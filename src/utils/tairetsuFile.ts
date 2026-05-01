@@ -21,6 +21,13 @@ export type TairetsuImportResult = {
   project: Project;
 };
 
+type TairetsuZipPayload = {
+  audioBlob: Blob | null;
+  audioFileName: string | null;
+  manifest: TairetsuManifest;
+  project: Project;
+};
+
 const safeJsonParse = <T>(text: string, errorMessage: string): T => {
   try {
     return JSON.parse(text) as T;
@@ -75,6 +82,103 @@ const isProjectLike = (value: unknown): value is Project => {
     Array.isArray(maybe.frames)
   );
 };
+
+const normalizeZipPath = (path: string): string => path.replace(/\\/g, "/");
+
+const getParentPath = (path: string): string => {
+  const normalized = normalizeZipPath(path);
+  const slashIndex = normalized.lastIndexOf("/");
+  return slashIndex >= 0 ? normalized.slice(0, slashIndex + 1) : "";
+};
+
+const findProjectFilePair = (
+  zip: JSZip,
+): { basePath: string; manifestFile: JSZip.JSZipObject; projectFile: JSZip.JSZipObject } | null => {
+  const files = Object.values(zip.files).filter((entry) => !entry.dir);
+  const manifestCandidates = files.filter((entry) =>
+    normalizeZipPath(entry.name).endsWith("manifest.json"),
+  );
+
+  for (const manifestFile of manifestCandidates) {
+    const basePath = getParentPath(manifestFile.name);
+    const projectFile =
+      zip.file(`${basePath}project.json`) ??
+      files.find(
+        (entry) =>
+          getParentPath(entry.name) === basePath &&
+          normalizeZipPath(entry.name).endsWith("project.json"),
+      ) ??
+      null;
+    if (projectFile) {
+      return { basePath, manifestFile, projectFile };
+    }
+  }
+
+  return null;
+};
+
+const readPayloadFromZip = async (
+  zip: JSZip,
+  sourceName: string,
+): Promise<TairetsuZipPayload | null> => {
+  const entries = Object.keys(zip.files);
+  console.info("[tairetsu import] zip entries", entries);
+
+  const pair = findProjectFilePair(zip);
+  if (!pair) {
+    return null;
+  }
+
+  const manifest = safeJsonParse<TairetsuManifest>(
+    await pair.manifestFile.async("string"),
+    "共有ファイルの情報を読み込めませんでした。",
+  );
+  console.info("[tairetsu import] manifest", manifest, { sourceName });
+  if (manifest.fileType !== TAIRETSU_FILE_TYPE) {
+    throw new Error("このファイルは隊列メーカーの共有ファイルではありません。");
+  }
+  if (manifest.formatVersion !== TAIRETSU_FORMAT_VERSION) {
+    throw new Error("この共有ファイルの形式には対応していません。");
+  }
+
+  const project = safeJsonParse<unknown>(
+    await pair.projectFile.async("string"),
+    "隊列表データが壊れている可能性があります。",
+  );
+  if (!isProjectLike(project)) {
+    throw new Error("隊列表データが壊れている可能性があります。");
+  }
+
+  const audioZipFile = manifest.includesAudio
+    ? Object.values(zip.files).find((entry) => {
+        if (entry.dir) {
+          return false;
+        }
+        const entryPath = normalizeZipPath(entry.name);
+        return (
+          entryPath.startsWith(`${pair.basePath}audio/`) ||
+          (pair.basePath === "" && entryPath.startsWith("audio/"))
+        );
+      })
+    : null;
+  const audioBlob = audioZipFile ? await audioZipFile.async("blob") : null;
+
+  return {
+    audioBlob,
+    audioFileName: audioZipFile ? getZipBaseName(audioZipFile.name) : null,
+    manifest,
+    project,
+  };
+};
+
+const findNestedArchive = (zip: JSZip): JSZip.JSZipObject | null =>
+  Object.values(zip.files).find((entry) => {
+    if (entry.dir) {
+      return false;
+    }
+    const name = normalizeZipPath(entry.name).toLowerCase();
+    return name.endsWith(".tairetsu") || name.endsWith(".zip");
+  }) ?? null;
 
 export const createTairetsuArchive = async (
   project: Project,
@@ -139,44 +243,28 @@ export const readTairetsuArchive = async (
     throw new Error("ZIPファイルとして展開できませんでした。");
   }
 
-  console.info("[tairetsu import] zip entries", Object.keys(zip.files));
+  let payload = await readPayloadFromZip(zip, file.name);
+  if (!payload) {
+    const nestedArchive = findNestedArchive(zip);
+    if (nestedArchive) {
+      console.info("[tairetsu import] trying nested archive", nestedArchive.name);
+      try {
+        const nestedBuffer = await nestedArchive.async("arraybuffer");
+        const nestedZip = await JSZip.loadAsync(nestedBuffer);
+        payload = await readPayloadFromZip(nestedZip, nestedArchive.name);
+      } catch (error) {
+        console.warn("[tairetsu import] nested archive failed", error);
+      }
+    }
+  }
 
-  const manifestFile = zip.file("manifest.json");
-  const projectFile = zip.file("project.json");
-  if (!manifestFile || !projectFile) {
+  if (!payload) {
     throw new Error("manifest.json または project.json が見つかりません。");
   }
 
-  const manifest = safeJsonParse<TairetsuManifest>(
-    await manifestFile.async("string"),
-    "共有ファイルの情報を読み込めませんでした。",
-  );
-  console.info("[tairetsu import] manifest", manifest);
-  if (manifest.fileType !== TAIRETSU_FILE_TYPE) {
-    throw new Error("このファイルは隊列メーカーの共有ファイルではありません。");
-  }
-  if (manifest.formatVersion !== TAIRETSU_FORMAT_VERSION) {
-    throw new Error("この共有ファイルの形式には対応していません。");
-  }
-
-  const project = safeJsonParse<unknown>(
-    await projectFile.async("string"),
-    "隊列表データが壊れている可能性があります。",
-  );
-  if (!isProjectLike(project)) {
-    throw new Error("隊列表データが壊れている可能性があります。");
-  }
-
-  const audioZipFile = manifest.includesAudio
-    ? Object.values(zip.files).find(
-        (entry) => !entry.dir && entry.name.startsWith("audio/"),
-      )
-    : null;
-  const audioBlob = audioZipFile ? await audioZipFile.async("blob") : null;
-
   return {
-    audioBlob,
-    audioFileName: audioZipFile ? getZipBaseName(audioZipFile.name) : null,
-    project,
+    audioBlob: payload.audioBlob,
+    audioFileName: payload.audioFileName,
+    project: payload.project,
   };
 };

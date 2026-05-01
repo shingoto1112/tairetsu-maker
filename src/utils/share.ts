@@ -13,9 +13,30 @@ export const projectToShareHash = (project: Project): string => {
 };
 
 export const createShareUrl = (project: Project): string => {
-  const url = new URL(window.location.href);
-  url.hash = projectToShareHash(project).slice(1);
-  return url.toString();
+  const baseUrl = `${window.location.origin}${window.location.pathname}${window.location.search}`;
+  return `${baseUrl}${projectToShareHash(project)}`;
+};
+
+const expandSharePayload = (compressed: string): string | null => {
+  const candidates = new Set<string>([
+    compressed,
+    compressed.replace(/\s/g, "+"),
+  ]);
+  try {
+    const decoded = decodeURIComponent(compressed);
+    candidates.add(decoded);
+    candidates.add(decoded.replace(/\s/g, "+"));
+  } catch {
+    // URLの途中欠けなどでdecodeできない場合も、元文字列で展開を試す。
+  }
+
+  for (const candidate of candidates) {
+    const json = decompressFromEncodedURIComponent(candidate);
+    if (json) {
+      return json;
+    }
+  }
+  return null;
 };
 
 export const readProjectFromHash = (): Project | null => {
@@ -28,9 +49,13 @@ export const readProjectFromHash = (): Project | null => {
   }
 
   const compressed = hash.slice(HASH_KEY.length);
-  const json = decompressFromEncodedURIComponent(compressed);
+  const json = expandSharePayload(compressed);
   if (!json) {
     throw new Error("共有リンクのデータを展開できませんでした。");
   }
-  return JSON.parse(json) as Project;
+  try {
+    return JSON.parse(json) as Project;
+  } catch {
+    throw new Error("共有リンクの隊列表データが壊れている可能性があります。");
+  }
 };
