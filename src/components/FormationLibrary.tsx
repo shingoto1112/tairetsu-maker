@@ -16,6 +16,7 @@ import {
   Folder,
   MoreHorizontal,
   Plus,
+  Share2,
   Trash2,
   Upload,
   X,
@@ -41,6 +42,7 @@ type FormationLibraryProps = {
   onRenameProject: (projectId: string, title: string) => void | Promise<void>;
   onDuplicateProject: (project: Project) => void | Promise<void>;
   onExportProject: (project: Project, includeAudio: boolean) => void | Promise<void>;
+  onCreateShareLink: (project: Project, includeAudio: boolean) => string | Promise<string>;
   onImportProjectFile: (file: File) => void | Promise<void>;
   onDeleteProject: (project: Project) => void | Promise<void>;
 };
@@ -52,7 +54,7 @@ type LibraryMenu = {
 };
 
 const MENU_WIDTH = 196;
-const MENU_HEIGHT = 226;
+const MENU_HEIGHT = 270;
 const MENU_MARGIN = 12;
 
 const clampMenuPosition = (left: number, top: number): { left: number; top: number } => {
@@ -90,6 +92,7 @@ export const FormationLibrary = ({
   onRenameProject,
   onDuplicateProject,
   onExportProject,
+  onCreateShareLink,
   onImportProjectFile,
   onDeleteProject,
 }: FormationLibraryProps) => {
@@ -112,6 +115,10 @@ export const FormationLibrary = ({
   const [exportTarget, setExportTarget] = useState<Project | null>(null);
   const [includeAudioInExport, setIncludeAudioInExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [shareTarget, setShareTarget] = useState<Project | null>(null);
+  const [shareUrl, setShareUrl] = useState("");
+  const [isCreatingShareLink, setIsCreatingShareLink] = useState(false);
+  const [shareCopyStatus, setShareCopyStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -267,6 +274,13 @@ export const FormationLibrary = ({
     setLibraryMenu(null);
   };
 
+  const openShareDialog = (project: Project) => {
+    setShareTarget(project);
+    setShareUrl("");
+    setShareCopyStatus(null);
+    setLibraryMenu(null);
+  };
+
   const submitRename = async (event: FormEvent) => {
     event.preventDefault();
     if (!renameTarget?.id) return;
@@ -292,6 +306,40 @@ export const FormationLibrary = ({
       setIncludeAudioInExport(false);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const submitShareLink = async () => {
+    if (!shareTarget) return;
+    setIsCreatingShareLink(true);
+    setShareCopyStatus(null);
+    try {
+      const url = await onCreateShareLink(shareTarget, false);
+      setShareUrl(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareCopyStatus("共有リンクをコピーしました。");
+      } catch {
+        setShareCopyStatus("リンクを作成しました。必要に応じてコピーしてください。");
+      }
+    } catch (error) {
+      setShareCopyStatus(
+        error instanceof Error
+          ? `共有リンクを作成できませんでした: ${error.message}`
+          : "共有リンクを作成できませんでした。",
+      );
+    } finally {
+      setIsCreatingShareLink(false);
+    }
+  };
+
+  const copyShareUrl = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopyStatus("共有リンクをコピーしました。");
+    } catch {
+      setShareCopyStatus("コピーできませんでした。リンクを選択して手動でコピーしてください。");
     }
   };
 
@@ -391,6 +439,10 @@ export const FormationLibrary = ({
             <Download size={15} />
             書き出し
           </button>
+          <button type="button" onClick={() => openShareDialog(menuProject)}>
+            <Share2 size={15} />
+            共有リンクを作成
+          </button>
           <button
             className="danger"
             type="button"
@@ -408,7 +460,7 @@ export const FormationLibrary = ({
       <input
         ref={importInputRef}
         type="file"
-        accept=".tairetsu,application/zip,application/x-zip-compressed"
+        accept=".tairetsu,.zip,application/zip,application/x-zip-compressed,application/octet-stream"
         onChange={(event) => void handleImportFile(event)}
         hidden
       />
@@ -452,7 +504,7 @@ export const FormationLibrary = ({
                 <Upload size={22} />
                 <span>
                   <strong>読み込む</strong>
-                  <small>共有された .tairetsu ファイルを読み込みます。</small>
+                  <small>共有された .tairetsu / .zip ファイルを読み込みます。</small>
                 </span>
               </button>
             </div>
@@ -703,6 +755,71 @@ export const FormationLibrary = ({
                 disabled={isExporting}
               >
                 書き出す
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {shareTarget && (
+        <div className="new-formation-backdrop" onPointerDown={() => setShareTarget(null)}>
+          <div
+            className="new-formation-dialog library-small-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="共有リンクを作成"
+          >
+            <header>
+              <h2>共有リンクを作成</h2>
+              <button
+                className="share-export-close"
+                onClick={() => setShareTarget(null)}
+                type="button"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <p className="notice">
+              「{shareTarget.title || "名称未設定"}」をリンクで共有します。
+              共有された相手は、この隊列表を閲覧し、自分の一覧に追加できます。
+            </p>
+            <label className="library-export-check is-disabled">
+              <input type="checkbox" checked={false} disabled readOnly />
+              音源ファイルも含める
+            </label>
+            <p className="notice muted">
+              リンク共有は現在、音源なしで作成します。音源も渡す場合は .tairetsu 書き出しをご利用ください。
+            </p>
+            {shareUrl && (
+              <div className="library-share-url">
+                <label>
+                  共有URL
+                  <input value={shareUrl} readOnly onFocus={(event) => event.target.select()} />
+                </label>
+                <button className="mini-button" type="button" onClick={() => void copyShareUrl()}>
+                  コピー
+                </button>
+              </div>
+            )}
+            {shareCopyStatus && <p className="notice">{shareCopyStatus}</p>}
+            <footer>
+              <button
+                className="mini-button"
+                onClick={() => setShareTarget(null)}
+                type="button"
+                disabled={isCreatingShareLink}
+              >
+                キャンセル
+              </button>
+              <button
+                className="mini-button primary"
+                onClick={() => void submitShareLink()}
+                type="button"
+                disabled={isCreatingShareLink}
+              >
+                リンクを作成
               </button>
             </footer>
           </div>

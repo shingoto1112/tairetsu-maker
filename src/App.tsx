@@ -980,6 +980,7 @@ function App() {
   const [appView, setAppView] = useState<"library" | "editor">(
     initial.shared ? "editor" : "library",
   );
+  const [isSharedProject, setIsSharedProject] = useState(initial.shared);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(
     initial.project.frames[0]?.id ?? null,
   );
@@ -1240,7 +1241,7 @@ function App() {
   }, [refreshHistoryCounts]);
 
   useEffect(() => {
-    if (appView !== "editor") {
+    if (appView !== "editor" || isSharedProject) {
       return;
     }
     try {
@@ -1251,7 +1252,7 @@ function App() {
       setIsDirty(true);
       setNotice("自動保存に失敗しました。保存ボタンで再度保存してください。");
     }
-  }, [appView, project]);
+  }, [appView, isSharedProject, project]);
 
   useEffect(() => {
     if (project.frames.length === 0) {
@@ -3007,6 +3008,10 @@ function App() {
   const saveProjectManually = async (
     options: { showNotice?: boolean } = { showNotice: true },
   ): Promise<boolean> => {
+    if (isSharedProject) {
+      setNotice("共有リンクで開いた隊列表は、自分の一覧に追加してから保存できます。");
+      return false;
+    }
     if (isSaving) {
       return false;
     }
@@ -4102,6 +4107,7 @@ function App() {
     setViewerPerspective(nextProject.viewerPerspective ?? "audience");
     setCurrentTime(0);
     setIsPlaying(false);
+    setIsSharedProject(false);
     setAppView("editor");
     setIsDirty(false);
     saveProjectToStorage(nextProject);
@@ -4135,6 +4141,23 @@ function App() {
   };
 
   const returnToLibrary = async () => {
+    if (isSharedProject) {
+      setIsSharedProject(false);
+      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
+      setAppView("library");
+      setIsPlaying(false);
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      if (window.location.hash) {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}`,
+        );
+      }
+      return;
+    }
     if (isDirty) {
       const saved = await saveProjectManually({ showNotice: false });
       if (!saved) {
@@ -4265,7 +4288,7 @@ function App() {
         try {
           audio = await saveAudioBlobToIndexedDb(imported.audioBlob, {
             duration: imported.project.audio?.duration,
-            name: imported.audioFileName ?? imported.project.audio?.name ?? "audio",
+            name: imported.project.audio?.name ?? imported.audioFileName ?? "audio",
             type:
               imported.project.audio?.type ||
               imported.audioBlob.type ||
@@ -4303,6 +4326,42 @@ function App() {
           : "隊列表ファイルを読み込めませんでした。",
       );
     }
+  };
+
+  const createStoredProjectShareLink = async (
+    source: Project,
+    includeAudio: boolean,
+  ): Promise<string> => {
+    const projectToShare = normalizeProject({
+      ...cloneProject(source),
+      audio: null,
+    });
+    if (includeAudio) {
+      setNotice("リンク共有は現在、音源なしで作成します。音源を渡す場合は .tairetsu 書き出しをご利用ください。");
+    }
+    return createShareUrl(projectToShare);
+  };
+
+  const addSharedProjectToLibrary = async () => {
+    const now = new Date().toISOString();
+    const nextProject = normalizeProject({
+      ...cloneProject(projectRef.current),
+      audio: null,
+      createdAt: now,
+      id: createProjectId(),
+      lastOpenedAt: now,
+      title: createUniqueProjectTitle(projectRef.current.title, savedProjects),
+      updatedAt: now,
+    });
+    setIsSharedProject(false);
+    if (window.location.hash) {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    }
+    await openProjectInEditor(nextProject, "共有隊列表を自分の一覧に追加しました。");
   };
 
   const togglePlayback = async () => {
@@ -4387,7 +4446,12 @@ function App() {
 
   const createShareLink = async () => {
     try {
-      const url = createShareUrl(project);
+      const url = createShareUrl(
+        normalizeProject({
+          ...cloneProject(project),
+          audio: null,
+        }),
+      );
       await navigator.clipboard.writeText(url);
       setNotice("共有リンクをコピーしました。音源ファイルはリンクに含まれません。");
     } catch {
@@ -5774,6 +5838,7 @@ function App() {
         onRenameProject={renameStoredProject}
         onDuplicateProject={duplicateStoredProject}
         onExportProject={exportTairetsuProject}
+        onCreateShareLink={createStoredProjectShareLink}
         onImportProjectFile={importTairetsuProjectFile}
         onDeleteProject={deleteStoredProject}
       />
@@ -5783,6 +5848,7 @@ function App() {
   return (
     <>
     <div className="app-shell">
+      <div className="app-top-region">
       <Toolbar
         title={project.title}
         showGrid={project.stage.showGrid}
@@ -5834,7 +5900,32 @@ function App() {
           setIsPanelOpen(true);
         }}
       />
+      {isSharedProject && (
+        <div className="shared-project-banner">
+          <div>
+            <strong>共有リンクで閲覧中</strong>
+            <span>編集・保存する場合は、自分の隊列一覧に追加してください。</span>
+          </div>
+          <div className="shared-project-banner__actions">
+            <button
+              className="mini-button primary"
+              onClick={() => void addSharedProjectToLibrary()}
+              type="button"
+            >
+              自分の一覧に追加
+            </button>
+            <button
+              className="mini-button"
+              onClick={() => void returnToLibrary()}
+              type="button"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
       <audio ref={audioRef} className="persistent-audio" />
+      </div>
 
       <div className="workspace">
         <PanelTabs

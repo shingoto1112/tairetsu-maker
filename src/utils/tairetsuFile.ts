@@ -13,6 +13,8 @@ type TairetsuManifest = {
   includesAudio: boolean;
 };
 
+const ZIP_SIGNATURE = "PK";
+
 export type TairetsuImportResult = {
   audioBlob: Blob | null;
   audioFileName: string | null;
@@ -42,6 +44,23 @@ export const createTairetsuFileName = (project: Project): string =>
 const getZipBaseName = (path: string): string => {
   const parts = path.split("/");
   return parts[parts.length - 1] || "audio";
+};
+
+const getAudioExtension = (project: Project): string => {
+  const source = `${project.audio?.name ?? ""} ${project.audio?.type ?? ""}`.toLowerCase();
+  if (source.includes("wav")) {
+    return "wav";
+  }
+  if (source.includes("m4a") || source.includes("mp4")) {
+    return "m4a";
+  }
+  if (source.includes("aac")) {
+    return "aac";
+  }
+  if (source.includes("ogg")) {
+    return "ogg";
+  }
+  return "mp3";
 };
 
 const isProjectLike = (value: unknown): value is Project => {
@@ -83,8 +102,7 @@ export const createTairetsuArchive = async (
   zip.file("project.json", JSON.stringify(exportedProject, null, 2));
 
   if (includesAudio && options.audioBlob && project.audio) {
-    const audioName = sanitizeTairetsuFileName(project.audio.name || "audio");
-    zip.file(`audio/${audioName}`, options.audioBlob);
+    zip.file(`audio/audio.${getAudioExtension(project)}`, options.audioBlob);
   }
 
   return zip.generateAsync({
@@ -99,23 +117,41 @@ export const createTairetsuArchive = async (
 export const readTairetsuArchive = async (
   file: File,
 ): Promise<TairetsuImportResult> => {
+  console.info("[tairetsu import] selected file", {
+    name: file.name,
+    size: file.size,
+    type: file.type || "(empty)",
+  });
+  const buffer = await file.arrayBuffer();
+  const signature = String.fromCharCode(
+    ...new Uint8Array(buffer.slice(0, 2)),
+  );
+  if (signature !== ZIP_SIGNATURE) {
+    console.warn("[tairetsu import] file does not start with PK; trying JSZip anyway", {
+      signature,
+    });
+  }
+
   let zip: JSZip;
   try {
-    zip = await JSZip.loadAsync(file);
+    zip = await JSZip.loadAsync(buffer);
   } catch {
-    throw new Error("隊列表ファイルを読み込めませんでした。");
+    throw new Error("ZIPファイルとして展開できませんでした。");
   }
+
+  console.info("[tairetsu import] zip entries", Object.keys(zip.files));
 
   const manifestFile = zip.file("manifest.json");
   const projectFile = zip.file("project.json");
   if (!manifestFile || !projectFile) {
-    throw new Error("このファイルは隊列メーカーの共有ファイルではありません。");
+    throw new Error("manifest.json または project.json が見つかりません。");
   }
 
   const manifest = safeJsonParse<TairetsuManifest>(
     await manifestFile.async("string"),
     "共有ファイルの情報を読み込めませんでした。",
   );
+  console.info("[tairetsu import] manifest", manifest);
   if (manifest.fileType !== TAIRETSU_FILE_TYPE) {
     throw new Error("このファイルは隊列メーカーの共有ファイルではありません。");
   }
