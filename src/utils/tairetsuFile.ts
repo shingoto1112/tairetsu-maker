@@ -46,7 +46,7 @@ export const sanitizeTairetsuFileName = (name: string): string => {
 };
 
 export const createTairetsuFileName = (project: Project): string =>
-  `${sanitizeTairetsuFileName(project.title || "隊列表")}.tairetsu`;
+  `${sanitizeTairetsuFileName(project.title || "隊列表")}.zip`;
 
 const getZipBaseName = (path: string): string => {
   const parts = path.split("/");
@@ -171,14 +171,20 @@ const readPayloadFromZip = async (
   };
 };
 
-const findNestedArchive = (zip: JSZip): JSZip.JSZipObject | null =>
-  Object.values(zip.files).find((entry) => {
+const findNestedArchive = (zip: JSZip): JSZip.JSZipObject | null => {
+  const files = Object.values(zip.files).filter((entry) => !entry.dir);
+  const namedArchive = files.find((entry) => {
     if (entry.dir) {
       return false;
     }
     const name = normalizeZipPath(entry.name).toLowerCase();
     return name.endsWith(".tairetsu") || name.endsWith(".zip");
-  }) ?? null;
+  });
+
+  // LINEや一部の共有先では、拡張子が落ちた単一ファイル入りZIPに変わることがある。
+  // その場合も中身をZIPとして展開して、manifest/projectの有無で最終判定する。
+  return namedArchive ?? (files.length === 1 ? files[0] : null);
+};
 
 export const createTairetsuArchive = async (
   project: Project,

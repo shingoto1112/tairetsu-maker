@@ -460,7 +460,7 @@ export const FormationLibrary = ({
       <input
         ref={importInputRef}
         type="file"
-        accept=".tairetsu,.zip,application/zip,application/x-zip-compressed,application/octet-stream"
+        accept=".zip,.tairetsu,application/zip,application/x-zip-compressed,application/octet-stream"
         onChange={(event) => void handleImportFile(event)}
         hidden
       />
@@ -504,7 +504,7 @@ export const FormationLibrary = ({
                 <Upload size={22} />
                 <span>
                   <strong>読み込む</strong>
-                  <small>共有された .tairetsu / .zip ファイルを読み込みます。</small>
+                  <small>共有された .zip / .tairetsu ファイルを読み込みます。</small>
                 </span>
               </button>
             </div>
@@ -725,7 +725,7 @@ export const FormationLibrary = ({
               </button>
             </header>
             <p className="notice">
-              「{exportTarget.title || "名称未設定"}」を .tairetsu ファイルとして書き出します。
+              「{exportTarget.title || "名称未設定"}」を .zip ファイルとして書き出します。
             </p>
             <label className="library-export-check">
               <input
@@ -790,7 +790,7 @@ export const FormationLibrary = ({
               音源ファイルも含める
             </label>
             <p className="notice muted">
-              リンク共有は現在、音源なしで作成します。音源も渡す場合は .tairetsu 書き出しをご利用ください。
+              リンク共有は現在、音源なしで作成します。音源も渡す場合は .zip 書き出しをご利用ください。
             </p>
             {shareUrl && (
               <div className="library-share-url">

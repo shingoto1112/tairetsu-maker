@@ -4250,9 +4250,9 @@ function App() {
         pickerTypes: [
           {
             accept: {
-              "application/zip": [".tairetsu"],
+              "application/zip": [".zip", ".tairetsu"],
             },
-            description: "隊列メーカー共有ファイル",
+            description: "隊列メーカー共有ZIP",
           },
         ],
       });
@@ -4337,7 +4337,7 @@ function App() {
       audio: null,
     });
     if (includeAudio) {
-      setNotice("リンク共有は現在、音源なしで作成します。音源を渡す場合は .tairetsu 書き出しをご利用ください。");
+      setNotice("リンク共有は現在、音源なしで作成します。音源を渡す場合は .zip 書き出しをご利用ください。");
     }
     return createShareUrl(projectToShare);
   };
