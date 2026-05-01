@@ -71,6 +71,9 @@ type ObjectPanelProps = {
 
 type VisibilityTab = "visible" | "hidden";
 
+const compareMembersByName = (a: Member, b: Member): number =>
+  a.name.localeCompare(b.name, "ja", { numeric: true });
+
 const objectTypes: StageObjectType[] = [
   "prop",
   "setPiece",
@@ -752,9 +755,15 @@ export const ObjectPanel = ({
         const isVisible = isObjectVisible(object);
         const isSelected = selected?.type === "object" && selected.id === object.id;
         const assignedMemberIds = objectAssignments[object.id] ?? [];
-        const assignableMembers = members.filter(
-          (member) => !assignedMemberIds.includes(member.id),
-        );
+        const assignableMembers = members
+          .filter((member) => !assignedMemberIds.includes(member.id))
+          .sort(compareMembersByName);
+        const sortedAssignedMemberIds = [...assignedMemberIds].sort((a, b) => {
+          const memberA = membersById.get(a);
+          const memberB = membersById.get(b);
+          if (!memberA || !memberB) return 0;
+          return compareMembersByName(memberA, memberB);
+        });
         const draftMemberId = assignmentDrafts[object.id] ?? "";
         return (
           <article
@@ -899,7 +908,7 @@ export const ObjectPanel = ({
                 {assignedMemberIds.length === 0 ? (
                   <span className="muted-text">割当なし</span>
                 ) : (
-                  assignedMemberIds.map((memberId) => {
+                  sortedAssignedMemberIds.map((memberId) => {
                     const member = membersById.get(memberId);
                     if (!member) {
                       return null;

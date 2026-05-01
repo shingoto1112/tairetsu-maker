@@ -12,6 +12,9 @@ import { PanelStickyHeader } from "./PanelStickyHeader";
 type AssignmentView = "objects" | "members";
 type MemberSort = "total" | "assignments" | "hidden" | "name";
 
+const compareMembersByName = (a: Member, b: Member): number =>
+  a.name.localeCompare(b.name, "ja", { numeric: true });
+
 type AssignmentPanelProps = {
   frames: FormationFrame[];
   members: Member[];
@@ -143,9 +146,15 @@ export const AssignmentPanel = ({
         ) : (
           visibleObjectsInCurrentFrame.map((object) => {
             const assignedMemberIds = currentAssignments[object.id] ?? [];
-            const assignableMembers = members.filter(
-              (member) => !assignedMemberIds.includes(member.id),
-            );
+            const assignableMembers = members
+              .filter((member) => !assignedMemberIds.includes(member.id))
+              .sort(compareMembersByName);
+            const sortedAssignedMemberIds = [...assignedMemberIds].sort((a, b) => {
+              const memberA = membersById.get(a);
+              const memberB = membersById.get(b);
+              if (!memberA || !memberB) return 0;
+              return compareMembersByName(memberA, memberB);
+            });
             const draftMemberId = assignmentDrafts[object.id] ?? "";
             return (
               <article className="list-card assignment-object-card" key={object.id}>
@@ -161,7 +170,7 @@ export const AssignmentPanel = ({
                   {assignedMemberIds.length === 0 ? (
                     <span className="muted-text">割当なし</span>
                   ) : (
-                    assignedMemberIds.map((memberId) => {
+                    sortedAssignedMemberIds.map((memberId) => {
                       const member = membersById.get(memberId);
                       if (!member) return null;
                       return (
