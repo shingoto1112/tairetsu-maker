@@ -1,0 +1,165 @@
+import { Project } from "./types";
+
+export const createSampleProject = (): Project => {
+  const members = [
+    { id: "m_anna", name: "Anna", color: "#ef476f", visible: true, zIndex: 20 },
+    { id: "m_ben", name: "Ben", color: "#118ab2", visible: true, zIndex: 20 },
+    { id: "m_chika", name: "Chika", color: "#06d6a0", visible: true, zIndex: 20 },
+  ];
+
+  const curtain = {
+    id: "o_curtain",
+    type: "curtain" as const,
+    name: "移動幕",
+    color: "#7c3aed",
+    shape: "curtain" as const,
+    widthMeters: 2.2,
+    heightMeters: 5.6,
+    defaultX: 4.9,
+    defaultY: 0.2,
+    defaultRotation: 0,
+    visible: true,
+    locked: false,
+    zIndex: 8,
+  };
+
+  const chair = {
+    id: "o_chair",
+    type: "chair" as const,
+    name: "椅子",
+    color: "#f59e0b",
+    shape: "rectangle" as const,
+    widthMeters: 0.8,
+    heightMeters: 0.8,
+    defaultX: 5.6,
+    defaultY: 4.6,
+    defaultRotation: 0,
+    visible: true,
+    locked: false,
+    zIndex: 10,
+  };
+
+  return {
+    version: 1,
+    title: "隊列メーカー サンプル",
+    updatedAt: new Date().toISOString(),
+    stage: {
+      widthMeters: 12,
+      depthMeters: 6,
+      gridSizeMeters: 0.5,
+      showGrid: true,
+      showCenterLine: true,
+      audienceSide: "bottom",
+      showStageLabels: true,
+      frontDirection: "bottom",
+      originMode: "center",
+      showCenterMarker: true,
+      memberDiameterMeters: 0.5,
+      horizontalGuideMode: "meters",
+    },
+    memberGroups: [],
+    movementPaths: [],
+    focusMemberId: "m_anna",
+    viewerPerspective: "audience",
+    members,
+    stageObjects: [curtain, chair],
+    frames: [
+      {
+        id: "f_intro",
+        label: "Intro",
+        timeSec: 0,
+        positions: {
+          m_anna: { x: 3, y: 4.4 },
+          m_ben: { x: 6, y: 4.4 },
+          m_chika: { x: 9, y: 4.4 },
+        },
+        objectStates: {
+          o_curtain: {
+            objectId: "o_curtain",
+            x: 4.9,
+            y: 0.2,
+            widthMeters: 2.2,
+            heightMeters: 5.6,
+            rotation: 0,
+            visible: true,
+            zIndex: 8,
+          },
+          o_chair: {
+            objectId: "o_chair",
+            x: 5.6,
+            y: 4.6,
+            widthMeters: 0.8,
+            heightMeters: 0.8,
+            rotation: 0,
+            visible: true,
+            zIndex: 10,
+          },
+        },
+      },
+      {
+        id: "f_count8",
+        label: "Count 8",
+        timeSec: 12,
+        positions: {
+          m_anna: { x: 2.2, y: 2.2 },
+          m_ben: { x: 6, y: 3.1 },
+          m_chika: { x: 9.8, y: 2.2 },
+        },
+        objectStates: {
+          o_curtain: {
+            objectId: "o_curtain",
+            x: 1.1,
+            y: 0.2,
+            widthMeters: 1.4,
+            heightMeters: 5.6,
+            rotation: 0,
+            visible: true,
+            zIndex: 8,
+          },
+          o_chair: {
+            objectId: "o_chair",
+            x: 5.6,
+            y: 4.6,
+            widthMeters: 0.8,
+            heightMeters: 0.8,
+            rotation: 0,
+            visible: true,
+            zIndex: 10,
+          },
+        },
+      },
+      {
+        id: "f_chorus",
+        label: "Chorus",
+        timeSec: 24,
+        positions: {
+          m_anna: { x: 4.4, y: 1.4 },
+          m_ben: { x: 6, y: 1 },
+          m_chika: { x: 7.6, y: 1.4 },
+        },
+        objectStates: {
+          o_curtain: {
+            objectId: "o_curtain",
+            x: 9.5,
+            y: 0.2,
+            widthMeters: 1.4,
+            heightMeters: 5.6,
+            rotation: 0,
+            visible: true,
+            zIndex: 8,
+          },
+          o_chair: {
+            objectId: "o_chair",
+            x: 5.6,
+            y: 4.6,
+            widthMeters: 0.8,
+            heightMeters: 0.8,
+            rotation: 18,
+            visible: true,
+            zIndex: 10,
+          },
+        },
+      },
+    ],
+  };
+};

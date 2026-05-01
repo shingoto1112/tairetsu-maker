@@ -1,0 +1,23 @@
+node_modules
+dist
+.DS_Store
+
+# Local environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# Build/cache artifacts
+*.tsbuildinfo
+.vite
+vite.config.js
+vite.config.d.ts
+
+# Local logs
+*.log
+vite-dev.err
+vite-dev.log
+
+# Hosting/provider local state
+.vercel
