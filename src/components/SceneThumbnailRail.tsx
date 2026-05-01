@@ -116,7 +116,7 @@ export const SceneThumbnailRail = ({
                   type="button"
                 >
                   <div className="scene-thumbnail-card__meta">
-                    <strong>Scene {index + 1}</strong>
+                    <strong>{index + 1}</strong>
                     <span>{formatTime(frame.timeSec)}</span>
                   </div>
                   <div className="scene-thumbnail-card__label">
