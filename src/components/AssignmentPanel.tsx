@@ -52,6 +52,14 @@ export const AssignmentPanel = ({
     [objects],
   );
   const currentAssignments = currentFrame?.objectAssignments ?? {};
+  const visibleObjectsInCurrentFrame = useMemo(
+    () =>
+      objects.filter(
+        (object) =>
+          (objectStates[object.id]?.visible ?? object.visible ?? true) !== false,
+      ),
+    [objectStates, objects],
+  );
 
   const memberSummaries = useMemo(() => {
     const summaries = members.map((member) => {
@@ -128,16 +136,17 @@ export const AssignmentPanel = ({
       <section className="assignment-tab-list" aria-label="道具別割当">
         {objects.length === 0 ? (
           <div className="empty-state">道具がありません。</div>
+        ) : visibleObjectsInCurrentFrame.length === 0 ? (
+          <div className="empty-state">
+            このシーンで表示中の道具はありません。表示中の道具だけ割当できます。
+          </div>
         ) : (
-          objects.map((object) => {
+          visibleObjectsInCurrentFrame.map((object) => {
             const assignedMemberIds = currentAssignments[object.id] ?? [];
             const assignableMembers = members.filter(
               (member) => !assignedMemberIds.includes(member.id),
             );
             const draftMemberId = assignmentDrafts[object.id] ?? "";
-            const isVisible =
-              (objectStates[object.id]?.visible ?? object.visible ?? true) !==
-              false;
             return (
               <article className="list-card assignment-object-card" key={object.id}>
                 <div className="list-card__row">
@@ -147,9 +156,6 @@ export const AssignmentPanel = ({
                     aria-hidden="true"
                   />
                   <strong>{object.name}</strong>
-                  {!isVisible && (
-                    <span className="scene-status hidden">非表示</span>
-                  )}
                 </div>
                 <div className="assignment-chip-list">
                   {assignedMemberIds.length === 0 ? (
