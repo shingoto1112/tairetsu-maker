@@ -2,7 +2,10 @@ import {
   FormationFrame,
   Member,
   MemberGroup,
+  ObjectState,
   ObjectGroup,
+  Position,
+  StageConfig,
   StageObject,
   StageSnapshot,
   Selection,
@@ -19,6 +22,12 @@ type DetailsPanelProps = {
   objectGroups: ObjectGroup[];
   currentFrame: FormationFrame | null;
   snapshot: StageSnapshot;
+  stage: StageConfig;
+  onUpdateMember: (id: string, patch: Partial<Member>) => void;
+  onUpdateMemberGroup: (memberId: string, groupId: string | null) => void;
+  onMoveMember: (id: string, position: Position) => void;
+  onUpdateObject: (id: string, patch: Partial<StageObject>) => void;
+  onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
 };
 
 const objectTypeLabel = (type: StageObject["type"]): string => {
@@ -47,6 +56,30 @@ const objectTypeLabel = (type: StageObject["type"]): string => {
 const formatMeter = (value?: number): string =>
   value === undefined ? "-" : `${Number(value.toFixed(2))}m`;
 
+const formatNumberInput = (value?: number): string => {
+  if (value === undefined || !Number.isFinite(value)) {
+    return "";
+  }
+  return `${Number(value.toFixed(3))}`;
+};
+
+const parseNumberInput = (value: string): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const roundDetailMeters = (value: number): number =>
+  Math.round(value * 1000) / 1000;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+const toDisplayX = (internalX: number | undefined, stageWidth: number) =>
+  internalX === undefined ? undefined : internalX - stageWidth / 2;
+
+const fromDisplayX = (displayX: number, stageWidth: number) =>
+  displayX + stageWidth / 2;
+
 const getAssignedObjectNames = (
   memberId: string,
   frame: FormationFrame | null,
@@ -70,6 +103,12 @@ export const DetailsPanel = ({
   objectGroups,
   currentFrame,
   snapshot,
+  stage,
+  onUpdateMember,
+  onUpdateMemberGroup,
+  onMoveMember,
+  onUpdateObject,
+  onUpdateObjectState,
 }: DetailsPanelProps) => {
   const selectedMember =
     selected?.type === "member"
@@ -90,12 +129,100 @@ export const DetailsPanel = ({
   const memberPosition = selectedMember
     ? snapshot.positions[selectedMember.id]
     : undefined;
-  const objectState = selectedObject
-    ? snapshot.objectStates[selectedObject.id]
-    : undefined;
+  const objectState =
+    selectedObject && snapshot.objectStates[selectedObject.id]
+      ? snapshot.objectStates[selectedObject.id]
+      : selectedObject
+        ? {
+            objectId: selectedObject.id,
+            x: selectedObject.defaultX,
+            y: selectedObject.defaultY,
+            widthMeters: selectedObject.widthMeters,
+            heightMeters: selectedObject.heightMeters,
+            rotation: selectedObject.defaultRotation,
+            visible: selectedObject.visible,
+            zIndex: selectedObject.zIndex,
+          }
+        : undefined;
   const assignedObjectNames = selectedMember
     ? getAssignedObjectNames(selectedMember.id, currentFrame, objects)
     : [];
+  const stageWidthMeters = Math.max(0.1, stage.widthMeters);
+  const stageDepthMeters = Math.max(0.1, stage.depthMeters);
+
+  const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
+    if (!selectedMember || !memberPosition) {
+      return;
+    }
+    const value = parseNumberInput(rawValue);
+    if (value === null) {
+      return;
+    }
+    const nextInternalX =
+      axis === "x"
+        ? fromDisplayX(value, stageWidthMeters)
+        : memberPosition.x;
+    const nextInternalY = axis === "y" ? value : memberPosition.y;
+    onMoveMember(selectedMember.id, {
+      x: roundDetailMeters(clamp(nextInternalX, 0, stageWidthMeters)),
+      y: roundDetailMeters(clamp(nextInternalY, 0, stageDepthMeters)),
+    });
+  };
+
+  const updateObjectCoordinate = (axis: "x" | "y", rawValue: string) => {
+    if (!selectedObject || !objectState) {
+      return;
+    }
+    const value = parseNumberInput(rawValue);
+    if (value === null) {
+      return;
+    }
+    const maxObjectX = Math.max(
+      0,
+      stageWidthMeters - objectState.widthMeters,
+    );
+    const maxObjectY = Math.max(
+      0,
+      stageDepthMeters - objectState.heightMeters,
+    );
+    onUpdateObjectState(selectedObject.id, {
+      [axis]:
+        axis === "x"
+          ? roundDetailMeters(
+              clamp(fromDisplayX(value, stageWidthMeters), 0, maxObjectX),
+            )
+          : roundDetailMeters(clamp(value, 0, maxObjectY)),
+    });
+  };
+
+  const updateObjectPositiveNumber = (
+    field: "widthMeters" | "heightMeters",
+    rawValue: string,
+  ) => {
+    if (!selectedObject) {
+      return;
+    }
+    const value = parseNumberInput(rawValue);
+    if (value === null || value <= 0) {
+      return;
+    }
+    onUpdateObjectState(selectedObject.id, {
+      [field]: roundDetailMeters(value),
+    });
+  };
+
+  const updateObjectRotation = (rawValue: string) => {
+    if (!selectedObject) {
+      return;
+    }
+    const value = parseNumberInput(rawValue);
+    if (value === null) {
+      return;
+    }
+    onUpdateObjectState(selectedObject.id, {
+      rotation: roundDetailMeters(value),
+    });
+  };
 
   return (
     <div className="details-panel">
@@ -124,8 +251,7 @@ export const DetailsPanel = ({
 
         {!selectedMember && !selectedObject && selectedMemberIds.length <= 1 && (
           <p className="muted-text">
-            ステージ上のメンバーや道具を選択すると、ここに基本情報を表示します。
-            MVPではシーン間の自動移動アニメーションは使わず、曲時刻に合わせて静的な隊列表を切り替えます。
+            ステージ上のメンバーや道具を選択すると、ここで名前・サイズ・座標などを編集できます。
           </p>
         )}
 
@@ -151,29 +277,94 @@ export const DetailsPanel = ({
               />
               <strong>{selectedMember.name}</strong>
             </div>
-            <dl className="detail-readout-grid">
-              <div>
-                <dt>所属</dt>
-                <dd>{selectedMemberGroup?.name ?? "未所属"}</dd>
-              </div>
-              <div>
-                <dt>表示</dt>
-                <dd>
+            <div className="detail-edit-grid">
+              <label className="detail-edit-field detail-edit-field--wide">
+                <span>メンバー名</span>
+                <input
+                  value={selectedMember.name}
+                  onChange={(event) =>
+                    onUpdateMember(selectedMember.id, {
+                      name: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="detail-edit-field">
+                <span>所属グループ</span>
+                <select
+                  value={selectedMemberGroup?.id ?? ""}
+                  onChange={(event) =>
+                    onUpdateMemberGroup(
+                      selectedMember.id,
+                      event.target.value || null,
+                    )
+                  }
+                >
+                  <option value="">未所属</option>
+                  {memberGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="detail-edit-field">
+                <span>表示色</span>
+                <input
+                  className="detail-color-input"
+                  type="color"
+                  value={selectedMember.color}
+                  onChange={(event) =>
+                    onUpdateMember(selectedMember.id, {
+                      color: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <div className="detail-readout-chip">
+                <span>表示</span>
+                <strong>
                   {(selectedMember.visible ?? true) &&
                   (snapshot.memberVisibility[selectedMember.id] ?? true)
                     ? "表示中"
                     : "隊列外"}
-                </dd>
+                </strong>
               </div>
-              <div>
-                <dt>x</dt>
-                <dd>{formatMeter(memberPosition?.x)}</dd>
-              </div>
-              <div>
-                <dt>y</dt>
-                <dd>{formatMeter(memberPosition?.y)}</dd>
-              </div>
-            </dl>
+              <label className="detail-edit-field">
+                <span>x（中心基準）</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={-stageWidthMeters / 2}
+                    max={stageWidthMeters / 2}
+                    value={formatNumberInput(
+                      toDisplayX(memberPosition?.x, stageWidthMeters),
+                    )}
+                    onChange={(event) =>
+                      updateMemberCoordinate("x", event.target.value)
+                    }
+                  />
+                  <b>m</b>
+                </span>
+              </label>
+              <label className="detail-edit-field">
+                <span>y（上端基準）</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={stageDepthMeters}
+                    value={formatNumberInput(memberPosition?.y)}
+                    onChange={(event) =>
+                      updateMemberCoordinate("y", event.target.value)
+                    }
+                  />
+                  <b>m</b>
+                </span>
+              </label>
+            </div>
             {assignedObjectNames.length > 0 && (
               <p className="assignment-inline-note">
                 割当: {assignedObjectNames.join("、")}
@@ -191,56 +382,142 @@ export const DetailsPanel = ({
               />
               <strong>{selectedObject.name}</strong>
             </div>
-            <dl className="detail-readout-grid">
-              <div>
-                <dt>種類</dt>
-                <dd>{objectTypeLabel(selectedObject.type)}</dd>
+            <div className="detail-edit-grid">
+              <label className="detail-edit-field detail-edit-field--wide">
+                <span>道具名</span>
+                <input
+                  value={selectedObject.name}
+                  onChange={(event) =>
+                    onUpdateObject(selectedObject.id, {
+                      name: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <div className="detail-readout-chip">
+                <span>種類</span>
+                <strong>{objectTypeLabel(selectedObject.type)}</strong>
               </div>
-              <div>
-                <dt>所属</dt>
-                <dd>{selectedObjectGroup?.name ?? "未所属"}</dd>
+              <div className="detail-readout-chip">
+                <span>所属</span>
+                <strong>{selectedObjectGroup?.name ?? "未所属"}</strong>
               </div>
-              <div>
-                <dt>表示</dt>
-                <dd>
+              <div className="detail-readout-chip">
+                <span>表示</span>
+                <strong>
                   {(objectState?.visible ?? selectedObject.visible) !== false
                     ? "表示中"
                     : "非表示"}
-                </dd>
+                </strong>
               </div>
-              <div>
-                <dt>x</dt>
-                <dd>{formatMeter(objectState?.x)}</dd>
-              </div>
-              <div>
-                <dt>y</dt>
-                <dd>{formatMeter(objectState?.y)}</dd>
-              </div>
-              <div>
-                <dt>横</dt>
-                <dd>{formatMeter(objectState?.widthMeters)}</dd>
-              </div>
-              <div>
-                <dt>縦</dt>
-                <dd>{formatMeter(objectState?.heightMeters)}</dd>
-              </div>
-              <div>
-                <dt>回転</dt>
-                <dd>{objectState ? `${Math.round(objectState.rotation)}°` : "-"}</dd>
-              </div>
-            </dl>
+              <label className="detail-edit-field">
+                <span>色</span>
+                <input
+                  className="detail-color-input"
+                  type="color"
+                  value={selectedObject.color}
+                  onChange={(event) =>
+                    onUpdateObject(selectedObject.id, {
+                      color: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label className="detail-edit-field">
+                <span>x（中心基準）</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={-stageWidthMeters / 2}
+                    max={stageWidthMeters / 2}
+                    value={formatNumberInput(
+                      toDisplayX(objectState?.x, stageWidthMeters),
+                    )}
+                    onChange={(event) =>
+                      updateObjectCoordinate("x", event.target.value)
+                    }
+                  />
+                  <b>m</b>
+                </span>
+              </label>
+              <label className="detail-edit-field">
+                <span>y（上端基準）</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    max={stageDepthMeters}
+                    value={formatNumberInput(objectState?.y)}
+                    onChange={(event) =>
+                      updateObjectCoordinate("y", event.target.value)
+                    }
+                  />
+                  <b>m</b>
+                </span>
+              </label>
+              <label className="detail-edit-field">
+                <span>横幅</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    value={formatNumberInput(objectState?.widthMeters)}
+                    onChange={(event) =>
+                      updateObjectPositiveNumber(
+                        "widthMeters",
+                        event.target.value,
+                      )
+                    }
+                  />
+                  <b>m</b>
+                </span>
+              </label>
+              <label className="detail-edit-field">
+                <span>縦幅</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    value={formatNumberInput(objectState?.heightMeters)}
+                    onChange={(event) =>
+                      updateObjectPositiveNumber(
+                        "heightMeters",
+                        event.target.value,
+                      )
+                    }
+                  />
+                  <b>m</b>
+                </span>
+              </label>
+              <label className="detail-edit-field">
+                <span>回転角度</span>
+                <span className="detail-input-with-unit">
+                  <input
+                    type="number"
+                    step="1"
+                    value={formatNumberInput(objectState?.rotation)}
+                    onChange={(event) => updateObjectRotation(event.target.value)}
+                  />
+                  <b>°</b>
+                </span>
+              </label>
+            </div>
           </div>
         )}
       </section>
 
       <section className="panel-section">
         <div className="panel-section__header">
-          <h3>再生仕様</h3>
-          <span>MVP</span>
+          <h3>座標の見方</h3>
+          <span>詳細タブ</span>
         </div>
         <p className="muted-text">
-          再生中は、現在時刻に到達しているシーンの静的な配置を表示します。
-          次シーンの開始時刻までは自動で移動しません。
+          xはステージ上端のセンターラインを0mとして、右がプラス、左がマイナスです。
+          yはステージ上端を0mとして、下方向がプラスです。
         </p>
       </section>
 

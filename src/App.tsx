@@ -1722,6 +1722,14 @@ function App() {
   const selectStageElement = (selection: Selection) => {
     setSelected(selection);
     if (!selection) {
+      setSelectedMemberIds([]);
+      return;
+    }
+
+    if (activePanelTab === "animation") {
+      setIsPanelOpen(true);
+      setSelectedMemberIds([]);
+      setMode("preview");
       return;
     }
 
@@ -5746,6 +5754,12 @@ function App() {
           objectGroups={project.objectGroups ?? []}
           currentFrame={selectedFrame ?? null}
           snapshot={selectedFrameSnapshot}
+          stage={effectiveStage}
+          onUpdateMember={updateMember}
+          onUpdateMemberGroup={updateMemberGroup}
+          onMoveMember={moveMember}
+          onUpdateObject={updateObject}
+          onUpdateObjectState={updateObjectState}
         />
       );
     }
