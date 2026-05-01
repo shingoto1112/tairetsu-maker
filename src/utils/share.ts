@@ -51,11 +51,11 @@ export const readProjectFromHash = (): Project | null => {
   const compressed = hash.slice(HASH_KEY.length);
   const json = expandSharePayload(compressed);
   if (!json) {
-    throw new Error("共有リンクのデータを展開できませんでした。");
+    throw new Error("共有データを展開できませんでした。");
   }
   try {
     return JSON.parse(json) as Project;
   } catch {
-    throw new Error("共有リンクの隊列表データが壊れている可能性があります。");
+    throw new Error("共有データの隊列表データが壊れている可能性があります。");
   }
 };

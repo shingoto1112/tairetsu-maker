@@ -92,7 +92,7 @@ import {
   sortFrames,
 } from "./utils/interpolation";
 import { getMemberDisplayColor } from "./utils/memberAppearance";
-import { createShareUrl, readProjectFromHash } from "./utils/share";
+import { readProjectFromHash } from "./utils/share";
 import {
   loadProjectFromStorage,
   loadProjectsFromStorage,
@@ -433,19 +433,6 @@ const getKeyboardNudgeDelta = (
     x: roundMeters(displayDelta.x * direction),
     y: roundMeters(displayDelta.y * direction),
   };
-};
-
-const isProject = (value: unknown): value is Project => {
-  const maybe = value as Project;
-  return (
-    Boolean(maybe) &&
-    typeof maybe === "object" &&
-    typeof maybe.title === "string" &&
-    Array.isArray(maybe.members) &&
-    Array.isArray(maybe.stageObjects) &&
-    Array.isArray(maybe.frames) &&
-    typeof maybe.stage?.widthMeters === "number"
-  );
 };
 
 const createProjectId = (): string => {
@@ -868,7 +855,7 @@ const readInitialProject = (): InitialLoad => {
       error:
         error instanceof Error
           ? error.message
-          : "共有リンクから隊列表データを復元できませんでした。",
+          : "共有データから隊列表データを復元できませんでした。",
     };
   }
 
@@ -3095,7 +3082,7 @@ function App() {
     options: { showNotice?: boolean } = { showNotice: true },
   ): Promise<boolean> => {
     if (isSharedProject) {
-      setNotice("共有リンクで開いた隊列表は、自分の一覧に追加してから保存できます。");
+      setNotice("共有データで開いた隊列表は、自分の一覧に追加してから保存できます。");
       return false;
     }
     if (isSaving) {
@@ -4414,20 +4401,6 @@ function App() {
     }
   };
 
-  const createStoredProjectShareLink = async (
-    source: Project,
-    includeAudio: boolean,
-  ): Promise<string> => {
-    const projectToShare = normalizeProject({
-      ...cloneProject(source),
-      audio: null,
-    });
-    if (includeAudio) {
-      setNotice("リンク共有は現在、音源なしで作成します。音源を渡す場合は .zip 書き出しをご利用ください。");
-    }
-    return createShareUrl(projectToShare);
-  };
-
   const addSharedProjectToLibrary = async () => {
     const now = new Date().toISOString();
     const nextProject = normalizeProject({
@@ -4490,58 +4463,6 @@ function App() {
     const activeFrame = getActiveFrameAtTime(project.frames, nextTime);
     if (activeFrame) {
       setSelectedFrameId(activeFrame.id);
-    }
-  };
-
-  const downloadProjectJson = (fileName = project.title || "隊列メーカー") => {
-    const blob = new Blob([JSON.stringify(project, null, 2)], {
-      type: "application/json",
-    });
-    downloadBlob(blob, withFileExtension(fileName, "json"));
-    setNotice("JSONを書き出しました。");
-  };
-
-  const exportJson = () => {
-    downloadProjectJson();
-  };
-
-  const importJson = async (file: File) => {
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as unknown;
-      if (!isProject(parsed)) {
-        throw new Error("隊列メーカーのデータ形式ではありません。");
-      }
-      const nextProject = normalizeProject(parsed);
-      replaceProjectWithHistory(nextProject, "JSON読み込み");
-      setViewerPerspective(nextProject.viewerPerspective ?? "audience");
-      setSelectedFrameId(nextProject.frames[0]?.id ?? null);
-      setSelected(null);
-      setMode("members");
-      setActivePanelTab("members");
-      setNotice("JSONから隊列表データを読み込みました。音源は必要に応じて読み込んでください。");
-      setSharedAudioNotice(!audioRef.current?.src);
-    } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? `JSONインポートに失敗しました: ${error.message}`
-          : "JSONインポートに失敗しました。",
-      );
-    }
-  };
-
-  const createShareLink = async () => {
-    try {
-      const url = createShareUrl(
-        normalizeProject({
-          ...cloneProject(project),
-          audio: null,
-        }),
-      );
-      await navigator.clipboard.writeText(url);
-      setNotice("共有リンクをコピーしました。音源ファイルはリンクに含まれません。");
-    } catch {
-      setNotice("共有リンクのコピーに失敗しました。ブラウザのクリップボード権限を確認してください。");
     }
   };
 
@@ -4684,16 +4605,6 @@ function App() {
       (request.scope === "current"
         ? `${project.title || "隊列メーカー"}_${selectedFrame?.label ?? "現在シーン"}`
         : project.title || "隊列メーカー");
-
-    if (request.format === "link") {
-      await createShareLink();
-      return;
-    }
-
-    if (request.format === "stageflow") {
-      downloadProjectJson(filenameBase);
-      return;
-    }
 
     if (request.format === "image") {
       try {
@@ -5934,7 +5845,6 @@ function App() {
         onRenameProject={renameStoredProject}
         onDuplicateProject={duplicateStoredProject}
         onExportProject={exportTairetsuProject}
-        onCreateShareLink={createStoredProjectShareLink}
         onImportProjectFile={importTairetsuProjectFile}
         onDeleteProject={deleteStoredProject}
       />
@@ -5999,7 +5909,7 @@ function App() {
       {isSharedProject && (
         <div className="shared-project-banner">
           <div>
-            <strong>共有リンクで閲覧中</strong>
+            <strong>共有データで閲覧中</strong>
             <span>編集・保存する場合は、自分の隊列一覧に追加してください。</span>
           </div>
           <div className="shared-project-banner__actions">
@@ -6487,7 +6397,6 @@ function App() {
       currentSceneLabel={displayFrame?.label ?? selectedFrame?.label ?? "現在シーン"}
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
-      onImportJson={importJson}
     />
     <PrintPreview
       project={project}

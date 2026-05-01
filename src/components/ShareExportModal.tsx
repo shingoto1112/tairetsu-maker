@@ -1,19 +1,9 @@
-import {
-  Download,
-  FileJson,
-  FileText,
-  Image,
-  Link2,
-  Printer,
-  Share2,
-  Upload,
-  X,
-} from "lucide-react";
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { Download, FileText, Image, Printer, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export type ShareExportScope = "current" | "all";
 
-export type ShareExportFormat = "pdf" | "image" | "stageflow" | "link";
+export type ShareExportFormat = "pdf" | "image";
 
 export type ShareExportOptions = {
   includeBackground: boolean;
@@ -41,10 +31,9 @@ type ShareExportModalProps = {
   currentSceneLabel: string;
   onClose: () => void;
   onExport: (request: ShareExportRequest) => void | Promise<void>;
-  onImportJson: (file: File) => void;
 };
 
-const defaultOptions: ShareExportOptions = {
+const fixedExportOptions: ShareExportOptions = {
   includeBackground: true,
   includeGrid: true,
   includeMeterRulers: true,
@@ -60,22 +49,16 @@ const defaultOptions: ShareExportOptions = {
 const formatLabels: Record<ShareExportFormat, string> = {
   pdf: "PDF",
   image: "画像",
-  stageflow: "隊列メーカーデータ",
-  link: "リンク",
 };
 
 const formatDescriptions: Record<ShareExportFormat, string> = {
-  pdf: "印刷画面からPDF保存",
-  image: "PNGとして保存・共有",
-  stageflow: "JSONでバックアップ",
-  link: "共有URLをコピー",
+  pdf: "印刷用レイアウトで保存",
+  image: "PNG画像として保存",
 };
 
 const formatIcons: Record<ShareExportFormat, typeof FileText> = {
   pdf: FileText,
   image: Image,
-  stageflow: FileJson,
-  link: Link2,
 };
 
 const makeDefaultFileName = (
@@ -102,13 +85,10 @@ export const ShareExportModal = ({
   currentSceneLabel,
   onClose,
   onExport,
-  onImportJson,
 }: ShareExportModalProps) => {
-  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [scope, setScope] = useState<ShareExportScope | null>(null);
   const [format, setFormat] = useState<ShareExportFormat>("pdf");
   const [fileName, setFileName] = useState("");
-  const [options, setOptions] = useState<ShareExportOptions>(defaultOptions);
 
   useEffect(() => {
     if (!isOpen) {
@@ -129,32 +109,24 @@ export const ShareExportModal = ({
     }
   }, [currentSceneLabel, projectTitle, scope]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setScope(null);
+      setFormat("pdf");
+      setFileName("");
+    }
+  }, [isOpen]);
+
   if (!isOpen) {
     return null;
   }
-
-  const updateOption = <Key extends keyof ShareExportOptions>(
-    key: Key,
-    value: ShareExportOptions[Key],
-  ) => {
-    setOptions((previous) => ({ ...previous, [key]: value }));
-  };
 
   const startExport = (nextScope: ShareExportScope) => {
     setScope(nextScope);
     setFormat("pdf");
   };
 
-  const handleImport = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onImportJson(file);
-      event.target.value = "";
-      onClose();
-    }
-  };
-
-  const handleExport = async () => {
+  const submitExport = async () => {
     if (!scope) {
       return;
     }
@@ -162,43 +134,45 @@ export const ShareExportModal = ({
       scope,
       format,
       fileName: fileName.trim() || makeDefaultFileName(scope, projectTitle, currentSceneLabel),
-      options,
+      options: fixedExportOptions,
     });
-    if (format === "link" || format === "stageflow") {
-      onClose();
-    }
+    onClose();
   };
 
-  const runHomeExport = async (request: ShareExportRequest) => {
-    await onExport(request);
+  const runQuickExport = async (
+    nextScope: ShareExportScope,
+    nextFormat: ShareExportFormat,
+  ) => {
+    await onExport({
+      scope: nextScope,
+      format: nextFormat,
+      fileName: makeDefaultFileName(nextScope, projectTitle, currentSceneLabel),
+      options: fixedExportOptions,
+    });
     onClose();
   };
 
   const renderFormatCards = () => (
     <div className="share-format-grid" role="radiogroup" aria-label="書き出し形式">
-      {(["pdf", "image", "stageflow", "link"] as ShareExportFormat[]).map(
-        (item) => {
-          const Icon = formatIcons[item];
-          return (
-            <button
-              className={
-                format === item
-                  ? "share-format-card is-selected"
-                  : "share-format-card"
-              }
-              key={item}
-              onClick={() => setFormat(item)}
-              role="radio"
-              aria-checked={format === item}
-              type="button"
-            >
-              <strong>{formatLabels[item]}</strong>
-              <span>{formatDescriptions[item]}</span>
-              <Icon size={25} />
-            </button>
-          );
-        },
-      )}
+      {(["pdf", "image"] as ShareExportFormat[]).map((item) => {
+        const Icon = formatIcons[item];
+        return (
+          <button
+            className={
+              format === item ? "share-format-card is-selected" : "share-format-card"
+            }
+            key={item}
+            onClick={() => setFormat(item)}
+            role="radio"
+            aria-checked={format === item}
+            type="button"
+          >
+            <strong>{formatLabels[item]}</strong>
+            <span>{formatDescriptions[item]}</span>
+            <Icon size={25} />
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -247,29 +221,18 @@ export const ShareExportModal = ({
         {!scope ? (
           <div className="share-export-home">
             <section className="share-export-section">
-              <h3>共同・共有</h3>
+              <h3>印刷・PDF</h3>
               <button
                 className="share-export-row"
-                onClick={() =>
-                  void runHomeExport({
-                    scope: "all",
-                    format: "link",
-                    fileName: makeDefaultFileName("all", projectTitle, currentSceneLabel),
-                    options,
-                  })
-                }
+                onClick={() => void runQuickExport("all", "pdf")}
                 type="button"
               >
-                <Share2 size={26} />
+                <Printer size={26} />
                 <span>
-                  <strong>共有リンク</strong>
-                  <small>リンクをコピーして共有します</small>
+                  <strong>全シーンを印刷 / PDF保存</strong>
+                  <small>隊列表だけを縦長の印刷用レイアウトにします</small>
                 </span>
               </button>
-            </section>
-
-            <section className="share-export-section">
-              <h3>書き出し</h3>
               <button
                 className="share-export-row"
                 onClick={() => startExport("current")}
@@ -278,7 +241,22 @@ export const ShareExportModal = ({
                 <FileText size={26} />
                 <span>
                   <strong>このシーンを書き出す</strong>
-                  <small>現在の隊列表をPDF・画像・リンクで共有</small>
+                  <small>現在のシーンをPDFまたは画像で保存します</small>
+                </span>
+              </button>
+            </section>
+
+            <section className="share-export-section">
+              <h3>画像</h3>
+              <button
+                className="share-export-row"
+                onClick={() => void runQuickExport("current", "image")}
+                type="button"
+              >
+                <Image size={26} />
+                <span>
+                  <strong>現在シーンを画像保存</strong>
+                  <small>PNGとして保存します</small>
                 </span>
               </button>
               <button
@@ -289,58 +267,7 @@ export const ShareExportModal = ({
                 <Download size={26} />
                 <span>
                   <strong>すべてのシーンを書き出す</strong>
-                  <small>全シーンを印刷・PDF保存しやすい形へ</small>
-                </span>
-              </button>
-              <button
-                className="share-export-row"
-                onClick={() =>
-                  void runHomeExport({
-                    scope: "all",
-                    format: "pdf",
-                    fileName: makeDefaultFileName("all", projectTitle, currentSceneLabel),
-                    options,
-                  })
-                }
-                type="button"
-              >
-                <Printer size={26} />
-                <span>
-                  <strong>印刷</strong>
-                  <small>ブラウザ印刷からPDF保存できます</small>
-                </span>
-              </button>
-            </section>
-
-            <section className="share-export-section">
-              <h3>データ管理</h3>
-              <button
-                className="share-export-row"
-                onClick={() =>
-                  void runHomeExport({
-                    scope: "all",
-                    format: "stageflow",
-                    fileName: makeDefaultFileName("all", projectTitle, currentSceneLabel),
-                    options,
-                  })
-                }
-                type="button"
-              >
-                <FileJson size={26} />
-                <span>
-                  <strong>JSONを書き出し</strong>
-                  <small>隊列メーカーデータとしてバックアップ</small>
-                </span>
-              </button>
-              <button
-                className="share-export-row"
-                onClick={() => importInputRef.current?.click()}
-                type="button"
-              >
-                <Upload size={26} />
-                <span>
-                  <strong>JSONを読み込み</strong>
-                  <small>保存済みの隊列メーカーデータを開きます</small>
+                  <small>PDFまたは縦長PNGとして保存します</small>
                 </span>
               </button>
             </section>
@@ -358,147 +285,19 @@ export const ShareExportModal = ({
               />
             </label>
 
-            <section className="share-export-options">
-              <h3>オプション</h3>
-              <label>
-                <input
-                  checked={options.includeBackground}
-                  onChange={(event) =>
-                    updateOption("includeBackground", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                背景を含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeGrid}
-                  onChange={(event) =>
-                    updateOption("includeGrid", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                グリッドを含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeMeterRulers}
-                  onChange={(event) =>
-                    updateOption("includeMeterRulers", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                メートル目盛りを含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeNotes}
-                  onChange={(event) =>
-                    updateOption("includeNotes", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                メモを含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeAssignments}
-                  onChange={(event) =>
-                    updateOption("includeAssignments", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                道具割当を含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeHiddenMembers}
-                  onChange={(event) =>
-                    updateOption("includeHiddenMembers", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                非表示メンバーを含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeSceneName}
-                  onChange={(event) =>
-                    updateOption("includeSceneName", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                シーン名を含める
-              </label>
-              <label>
-                <input
-                  checked={options.includeSceneTime}
-                  onChange={(event) =>
-                    updateOption("includeSceneTime", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                シーン時刻を含める
-              </label>
-            </section>
-
-            {format === "pdf" && scope === "all" && (
-              <section className="share-export-layout">
-                <h3>レイアウト</h3>
-                {[
-                  ["auto", "自動"],
-                  ["two", "2シーン/ページ"],
-                  ["three", "3シーン/ページ"],
-                  ["four", "4シーン/ページ"],
-                ].map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      checked={options.layout === value}
-                      onChange={() =>
-                        updateOption("layout", value as ShareExportOptions["layout"])
-                      }
-                      type="radio"
-                    />
-                    {label}
-                  </label>
-                ))}
-                <label>
-                  シーン間余白
-                  <select
-                    value={options.sceneGapRows}
-                    onChange={(event) =>
-                      updateOption("sceneGapRows", Number(event.target.value))
-                    }
-                  >
-                    <option value={3}>3マス</option>
-                    <option value={5}>5マス</option>
-                    <option value={7}>7マス</option>
-                  </select>
-                </label>
-              </section>
-            )}
+            <p className="notice muted">
+              グリッド、メートル目盛り、シーン名、時刻、メモ、道具割当を含めた固定レイアウトで書き出します。
+            </p>
 
             <button
               className="share-export-submit"
-              onClick={handleExport}
+              onClick={() => void submitExport()}
               type="button"
             >
-              {format === "pdf"
-                ? "PDFとして保存"
-                : format === "image"
-                  ? "画像として保存"
-                  : "書き出す"}
+              {format === "pdf" ? "PDFとして保存" : "画像として保存"}
             </button>
           </div>
         )}
-
-        <input
-          ref={importInputRef}
-          className="visually-hidden"
-          type="file"
-          accept="application/json,.json"
-          onChange={handleImport}
-        />
       </section>
     </div>
   );
