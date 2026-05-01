@@ -1721,6 +1721,13 @@ function App() {
     () => getSnapshotForFrame(project, selectedFrame?.id ?? null),
     [project, selectedFrame?.id],
   );
+  const selectedPreviousFrameSnapshot = useMemo<StageSnapshot | null>(
+    () =>
+      selectedPreviousFrame
+        ? getSnapshotForFrame(project, selectedPreviousFrame.id)
+        : null,
+    [project, selectedPreviousFrame?.id],
+  );
 
   const requestPanelScroll = (type: "member" | "object", id: string) => {
     setPanelScrollTarget((previous) => ({
@@ -2392,6 +2399,74 @@ function App() {
       }),
     }));
     setNotice(notice);
+  };
+
+  const applyPreviousAssignmentsToCurrentFrame = () => {
+    if (!selectedFrame) {
+      setNotice("割当を反映するシーンがありません。");
+      return;
+    }
+    if (!selectedPreviousFrame || !selectedPreviousFrameSnapshot) {
+      setNotice("反映できる直前シーンがありません。");
+      return;
+    }
+
+    const validMemberIds = new Set(project.members.map((member) => member.id));
+    const transferableEntries = project.stageObjects
+      .map((object) => {
+        const currentVisible =
+          (selectedFrameSnapshot.objectStates[object.id]?.visible ??
+            object.visible ??
+            true) !== false;
+        const previousVisible =
+          (selectedPreviousFrameSnapshot.objectStates[object.id]?.visible ??
+            object.visible ??
+            true) !== false;
+        if (!currentVisible || !previousVisible) {
+          return null;
+        }
+        const memberIds = [
+          ...new Set(selectedPreviousFrame.objectAssignments?.[object.id] ?? []),
+        ].filter((memberId) => validMemberIds.has(memberId));
+        return memberIds.length > 0
+          ? {
+              objectId: object.id,
+              memberIds,
+            }
+          : null;
+      })
+      .filter(
+        (entry): entry is { objectId: string; memberIds: string[] } =>
+          entry !== null,
+      );
+
+    if (transferableEntries.length === 0) {
+      setNotice("反映できる前シーンの割当がありません。");
+      return;
+    }
+
+    const assignedMemberIds = new Set(
+      transferableEntries.flatMap((entry) => entry.memberIds),
+    );
+
+    updateMemberAssignmentsInCurrentFrame(
+      (frame) => {
+        const objectAssignments = { ...(frame.objectAssignments ?? {}) };
+        transferableEntries.forEach(({ objectId, memberIds }) => {
+          objectAssignments[objectId] = [...memberIds];
+        });
+        const memberVisibility = { ...(frame.memberVisibility ?? {}) };
+        assignedMemberIds.forEach((memberId) => {
+          memberVisibility[memberId] = false;
+        });
+        return {
+          objectAssignments,
+          memberVisibility,
+          positions: frame.positions,
+        };
+      },
+      `${transferableEntries.length}件の道具割当を前シーンから反映しました。`,
+    );
   };
 
   const assignMemberToObject = (objectId: string, memberId: string) => {
@@ -5719,8 +5794,11 @@ function App() {
           objects={project.stageObjects}
           objectGroups={project.objectGroups ?? []}
           currentFrame={selectedFrame ?? null}
+          previousFrame={selectedPreviousFrame}
           objectStates={selectedFrameSnapshot.objectStates}
+          previousObjectStates={selectedPreviousFrameSnapshot?.objectStates ?? {}}
           onAssignMember={assignMemberToObject}
+          onApplyPreviousAssignments={applyPreviousAssignmentsToCurrentFrame}
           onRemoveAssignment={removeObjectAssignment}
           onSelectFrame={(id) => {
             const frame = project.frames.find((item) => item.id === id);

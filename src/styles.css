@@ -1055,6 +1055,37 @@ h2 {
   grid-auto-rows: max-content;
 }
 
+.assignment-sync-panel {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 10px;
+}
+
+.assignment-sync-panel h3 {
+  color: #0f172a;
+  font-size: 13px;
+  margin: 0 0 4px;
+}
+
+.assignment-sync-panel p,
+.assignment-sync-panel span,
+.assignment-sync-panel small {
+  color: var(--muted);
+  display: block;
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.assignment-sync-panel .mini-button {
+  justify-self: start;
+}
+
 .assignment-object-card,
 .assignment-member-card {
   align-self: start;

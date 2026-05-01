@@ -22,8 +22,11 @@ type AssignmentPanelProps = {
   objects: StageObject[];
   objectGroups: ObjectGroup[];
   currentFrame: FormationFrame | null;
+  previousFrame: FormationFrame | null;
   objectStates: Record<string, ObjectState>;
+  previousObjectStates: Record<string, ObjectState>;
   onAssignMember: (objectId: string, memberId: string) => void;
+  onApplyPreviousAssignments: () => void;
   onRemoveAssignment: (
     objectId: string,
     memberId: string,
@@ -38,8 +41,11 @@ export const AssignmentPanel = ({
   objects,
   objectGroups,
   currentFrame,
+  previousFrame,
   objectStates,
+  previousObjectStates,
   onAssignMember,
+  onApplyPreviousAssignments,
   onRemoveAssignment,
   onSelectFrame,
 }: AssignmentPanelProps) => {
@@ -94,6 +100,28 @@ export const AssignmentPanel = ({
           );
         }),
     [objectOrderById, objectStates, objects],
+  );
+  const previousAssignments = previousFrame?.objectAssignments ?? {};
+  const transferablePreviousAssignmentCount = useMemo(
+    () =>
+      objects.filter((object) => {
+        const currentVisible =
+          (objectStates[object.id]?.visible ?? object.visible ?? true) !== false;
+        const previousVisible =
+          (previousObjectStates[object.id]?.visible ?? object.visible ?? true) !==
+          false;
+        const hasValidAssignment = (previousAssignments[object.id] ?? []).some(
+          (memberId) => membersById.has(memberId),
+        );
+        return currentVisible && previousVisible && hasValidAssignment;
+      }).length,
+    [
+      membersById,
+      objectStates,
+      objects,
+      previousAssignments,
+      previousObjectStates,
+    ],
   );
 
   const memberSummaries = useMemo(() => {
@@ -169,6 +197,30 @@ export const AssignmentPanel = ({
 
     return (
       <section className="assignment-tab-list" aria-label="道具別割当">
+        <div className="assignment-sync-panel">
+          <div>
+            <h3>前シーンの割当</h3>
+            <p>
+              直前シーンでも表示中の道具だけ、同じ割当メンバーを現在シーンへ反映します。
+            </p>
+            <span>
+              {previousFrame
+                ? `直前: ${previousFrame.label} / ${formatTime(previousFrame.timeSec)}`
+                : "直前シーンがありません"}
+            </span>
+          </div>
+          <button
+            className="mini-button"
+            type="button"
+            disabled={!previousFrame || transferablePreviousAssignmentCount === 0}
+            onClick={onApplyPreviousAssignments}
+          >
+            前シーンの割当を反映
+          </button>
+          {previousFrame && transferablePreviousAssignmentCount === 0 ? (
+            <small>反映できる表示中道具の割当はありません。</small>
+          ) : null}
+        </div>
         {objects.length === 0 ? (
           <div className="empty-state">道具がありません。</div>
         ) : visibleObjectsInCurrentFrame.length === 0 ? (
