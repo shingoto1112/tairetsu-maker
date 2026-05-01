@@ -4,6 +4,7 @@ import {
   FormationFrame,
   Member,
   ObjectState,
+  ObjectGroup,
   StageObject,
 } from "../types";
 import { formatTime } from "../utils/time";
@@ -19,6 +20,7 @@ type AssignmentPanelProps = {
   frames: FormationFrame[];
   members: Member[];
   objects: StageObject[];
+  objectGroups: ObjectGroup[];
   currentFrame: FormationFrame | null;
   objectStates: Record<string, ObjectState>;
   onAssignMember: (objectId: string, memberId: string) => void;
@@ -34,6 +36,7 @@ export const AssignmentPanel = ({
   frames,
   members,
   objects,
+  objectGroups,
   currentFrame,
   objectStates,
   onAssignMember,
@@ -54,14 +57,43 @@ export const AssignmentPanel = ({
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
   );
+  const objectOrderById = useMemo(() => {
+    const orderById = new Map<string, number>();
+    let order = 0;
+    objectGroups.forEach((group, groupIndex) => {
+      group.objectIds.forEach((objectId, objectIndex) => {
+        if (!orderById.has(objectId)) {
+          orderById.set(objectId, groupIndex * 10000 + objectIndex);
+        }
+      });
+      order = Math.max(order, (groupIndex + 1) * 10000);
+    });
+    objects
+      .filter((object) => !orderById.has(object.id))
+      .sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }))
+      .forEach((object) => {
+        orderById.set(object.id, order);
+        order += 1;
+      });
+    return orderById;
+  }, [objectGroups, objects]);
   const currentAssignments = currentFrame?.objectAssignments ?? {};
   const visibleObjectsInCurrentFrame = useMemo(
     () =>
-      objects.filter(
-        (object) =>
-          (objectStates[object.id]?.visible ?? object.visible ?? true) !== false,
-      ),
-    [objectStates, objects],
+      objects
+        .filter(
+          (object) =>
+            (objectStates[object.id]?.visible ?? object.visible ?? true) !== false,
+        )
+        .sort((a, b) => {
+          const orderA = objectOrderById.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+          const orderB = objectOrderById.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+          return (
+            orderA - orderB ||
+            a.name.localeCompare(b.name, "ja", { numeric: true })
+          );
+        }),
+    [objectOrderById, objectStates, objects],
   );
 
   const memberSummaries = useMemo(() => {

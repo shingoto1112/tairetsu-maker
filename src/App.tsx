@@ -5717,6 +5717,7 @@ function App() {
           frames={project.frames}
           members={project.members}
           objects={project.stageObjects}
+          objectGroups={project.objectGroups ?? []}
           currentFrame={selectedFrame ?? null}
           objectStates={selectedFrameSnapshot.objectStates}
           onAssignMember={assignMemberToObject}
