@@ -2096,16 +2096,71 @@ h2 {
   white-space: nowrap;
 }
 
-.stage-timebar__range {
-  accent-color: var(--accent);
-  cursor: pointer;
+.stage-timebar__range-shell {
   min-height: 28px;
   min-width: 0;
+  position: relative;
   width: 100%;
+}
+
+.stage-timebar__range-track {
+  background: #eef2f5;
+  border: 1px solid #cbd5df;
+  border-radius: 999px;
+  display: block;
+  height: 8px;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.stage-timebar__range-fill {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+  width: var(--progress);
+}
+
+.stage-timebar__range-thumb {
+  background: var(--accent);
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2);
+  height: 16px;
+  left: var(--progress);
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+}
+
+.stage-timebar__range {
+  cursor: pointer;
+  height: 28px;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  padding: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.stage-timebar__range-shell:focus-within .stage-timebar__range-track {
+  box-shadow: 0 0 0 3px rgba(13, 139, 120, 0.14);
 }
 
 .stage-timebar__range:disabled {
   cursor: not-allowed;
+}
+
+.stage-timebar.is-disabled .stage-timebar__range-track,
+.stage-timebar.is-disabled .stage-timebar__range-thumb {
+  opacity: 0.55;
 }
 
 .focus-distance {

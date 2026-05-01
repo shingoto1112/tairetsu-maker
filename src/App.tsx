@@ -1311,19 +1311,30 @@ function App() {
       return;
     }
 
-    const handleLoaded = () => {
+    const getResolvedDuration = () => {
       const fallbackDuration =
         project.audio?.duration && Number.isFinite(project.audio.duration)
           ? project.audio.duration
           : 0;
-      const nextDuration =
+      return (
         Number.isFinite(audio.duration) && audio.duration > 0
           ? audio.duration
-          : fallbackDuration;
+          : fallbackDuration
+      );
+    };
+    const handleLoaded = () => {
+      const nextDuration = getResolvedDuration();
       setDuration(nextDuration);
+      setCurrentTime((previous) =>
+        nextDuration > 0 ? Math.min(previous, nextDuration) : 0,
+      );
       setLoopEnd((previous) => (previous > 0 ? previous : nextDuration));
     };
-    const handleEnded = () => setIsPlaying(false);
+    const handleEnded = () => {
+      const nextDuration = getResolvedDuration();
+      setIsPlaying(false);
+      setCurrentTime(nextDuration > 0 ? nextDuration : audio.currentTime);
+    };
 
     audio.addEventListener("loadedmetadata", handleLoaded);
     audio.addEventListener("durationchange", handleLoaded);

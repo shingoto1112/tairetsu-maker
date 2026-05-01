@@ -4,6 +4,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { formatTime } from "../utils/time";
 
 type StageTimeBarProps = {
@@ -29,6 +30,15 @@ export const StageTimeBar = ({
     Math.max(0, currentTime),
     safeDuration || Math.max(0, currentTime),
   );
+  const visualCurrentTime =
+    canSeek && safeDuration > 0 && formatTime(safeCurrentTime) === formatTime(safeDuration)
+      ? safeDuration
+      : safeCurrentTime;
+  const progressPercent =
+    canSeek && safeDuration > 0
+      ? Math.min(100, Math.max(0, (visualCurrentTime / safeDuration) * 100))
+      : 0;
+  const rangeStyle = { "--progress": `${progressPercent}%` } as CSSProperties;
   const seekBy = (deltaSec: number) => {
     if (!canSeek) return;
     onSeek(Math.min(safeDuration, Math.max(0, safeCurrentTime + deltaSec)));
@@ -81,17 +91,23 @@ export const StageTimeBar = ({
       <span className="stage-timebar__time">
         {formatTime(safeCurrentTime)} / {formatDuration(duration)}
       </span>
-      <input
-        className="stage-timebar__range"
-        type="range"
-        min="0"
-        max={Math.max(duration, 0.1)}
-        step="0.01"
-        value={canSeek ? safeCurrentTime : 0}
-        disabled={!canSeek}
-        onChange={(event) => onSeek(Number(event.target.value))}
-        aria-label="曲の再生位置"
-      />
+      <div className="stage-timebar__range-shell" style={rangeStyle}>
+        <span className="stage-timebar__range-track" aria-hidden="true">
+          <span className="stage-timebar__range-fill" />
+        </span>
+        <span className="stage-timebar__range-thumb" aria-hidden="true" />
+        <input
+          className="stage-timebar__range"
+          type="range"
+          min="0"
+          max={Math.max(duration, 0.1)}
+          step="0.01"
+          value={canSeek ? safeCurrentTime : 0}
+          disabled={!canSeek}
+          onChange={(event) => onSeek(Number(event.target.value))}
+          aria-label="曲の再生位置"
+        />
+      </div>
     </div>
   );
 };
