@@ -10,12 +10,14 @@ import {
 } from "react";
 import {
   Copy,
+  Download,
   Edit3,
   ExternalLink,
   Folder,
   MoreHorizontal,
   Plus,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import type { HorizontalGuideMode, Project } from "../types";
@@ -38,6 +40,8 @@ type FormationLibraryProps = {
   onOpenProject: (project: Project) => void | Promise<void>;
   onRenameProject: (projectId: string, title: string) => void | Promise<void>;
   onDuplicateProject: (project: Project) => void | Promise<void>;
+  onExportProject: (project: Project, includeAudio: boolean) => void | Promise<void>;
+  onImportProjectFile: (file: File) => void | Promise<void>;
   onDeleteProject: (project: Project) => void | Promise<void>;
 };
 
@@ -48,7 +52,7 @@ type LibraryMenu = {
 };
 
 const MENU_WIDTH = 196;
-const MENU_HEIGHT = 184;
+const MENU_HEIGHT = 226;
 const MENU_MARGIN = 12;
 
 const clampMenuPosition = (left: number, top: number): { left: number; top: number } => {
@@ -85,8 +89,11 @@ export const FormationLibrary = ({
   onOpenProject,
   onRenameProject,
   onDuplicateProject,
+  onExportProject,
+  onImportProjectFile,
   onDeleteProject,
 }: FormationLibraryProps) => {
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [widthMeters, setWidthMeters] = useState(12);
@@ -102,7 +109,12 @@ export const FormationLibrary = ({
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [exportTarget, setExportTarget] = useState<Project | null>(null);
+  const [includeAudioInExport, setIncludeAudioInExport] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const sortedProjects = useMemo(
     () =>
@@ -158,8 +170,28 @@ export const FormationLibrary = ({
     resetDialog();
   };
 
+  const openCreateDialog = () => {
+    setIsAddDialogOpen(false);
+    setIsDialogOpen(true);
+  };
+
   const handleAudioFile = (event: ChangeEvent<HTMLInputElement>) => {
     setAudioFile(event.target.files?.[0] ?? null);
+  };
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    setIsImporting(true);
+    try {
+      await onImportProjectFile(file);
+      setIsAddDialogOpen(false);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const validatePositive = (value: number, label: string): string | null => {
@@ -229,6 +261,12 @@ export const FormationLibrary = ({
     setLibraryMenu(null);
   };
 
+  const openExportDialog = (project: Project) => {
+    setExportTarget(project);
+    setIncludeAudioInExport(false);
+    setLibraryMenu(null);
+  };
+
   const submitRename = async (event: FormEvent) => {
     event.preventDefault();
     if (!renameTarget?.id) return;
@@ -243,6 +281,18 @@ export const FormationLibrary = ({
     if (!deleteTarget) return;
     await onDeleteProject(deleteTarget);
     setDeleteTarget(null);
+  };
+
+  const submitExport = async () => {
+    if (!exportTarget) return;
+    setIsExporting(true);
+    try {
+      await onExportProject(exportTarget, includeAudioInExport && Boolean(exportTarget.audio?.id));
+      setExportTarget(null);
+      setIncludeAudioInExport(false);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -260,13 +310,14 @@ export const FormationLibrary = ({
       <section className="library-grid" aria-label="隊列表一覧">
         <button
           className="formation-card formation-card--new"
-          onClick={() => setIsDialogOpen(true)}
+          onClick={() => setIsAddDialogOpen(true)}
           type="button"
         >
           <span className="formation-card__plus">
             <Plus size={30} />
           </span>
-          <strong>新規作成</strong>
+          <strong>追加</strong>
+          <small>新規 / 読込</small>
         </button>
 
         {sortedProjects.map((project, index) => (
@@ -336,6 +387,10 @@ export const FormationLibrary = ({
             <Copy size={15} />
             複製
           </button>
+          <button type="button" onClick={() => openExportDialog(menuProject)}>
+            <Download size={15} />
+            書き出し
+          </button>
           <button
             className="danger"
             type="button"
@@ -347,6 +402,70 @@ export const FormationLibrary = ({
             <Trash2 size={15} />
             削除
           </button>
+        </div>
+      )}
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".tairetsu,application/zip,application/x-zip-compressed"
+        onChange={(event) => void handleImportFile(event)}
+        hidden
+      />
+
+      {isAddDialogOpen && (
+        <div
+          className="new-formation-backdrop"
+          onPointerDown={() => setIsAddDialogOpen(false)}
+        >
+          <div
+            className="new-formation-dialog library-small-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="隊列表を追加"
+          >
+            <header>
+              <h2>隊列表を追加</h2>
+              <button
+                className="share-export-close"
+                onClick={() => setIsAddDialogOpen(false)}
+                type="button"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="library-add-options">
+              <button type="button" onClick={openCreateDialog}>
+                <Plus size={22} />
+                <span>
+                  <strong>新しく作る</strong>
+                  <small>最初から新しい隊列表を作成します。</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => importInputRef.current?.click()}
+                disabled={isImporting}
+              >
+                <Upload size={22} />
+                <span>
+                  <strong>読み込む</strong>
+                  <small>共有された .tairetsu ファイルを読み込みます。</small>
+                </span>
+              </button>
+            </div>
+            <footer>
+              <button
+                className="mini-button"
+                onClick={() => setIsAddDialogOpen(false)}
+                type="button"
+              >
+                キャンセル
+              </button>
+            </footer>
+          </div>
         </div>
       )}
 
@@ -530,6 +649,63 @@ export const FormationLibrary = ({
               </button>
             </footer>
           </form>
+        </div>
+      )}
+
+      {exportTarget && (
+        <div className="new-formation-backdrop" onPointerDown={() => setExportTarget(null)}>
+          <div
+            className="new-formation-dialog library-small-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="隊列表を書き出し"
+          >
+            <header>
+              <h2>隊列表を書き出し</h2>
+              <button
+                className="share-export-close"
+                onClick={() => setExportTarget(null)}
+                type="button"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <p className="notice">
+              「{exportTarget.title || "名称未設定"}」を .tairetsu ファイルとして書き出します。
+            </p>
+            <label className="library-export-check">
+              <input
+                type="checkbox"
+                checked={includeAudioInExport}
+                onChange={(event) => setIncludeAudioInExport(event.target.checked)}
+                disabled={!exportTarget.audio?.id}
+              />
+              音源ファイルも含める
+            </label>
+            {!exportTarget.audio?.id && (
+              <p className="notice muted">音源は設定されていません。</p>
+            )}
+            <footer>
+              <button
+                className="mini-button"
+                onClick={() => setExportTarget(null)}
+                type="button"
+                disabled={isExporting}
+              >
+                キャンセル
+              </button>
+              <button
+                className="mini-button primary"
+                onClick={() => void submitExport()}
+                type="button"
+                disabled={isExporting}
+              >
+                書き出す
+              </button>
+            </footer>
+          </div>
         </div>
       )}
 

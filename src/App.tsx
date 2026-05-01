@@ -74,6 +74,7 @@ import { jpegDataUrlsToPdfBlob } from "./utils/pdfExport";
 import {
   deleteAudioBlobFromIndexedDb,
   loadAudioBlobFromIndexedDb,
+  saveAudioBlobToIndexedDb,
   saveAudioFileToIndexedDb,
 } from "./utils/audioStorage";
 import { createId } from "./utils/ids";
@@ -99,6 +100,11 @@ import {
   saveProjectsToStorage,
   sortStoredProjects,
 } from "./utils/storage";
+import {
+  createTairetsuArchive,
+  createTairetsuFileName,
+  readTairetsuArchive,
+} from "./utils/tairetsuFile";
 
 type InitialLoad = {
   project: Project;
@@ -373,6 +379,26 @@ const sanitizeExportFileName = (value: string): string =>
   (value.trim() || APP_NAME)
     .replace(/[\\/:*?"<>|]/g, "_")
     .replace(/\s+/g, "_");
+
+const createUniqueProjectTitle = (
+  baseTitle: string,
+  projects: Project[],
+): string => {
+  const base = baseTitle.trim() || "読み込んだ隊列表";
+  const existingTitles = new Set(projects.map((item) => item.title));
+  if (!existingTitles.has(base)) {
+    return base;
+  }
+  const firstCopy = `${base} のコピー`;
+  if (!existingTitles.has(firstCopy)) {
+    return firstCopy;
+  }
+  let index = 2;
+  while (existingTitles.has(`${firstCopy} ${index}`)) {
+    index += 1;
+  }
+  return `${firstCopy} ${index}`;
+};
 
 const withFileExtension = (fileName: string, extension: string): string => {
   const safeName = sanitizeExportFileName(fileName);
@@ -4177,6 +4203,108 @@ function App() {
     setNotice("隊列表を削除しました。");
   };
 
+  const exportTairetsuProject = async (
+    source: Project,
+    includeAudio: boolean,
+  ) => {
+    const projectToExport = normalizeProject(source);
+    let audioMissing = false;
+    let exportedWithAudio = false;
+    try {
+      const status = await saveGeneratedBlob({
+        fallbackFileName: createTairetsuFileName(projectToExport),
+        generateBlob: async () => {
+          let audioBlob: Blob | null = null;
+          if (includeAudio && projectToExport.audio?.id) {
+            audioBlob = await loadAudioBlobFromIndexedDb(projectToExport.audio.id);
+            audioMissing = !audioBlob;
+          }
+          exportedWithAudio = Boolean(audioBlob);
+          return createTairetsuArchive(projectToExport, {
+            audioBlob,
+          });
+        },
+        pickerTypes: [
+          {
+            accept: {
+              "application/zip": [".tairetsu"],
+            },
+            description: "隊列メーカー共有ファイル",
+          },
+        ],
+      });
+      if (status === "cancelled") {
+        setNotice("書き出しをキャンセルしました。");
+        return;
+      }
+      if (audioMissing) {
+        setNotice("音源が見つからなかったため、音源なしで隊列表を書き出しました。");
+        return;
+      }
+      setNotice(
+        exportedWithAudio
+          ? "音源を含めて隊列表を書き出しました。"
+          : "隊列表を音源なしで書き出しました。",
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `隊列表を書き出せませんでした: ${error.message}`
+          : "隊列表を書き出せませんでした。",
+      );
+    }
+  };
+
+  const importTairetsuProjectFile = async (file: File) => {
+    try {
+      const imported = await readTairetsuArchive(file);
+      const now = new Date().toISOString();
+      let audio: AudioMeta | null = null;
+      let audioNotice: string | null = null;
+      if (imported.audioBlob) {
+        try {
+          audio = await saveAudioBlobToIndexedDb(imported.audioBlob, {
+            duration: imported.project.audio?.duration,
+            name: imported.audioFileName ?? imported.project.audio?.name ?? "audio",
+            type:
+              imported.project.audio?.type ||
+              imported.audioBlob.type ||
+              "audio/mpeg",
+          });
+        } catch {
+          audioNotice =
+            "音源の読み込みに失敗しました。隊列表は音源なしで読み込みました。";
+        }
+      }
+
+      const nextProject = normalizeProject({
+        ...cloneProject(imported.project),
+        audio,
+        createdAt: now,
+        id: createProjectId(),
+        lastOpenedAt: now,
+        title: createUniqueProjectTitle(imported.project.title, savedProjects),
+        updatedAt: now,
+      });
+      const nextProjects = sortStoredProjects([nextProject, ...savedProjects]);
+      saveProjectsToStorage(nextProjects);
+      setSavedProjects(nextProjects);
+      await openProjectInEditor(
+        nextProject,
+        audioNotice ??
+          (audio
+            ? "隊列表と音源を読み込みました。"
+            : "音源なしで隊列表を読み込みました。"),
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "隊列表ファイルを読み込めませんでした。",
+      );
+    }
+  };
+
   const togglePlayback = async () => {
     const audio = audioRef.current;
     if (!audio || !audio.src) {
@@ -5645,6 +5773,8 @@ function App() {
         onOpenProject={(nextProject) => void openProjectInEditor(nextProject)}
         onRenameProject={renameStoredProject}
         onDuplicateProject={duplicateStoredProject}
+        onExportProject={exportTairetsuProject}
+        onImportProjectFile={importTairetsuProjectFile}
         onDeleteProject={deleteStoredProject}
       />
     );

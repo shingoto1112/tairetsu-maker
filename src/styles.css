@@ -336,6 +336,47 @@ h2 {
   color: var(--danger);
 }
 
+.library-add-options {
+  display: grid;
+  gap: 10px;
+}
+
+.library-add-options button {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: #233047;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 14px;
+  text-align: left;
+}
+
+.library-add-options button:hover,
+.library-add-options button:focus-visible {
+  background: #ecfdf5;
+  border-color: #99f6e4;
+  outline: none;
+}
+
+.library-add-options small {
+  color: #64748b;
+  display: block;
+  margin-top: 3px;
+}
+
+.library-export-check {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+}
+
 .new-formation-dialog header,
 .new-formation-dialog footer {
   align-items: center;

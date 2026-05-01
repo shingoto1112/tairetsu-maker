@@ -74,16 +74,37 @@ const readAudioDuration = (file: File): Promise<number | undefined> =>
   });
 
 export const saveAudioFileToIndexedDb = async (file: File): Promise<AudioMeta> => {
+  return saveAudioBlobToIndexedDb(file, {
+    name: file.name,
+    type: file.type || "audio/mpeg",
+  });
+};
+
+export const saveAudioBlobToIndexedDb = async (
+  blob: Blob,
+  meta: {
+    duration?: number;
+    name: string;
+    type?: string;
+  },
+): Promise<AudioMeta> => {
   const id = createAudioId();
+  const type = meta.type || blob.type || "audio/mpeg";
+  const file =
+    blob instanceof File
+      ? blob
+      : new File([blob], meta.name, {
+          type,
+        });
   await withAudioStore("readwrite", (store) =>
     store.put({ id, blob: file } satisfies AudioRecord),
   );
   return {
     id,
-    name: file.name,
-    type: file.type || "audio/mpeg",
+    name: meta.name || file.name,
+    type: file.type || type,
     size: file.size,
-    duration: await readAudioDuration(file),
+    duration: meta.duration ?? (await readAudioDuration(file)),
   };
 };
 
