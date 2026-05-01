@@ -321,15 +321,6 @@ export const DetailsPanel = ({
                   }
                 />
               </label>
-              <div className="detail-readout-chip">
-                <span>表示</span>
-                <strong>
-                  {(selectedMember.visible ?? true) &&
-                  (snapshot.memberVisibility[selectedMember.id] ?? true)
-                    ? "表示中"
-                    : "隊列外"}
-                </strong>
-              </div>
               <label className="detail-edit-field">
                 <span>x（中心基準）</span>
                 <span className="detail-input-with-unit">
@@ -364,6 +355,15 @@ export const DetailsPanel = ({
                   <b>m</b>
                 </span>
               </label>
+              <div className="detail-readout-chip detail-readout-chip--wide">
+                <span>表示</span>
+                <strong>
+                  {(selectedMember.visible ?? true) &&
+                  (snapshot.memberVisibility[selectedMember.id] ?? true)
+                    ? "表示中"
+                    : "隊列外"}
+                </strong>
+              </div>
             </div>
             {assignedObjectNames.length > 0 && (
               <p className="assignment-inline-note">

@@ -3023,6 +3023,10 @@ h2 {
   padding: 8px;
 }
 
+.detail-readout-chip--wide {
+  grid-column: 1 / -1;
+}
+
 .detail-readout-chip span {
   color: var(--muted);
   font-size: 11px;
