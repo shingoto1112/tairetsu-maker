@@ -1869,14 +1869,6 @@ function App() {
     if ([...timeCounts.values()].some((count) => count > 1)) {
       messages.push("同じtimeSecのフレームがあります。再生順が分かりにくくなる可能性があります。");
     }
-    if (
-      project.frames.some(
-        (frame, index) =>
-          index > 0 && frame.timeSec < project.frames[index - 1].timeSec,
-      )
-    ) {
-      messages.push("シーン順と時刻順が一致していません。曲同期する場合は時刻を確認してください。");
-    }
 
     const outMember = project.members.find((member) => {
       const position = snapshot.positions[member.id];
