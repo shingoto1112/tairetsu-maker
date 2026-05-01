@@ -1042,17 +1042,22 @@ h2 {
 }
 
 .assignment-tab {
+  align-content: start;
   display: grid;
   gap: 12px;
+  grid-auto-rows: max-content;
 }
 
 .assignment-tab-list {
+  align-content: start;
   display: grid;
   gap: 10px;
+  grid-auto-rows: max-content;
 }
 
 .assignment-object-card,
 .assignment-member-card {
+  align-self: start;
   gap: 9px;
 }
 
