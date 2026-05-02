@@ -23,6 +23,7 @@ import {
 import type {
   FormationMode,
   HorizontalGuideMode,
+  ParadeHorizontalMeasureMode,
   ParadeRulerPosition,
   ParadeSettings,
   Project,
@@ -118,6 +119,8 @@ export const FormationLibrary = ({
   const [paradeCellSizeMeters, setParadeCellSizeMeters] = useState(1);
   const [paradeRulerPosition, setParadeRulerPosition] =
     useState<ParadeRulerPosition>("both");
+  const [paradeHorizontalMeasureMode, setParadeHorizontalMeasureMode] =
+    useState<ParadeHorizontalMeasureMode>("center");
   const [paradeEmphasizeEvery5m, setParadeEmphasizeEvery5m] = useState(true);
   const [paradeEmphasizeEvery10m, setParadeEmphasizeEvery10m] = useState(true);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -183,6 +186,7 @@ export const FormationLibrary = ({
     setParadeWidthMeters(20);
     setParadeCellSizeMeters(1);
     setParadeRulerPosition("both");
+    setParadeHorizontalMeasureMode("center");
     setParadeEmphasizeEvery5m(true);
     setParadeEmphasizeEvery10m(true);
     setAudioFile(null);
@@ -270,6 +274,7 @@ export const FormationLibrary = ({
             cellSizeMeters: paradeCellSizeMeters,
             direction: "up",
             rulerPosition: paradeRulerPosition,
+            horizontalMeasureMode: paradeHorizontalMeasureMode,
             emphasizeEvery5m: paradeEmphasizeEvery5m,
             emphasizeEvery10m: paradeEmphasizeEvery10m,
           }
@@ -747,6 +752,20 @@ export const FormationLibrary = ({
                     />
                     m
                   </span>
+                </label>
+                <label>
+                  横方向表示方式
+                  <select
+                    value={paradeHorizontalMeasureMode}
+                    onChange={(event) =>
+                      setParadeHorizontalMeasureMode(
+                        event.target.value as ParadeHorizontalMeasureMode,
+                      )
+                    }
+                  >
+                    <option value="center">センター割り方式</option>
+                    <option value="normal">通常m表示</option>
+                  </select>
                 </label>
                 <label>
                   進行方向

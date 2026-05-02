@@ -513,6 +513,8 @@ const createDefaultParadeSettings = (
     settings.rulerPosition === "none"
       ? settings.rulerPosition
       : "both",
+  horizontalMeasureMode:
+    settings.horizontalMeasureMode === "normal" ? "normal" : "center",
   emphasizeEvery5m: settings.emphasizeEvery5m ?? true,
   emphasizeEvery10m: settings.emphasizeEvery10m ?? true,
 });
@@ -2984,6 +2986,26 @@ function App() {
         ),
       },
     }), "ステージ設定編集");
+  };
+
+  const updateParadeSettings = (patch: Partial<ParadeSettings>) => {
+    updateProject((previous) => {
+      const nextParadeSettings = createDefaultParadeSettings({
+        ...(previous.paradeSettings ?? {}),
+        ...patch,
+      });
+      return {
+        ...previous,
+        paradeSettings: nextParadeSettings,
+        stage: {
+          ...previous.stage,
+          widthMeters: nextParadeSettings.width,
+          depthMeters: nextParadeSettings.totalDistance,
+          gridSizeMeters: nextParadeSettings.cellSizeMeters,
+          gridIntervalM: nextParadeSettings.cellSizeMeters,
+        },
+      };
+    }, "パレード設定編集");
   };
 
   const setAllObjectsFrameVisibility = (visible: boolean) => {
@@ -6105,11 +6127,14 @@ function App() {
     if (activePanelTab === "stage") {
       return (
         <StageSettingsPanel
+          mode={project.mode ?? "stage"}
           stage={project.stage}
+          paradeSettings={project.paradeSettings}
           useGlobalStageSize={
             project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true
           }
           onChange={updateStage}
+          onParadeSettingsChange={updateParadeSettings}
           onUseGlobalStageSizeChange={updateUseGlobalStageSize}
         />
       );
@@ -6127,6 +6152,8 @@ function App() {
           currentFrame={selectedFrame ?? null}
           snapshot={selectedFrameSnapshot}
           stage={effectiveStage}
+          projectMode={project.mode ?? "stage"}
+          paradeSettings={project.paradeSettings}
           onUpdateMember={updateMember}
           onUpdateMemberGroup={updateMemberGroup}
           onMoveMember={moveMember}
@@ -6373,6 +6400,14 @@ function App() {
                   onEndProjectEdit={endProjectHistoryBatch}
                   onFrameViewStateChange={updateFrameViewState}
                   onReflectPreviousFrame={reflectPreviousParadeFrame}
+                  isFullscreen={isStageFullscreen}
+                  onToggleFullscreen={() => {
+                    if (isStageFullscreen) {
+                      void exitStageFullscreen();
+                      return;
+                    }
+                    void enterStageFullscreen();
+                  }}
                 />
               ) : (
                 <StageCanvas

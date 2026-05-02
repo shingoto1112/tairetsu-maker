@@ -4,6 +4,7 @@ import {
   MemberGroup,
   ObjectState,
   ObjectGroup,
+  ParadeSettings,
   Position,
   StageConfig,
   StageObject,
@@ -23,6 +24,8 @@ type DetailsPanelProps = {
   currentFrame: FormationFrame | null;
   snapshot: StageSnapshot;
   stage: StageConfig;
+  projectMode?: "stage" | "parade";
+  paradeSettings?: ParadeSettings;
   onUpdateMember: (id: string, patch: Partial<Member>) => void;
   onUpdateMemberGroup: (memberId: string, groupId: string | null) => void;
   onMoveMember: (id: string, position: Position) => void;
@@ -104,6 +107,8 @@ export const DetailsPanel = ({
   currentFrame,
   snapshot,
   stage,
+  projectMode = "stage",
+  paradeSettings,
   onUpdateMember,
   onUpdateMemberGroup,
   onMoveMember,
@@ -147,8 +152,32 @@ export const DetailsPanel = ({
   const assignedObjectNames = selectedMember
     ? getAssignedObjectNames(selectedMember.id, currentFrame, objects)
     : [];
-  const stageWidthMeters = Math.max(0.1, stage.widthMeters);
-  const stageDepthMeters = Math.max(0.1, stage.depthMeters);
+  const stageWidthMeters = Math.max(
+    0.1,
+    projectMode === "parade" ? paradeSettings?.width ?? stage.widthMeters : stage.widthMeters,
+  );
+  const stageDepthMeters = Math.max(
+    0.1,
+    projectMode === "parade"
+      ? paradeSettings?.totalDistance ?? stage.depthMeters
+      : stage.depthMeters,
+  );
+  const useParadeNormalX =
+    projectMode === "parade" &&
+    (paradeSettings?.horizontalMeasureMode ?? "center") === "normal";
+  const xLabel =
+    projectMode === "parade"
+      ? useParadeNormalX
+        ? "x（左端基準）"
+        : "x（センター基準）"
+      : "x（中心基準）";
+  const yLabel = projectMode === "parade" ? "m位置" : "y（上端基準）";
+  const displayXValue = (internalX: number | undefined) =>
+    useParadeNormalX ? internalX : toDisplayX(internalX, stageWidthMeters);
+  const internalXValue = (displayX: number) =>
+    useParadeNormalX ? displayX : fromDisplayX(displayX, stageWidthMeters);
+  const minDisplayX = useParadeNormalX ? 0 : -stageWidthMeters / 2;
+  const maxDisplayX = useParadeNormalX ? stageWidthMeters : stageWidthMeters / 2;
 
   const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
     if (!selectedMember || !memberPosition) {
@@ -159,9 +188,7 @@ export const DetailsPanel = ({
       return;
     }
     const nextInternalX =
-      axis === "x"
-        ? fromDisplayX(value, stageWidthMeters)
-        : memberPosition.x;
+      axis === "x" ? internalXValue(value) : memberPosition.x;
     const nextInternalY = axis === "y" ? value : memberPosition.y;
     onMoveMember(selectedMember.id, {
       x: roundDetailMeters(clamp(nextInternalX, 0, stageWidthMeters)),
@@ -189,7 +216,7 @@ export const DetailsPanel = ({
       [axis]:
         axis === "x"
           ? roundDetailMeters(
-              clamp(fromDisplayX(value, stageWidthMeters), 0, maxObjectX),
+              clamp(internalXValue(value), 0, maxObjectX),
             )
           : roundDetailMeters(clamp(value, 0, maxObjectY)),
     });
@@ -322,16 +349,14 @@ export const DetailsPanel = ({
                 />
               </label>
               <label className="detail-edit-field">
-                <span>x（中心基準）</span>
+                <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
                   <input
                     type="number"
                     step="0.01"
-                    min={-stageWidthMeters / 2}
-                    max={stageWidthMeters / 2}
-                    value={formatNumberInput(
-                      toDisplayX(memberPosition?.x, stageWidthMeters),
-                    )}
+                    min={minDisplayX}
+                    max={maxDisplayX}
+                    value={formatNumberInput(displayXValue(memberPosition?.x))}
                     onChange={(event) =>
                       updateMemberCoordinate("x", event.target.value)
                     }
@@ -340,7 +365,7 @@ export const DetailsPanel = ({
                 </span>
               </label>
               <label className="detail-edit-field">
-                <span>y（上端基準）</span>
+                <span>{yLabel}</span>
                 <span className="detail-input-with-unit">
                   <input
                     type="number"
@@ -424,16 +449,14 @@ export const DetailsPanel = ({
                 />
               </label>
               <label className="detail-edit-field">
-                <span>x（中心基準）</span>
+                <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
                   <input
                     type="number"
                     step="0.01"
-                    min={-stageWidthMeters / 2}
-                    max={stageWidthMeters / 2}
-                    value={formatNumberInput(
-                      toDisplayX(objectState?.x, stageWidthMeters),
-                    )}
+                    min={minDisplayX}
+                    max={maxDisplayX}
+                    value={formatNumberInput(displayXValue(objectState?.x))}
                     onChange={(event) =>
                       updateObjectCoordinate("x", event.target.value)
                     }
@@ -442,7 +465,7 @@ export const DetailsPanel = ({
                 </span>
               </label>
               <label className="detail-edit-field">
-                <span>y（上端基準）</span>
+                <span>{yLabel}</span>
                 <span className="detail-input-with-unit">
                   <input
                     type="number"
@@ -516,8 +539,9 @@ export const DetailsPanel = ({
           <span>詳細タブ</span>
         </div>
         <p className="muted-text">
-          xはステージ上端のセンターラインを0mとして、右がプラス、左がマイナスです。
-          yはステージ上端を0mとして、下方向がプラスです。
+          {projectMode === "parade" && useParadeNormalX
+            ? "xは左端を0mとして、右方向へ増えます。m位置はスタート地点からの距離です。"
+            : "xはステージ上端のセンターラインを0mとして、右がプラス、左がマイナスです。yはステージ上端を0mとして、下方向がプラスです。"}
         </p>
       </section>
 

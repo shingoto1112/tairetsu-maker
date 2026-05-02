@@ -78,12 +78,15 @@ export type ParadeDirection = "up";
 
 export type ParadeRulerPosition = "both" | "left" | "right" | "none";
 
+export type ParadeHorizontalMeasureMode = "center" | "normal";
+
 export type ParadeSettings = {
   totalDistance: number;
   width: number;
   cellSizeMeters: number;
   direction: ParadeDirection;
   rulerPosition: ParadeRulerPosition;
+  horizontalMeasureMode?: ParadeHorizontalMeasureMode;
   emphasizeEvery5m: boolean;
   emphasizeEvery10m: boolean;
 };

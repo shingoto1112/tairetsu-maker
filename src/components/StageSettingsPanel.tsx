@@ -1,45 +1,181 @@
 import {
+  FormationMode,
   FrontDirection,
   HorizontalGuideMode,
   OriginMode,
+  ParadeHorizontalMeasureMode,
+  ParadeSettings,
   StageConfig,
 } from "../types";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type StageSettingsPanelProps = {
+  mode?: FormationMode;
   stage: StageConfig;
+  paradeSettings?: ParadeSettings;
   useGlobalStageSize: boolean;
   onChange: (patch: Partial<StageConfig>) => void;
+  onParadeSettingsChange?: (patch: Partial<ParadeSettings>) => void;
   onUseGlobalStageSizeChange: (enabled: boolean) => void;
 };
 
 export const StageSettingsPanel = ({
+  mode = "stage",
   stage,
+  paradeSettings,
   useGlobalStageSize,
   onChange,
+  onParadeSettingsChange,
   onUseGlobalStageSizeChange,
-}: StageSettingsPanelProps) => (
-  <section className="panel-section">
-    <PanelStickyHeader
-      title="ステージ設定"
-      meta={`現在: 横${stage.widthMeters}m / 縦${stage.depthMeters}m / ${
-        useGlobalStageSize ? "全シーン固定ON" : "シーン別サイズ"
-      }`}
-      actions={
-        <label className="sticky-select-label">
-          固定
-          <select
-            value={String(useGlobalStageSize)}
-            onChange={(event) =>
-              onUseGlobalStageSizeChange(event.target.value === "true")
-            }
-          >
-            <option value="true">ON</option>
-            <option value="false">OFF</option>
-          </select>
-        </label>
-      }
-    />
+}: StageSettingsPanelProps) => {
+  const effectiveParadeSettings: ParadeSettings = {
+    totalDistance: paradeSettings?.totalDistance ?? stage.depthMeters,
+    width: paradeSettings?.width ?? stage.widthMeters,
+    cellSizeMeters: paradeSettings?.cellSizeMeters ?? stage.gridSizeMeters,
+    direction: paradeSettings?.direction ?? "up",
+    rulerPosition: paradeSettings?.rulerPosition ?? "both",
+    horizontalMeasureMode: paradeSettings?.horizontalMeasureMode ?? "center",
+    emphasizeEvery5m: paradeSettings?.emphasizeEvery5m ?? true,
+    emphasizeEvery10m: paradeSettings?.emphasizeEvery10m ?? true,
+  };
+
+  if (mode === "parade") {
+    return (
+      <section className="panel-section">
+        <PanelStickyHeader
+          title="パレード設定"
+          meta={`現在: 全体距離${effectiveParadeSettings.totalDistance}m / 横幅${effectiveParadeSettings.width}m`}
+        />
+        <div className="settings-grid">
+          <label>
+            全体距離
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={effectiveParadeSettings.totalDistance}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  totalDistance: Math.max(1, Number(event.target.value)),
+                })
+              }
+            />
+          </label>
+          <label>
+            横幅
+            <input
+              type="number"
+              min="1"
+              step="0.5"
+              value={effectiveParadeSettings.width}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  width: Math.max(1, Number(event.target.value)),
+                })
+              }
+            />
+          </label>
+          <label>
+            1マスあたりの距離
+            <input
+              type="number"
+              min="0.1"
+              step="0.1"
+              value={effectiveParadeSettings.cellSizeMeters}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  cellSizeMeters: Math.max(0.1, Number(event.target.value)),
+                })
+              }
+            />
+          </label>
+          <label>
+            横方向表示方式
+            <select
+              value={effectiveParadeSettings.horizontalMeasureMode ?? "center"}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  horizontalMeasureMode: event.target
+                    .value as ParadeHorizontalMeasureMode,
+                })
+              }
+            >
+              <option value="center">センター割り方式</option>
+              <option value="normal">通常m表示</option>
+            </select>
+          </label>
+          <label>
+            距離目盛り
+            <select
+              value={effectiveParadeSettings.rulerPosition}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  rulerPosition: event.target.value as ParadeSettings["rulerPosition"],
+                })
+              }
+            >
+              <option value="both">左右に表示</option>
+              <option value="left">左のみ表示</option>
+              <option value="right">右のみ表示</option>
+              <option value="none">非表示</option>
+            </select>
+          </label>
+        </div>
+        <div className="toggle-list">
+          <label>
+            <input
+              type="checkbox"
+              checked={effectiveParadeSettings.emphasizeEvery5m}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  emphasizeEvery5m: event.target.checked,
+                })
+              }
+            />
+            5mごとのライン強調
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={effectiveParadeSettings.emphasizeEvery10m}
+              onChange={(event) =>
+                onParadeSettingsChange?.({
+                  emphasizeEvery10m: event.target.checked,
+                })
+              }
+            />
+            10mごとのライン強調
+          </label>
+        </div>
+        <p className="notice muted">
+          横方向表示方式は表示だけを切り替えます。配置データはこれまで通りm単位で保存します。
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel-section">
+      <PanelStickyHeader
+        title="ステージ設定"
+        meta={`現在: 横${stage.widthMeters}m / 縦${stage.depthMeters}m / ${
+          useGlobalStageSize ? "全シーン固定ON" : "シーン別サイズ"
+        }`}
+        actions={
+          <label className="sticky-select-label">
+            固定
+            <select
+              value={String(useGlobalStageSize)}
+              onChange={(event) =>
+                onUseGlobalStageSizeChange(event.target.value === "true")
+              }
+            >
+              <option value="true">ON</option>
+              <option value="false">OFF</option>
+            </select>
+          </label>
+        }
+      />
     <div className="settings-grid">
       <label>
         デフォルトの横
@@ -197,5 +333,6 @@ export const StageSettingsPanel = ({
         </label>
       </div>
     </details>
-  </section>
-);
+    </section>
+  );
+};

@@ -1,8 +1,8 @@
 import {
   ArrowDownToLine,
-  ArrowUp,
   ArrowUpToLine,
   Maximize2,
+  Minimize2,
   RotateCcw,
   ZoomIn,
   ZoomOut,
@@ -50,6 +50,8 @@ type ParadeCanvasProps = {
   onEndProjectEdit: () => void;
   onFrameViewStateChange: (frameId: string, viewState: SceneViewState) => void;
   onReflectPreviousFrame: (options: ParadeReflectOptions) => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
 };
 
 type DragState =
@@ -79,6 +81,7 @@ const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
   cellSizeMeters: 1,
   direction: "up",
   rulerPosition: "both",
+  horizontalMeasureMode: "center",
   emphasizeEvery5m: true,
   emphasizeEvery10m: true,
 };
@@ -141,6 +144,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onEndProjectEdit,
       onFrameViewStateChange,
       onReflectPreviousFrame,
+      isFullscreen,
+      onToggleFullscreen,
     },
     ref,
   ) => {
@@ -164,6 +169,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const pxPerMeter = BASE_PX_PER_METER * zoom;
     const canvasWidthPx = settings.width * pxPerMeter;
     const canvasHeightPx = settings.totalDistance * pxPerMeter;
+    const horizontalRulerHeight = 28;
     const leftRulerVisible =
       settings.rulerPosition === "both" || settings.rulerPosition === "left";
     const rightRulerVisible =
@@ -210,6 +216,29 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       return ticks;
     }, [settings.totalDistance]);
+
+    const horizontalTicks = useMemo(() => {
+      const ticks: number[] = [];
+      const step = Math.max(0.5, Math.min(1, settings.cellSizeMeters || 1));
+      for (let value = 0; value <= settings.width + 0.001; value += step) {
+        const rounded = roundMeters(value);
+        if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+          ticks.push(Math.round(rounded));
+        }
+      }
+      return Array.from(new Set(ticks));
+    }, [settings.cellSizeMeters, settings.width]);
+
+    const formatHorizontalTick = (xMeters: number) => {
+      if ((settings.horizontalMeasureMode ?? "center") === "normal") {
+        return `${xMeters}m`;
+      }
+      const centered = roundMeters(xMeters - settings.width / 2);
+      if (Math.abs(centered) < 0.001) {
+        return "0";
+      }
+      return centered > 0 ? `+${centered}` : `${centered}`;
+    };
 
     const saveViewState = () => {
       if (!currentFrame?.id || !scrollRef.current) {
@@ -409,7 +438,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
 
     return (
       <div className="parade-canvas-shell">
-        <div className="parade-toolbar">
+        <div className="parade-toolbar parade-control-panel">
           <div className="parade-toolbar__main">
             <strong>{selectedFrameLabel}</strong>
             <button
@@ -505,6 +534,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             <button type="button" className="icon-button" title="全体表示" onClick={fitAll}>
               <Maximize2 size={16} />
             </button>
+            <button
+              type="button"
+              className="icon-button"
+              title={isFullscreen ? "フルスクリーンを終了" : "フルスクリーン"}
+              onClick={onToggleFullscreen}
+            >
+              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
             <button type="button" className="icon-button" title="表示を戻す" onClick={jumpToStart}>
               <RotateCcw size={16} />
             </button>
@@ -516,11 +553,30 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             className="parade-stage-wrap"
             style={{
               gridTemplateColumns: `${leftRulerVisible ? RULER_WIDTH : 0}px ${canvasWidthPx}px ${rightRulerVisible ? RULER_WIDTH : 0}px`,
+              gridTemplateRows: `${horizontalRulerHeight}px ${canvasHeightPx}px`,
             }}
             ref={ref}
           >
+            <div className="parade-ruler-spacer" />
+            <div
+              className="parade-horizontal-ruler"
+              style={{ width: canvasWidthPx, height: horizontalRulerHeight }}
+            >
+              {horizontalTicks.map((meter) => (
+                <span
+                  key={`horizontal-${meter}`}
+                  style={{ left: meter * pxPerMeter }}
+                >
+                  {formatHorizontalTick(meter)}
+                </span>
+              ))}
+            </div>
+            <div className="parade-ruler-spacer" />
             {leftRulerVisible && (
-              <div className="parade-ruler parade-ruler--left" style={{ height: canvasHeightPx }}>
+              <div
+                className="parade-ruler parade-ruler--left"
+                style={{ height: canvasHeightPx, gridColumn: 1, gridRow: 2 }}
+              >
                 {meterTicks.map((meter) => {
                   const top = (settings.totalDistance - meter) * pxPerMeter;
                   return (
@@ -538,6 +594,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             <div
               className="parade-stage"
               style={{
+                gridColumn: 2,
+                gridRow: 2,
                 width: canvasWidthPx,
                 height: canvasHeightPx,
                 backgroundSize: `${pxPerMeter}px ${pxPerMeter}px`,
@@ -623,13 +681,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   </button>
                 );
               })}
-              <div className="parade-direction-label">
-                <ArrowUp size={14} />
-                進行方向
-              </div>
             </div>
             {rightRulerVisible && (
-              <div className="parade-ruler parade-ruler--right" style={{ height: canvasHeightPx }}>
+              <div
+                className="parade-ruler parade-ruler--right"
+                style={{ height: canvasHeightPx, gridColumn: 3, gridRow: 2 }}
+              >
                 {meterTicks.map((meter) => {
                   const top = (settings.totalDistance - meter) * pxPerMeter;
                   return (
