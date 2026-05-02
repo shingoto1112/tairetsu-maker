@@ -375,10 +375,53 @@ type NavigatorWithFileShare = Navigator & {
   canShare?: (data: ShareData) => boolean;
 };
 
+type ClipboardItemLike = unknown;
+
+type ClipboardItemConstructor = new (
+  items: Record<string, Blob>,
+) => ClipboardItemLike;
+
+type NavigatorWithImageClipboard = Navigator & {
+  clipboard?: {
+    write?: (items: ClipboardItemLike[]) => Promise<void>;
+  };
+};
+
+type WindowWithClipboardItem = Window & {
+  ClipboardItem?: ClipboardItemConstructor;
+};
+
 const sanitizeExportFileName = (value: string): string =>
   (value.trim() || APP_NAME)
     .replace(/[\\/:*?"<>|]/g, "_")
     .replace(/\s+/g, "_");
+
+const formatExportTimestamp = (date = new Date()): string => {
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )}_${pad(date.getHours())}-${pad(date.getMinutes())}`;
+};
+
+const isAppleTouchDevice = (): boolean =>
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
+  const ClipboardItemCtor = (window as WindowWithClipboardItem).ClipboardItem;
+  const clipboardWrite = (navigator as NavigatorWithImageClipboard).clipboard
+    ?.write;
+  if (!ClipboardItemCtor || !clipboardWrite) {
+    return false;
+  }
+  try {
+    await clipboardWrite([new ClipboardItemCtor({ "image/png": blob })]);
+    return true;
+  } catch (error) {
+    console.error("画像のクリップボードコピーに失敗しました。", error);
+    return false;
+  }
+};
 
 const createUniqueProjectTitle = (
   baseTitle: string,
@@ -981,6 +1024,9 @@ function App() {
   const [printOptions, setPrintOptions] = useState<ShareExportOptions | null>(
     null,
   );
+  const [printVariant, setPrintVariant] = useState<
+    "document" | "stage-only"
+  >("document");
   const [isSceneThumbnailRailCollapsed, setIsSceneThumbnailRailCollapsed] =
     useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -4488,9 +4534,11 @@ function App() {
   const preparePrintExportElement = async (
     scope: "all" | "current",
     options: ShareExportOptions,
+    variant: "document" | "stage-only" = "document",
   ): Promise<HTMLDivElement> => {
     setPrintScope(scope);
     setPrintOptions(options);
+    setPrintVariant(variant);
     await waitForPaint();
     const element = printExportRef.current;
     if (!element) {
@@ -4503,6 +4551,7 @@ function App() {
 
   const cleanupPrintExportElement = () => {
     printExportRef.current?.classList.remove("is-exporting");
+    setPrintVariant("document");
   };
 
   const getSaveStatusNotice = (
@@ -4522,7 +4571,7 @@ function App() {
     scope: "all" | "current",
     options: ShareExportOptions,
   ): Promise<Blob> => {
-    const element = await preparePrintExportElement(scope, options);
+    const element = await preparePrintExportElement(scope, options, "document");
     try {
       return await elementToPngBlob(element);
     } finally {
@@ -4535,7 +4584,7 @@ function App() {
     options: ShareExportOptions,
     title: string,
   ): Promise<Blob> => {
-    const element = await preparePrintExportElement(scope, options);
+    const element = await preparePrintExportElement(scope, options, "document");
     try {
       const pages = Array.from(
         element.querySelectorAll<HTMLElement>(".print-page"),
@@ -4553,8 +4602,110 @@ function App() {
     }
   };
 
+  const stageScreenshotOptions: ShareExportOptions = {
+    includeAssignments: false,
+    includeBackground: true,
+    includeGrid: true,
+    includeHiddenMembers: false,
+    includeMeterRulers: true,
+    includeNotes: false,
+    includeSceneName: false,
+    includeSceneTime: false,
+    layout: "auto",
+    sceneGapRows: 0,
+  };
+
+  const generateStageScreenshotBlob = async (): Promise<Blob> => {
+    const element = await preparePrintExportElement(
+      "current",
+      stageScreenshotOptions,
+      "stage-only",
+    );
+    try {
+      return await elementToPngBlob(element, {
+        backgroundColor: "#ffffff",
+        pixelRatio: Math.max(2, window.devicePixelRatio || 1),
+      });
+    } finally {
+      cleanupPrintExportElement();
+    }
+  };
+
+  const captureStageImage = async () => {
+    const frameLabel =
+      displayFrame?.label ?? selectedFrame?.label ?? "現在シーン";
+    const filename = withFileExtension(
+      `${APP_NAME}_${frameLabel}_${formatExportTimestamp()}`,
+      "png",
+    );
+
+    try {
+      const blob = await generateStageScreenshotBlob();
+      const file = new File([blob], filename, { type: "image/png" });
+      const nav = navigator as NavigatorWithFileShare;
+
+      if (
+        isAppleTouchDevice() &&
+        navigator.share &&
+        (!nav.canShare || nav.canShare({ files: [file] }))
+      ) {
+        try {
+          await navigator.share({
+            files: [file],
+            text: "隊列メーカーのステージ画像です。",
+            title: "ステージ画像",
+          });
+          setNotice("画像を作成しました。共有または保存してください。");
+          return;
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            setNotice("共有をキャンセルしました。");
+            return;
+          }
+          console.error("ステージ画像の共有に失敗しました。", error);
+        }
+      }
+
+      const copied = await copyImageToClipboard(blob);
+      const status = await saveGeneratedBlob({
+        fallbackFileName: filename,
+        generateBlob: async () => blob,
+        pickerTypes: [
+          {
+            accept: { "image/png": [".png"] },
+            description: "PNG画像",
+          },
+        ],
+      });
+
+      if (status === "cancelled") {
+        setNotice(
+          copied
+            ? "画像をクリップボードにコピーしました。保存はキャンセルされました。"
+            : "保存をキャンセルしました。",
+        );
+        return;
+      }
+
+      if (copied) {
+        setNotice("ステージ画像を保存し、クリップボードにコピーしました。");
+        return;
+      }
+
+      setNotice(
+        status === "downloaded"
+          ? "ステージ画像をダウンロードしました。クリップボードコピーはこのブラウザでは使えませんでした。"
+          : "ステージ画像を保存しました。",
+      );
+    } catch (error) {
+      console.error("ステージ画像の保存に失敗しました。", error);
+      setNotice("ステージ画像の保存に失敗しました。");
+    }
+  };
+
   const printProject = (scope: "all" | "current" = "all") => {
     setPrintScope(scope);
+    setPrintVariant("document");
     setNotice(
       scope === "current"
         ? "現在のシーンを印刷画面でPDF保存できます。"
@@ -6021,6 +6172,7 @@ function App() {
                   }
                   void enterStageFullscreen();
                 }}
+                onCaptureStageImage={captureStageImage}
                 onSeekAudio={seek}
                 onContextMenuRequest={handleStageContextMenu}
               />
@@ -6404,6 +6556,7 @@ function App() {
       selectedFrameId={displayFrame?.id ?? selectedFrame?.id ?? null}
       options={printOptions ?? undefined}
       rootRef={printExportRef}
+      variant={printVariant}
     />
     </>
   );

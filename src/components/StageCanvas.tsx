@@ -1,4 +1,5 @@
 import {
+  Camera,
   FlipHorizontal2,
   Maximize2,
   Minimize2,
@@ -83,6 +84,7 @@ type StageCanvasProps = {
   onEndProjectEdit: () => void;
   onTogglePlayback: () => void;
   onSaveFrame: () => void;
+  onCaptureStageImage: () => void;
   onTogglePerspective: () => void;
   onToggleFullscreen: () => void;
   onSeekAudio: (timeSec: number) => void;
@@ -330,6 +332,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       onEndProjectEdit,
       onTogglePlayback,
       onSaveFrame,
+      onCaptureStageImage,
       onTogglePerspective,
       onToggleFullscreen,
       onSeekAudio,
@@ -915,6 +918,15 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               >
                 <Save size={15} />
                 保存
+              </button>
+              <button
+                className="mini-button icon-only"
+                onClick={onCaptureStageImage}
+                type="button"
+                title="ステージを画像保存"
+                aria-label="ステージを画像保存"
+              >
+                <Camera size={15} />
               </button>
               <button
                 className="mini-button"

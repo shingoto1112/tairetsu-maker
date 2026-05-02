@@ -8,7 +8,6 @@ import {
 } from "../types";
 import { createDefaultObjectState, sortFrames } from "../utils/interpolation";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
-import { formatTime } from "../utils/time";
 import type { ShareExportOptions } from "./ShareExportModal";
 
 type PrintPreviewProps = {
@@ -17,6 +16,7 @@ type PrintPreviewProps = {
   selectedFrameId?: string | null;
   options?: ShareExportOptions;
   rootRef?: Ref<HTMLDivElement>;
+  variant?: "document" | "stage-only";
 };
 
 type EffectiveStageSize = {
@@ -33,8 +33,8 @@ type PrintMetrics = {
   stageWidthMm: number;
 };
 
-const PRINT_PAGE_USABLE_WIDTH_MM = 277;
-const PRINT_PAGE_USABLE_HEIGHT_MM = 190;
+const PRINT_PAGE_USABLE_WIDTH_MM = 190;
+const PRINT_PAGE_USABLE_HEIGHT_MM = 277;
 const PRINT_RULER_LEFT_MM = 10;
 const PRINT_RULER_TOP_MM = 6;
 const PRINT_RULER_BOTTOM_MM = 3;
@@ -42,14 +42,14 @@ const PRINT_SCENE_TITLE_MM = 9;
 const PRINT_STAGE_RIGHT_SAFETY_MM = 2;
 
 const defaultPrintOptions: ShareExportOptions = {
-  includeAssignments: true,
+  includeAssignments: false,
   includeBackground: true,
   includeGrid: true,
   includeHiddenMembers: false,
   includeMeterRulers: true,
-  includeNotes: true,
+  includeNotes: false,
   includeSceneName: true,
-  includeSceneTime: true,
+  includeSceneTime: false,
   layout: "auto",
   sceneGapRows: 5,
 };
@@ -381,6 +381,7 @@ export const PrintPreview = ({
   selectedFrameId = null,
   options = defaultPrintOptions,
   rootRef,
+  variant = "document",
 }: PrintPreviewProps) => {
   const sortedFrames = sortFrames(project.frames);
   const frames =
@@ -390,6 +391,35 @@ export const PrintPreview = ({
   const resolvedOptions = { ...defaultPrintOptions, ...options };
   const metrics = getPrintMetrics(project, frames, resolvedOptions);
   const pages = paginateFrames(project, frames, metrics, resolvedOptions);
+
+  if (variant === "stage-only") {
+    const frame = frames[0] ?? sortedFrames[0];
+    if (!frame) {
+      return <div className="print-document print-document--stage-only" ref={rootRef} />;
+    }
+    const stageSize = {
+      ...getEffectiveSize(project, frame),
+      widthMeters: metrics.commonWidthMeters,
+    };
+
+    return (
+      <div
+        className="print-document print-document--stage-only"
+        aria-hidden="true"
+        ref={rootRef}
+      >
+        <PrintStagePreview
+          commonWidthMeters={metrics.commonWidthMeters}
+          frame={frame}
+          gapAfter={false}
+          metrics={metrics}
+          project={project}
+          stageSize={stageSize}
+          options={resolvedOptions}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="print-document" aria-hidden="true" ref={rootRef}>
@@ -410,17 +440,11 @@ export const PrintPreview = ({
                   className="print-scene-title"
                   style={{ height: `${PRINT_SCENE_TITLE_MM}mm` }}
                 >
-                  <div>
-                    <span>シーン{sceneNumber}</span>
-                    <h2>
-                      {resolvedOptions.includeSceneName
-                        ? frame.label
-                        : `シーン${sceneNumber}`}
-                    </h2>
-                  </div>
-                  {resolvedOptions.includeSceneTime && (
-                    <strong>{formatTime(frame.timeSec)}</strong>
-                  )}
+                  <h2>
+                    {resolvedOptions.includeSceneName
+                      ? frame.label
+                      : `シーン${sceneNumber}`}
+                  </h2>
                 </header>
 
                 <PrintStagePreview

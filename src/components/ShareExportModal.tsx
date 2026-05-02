@@ -37,10 +37,10 @@ const fixedExportOptions: ShareExportOptions = {
   includeBackground: true,
   includeGrid: true,
   includeMeterRulers: true,
-  includeNotes: true,
-  includeAssignments: true,
+  includeNotes: false,
+  includeAssignments: false,
   includeHiddenMembers: false,
-  includeSceneTime: true,
+  includeSceneTime: false,
   includeSceneName: true,
   layout: "auto",
   sceneGapRows: 5,
@@ -286,7 +286,7 @@ export const ShareExportModal = ({
             </label>
 
             <p className="notice muted">
-              グリッド、メートル目盛り、シーン名、時刻、メモ、道具割当を含めた固定レイアウトで書き出します。
+              シーン名とステージ画像だけを並べた、印刷しやすい固定レイアウトで書き出します。
             </p>
 
             <button

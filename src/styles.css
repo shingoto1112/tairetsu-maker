@@ -3704,6 +3704,10 @@ h2 {
   margin-bottom: 0;
 }
 
+.print-document.is-exporting.print-document--stage-only {
+  padding: 0;
+}
+
 .print-page {
   background: #ffffff;
   color: #172033;
@@ -3732,12 +3736,12 @@ h2 {
 }
 
 .print-scene-title {
-  align-items: center;
+  align-items: flex-end;
   border-bottom: 0;
   color: #0f766e;
   display: flex;
   gap: 8mm;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 0 0 1.5mm var(--print-ruler-left-mm, 10mm);
 }
 
@@ -3755,10 +3759,9 @@ h2 {
 }
 
 .print-scene-title h2 {
-  color: #0f172a;
-  font-size: 11pt;
+  color: #0f766e;
+  font-size: 12pt;
   font-weight: 900;
-  margin-top: 0.5mm;
 }
 
 .print-scene-title strong {
@@ -3923,7 +3926,7 @@ h2 {
 @media print {
   @page {
     margin: 10mm;
-    size: A4 landscape;
+    size: A4 portrait;
   }
 
   .app-shell {

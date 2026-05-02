@@ -2,11 +2,12 @@ import { toJpeg, toPng } from "html-to-image";
 
 export const elementToPngBlob = async (
   element: HTMLElement,
+  options: { backgroundColor?: string; pixelRatio?: number } = {},
 ): Promise<Blob> => {
   const dataUrl = await toPng(element, {
     cacheBust: true,
-    pixelRatio: 2,
-    backgroundColor: "#ffffff",
+    pixelRatio: options.pixelRatio ?? 2,
+    backgroundColor: options.backgroundColor ?? "#ffffff",
   });
   const response = await fetch(dataUrl);
   return response.blob();
