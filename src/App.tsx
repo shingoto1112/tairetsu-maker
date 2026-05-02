@@ -24,6 +24,10 @@ import {
   ShareExportRequest,
 } from "./components/ShareExportModal";
 import { StageCanvas } from "./components/StageCanvas";
+import {
+  ParadeCanvas,
+  type ParadeReflectOptions,
+} from "./components/ParadeCanvas";
 import { StageSettingsPanel } from "./components/StageSettingsPanel";
 import { Timeline } from "./components/Timeline";
 import { Toolbar } from "./components/Toolbar";
@@ -45,8 +49,10 @@ import {
   MovementTargetType,
   ObjectGroup,
   ObjectState,
+  ParadeSettings,
   Position,
   Project,
+  SceneViewState,
   Selection,
   StageConfig,
   StageObject,
@@ -494,6 +500,23 @@ const positiveNumber = (
     ? Math.max(min, value)
     : Math.max(min, fallback);
 
+const createDefaultParadeSettings = (
+  settings: Partial<ParadeSettings> = {},
+): ParadeSettings => ({
+  totalDistance: positiveNumber(settings.totalDistance, 100, 1),
+  width: positiveNumber(settings.width, 20, 1),
+  cellSizeMeters: positiveNumber(settings.cellSizeMeters, 1, 0.1),
+  direction: "up",
+  rulerPosition:
+    settings.rulerPosition === "left" ||
+    settings.rulerPosition === "right" ||
+    settings.rulerPosition === "none"
+      ? settings.rulerPosition
+      : "both",
+  emphasizeEvery5m: settings.emphasizeEvery5m ?? true,
+  emphasizeEvery10m: settings.emphasizeEvery10m ?? true,
+});
+
 const normalizeProject = (project: Project): Project => {
   const sample = createSampleProject();
   const legacyStage = project.stage as StageConfig & {
@@ -522,7 +545,8 @@ const normalizeProject = (project: Project): Project => {
     memberCircleDiameterM?: number;
   };
   const now = new Date().toISOString();
-  const stage: StageConfig = {
+  const mode = project.mode === "parade" ? "parade" : "stage";
+  let stage: StageConfig = {
     ...sample.stage,
     ...project.stage,
     widthMeters: positiveNumber(
@@ -580,6 +604,43 @@ const normalizeProject = (project: Project): Project => {
             ? "centerSplit"
             : "meters",
   };
+  const paradeSettings =
+    mode === "parade"
+      ? createDefaultParadeSettings({
+          ...(project.paradeSettings ?? {}),
+          width:
+            project.paradeSettings?.width ??
+            project.stage.widthMeters ??
+            legacyStage.stageWidthM ??
+            legacyStage.widthM ??
+            legacyProject.stageWidthM ??
+            legacyProject.widthM,
+          totalDistance:
+            project.paradeSettings?.totalDistance ??
+            project.stage.depthMeters ??
+            legacyStage.stageHeightM ??
+            legacyStage.heightM ??
+            legacyStage.depthM ??
+            legacyProject.stageHeightM ??
+            legacyProject.heightM ??
+            legacyProject.stageDepthM ??
+            legacyProject.depthM,
+          cellSizeMeters:
+            project.paradeSettings?.cellSizeMeters ??
+            project.stage.gridSizeMeters ??
+            legacyStage.gridIntervalM ??
+            legacyProject.gridIntervalM,
+        })
+      : undefined;
+  if (paradeSettings) {
+    stage = {
+      ...stage,
+      widthMeters: paradeSettings.width,
+      depthMeters: paradeSettings.totalDistance,
+      gridSizeMeters: paradeSettings.cellSizeMeters,
+      gridIntervalM: paradeSettings.cellSizeMeters,
+    };
+  }
 
   const stageObjects = project.stageObjects.map((object, index) => ({
     ...object,
@@ -654,6 +715,14 @@ const normalizeProject = (project: Project): Project => {
       : undefined,
     positions: frame.positions ?? {},
     objectStates: frame.objectStates ?? {},
+    sceneViewState:
+      mode === "parade" && frame.sceneViewState
+        ? {
+            scrollTop: frame.sceneViewState?.scrollTop ?? 0,
+            scrollLeft: frame.sceneViewState?.scrollLeft ?? 0,
+            zoom: positiveNumber(frame.sceneViewState?.zoom, 1, 0.2),
+          }
+        : frame.sceneViewState,
     stageWidthMeters:
       frame.stageWidthMeters === undefined
         ? undefined
@@ -766,6 +835,8 @@ const normalizeProject = (project: Project): Project => {
     id: project.id ?? createProjectId(),
     version: project.version ?? 1,
     title: project.title || APP_NAME,
+    mode,
+    paradeSettings,
     createdAt: project.createdAt ?? project.updatedAt ?? now,
     lastOpenedAt: project.lastOpenedAt,
     audio: project.audio ?? null,
@@ -807,13 +878,35 @@ const createEmptyFormationProject = (
     | "gridSizeMeters"
     | "horizontalGuideMode"
     | "memberDiameterMeters"
+    | "formationMode"
+    | "paradeSettings"
   >,
   audio: AudioMeta | null,
 ): Project => {
   const now = new Date().toISOString();
-  const widthMeters = Math.max(1, settings.widthMeters);
-  const depthMeters = Math.max(1, settings.heightMeters);
-  const gridSizeMeters = Math.max(0.05, settings.gridSizeMeters);
+  const formationMode = settings.formationMode ?? "stage";
+  const paradeSettings =
+    formationMode === "parade"
+      ? createDefaultParadeSettings(
+          settings.paradeSettings ?? {
+            width: settings.widthMeters,
+            totalDistance: settings.heightMeters,
+            cellSizeMeters: settings.gridSizeMeters,
+          },
+        )
+      : undefined;
+  const widthMeters =
+    formationMode === "parade"
+      ? paradeSettings?.width ?? 20
+      : Math.max(1, settings.widthMeters);
+  const depthMeters =
+    formationMode === "parade"
+      ? paradeSettings?.totalDistance ?? 100
+      : Math.max(1, settings.heightMeters);
+  const gridSizeMeters =
+    formationMode === "parade"
+      ? paradeSettings?.cellSizeMeters ?? 1
+      : Math.max(0.05, settings.gridSizeMeters);
   const memberDiameterMeters = Math.min(
     1,
     Math.max(0.1, settings.memberDiameterMeters),
@@ -822,6 +915,8 @@ const createEmptyFormationProject = (
     id: createProjectId(),
     version: 1,
     title,
+    mode: formationMode,
+    paradeSettings,
     createdAt: now,
     updatedAt: now,
     lastOpenedAt: now,
@@ -868,6 +963,7 @@ const createEmptyFormationProject = (
         id: createId("f"),
         label: "Scene 1",
         timeSec: 0,
+        sceneViewState: undefined,
         positions: {},
         objectStates: {},
       },
@@ -1738,12 +1834,16 @@ function App() {
   }, []);
 
   const snapshot = useMemo<StageSnapshot>(() => {
+    if (project.mode === "parade") {
+      return getSnapshotForFrame(project, displayFrame?.id ?? selectedFrame?.id ?? null);
+    }
     if (isPlaying || mode === "preview") {
       return interpolateProjectAtTime(project, currentTime);
     }
     return getSnapshotForFrame(project, selectedFrame?.id ?? null);
   }, [
     currentTime,
+    displayFrame?.id,
     isPlaying,
     mode,
     project,
@@ -1760,6 +1860,134 @@ function App() {
         ? getSnapshotForFrame(project, selectedPreviousFrame.id)
         : null,
     [project, selectedPreviousFrame?.id],
+  );
+
+  const updateFrameViewState = useCallback(
+    (frameId: string, viewState: SceneViewState) => {
+      const previous = projectRef.current;
+      const nextProject = {
+        ...previous,
+        updatedAt: new Date().toISOString(),
+        frames: previous.frames.map((frame) =>
+          frame.id === frameId
+            ? {
+                ...frame,
+                sceneViewState: {
+                  scrollTop: Math.max(0, viewState.scrollTop),
+                  scrollLeft: Math.max(0, viewState.scrollLeft),
+                  zoom: Math.min(3, Math.max(0.2, viewState.zoom)),
+                },
+              }
+            : frame,
+        ),
+      };
+      projectRef.current = nextProject;
+      setProject(nextProject);
+      setIsDirty(true);
+    },
+    [],
+  );
+
+  const reflectPreviousParadeFrame = useCallback(
+    (options: ParadeReflectOptions) => {
+      if (!selectedFrame || !selectedPreviousFrame) {
+        setNotice("直前シーンがありません。");
+        return;
+      }
+      const activeFrameId = selectedFrame.id;
+      const previousFrameId = selectedPreviousFrame.id;
+      updateProject((previous) => {
+        const sourceFrame = previous.frames.find((frame) => frame.id === previousFrameId);
+        const targetFrame = previous.frames.find((frame) => frame.id === activeFrameId);
+        if (!sourceFrame || !targetFrame) {
+          return previous;
+        }
+        const settings = createDefaultParadeSettings({
+          ...(previous.paradeSettings ?? {}),
+          width: previous.stage.widthMeters,
+          totalDistance: previous.stage.depthMeters,
+          cellSizeMeters: previous.stage.gridSizeMeters,
+        });
+        const groupMemberIds =
+          options.target === "group" && options.groupId
+            ? new Set(
+                (previous.memberGroups ?? []).find((group) => group.id === options.groupId)
+                  ?.memberIds ?? [],
+              )
+            : null;
+        const moveMeters = Math.max(0, options.moveMeters || 0);
+        let outOfRangeCount = 0;
+        const shouldMoveMember = (memberId: string) =>
+          options.target === "all" || Boolean(groupMemberIds?.has(memberId));
+        const nextPositions = Object.fromEntries(
+          Object.entries(sourceFrame.positions).map(([memberId, position]) => {
+            const moved =
+              shouldMoveMember(memberId) && moveMeters > 0
+                ? { ...position, y: roundMeters(position.y - moveMeters) }
+                : position;
+            if (
+              moved.x < 0 ||
+              moved.x > settings.width ||
+              moved.y < 0 ||
+              moved.y > settings.totalDistance
+            ) {
+              outOfRangeCount += 1;
+            }
+            return [memberId, moved];
+          }),
+        );
+        const nextObjectStates = Object.fromEntries(
+          Object.entries(sourceFrame.objectStates).map(([objectId, state]) => {
+            const moved =
+              options.moveObjects && moveMeters > 0
+                ? { ...state, y: roundMeters(state.y - moveMeters) }
+                : state;
+            if (
+              moved.x < 0 ||
+              moved.x > settings.width ||
+              moved.y < 0 ||
+              moved.y > settings.totalDistance
+            ) {
+              outOfRangeCount += 1;
+            }
+            return [objectId, moved];
+          }),
+        );
+        if (outOfRangeCount > 0) {
+          setNotice(
+            `${outOfRangeCount}件がパレード範囲外に移動しました。位置データは保持しています。`,
+          );
+        } else {
+          setNotice("前シーンの隊列を反映しました。");
+        }
+        return {
+          ...previous,
+          frames: previous.frames.map((frame) =>
+            frame.id === activeFrameId
+              ? {
+                  ...frame,
+                  positions: nextPositions,
+                  objectStates: nextObjectStates,
+                  memberVisibility: sourceFrame.memberVisibility
+                    ? { ...sourceFrame.memberVisibility }
+                    : undefined,
+                  objectAssignments: sourceFrame.objectAssignments
+                    ? Object.fromEntries(
+                        Object.entries(sourceFrame.objectAssignments).map(
+                          ([objectId, memberIds]) => [objectId, [...memberIds]],
+                        ),
+                      )
+                    : undefined,
+                  memberAppearanceOverrides: sourceFrame.memberAppearanceOverrides
+                    ? { ...sourceFrame.memberAppearanceOverrides }
+                    : undefined,
+                }
+              : frame,
+          ),
+        };
+      }, "パレード前シーン反映");
+    },
+    [selectedFrame, selectedPreviousFrame, setNotice, updateProject],
   );
 
   const requestPanelScroll = (type: "member" | "object", id: string) => {
@@ -6127,55 +6355,76 @@ function App() {
                   : "stage-fullscreen-host"
               }
             >
-              <StageCanvas
-                ref={stageExportRef}
-                project={projectForStage}
-                snapshot={snapshot}
-                selected={selected}
-                selectedFrameLabel={getFrameLabel(displayFrame)}
-                selectedFrameTime={getFrameTime(displayFrame)}
-                mode={mode}
-                isPlaying={isPlaying}
-                isFullscreen={isStageFullscreen}
-                currentTime={currentTime}
-                audioDuration={duration}
-                audioName={audioName}
-                selectedFrameId={displayFrame?.id ?? null}
-                viewerPerspective={viewerPerspective}
-                showMovementPaths={false}
-                showMeterRulers={showMeterRulers}
-                movementPathMode={movementPathMode}
-                selectedMemberIds={selectedMemberIds}
-                focusMemberId={project.focusMemberId}
-                focusMode={focusMode}
-                onSelect={selectStageElement}
-                onStagePointerPositionChange={handleStagePointerPositionChange}
-                onMoveMember={moveMember}
-                onUpdateObjectState={moveObject}
-                canUndo={historyCounts.undo > 0}
-                canRedo={historyCounts.redo > 0}
-                onUndo={undoProject}
-                onRedo={redoProject}
-                onBeginProjectEdit={beginProjectHistoryBatch}
-                onEndProjectEdit={endProjectHistoryBatch}
-                onTogglePlayback={togglePlayback}
-                onSaveFrame={saveCurrentFormation}
-                onTogglePerspective={() =>
-                  updateViewerPerspective(
-                    viewerPerspective === "audience" ? "performer" : "audience",
-                  )
-                }
-                onToggleFullscreen={() => {
-                  if (isStageFullscreen) {
-                    void exitStageFullscreen();
-                    return;
+              {project.mode === "parade" ? (
+                <ParadeCanvas
+                  ref={stageExportRef}
+                  project={projectForStage}
+                  snapshot={snapshot}
+                  selected={selected}
+                  selectedFrameId={displayFrame?.id ?? null}
+                  selectedFrameLabel={getFrameLabel(displayFrame)}
+                  selectedMemberIds={selectedMemberIds}
+                  focusMemberId={project.focusMemberId}
+                  focusMode={focusMode}
+                  onSelect={selectStageElement}
+                  onMoveMember={moveMember}
+                  onUpdateObjectState={moveObject}
+                  onBeginProjectEdit={beginProjectHistoryBatch}
+                  onEndProjectEdit={endProjectHistoryBatch}
+                  onFrameViewStateChange={updateFrameViewState}
+                  onReflectPreviousFrame={reflectPreviousParadeFrame}
+                />
+              ) : (
+                <StageCanvas
+                  ref={stageExportRef}
+                  project={projectForStage}
+                  snapshot={snapshot}
+                  selected={selected}
+                  selectedFrameLabel={getFrameLabel(displayFrame)}
+                  selectedFrameTime={getFrameTime(displayFrame)}
+                  mode={mode}
+                  isPlaying={isPlaying}
+                  isFullscreen={isStageFullscreen}
+                  currentTime={currentTime}
+                  audioDuration={duration}
+                  audioName={audioName}
+                  selectedFrameId={displayFrame?.id ?? null}
+                  viewerPerspective={viewerPerspective}
+                  showMovementPaths={false}
+                  showMeterRulers={showMeterRulers}
+                  movementPathMode={movementPathMode}
+                  selectedMemberIds={selectedMemberIds}
+                  focusMemberId={project.focusMemberId}
+                  focusMode={focusMode}
+                  onSelect={selectStageElement}
+                  onStagePointerPositionChange={handleStagePointerPositionChange}
+                  onMoveMember={moveMember}
+                  onUpdateObjectState={moveObject}
+                  canUndo={historyCounts.undo > 0}
+                  canRedo={historyCounts.redo > 0}
+                  onUndo={undoProject}
+                  onRedo={redoProject}
+                  onBeginProjectEdit={beginProjectHistoryBatch}
+                  onEndProjectEdit={endProjectHistoryBatch}
+                  onTogglePlayback={togglePlayback}
+                  onSaveFrame={saveCurrentFormation}
+                  onTogglePerspective={() =>
+                    updateViewerPerspective(
+                      viewerPerspective === "audience" ? "performer" : "audience",
+                    )
                   }
-                  void enterStageFullscreen();
-                }}
-                onCaptureStageImage={captureStageImage}
-                onSeekAudio={seek}
-                onContextMenuRequest={handleStageContextMenu}
-              />
+                  onToggleFullscreen={() => {
+                    if (isStageFullscreen) {
+                      void exitStageFullscreen();
+                      return;
+                    }
+                    void enterStageFullscreen();
+                  }}
+                  onCaptureStageImage={captureStageImage}
+                  onSeekAudio={seek}
+                  onContextMenuRequest={handleStageContextMenu}
+                />
+              )}
             </div>
           </div>
         </div>

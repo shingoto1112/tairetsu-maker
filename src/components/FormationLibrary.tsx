@@ -20,16 +20,24 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import type { HorizontalGuideMode, Project } from "../types";
+import type {
+  FormationMode,
+  HorizontalGuideMode,
+  ParadeRulerPosition,
+  ParadeSettings,
+  Project,
+} from "../types";
 
 export type NewFormationInput = {
   title: string;
+  formationMode: FormationMode;
   widthMeters: number;
   heightMeters: number;
   useGlobalStageSize: boolean;
   gridSizeMeters: number;
   horizontalGuideMode: HorizontalGuideMode;
   memberDiameterMeters: number;
+  paradeSettings?: ParadeSettings;
   audioFile: File | null;
 };
 
@@ -94,7 +102,9 @@ export const FormationLibrary = ({
   onDeleteProject,
 }: FormationLibraryProps) => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formationMode, setFormationMode] = useState<FormationMode>("stage");
   const [title, setTitle] = useState("");
   const [widthMeters, setWidthMeters] = useState(12);
   const [heightMeters, setHeightMeters] = useState(8);
@@ -103,6 +113,13 @@ export const FormationLibrary = ({
   const [horizontalGuideMode, setHorizontalGuideMode] =
     useState<HorizontalGuideMode>("meters");
   const [memberDiameterMeters, setMemberDiameterMeters] = useState(0.5);
+  const [paradeTotalDistance, setParadeTotalDistance] = useState(100);
+  const [paradeWidthMeters, setParadeWidthMeters] = useState(20);
+  const [paradeCellSizeMeters, setParadeCellSizeMeters] = useState(1);
+  const [paradeRulerPosition, setParadeRulerPosition] =
+    useState<ParadeRulerPosition>("both");
+  const [paradeEmphasizeEvery5m, setParadeEmphasizeEvery5m] = useState(true);
+  const [paradeEmphasizeEvery10m, setParadeEmphasizeEvery10m] = useState(true);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [libraryMenu, setLibraryMenu] = useState<LibraryMenu | null>(null);
@@ -154,6 +171,7 @@ export const FormationLibrary = ({
   }, [libraryMenu]);
 
   const resetDialog = () => {
+    setFormationMode("stage");
     setTitle("");
     setWidthMeters(12);
     setHeightMeters(8);
@@ -161,6 +179,12 @@ export const FormationLibrary = ({
     setGridSizeMeters(0.25);
     setHorizontalGuideMode("meters");
     setMemberDiameterMeters(0.5);
+    setParadeTotalDistance(100);
+    setParadeWidthMeters(20);
+    setParadeCellSizeMeters(1);
+    setParadeRulerPosition("both");
+    setParadeEmphasizeEvery5m(true);
+    setParadeEmphasizeEvery10m(true);
     setAudioFile(null);
     setError(null);
   };
@@ -170,8 +194,15 @@ export const FormationLibrary = ({
     resetDialog();
   };
 
-  const openCreateDialog = () => {
+  const openCreateTypeDialog = () => {
     setIsAddDialogOpen(false);
+    setIsTypeDialogOpen(true);
+  };
+
+  const openCreateDialog = (nextMode: FormationMode) => {
+    resetDialog();
+    setFormationMode(nextMode);
+    setIsTypeDialogOpen(false);
     setIsDialogOpen(true);
   };
 
@@ -209,22 +240,40 @@ export const FormationLibrary = ({
       return;
     }
     const validationError =
-      validatePositive(widthMeters, "ステージ横幅") ??
-      validatePositive(heightMeters, "ステージ縦幅") ??
-      validatePositive(gridSizeMeters, "グリッド間隔") ??
-      validatePositive(memberDiameterMeters, "メンバー円の直径");
+      formationMode === "parade"
+        ? validatePositive(paradeTotalDistance, "全体距離") ??
+          validatePositive(paradeWidthMeters, "横幅") ??
+          validatePositive(paradeCellSizeMeters, "1マスあたりの距離") ??
+          validatePositive(memberDiameterMeters, "メンバー円の直径")
+        : validatePositive(widthMeters, "ステージ横幅") ??
+          validatePositive(heightMeters, "ステージ縦幅") ??
+          validatePositive(gridSizeMeters, "グリッド間隔") ??
+          validatePositive(memberDiameterMeters, "メンバー円の直径");
     if (validationError) {
       setError(validationError);
       return;
     }
+    const isParade = formationMode === "parade";
     await onCreate({
       title: trimmedTitle,
-      widthMeters,
-      heightMeters,
-      useGlobalStageSize,
-      gridSizeMeters,
+      formationMode,
+      widthMeters: isParade ? paradeWidthMeters : widthMeters,
+      heightMeters: isParade ? paradeTotalDistance : heightMeters,
+      useGlobalStageSize: isParade ? true : useGlobalStageSize,
+      gridSizeMeters: isParade ? paradeCellSizeMeters : gridSizeMeters,
       horizontalGuideMode,
       memberDiameterMeters,
+      paradeSettings: isParade
+        ? {
+            totalDistance: paradeTotalDistance,
+            width: paradeWidthMeters,
+            cellSizeMeters: paradeCellSizeMeters,
+            direction: "up",
+            rulerPosition: paradeRulerPosition,
+            emphasizeEvery5m: paradeEmphasizeEvery5m,
+            emphasizeEvery10m: paradeEmphasizeEvery10m,
+          }
+        : undefined,
       audioFile,
     });
     closeDialog();
@@ -437,7 +486,7 @@ export const FormationLibrary = ({
               </button>
             </header>
             <div className="library-add-options">
-              <button type="button" onClick={openCreateDialog}>
+              <button type="button" onClick={openCreateTypeDialog}>
                 <Plus size={22} />
                 <span>
                   <strong>新しく作る</strong>
@@ -469,6 +518,66 @@ export const FormationLibrary = ({
         </div>
       )}
 
+      {isTypeDialogOpen && (
+        <div
+          className="new-formation-backdrop"
+          onPointerDown={() => setIsTypeDialogOpen(false)}
+        >
+          <div
+            className="new-formation-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="作成タイプを選択"
+          >
+            <header>
+              <h2>作成タイプを選択</h2>
+              <button
+                className="share-export-close"
+                onClick={() => setIsTypeDialogOpen(false)}
+                type="button"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="formation-type-grid">
+              <button
+                type="button"
+                className="formation-type-card"
+                onClick={() => openCreateDialog("stage")}
+              >
+                <strong>ステージ隊列</strong>
+                <span>
+                  固定されたステージ上で、シーンごとの隊形を作成します。
+                </span>
+                <small>ダンスステージ、体育館ステージ、発表会、ライブ向け</small>
+              </button>
+              <button
+                type="button"
+                className="formation-type-card"
+                onClick={() => openCreateDialog("parade")}
+              >
+                <strong>パレード隊列</strong>
+                <span>
+                  長い移動ルート上で、前進しながら変化する隊形を作成します。
+                </span>
+                <small>パレード、行進、縦長い演出向け</small>
+              </button>
+            </div>
+            <footer>
+              <button
+                className="mini-button"
+                onClick={() => setIsTypeDialogOpen(false)}
+                type="button"
+              >
+                キャンセル
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
       {isDialogOpen && (
         <div className="new-formation-backdrop" onPointerDown={closeDialog}>
           <form
@@ -480,7 +589,11 @@ export const FormationLibrary = ({
             aria-label="新しい隊列表を作成"
           >
             <header>
-              <h2>新しい隊列表を作成</h2>
+              <h2>
+                {formationMode === "parade"
+                  ? "新しいパレード隊列を作成"
+                  : "新しいステージ隊列を作成"}
+              </h2>
               <button
                 className="share-export-close"
                 onClick={closeDialog}
@@ -507,87 +620,186 @@ export const FormationLibrary = ({
               <small>{audioFile ? audioFile.name : "任意です。音源なしでも作成できます。"}</small>
             </label>
 
-            <section className="new-formation-size">
-              <h3>ステージ設定</h3>
-              <p className="notice muted">
-                現在: 横{widthMeters || 0}m / 縦{heightMeters || 0}m /{" "}
-                {useGlobalStageSize ? "全シーン固定ON" : "シーン別サイズ"}
-              </p>
-              <label>
-                全シーン固定
-                <select
-                  value={String(useGlobalStageSize)}
-                  onChange={(event) => setUseGlobalStageSize(event.target.value === "true")}
-                >
-                  <option value="true">ON</option>
-                  <option value="false">OFF</option>
-                </select>
-              </label>
-              <label>
-                横幅
-                <span className="meter-input">
+            {formationMode === "stage" ? (
+              <section className="new-formation-size">
+                <h3>ステージ設定</h3>
+                <p className="notice muted">
+                  現在: 横{widthMeters || 0}m / 縦{heightMeters || 0}m /{" "}
+                  {useGlobalStageSize ? "全シーン固定ON" : "シーン別サイズ"}
+                </p>
+                <label>
+                  全シーン固定
+                  <select
+                    value={String(useGlobalStageSize)}
+                    onChange={(event) => setUseGlobalStageSize(event.target.value === "true")}
+                  >
+                    <option value="true">ON</option>
+                    <option value="false">OFF</option>
+                  </select>
+                </label>
+                <label>
+                  横幅
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={widthMeters}
+                      onChange={(event) => setWidthMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <label>
+                  縦幅
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={heightMeters}
+                      onChange={(event) => setHeightMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <label>
+                  グリッド間隔
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="0.05"
+                      step="0.05"
+                      value={gridSizeMeters}
+                      onChange={(event) => setGridSizeMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <label>
+                  横方向の表示
+                  <select
+                    value={horizontalGuideMode}
+                    onChange={(event) =>
+                      setHorizontalGuideMode(event.target.value as HorizontalGuideMode)
+                    }
+                  >
+                    <option value="meters">通常メートル表示</option>
+                    <option value="centerSplit">センター割り表示</option>
+                  </select>
+                </label>
+                <label>
+                  メンバー円の直径
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.05"
+                      value={memberDiameterMeters}
+                      onChange={(event) => setMemberDiameterMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+              </section>
+            ) : (
+              <section className="new-formation-size">
+                <h3>パレード設定</h3>
+                <p className="notice muted">
+                  現在: 全体距離{paradeTotalDistance || 0}m / 横幅
+                  {paradeWidthMeters || 0}m / 1マス={paradeCellSizeMeters || 0}m
+                </p>
+                <label>
+                  全体距離
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={paradeTotalDistance}
+                      onChange={(event) => setParadeTotalDistance(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <label>
+                  横幅
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.5"
+                      value={paradeWidthMeters}
+                      onChange={(event) => setParadeWidthMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <label>
+                  1マスあたりの距離
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={paradeCellSizeMeters}
+                      onChange={(event) => setParadeCellSizeMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <label>
+                  進行方向
+                  <select value="up" disabled>
+                    <option value="up">上方向</option>
+                  </select>
+                </label>
+                <label>
+                  距離目盛り表示
+                  <select
+                    value={paradeRulerPosition}
+                    onChange={(event) =>
+                      setParadeRulerPosition(event.target.value as ParadeRulerPosition)
+                    }
+                  >
+                    <option value="both">左右に表示</option>
+                    <option value="left">左のみ表示</option>
+                    <option value="right">右のみ表示</option>
+                    <option value="none">非表示</option>
+                  </select>
+                </label>
+                <label className="checkbox-row">
                   <input
-                    type="number"
-                    min="0.1"
-                    step="0.1"
-                    value={widthMeters}
-                    onChange={(event) => setWidthMeters(Number(event.target.value))}
+                    type="checkbox"
+                    checked={paradeEmphasizeEvery5m}
+                    onChange={(event) => setParadeEmphasizeEvery5m(event.target.checked)}
                   />
-                  m
-                </span>
-              </label>
-              <label>
-                縦幅
-                <span className="meter-input">
+                  5mごとのライン強調
+                </label>
+                <label className="checkbox-row">
                   <input
-                    type="number"
-                    min="0.1"
-                    step="0.1"
-                    value={heightMeters}
-                    onChange={(event) => setHeightMeters(Number(event.target.value))}
+                    type="checkbox"
+                    checked={paradeEmphasizeEvery10m}
+                    onChange={(event) => setParadeEmphasizeEvery10m(event.target.checked)}
                   />
-                  m
-                </span>
-              </label>
-              <label>
-                グリッド間隔
-                <span className="meter-input">
-                  <input
-                    type="number"
-                    min="0.05"
-                    step="0.05"
-                    value={gridSizeMeters}
-                    onChange={(event) => setGridSizeMeters(Number(event.target.value))}
-                  />
-                  m
-                </span>
-              </label>
-              <label>
-                横方向の表示
-                <select
-                  value={horizontalGuideMode}
-                  onChange={(event) =>
-                    setHorizontalGuideMode(event.target.value as HorizontalGuideMode)
-                  }
-                >
-                  <option value="meters">通常メートル表示</option>
-                  <option value="centerSplit">センター割り表示</option>
-                </select>
-              </label>
-              <label>
-                メンバー円の直径
-                <span className="meter-input">
-                  <input
-                    type="number"
-                    min="0.1"
-                    step="0.05"
-                    value={memberDiameterMeters}
-                    onChange={(event) => setMemberDiameterMeters(Number(event.target.value))}
-                  />
-                  m
-                </span>
-              </label>
-            </section>
+                  10mごとのライン強調
+                </label>
+                <label>
+                  メンバー円の直径
+                  <span className="meter-input">
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.05"
+                      value={memberDiameterMeters}
+                      onChange={(event) => setMemberDiameterMeters(Number(event.target.value))}
+                    />
+                    m
+                  </span>
+                </label>
+                <small>作成後の初期表示はスタート地点です。</small>
+              </section>
+            )}
 
             {error && <p className="dialog-error">{error}</p>}
 

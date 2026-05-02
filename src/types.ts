@@ -72,6 +72,28 @@ export type AudioMeta = {
 
 export type HorizontalGuideMode = "meters" | "centerSplit";
 
+export type FormationMode = "stage" | "parade";
+
+export type ParadeDirection = "up";
+
+export type ParadeRulerPosition = "both" | "left" | "right" | "none";
+
+export type ParadeSettings = {
+  totalDistance: number;
+  width: number;
+  cellSizeMeters: number;
+  direction: ParadeDirection;
+  rulerPosition: ParadeRulerPosition;
+  emphasizeEvery5m: boolean;
+  emphasizeEvery10m: boolean;
+};
+
+export type SceneViewState = {
+  scrollTop: number;
+  scrollLeft: number;
+  zoom: number;
+};
+
 export type StageConfig = {
   widthMeters: number;
   depthMeters: number;
@@ -152,6 +174,7 @@ export type FormationFrame = {
   groupVisibility?: Record<string, boolean>;
   objectAssignments?: Record<string, string[]>;
   memberAppearanceOverrides?: Record<string, MemberAppearanceOverride>;
+  sceneViewState?: SceneViewState;
   positions: Record<string, Position>;
   objectStates: Record<string, ObjectState>;
 };
@@ -212,6 +235,8 @@ export type Project = {
   id?: string;
   version: number;
   title: string;
+  mode?: FormationMode;
+  paradeSettings?: ParadeSettings;
   createdAt?: string;
   lastOpenedAt?: string;
   audio?: AudioMeta | null;
