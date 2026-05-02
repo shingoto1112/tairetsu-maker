@@ -4306,17 +4306,6 @@ h2 {
 }
 
 @media (max-width: 1180px) {
-  .parade-canvas-shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .parade-control-panel {
-    border-bottom: 1px solid #dbe7ee;
-    border-right: 0;
-    max-height: 270px;
-  }
-
   .toolbar {
     grid-template-columns: 1fr;
   }
@@ -4355,6 +4344,19 @@ h2 {
   .stage-export-header__actions {
     justify-content: flex-start;
     margin-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .parade-canvas-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .parade-control-panel {
+    border-bottom: 1px solid #dbe7ee;
+    border-right: 0;
+    max-height: 270px;
   }
 }
 
