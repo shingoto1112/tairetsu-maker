@@ -27,7 +27,6 @@ import type {
 import { roundMeters } from "../utils/coordinates";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import {
-  formatCenterSplitLabel,
   formatSignedMeterLabel,
   normalizeParadeHorizontalMeasureMode,
 } from "../utils/parade";
@@ -80,6 +79,12 @@ type DragState =
       startState: ObjectState;
     };
 
+type CenterSplitLabel = {
+  key: string;
+  label: string;
+  positionMeters: number;
+};
+
 const BASE_PX_PER_METER = 32;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.5;
@@ -104,6 +109,34 @@ const snapMeters = (value: number, gridSize: number) => {
     return roundMeters(value);
   }
   return roundMeters(Math.round(value / gridSize) * gridSize);
+};
+
+const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
+  const safeWidth = Math.max(0, widthMeters);
+  const center = safeWidth / 2;
+  const leftCount = Math.floor(center + 0.001);
+  const rightCount = Math.floor(safeWidth - center + 0.001);
+  const labels: CenterSplitLabel[] = [];
+
+  for (let index = leftCount; index >= 1; index -= 1) {
+    labels.push({
+      key: `left-${index}`,
+      label: String(index),
+      positionMeters: center - index + 0.5,
+    });
+  }
+
+  for (let index = 1; index <= rightCount; index += 1) {
+    labels.push({
+      key: `right-${index}`,
+      label: String(index),
+      positionMeters: center + index - 0.5,
+    });
+  }
+
+  return labels.filter(
+    (item) => item.positionMeters >= 0 && item.positionMeters <= safeWidth,
+  );
 };
 
 const getObjectState = (
@@ -249,11 +282,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       return Array.from(new Set(ticks));
     }, [settings.cellSizeMeters, settings.width]);
 
+    const centerSplitLabels = useMemo(
+      () => createCenterSplitLabels(settings.width),
+      [settings.width],
+    );
+
     const formatHorizontalTick = (xMeters: number) => {
-      if (settings.horizontalMeasureMode === "normalMeter") {
-        return formatSignedMeterLabel(xMeters - settings.width / 2);
-      }
-      return formatCenterSplitLabel(xMeters, settings.width);
+      return formatSignedMeterLabel(xMeters - settings.width / 2);
     };
 
     const saveViewState = () => {
@@ -618,14 +653,23 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               className="parade-horizontal-ruler"
               style={{ width: canvasWidthPx, height: horizontalRulerHeight }}
             >
-              {horizontalTicks.map((meter) => (
-                <span
-                  key={`horizontal-${meter}`}
-                  style={{ left: meter * pxPerMeter }}
-                >
-                  {formatHorizontalTick(meter)}
-                </span>
-              ))}
+              {settings.horizontalMeasureMode === "centerSplit"
+                ? centerSplitLabels.map((item) => (
+                    <span
+                      key={`horizontal-center-${item.key}`}
+                      style={{ left: item.positionMeters * pxPerMeter }}
+                    >
+                      {item.label}
+                    </span>
+                  ))
+                : horizontalTicks.map((meter) => (
+                    <span
+                      key={`horizontal-${meter}`}
+                      style={{ left: meter * pxPerMeter }}
+                    >
+                      {formatHorizontalTick(meter)}
+                    </span>
+                  ))}
             </div>
             <div className="parade-ruler-spacer" />
             {leftRulerVisible && (
