@@ -7,6 +7,7 @@ import {
   ParadeSettings,
   StageConfig,
 } from "../types";
+import { normalizeParadeHorizontalMeasureMode } from "../utils/parade";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type StageSettingsPanelProps = {
@@ -34,7 +35,9 @@ export const StageSettingsPanel = ({
     cellSizeMeters: paradeSettings?.cellSizeMeters ?? stage.gridSizeMeters,
     direction: paradeSettings?.direction ?? "up",
     rulerPosition: paradeSettings?.rulerPosition ?? "both",
-    horizontalMeasureMode: paradeSettings?.horizontalMeasureMode ?? "center",
+    horizontalMeasureMode: normalizeParadeHorizontalMeasureMode(
+      paradeSettings?.horizontalMeasureMode,
+    ),
     emphasizeEvery5m: paradeSettings?.emphasizeEvery5m ?? true,
     emphasizeEvery10m: paradeSettings?.emphasizeEvery10m ?? true,
   };
@@ -92,7 +95,7 @@ export const StageSettingsPanel = ({
           <label>
             横方向表示方式
             <select
-              value={effectiveParadeSettings.horizontalMeasureMode ?? "center"}
+              value={effectiveParadeSettings.horizontalMeasureMode ?? "centerSplit"}
               onChange={(event) =>
                 onParadeSettingsChange?.({
                   horizontalMeasureMode: event.target
@@ -100,8 +103,8 @@ export const StageSettingsPanel = ({
                 })
               }
             >
-              <option value="center">センター割り方式</option>
-              <option value="normal">通常m表示</option>
+              <option value="centerSplit">センター割り方式</option>
+              <option value="normalMeter">通常m表示</option>
             </select>
           </label>
           <label>

@@ -26,10 +26,16 @@ import type {
 } from "../types";
 import { roundMeters } from "../utils/coordinates";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
+import {
+  formatCenterSplitLabel,
+  formatSignedMeterLabel,
+  normalizeParadeHorizontalMeasureMode,
+} from "../utils/parade";
 
 export type ParadeReflectOptions = {
   target: "all" | "group";
   groupId?: string;
+  direction?: "forward" | "backward" | "left" | "right";
   moveMeters: number;
   moveObjects: boolean;
 };
@@ -50,6 +56,10 @@ type ParadeCanvasProps = {
   onEndProjectEdit: () => void;
   onFrameViewStateChange: (frameId: string, viewState: SceneViewState) => void;
   onReflectPreviousFrame: (options: ParadeReflectOptions) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
 };
@@ -81,7 +91,7 @@ const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
   cellSizeMeters: 1,
   direction: "up",
   rulerPosition: "both",
-  horizontalMeasureMode: "center",
+  horizontalMeasureMode: "centerSplit",
   emphasizeEvery5m: true,
   emphasizeEvery10m: true,
 };
@@ -144,6 +154,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onEndProjectEdit,
       onFrameViewStateChange,
       onReflectPreviousFrame,
+      canUndo,
+      canRedo,
+      onUndo,
+      onRedo,
       isFullscreen,
       onToggleFullscreen,
     },
@@ -155,6 +169,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const settings = {
       ...DEFAULT_PARADE_SETTINGS,
       ...(project.paradeSettings ?? {}),
+      horizontalMeasureMode: normalizeParadeHorizontalMeasureMode(
+        project.paradeSettings?.horizontalMeasureMode,
+      ),
     };
     const [zoom, setZoom] = useState(currentFrame?.sceneViewState?.zoom ?? 1);
     const [dragState, setDragState] = useState<DragState | null>(null);
@@ -162,6 +179,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const [reflectGroupId, setReflectGroupId] = useState(
       project.memberGroups?.[0]?.id ?? "",
     );
+    const [reflectDirection, setReflectDirection] = useState<
+      "forward" | "backward" | "left" | "right"
+    >("forward");
     const [reflectMoveMeters, setReflectMoveMeters] = useState(5);
     const [reflectMoveObjects, setReflectMoveObjects] = useState(true);
     const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -230,14 +250,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     }, [settings.cellSizeMeters, settings.width]);
 
     const formatHorizontalTick = (xMeters: number) => {
-      if ((settings.horizontalMeasureMode ?? "center") === "normal") {
-        return `${xMeters}m`;
+      if (settings.horizontalMeasureMode === "normalMeter") {
+        return formatSignedMeterLabel(xMeters - settings.width / 2);
       }
-      const centered = roundMeters(xMeters - settings.width / 2);
-      if (Math.abs(centered) < 0.001) {
-        return "0";
-      }
-      return centered > 0 ? `+${centered}` : `${centered}`;
+      return formatCenterSplitLabel(xMeters, settings.width);
     };
 
     const saveViewState = () => {
@@ -438,15 +454,20 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
 
     return (
       <div className="parade-canvas-shell">
-        <div className="parade-toolbar parade-control-panel">
-          <div className="parade-toolbar__main">
-            <strong>{selectedFrameLabel}</strong>
+        <aside className="parade-control-panel" aria-label="パレード操作">
+          <div className="parade-control-panel__header">
+            <strong>パレード操作</strong>
+            <span>{selectedFrameLabel}</span>
+          </div>
+          <section className="parade-control-section">
+            <h3>前シーン反映</h3>
             <button
               className="mini-button"
               type="button"
               onClick={() =>
                 onReflectPreviousFrame({
                   target: "all",
+                  direction: "forward",
                   moveMeters: 0,
                   moveObjects: reflectMoveObjects,
                 })
@@ -480,7 +501,23 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               </label>
             )}
             <label>
-              前へ
+              方向
+              <select
+                value={reflectDirection}
+                onChange={(event) =>
+                  setReflectDirection(
+                    event.target.value as "forward" | "backward" | "left" | "right",
+                  )
+                }
+              >
+                <option value="forward">前へ</option>
+                <option value="backward">後ろへ</option>
+                <option value="left">左へ</option>
+                <option value="right">右へ</option>
+              </select>
+            </label>
+            <label>
+              移動量
               <span className="meter-input compact">
                 <input
                   type="number"
@@ -507,6 +544,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 onReflectPreviousFrame({
                   target: reflectTarget,
                   groupId: reflectTarget === "group" ? reflectGroupId : undefined,
+                  direction: reflectDirection,
                   moveMeters: reflectMoveMeters,
                   moveObjects: reflectMoveObjects,
                 })
@@ -514,39 +552,57 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             >
               反映して移動
             </button>
-          </div>
-          <div className="parade-toolbar__zoom">
-            <button type="button" className="icon-button" title="スタートへ" onClick={jumpToStart}>
-              <ArrowDownToLine size={16} />
-            </button>
-            <button type="button" className="icon-button" title="ゴールへ" onClick={jumpToGoal}>
-              <ArrowUpToLine size={16} />
-            </button>
-            <button type="button" className="icon-button" title="縮小" onClick={() => updateZoom(zoom - 0.1)}>
-              <ZoomOut size={16} />
-            </button>
-            <button type="button" className="mini-button" onClick={() => updateZoom(1)}>
-              100%
-            </button>
-            <button type="button" className="icon-button" title="拡大" onClick={() => updateZoom(zoom + 0.1)}>
-              <ZoomIn size={16} />
-            </button>
-            <button type="button" className="icon-button" title="全体表示" onClick={fitAll}>
-              <Maximize2 size={16} />
-            </button>
+          </section>
+          <section className="parade-control-section">
+            <h3>表示</h3>
+            <div className="parade-control-row">
+              <button type="button" className="icon-button" title="スタートへ" onClick={jumpToStart}>
+                <ArrowDownToLine size={16} />
+              </button>
+              <button type="button" className="icon-button" title="ゴールへ" onClick={jumpToGoal}>
+                <ArrowUpToLine size={16} />
+              </button>
+              <button type="button" className="icon-button" title="縮小" onClick={() => updateZoom(zoom - 0.1)}>
+                <ZoomOut size={16} />
+              </button>
+              <button type="button" className="mini-button" onClick={() => updateZoom(1)}>
+                100%
+              </button>
+              <button type="button" className="icon-button" title="拡大" onClick={() => updateZoom(zoom + 0.1)}>
+                <ZoomIn size={16} />
+              </button>
+            </div>
+            <div className="parade-control-row">
+              <button type="button" className="mini-button" title="全体表示" onClick={fitAll}>
+                全体表示
+              </button>
+              <button type="button" className="mini-button" title="表示を戻す" onClick={jumpToStart}>
+                <RotateCcw size={14} />
+                戻す
+              </button>
+            </div>
             <button
               type="button"
-              className="icon-button"
+              className="mini-button"
               title={isFullscreen ? "フルスクリーンを終了" : "フルスクリーン"}
               onClick={onToggleFullscreen}
             >
               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {isFullscreen ? "解除" : "全画面"}
             </button>
-            <button type="button" className="icon-button" title="表示を戻す" onClick={jumpToStart}>
-              <RotateCcw size={16} />
-            </button>
-          </div>
-        </div>
+          </section>
+          <section className="parade-control-section">
+            <h3>編集</h3>
+            <div className="parade-control-row">
+              <button type="button" className="mini-button" onClick={onUndo} disabled={!canUndo}>
+                元に戻す
+              </button>
+              <button type="button" className="mini-button" onClick={onRedo} disabled={!canRedo}>
+                やり直し
+              </button>
+            </div>
+          </section>
+        </aside>
 
         <div className="parade-viewport" ref={scrollRef} onScroll={scheduleSaveViewState}>
           <div

@@ -62,10 +62,11 @@
   background: #f8fafc;
   border: 1px solid #dbe7ee;
   border-radius: 14px;
-  display: flex;
-  flex-direction: column;
-  height: min(78vh, 840px);
-  min-height: 520px;
+  display: grid;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: min(82vh, 900px);
+  min-height: 560px;
   overflow: hidden;
 }
 
@@ -80,8 +81,67 @@
 }
 
 .parade-control-panel {
-  align-items: flex-start;
-  gap: 10px;
+  align-content: start;
+  background: #ffffff;
+  border-right: 1px solid #dbe7ee;
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.parade-control-panel__header {
+  display: grid;
+  gap: 2px;
+}
+
+.parade-control-panel__header strong {
+  color: #0f766e;
+  font-size: 0.92rem;
+}
+
+.parade-control-panel__header span {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.parade-control-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.parade-control-section h3 {
+  color: #0f172a;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.parade-control-section label {
+  color: #475569;
+  display: grid;
+  font-size: 0.76rem;
+  gap: 4px;
+}
+
+.parade-control-section select,
+.parade-control-section input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #0f172a;
+  font: inherit;
+  min-height: 32px;
+  padding: 4px 8px;
+  width: 100%;
+}
+
+.parade-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .parade-toolbar__main,
@@ -112,7 +172,8 @@
 }
 
 .parade-viewport {
-  flex: 1;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
   padding: 10px 14px 14px;
 }
@@ -3376,6 +3437,15 @@ h2 {
   font-size: 12px;
 }
 
+.detail-side-label {
+  color: var(--accent);
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .detail-color-input {
   cursor: pointer;
   padding: 3px !important;
@@ -4236,6 +4306,17 @@ h2 {
 }
 
 @media (max-width: 1180px) {
+  .parade-canvas-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .parade-control-panel {
+    border-bottom: 1px solid #dbe7ee;
+    border-right: 0;
+    max-height: 270px;
+  }
+
   .toolbar {
     grid-template-columns: 1fr;
   }

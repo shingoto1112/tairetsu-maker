@@ -13,6 +13,10 @@ import {
 } from "../types";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
+import {
+  getCenterSplitSideLabel,
+  normalizeParadeHorizontalMeasureMode,
+} from "../utils/parade";
 
 type DetailsPanelProps = {
   selected: Selection;
@@ -82,6 +86,20 @@ const toDisplayX = (internalX: number | undefined, stageWidth: number) =>
 
 const fromDisplayX = (displayX: number, stageWidth: number) =>
   displayX + stageWidth / 2;
+
+const fromCenterSplitDistance = (
+  distance: number,
+  currentInternalX: number | undefined,
+  stageWidth: number,
+) => {
+  const center = stageWidth / 2;
+  const currentOffset =
+    currentInternalX === undefined ? 0 : currentInternalX - center;
+  if (Math.abs(currentOffset) < 0.001) {
+    return center + distance;
+  }
+  return currentOffset < 0 ? center - distance : center + distance;
+};
 
 const getAssignedObjectNames = (
   memberId: string,
@@ -162,22 +180,34 @@ export const DetailsPanel = ({
       ? paradeSettings?.totalDistance ?? stage.depthMeters
       : stage.depthMeters,
   );
-  const useParadeNormalX =
+  const paradeHorizontalMeasureMode = normalizeParadeHorizontalMeasureMode(
+    paradeSettings?.horizontalMeasureMode,
+  );
+  const useParadeCenterSplitX =
     projectMode === "parade" &&
-    (paradeSettings?.horizontalMeasureMode ?? "center") === "normal";
+    paradeHorizontalMeasureMode === "centerSplit";
   const xLabel =
     projectMode === "parade"
-      ? useParadeNormalX
-        ? "x（左端基準）"
-        : "x（センター基準）"
+      ? useParadeCenterSplitX
+        ? "横位置（センター割り）"
+        : "x（中心基準）"
       : "x（中心基準）";
   const yLabel = projectMode === "parade" ? "m位置" : "y（上端基準）";
   const displayXValue = (internalX: number | undefined) =>
-    useParadeNormalX ? internalX : toDisplayX(internalX, stageWidthMeters);
-  const internalXValue = (displayX: number) =>
-    useParadeNormalX ? displayX : fromDisplayX(displayX, stageWidthMeters);
-  const minDisplayX = useParadeNormalX ? 0 : -stageWidthMeters / 2;
-  const maxDisplayX = useParadeNormalX ? stageWidthMeters : stageWidthMeters / 2;
+    useParadeCenterSplitX
+      ? internalX === undefined
+        ? undefined
+        : Math.abs(toDisplayX(internalX, stageWidthMeters) ?? 0)
+      : toDisplayX(internalX, stageWidthMeters);
+  const internalXValue = (
+    displayX: number,
+    currentInternalX: number | undefined,
+  ) =>
+    useParadeCenterSplitX
+      ? fromCenterSplitDistance(displayX, currentInternalX, stageWidthMeters)
+      : fromDisplayX(displayX, stageWidthMeters);
+  const minDisplayX = useParadeCenterSplitX ? 0 : -stageWidthMeters / 2;
+  const maxDisplayX = stageWidthMeters / 2;
 
   const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
     if (!selectedMember || !memberPosition) {
@@ -188,7 +218,7 @@ export const DetailsPanel = ({
       return;
     }
     const nextInternalX =
-      axis === "x" ? internalXValue(value) : memberPosition.x;
+      axis === "x" ? internalXValue(value, memberPosition.x) : memberPosition.x;
     const nextInternalY = axis === "y" ? value : memberPosition.y;
     onMoveMember(selectedMember.id, {
       x: roundDetailMeters(clamp(nextInternalX, 0, stageWidthMeters)),
@@ -216,7 +246,7 @@ export const DetailsPanel = ({
       [axis]:
         axis === "x"
           ? roundDetailMeters(
-              clamp(internalXValue(value), 0, maxObjectX),
+              clamp(internalXValue(value, objectState.x), 0, maxObjectX),
             )
           : roundDetailMeters(clamp(value, 0, maxObjectY)),
     });
@@ -362,6 +392,11 @@ export const DetailsPanel = ({
                     }
                   />
                   <b>m</b>
+                  {useParadeCenterSplitX && (
+                    <em className="detail-side-label">
+                      {getCenterSplitSideLabel(memberPosition?.x, stageWidthMeters)}
+                    </em>
+                  )}
                 </span>
               </label>
               <label className="detail-edit-field">
@@ -462,6 +497,11 @@ export const DetailsPanel = ({
                     }
                   />
                   <b>m</b>
+                  {useParadeCenterSplitX && (
+                    <em className="detail-side-label">
+                      {getCenterSplitSideLabel(objectState?.x, stageWidthMeters)}
+                    </em>
+                  )}
                 </span>
               </label>
               <label className="detail-edit-field">
@@ -539,8 +579,10 @@ export const DetailsPanel = ({
           <span>詳細タブ</span>
         </div>
         <p className="muted-text">
-          {projectMode === "parade" && useParadeNormalX
-            ? "xは左端を0mとして、右方向へ増えます。m位置はスタート地点からの距離です。"
+          {projectMode === "parade"
+            ? useParadeCenterSplitX
+              ? "横位置はセンターから左右それぞれの距離で表示します。m位置はスタート地点からの距離です。"
+              : "xはセンターラインを0mとして、右がプラス、左がマイナスです。m位置はスタート地点からの距離です。"
             : "xはステージ上端のセンターラインを0mとして、右がプラス、左がマイナスです。yはステージ上端を0mとして、下方向がプラスです。"}
         </p>
       </section>

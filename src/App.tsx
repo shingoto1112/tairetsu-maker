@@ -98,6 +98,7 @@ import {
   sortFrames,
 } from "./utils/interpolation";
 import { getMemberDisplayColor } from "./utils/memberAppearance";
+import { normalizeParadeHorizontalMeasureMode } from "./utils/parade";
 import { readProjectFromHash } from "./utils/share";
 import {
   loadProjectFromStorage,
@@ -513,8 +514,9 @@ const createDefaultParadeSettings = (
     settings.rulerPosition === "none"
       ? settings.rulerPosition
       : "both",
-  horizontalMeasureMode:
-    settings.horizontalMeasureMode === "normal" ? "normal" : "center",
+  horizontalMeasureMode: normalizeParadeHorizontalMeasureMode(
+    (settings as { horizontalMeasureMode?: unknown }).horizontalMeasureMode,
+  ),
   emphasizeEvery5m: settings.emphasizeEvery5m ?? true,
   emphasizeEvery10m: settings.emphasizeEvery10m ?? true,
 });
@@ -1918,6 +1920,23 @@ function App() {
               )
             : null;
         const moveMeters = Math.max(0, options.moveMeters || 0);
+        const moveDirection = options.direction ?? "forward";
+        const movePosition = (position: Position): Position => {
+          if (moveMeters <= 0) {
+            return position;
+          }
+          switch (moveDirection) {
+            case "backward":
+              return { ...position, y: roundMeters(position.y + moveMeters) };
+            case "left":
+              return { ...position, x: roundMeters(position.x - moveMeters) };
+            case "right":
+              return { ...position, x: roundMeters(position.x + moveMeters) };
+            case "forward":
+            default:
+              return { ...position, y: roundMeters(position.y - moveMeters) };
+          }
+        };
         let outOfRangeCount = 0;
         const shouldMoveMember = (memberId: string) =>
           options.target === "all" || Boolean(groupMemberIds?.has(memberId));
@@ -1925,7 +1944,7 @@ function App() {
           Object.entries(sourceFrame.positions).map(([memberId, position]) => {
             const moved =
               shouldMoveMember(memberId) && moveMeters > 0
-                ? { ...position, y: roundMeters(position.y - moveMeters) }
+                ? movePosition(position)
                 : position;
             if (
               moved.x < 0 ||
@@ -1942,7 +1961,7 @@ function App() {
           Object.entries(sourceFrame.objectStates).map(([objectId, state]) => {
             const moved =
               options.moveObjects && moveMeters > 0
-                ? { ...state, y: roundMeters(state.y - moveMeters) }
+                ? { ...state, ...movePosition({ x: state.x, y: state.y }) }
                 : state;
             if (
               moved.x < 0 ||
@@ -6396,6 +6415,10 @@ function App() {
                   onSelect={selectStageElement}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
+                  canUndo={historyCounts.undo > 0}
+                  canRedo={historyCounts.redo > 0}
+                  onUndo={undoProject}
+                  onRedo={redoProject}
                   onBeginProjectEdit={beginProjectHistoryBatch}
                   onEndProjectEdit={endProjectHistoryBatch}
                   onFrameViewStateChange={updateFrameViewState}

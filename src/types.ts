@@ -78,7 +78,7 @@ export type ParadeDirection = "up";
 
 export type ParadeRulerPosition = "both" | "left" | "right" | "none";
 
-export type ParadeHorizontalMeasureMode = "center" | "normal";
+export type ParadeHorizontalMeasureMode = "centerSplit" | "normalMeter";
 
 export type ParadeSettings = {
   totalDistance: number;

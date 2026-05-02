@@ -120,7 +120,7 @@ export const FormationLibrary = ({
   const [paradeRulerPosition, setParadeRulerPosition] =
     useState<ParadeRulerPosition>("both");
   const [paradeHorizontalMeasureMode, setParadeHorizontalMeasureMode] =
-    useState<ParadeHorizontalMeasureMode>("center");
+    useState<ParadeHorizontalMeasureMode>("centerSplit");
   const [paradeEmphasizeEvery5m, setParadeEmphasizeEvery5m] = useState(true);
   const [paradeEmphasizeEvery10m, setParadeEmphasizeEvery10m] = useState(true);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -186,7 +186,7 @@ export const FormationLibrary = ({
     setParadeWidthMeters(20);
     setParadeCellSizeMeters(1);
     setParadeRulerPosition("both");
-    setParadeHorizontalMeasureMode("center");
+    setParadeHorizontalMeasureMode("centerSplit");
     setParadeEmphasizeEvery5m(true);
     setParadeEmphasizeEvery10m(true);
     setAudioFile(null);
@@ -763,8 +763,8 @@ export const FormationLibrary = ({
                       )
                     }
                   >
-                    <option value="center">センター割り方式</option>
-                    <option value="normal">通常m表示</option>
+                    <option value="centerSplit">センター割り方式</option>
+                    <option value="normalMeter">通常m表示</option>
                   </select>
                 </label>
                 <label>
