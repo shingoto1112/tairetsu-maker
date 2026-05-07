@@ -74,7 +74,6 @@ import {
   elementToJpegDataUrl,
   elementToPngBlob,
   exportElementAsPng,
-  visibleElementToPngBlob,
 } from "./utils/exportImage";
 import { saveGeneratedBlob, UserFileSaveStatus } from "./utils/fileSave";
 import { jpegDataUrlsToPdfBlob } from "./utils/pdfExport";
@@ -4908,16 +4907,10 @@ function App() {
   };
 
   const generateStageScreenshotBlob = async (): Promise<Blob> => {
-    const visibleStageElement = stageExportRef.current;
     const captureOptions = {
       backgroundColor: "#ffffff",
       pixelRatio: Math.max(2, window.devicePixelRatio || 1),
     };
-
-    if (visibleStageElement) {
-      await waitForPaint();
-      return await visibleElementToPngBlob(visibleStageElement, captureOptions);
-    }
 
     const element = await preparePrintExportElement(
       "current",

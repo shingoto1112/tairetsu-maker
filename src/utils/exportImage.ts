@@ -32,12 +32,12 @@ const withExportClone = async <T>(
   host.setAttribute("aria-hidden", "true");
   Object.assign(host.style, {
     background: "#ffffff",
-    left: "0",
+    left: "-100000px",
     pointerEvents: "none",
     position: "fixed",
     top: "0",
     width: `${size.width}px`,
-    zIndex: "-1",
+    zIndex: "0",
   });
 
   const clone = element.cloneNode(true) as HTMLElement;
@@ -120,8 +120,11 @@ export const downloadBlob = (blob: Blob, filename: string): void => {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 export const exportElementAsPng = async (
