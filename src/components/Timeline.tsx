@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { FormationFrame } from "../types";
 import { formatTime } from "../utils/time";
+import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type TimelineProps = {
@@ -128,14 +129,13 @@ export const Timeline = ({
         </label>
         <label>
           時刻（秒）
-          <input
-            type="number"
-            min="0"
+          <NumericInput
+            min={0}
             step="0.1"
             value={frame.timeSec}
-            onChange={(event) =>
+            onValueChange={(timeSec) =>
               onUpdateFrame(frame.id, {
-                timeSec: Math.max(0, Number(event.target.value)),
+                timeSec,
               })
             }
           />
@@ -151,28 +151,26 @@ export const Timeline = ({
           <div className="settings-grid">
             <label>
               このシーンの横
-              <input
-                type="number"
-                min="1"
+              <NumericInput
+                min={1}
                 step="0.5"
                 value={frame.stageWidthMeters ?? defaultStageWidth}
-                onChange={(event) =>
+                onValueChange={(stageWidthMeters) =>
                   onUpdateFrame(frame.id, {
-                    stageWidthMeters: Math.max(1, Number(event.target.value)),
+                    stageWidthMeters,
                   })
                 }
               />
             </label>
             <label>
               このシーンの縦
-              <input
-                type="number"
-                min="1"
+              <NumericInput
+                min={1}
                 step="0.5"
                 value={frame.stageDepthMeters ?? defaultStageDepth}
-                onChange={(event) =>
+                onValueChange={(stageDepthMeters) =>
                   onUpdateFrame(frame.id, {
-                    stageDepthMeters: Math.max(1, Number(event.target.value)),
+                    stageDepthMeters,
                   })
                 }
               />

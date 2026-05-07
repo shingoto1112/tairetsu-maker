@@ -1,5 +1,6 @@
 import { FlipHorizontal2, Shapes, Users } from "lucide-react";
 import { AlignmentAction, FormationTemplate, Member } from "../types";
+import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type GroupToolsPanelProps = {
@@ -50,14 +51,11 @@ export const GroupToolsPanel = ({
       <div className="settings-grid group-spacing">
         <label>
           隊列間隔 m
-          <input
-            type="number"
-            min="0.2"
+          <NumericInput
+            min={0.2}
             step="0.1"
             value={spacingMeters}
-            onChange={(event) =>
-              onSpacingChange(Math.max(0.2, Number(event.target.value)))
-            }
+            onValueChange={onSpacingChange}
           />
         </label>
       </div>

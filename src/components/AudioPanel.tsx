@@ -1,6 +1,7 @@
 import { Music, Pause, Play } from "lucide-react";
 import { ChangeEvent } from "react";
 import { formatTime } from "../utils/time";
+import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type AudioPanelProps = {
@@ -108,26 +109,20 @@ export const AudioPanel = ({
         </label>
         <label>
           開始秒
-          <input
-            type="number"
-            min="0"
+          <NumericInput
+            min={0}
             step="0.1"
             value={loopStart}
-            onChange={(event) =>
-              onLoopChange({ loopStart: Math.max(0, Number(event.target.value)) })
-            }
+            onValueChange={(loopStart) => onLoopChange({ loopStart })}
           />
         </label>
         <label>
           終了秒
-          <input
-            type="number"
-            min="0"
+          <NumericInput
+            min={0}
             step="0.1"
             value={loopEnd}
-            onChange={(event) =>
-              onLoopChange({ loopEnd: Math.max(0, Number(event.target.value)) })
-            }
+            onValueChange={(loopEnd) => onLoopChange({ loopEnd })}
           />
         </label>
       </div>

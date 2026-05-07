@@ -28,6 +28,7 @@ import type {
   ParadeSettings,
   Project,
 } from "../types";
+import { NumericInput } from "./NumericInput";
 
 export type NewFormationInput = {
   title: string;
@@ -645,12 +646,11 @@ export const FormationLibrary = ({
                 <label>
                   横幅
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="0.1"
+                    <NumericInput
+                      min={0.1}
                       step="0.1"
                       value={widthMeters}
-                      onChange={(event) => setWidthMeters(Number(event.target.value))}
+                      onValueChange={setWidthMeters}
                     />
                     m
                   </span>
@@ -658,12 +658,11 @@ export const FormationLibrary = ({
                 <label>
                   縦幅
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="0.1"
+                    <NumericInput
+                      min={0.1}
                       step="0.1"
                       value={heightMeters}
-                      onChange={(event) => setHeightMeters(Number(event.target.value))}
+                      onValueChange={setHeightMeters}
                     />
                     m
                   </span>
@@ -671,12 +670,11 @@ export const FormationLibrary = ({
                 <label>
                   グリッド間隔
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="0.05"
+                    <NumericInput
+                      min={0.05}
                       step="0.05"
                       value={gridSizeMeters}
-                      onChange={(event) => setGridSizeMeters(Number(event.target.value))}
+                      onValueChange={setGridSizeMeters}
                     />
                     m
                   </span>
@@ -696,12 +694,11 @@ export const FormationLibrary = ({
                 <label>
                   メンバー円の直径
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="0.1"
+                    <NumericInput
+                      min={0.1}
                       step="0.05"
                       value={memberDiameterMeters}
-                      onChange={(event) => setMemberDiameterMeters(Number(event.target.value))}
+                      onValueChange={setMemberDiameterMeters}
                     />
                     m
                   </span>
@@ -717,12 +714,11 @@ export const FormationLibrary = ({
                 <label>
                   全体距離
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="1"
+                    <NumericInput
+                      min={1}
                       step="1"
                       value={paradeTotalDistance}
-                      onChange={(event) => setParadeTotalDistance(Number(event.target.value))}
+                      onValueChange={setParadeTotalDistance}
                     />
                     m
                   </span>
@@ -730,12 +726,11 @@ export const FormationLibrary = ({
                 <label>
                   横幅
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="1"
+                    <NumericInput
+                      min={1}
                       step="0.5"
                       value={paradeWidthMeters}
-                      onChange={(event) => setParadeWidthMeters(Number(event.target.value))}
+                      onValueChange={setParadeWidthMeters}
                     />
                     m
                   </span>
@@ -743,12 +738,11 @@ export const FormationLibrary = ({
                 <label>
                   1マスあたりの距離
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="0.1"
+                    <NumericInput
+                      min={0.1}
                       step="0.1"
                       value={paradeCellSizeMeters}
-                      onChange={(event) => setParadeCellSizeMeters(Number(event.target.value))}
+                      onValueChange={setParadeCellSizeMeters}
                     />
                     m
                   </span>
@@ -806,12 +800,11 @@ export const FormationLibrary = ({
                 <label>
                   メンバー円の直径
                   <span className="meter-input">
-                    <input
-                      type="number"
-                      min="0.1"
+                    <NumericInput
+                      min={0.1}
                       step="0.05"
                       value={memberDiameterMeters}
-                      onChange={(event) => setMemberDiameterMeters(Number(event.target.value))}
+                      onValueChange={setMemberDiameterMeters}
                     />
                     m
                   </span>

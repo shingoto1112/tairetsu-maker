@@ -176,6 +176,12 @@
   min-height: 0;
   overflow: auto;
   padding: 10px 14px 14px;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+
+.parade-viewport.is-parade-pinching {
+  cursor: zoom-in;
 }
 
 .parade-stage-wrap {
@@ -321,24 +327,29 @@
   align-items: center;
   display: flex;
   flex-direction: column;
-  inset: 0;
+  inset: auto 6% auto 6%;
   justify-content: center;
   line-height: 1.05;
-  max-width: 92%;
+  min-height: 42%;
   overflow: hidden;
   position: absolute;
   text-align: center;
+  top: 30%;
+  transform: translateY(-50%);
   user-select: none;
   white-space: normal;
   writing-mode: horizontal-tb;
+  z-index: 2;
 }
 
 .parade-member__label-line {
   display: block;
   max-width: 100%;
   overflow: hidden;
+  overflow-wrap: normal;
   text-overflow: clip;
   white-space: nowrap;
+  word-break: keep-all;
   writing-mode: horizontal-tb;
 }
 
@@ -2675,6 +2686,8 @@ h2 {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
   width: 100%;
 }
 
@@ -2684,6 +2697,10 @@ h2 {
   overflow: auto;
   padding: 8px;
   overscroll-behavior: contain;
+}
+
+.stage-fit-area.is-stage-pinching {
+  cursor: zoom-in;
 }
 
 .stage-canvas-with-rulers {
@@ -3065,25 +3082,30 @@ h2 {
   flex-direction: column;
   font-weight: 800;
   gap: 0;
-  inset: 9%;
+  inset: auto 6% auto 6%;
   justify-content: center;
   line-height: 1.02;
+  min-height: 42%;
   overflow: hidden;
   pointer-events: none;
   position: absolute;
   text-align: center;
   text-overflow: clip;
+  top: 30%;
+  transform: translateY(-50%);
   user-select: none;
   white-space: normal;
+  z-index: 2;
 }
 
 .member-token__label-line {
   display: block;
   max-width: 100%;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   text-overflow: clip;
-  word-break: break-word;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .member-token.is-selected {
@@ -4347,23 +4369,31 @@ h2 {
 }
 
 .print-member {
-  align-items: center;
   border-radius: 999px;
-  color: #ffffff;
   display: inline-flex;
   font-size: 7pt;
   font-weight: 800;
   height: var(--print-member-size, 7mm);
-  justify-content: center;
   line-height: 1;
-  max-width: var(--print-member-size, 7mm);
   overflow: hidden;
-  padding: 0 1mm;
+  padding: 0;
   position: absolute;
   text-align: center;
   transform: translate(-50%, -50%);
   width: var(--print-member-size, 7mm);
-  word-break: break-word;
+}
+
+.print-member__label {
+  left: 7%;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: 7%;
+  text-align: center;
+  text-overflow: clip;
+  top: 30%;
+  transform: translateY(-50%);
+  white-space: nowrap;
 }
 
 .print-object {
@@ -4400,6 +4430,16 @@ h2 {
     size: A4 portrait;
   }
 
+  @page tairetsu-landscape {
+    margin: 10mm;
+    size: A4 landscape;
+  }
+
+  @page tairetsu-portrait {
+    margin: 10mm;
+    size: A4 portrait;
+  }
+
   .app-shell {
     display: none !important;
   }
@@ -4417,6 +4457,14 @@ h2 {
   .print-page {
     break-after: page;
     page-break-after: always;
+  }
+
+  .print-document--landscape .print-page {
+    page: tairetsu-landscape;
+  }
+
+  .print-document--portrait .print-page {
+    page: tairetsu-portrait;
   }
 
   .print-page:last-child {

@@ -7,7 +7,8 @@ import {
   StageObject,
 } from "../types";
 import { createDefaultObjectState, sortFrames } from "../utils/interpolation";
-import { getMemberDisplayColor } from "../utils/memberAppearance";
+import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
+import { normalizeParadeHorizontalMeasureMode } from "../utils/parade";
 import type { ShareExportOptions } from "./ShareExportModal";
 
 type PrintPreviewProps = {
@@ -24,11 +25,20 @@ type EffectiveStageSize = {
   depthMeters: number;
 };
 
+type SceneVerticalRange = {
+  bottomMeters: number;
+  depthMeters: number;
+  topMeters: number;
+};
+
+export type PrintOrientation = "landscape" | "portrait";
+
 type PrintMetrics = {
   commonWidthMeters: number;
   gapRows: number;
   gridSizeMeters: number;
   mmPerMeter: number;
+  orientation: PrintOrientation;
   pageUsableHeightMm: number;
   stageWidthMm: number;
 };
@@ -39,8 +49,8 @@ type CenterSplitLabel = {
   positionMeters: number;
 };
 
-const PRINT_PAGE_USABLE_WIDTH_MM = 190;
-const PRINT_PAGE_USABLE_HEIGHT_MM = 277;
+const PRINT_A4_SHORT_USABLE_MM = 190;
+const PRINT_A4_LONG_USABLE_MM = 277;
 const PRINT_RULER_LEFT_MM = 10;
 const PRINT_RULER_TOP_MM = 6;
 const PRINT_RULER_BOTTOM_MM = 3;
@@ -65,6 +75,16 @@ const getEffectiveSize = (
   project: Project,
   frame: FormationFrame,
 ): EffectiveStageSize => {
+  if (project.mode === "parade") {
+    return {
+      widthMeters: Math.max(project.paradeSettings?.width ?? project.stage.widthMeters, 1),
+      depthMeters: Math.max(
+        project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
+        1,
+      ),
+    };
+  }
+
   const useGlobal =
     project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true;
   return {
@@ -152,7 +172,7 @@ const metersToPrintMm = (meters: number, metrics: PrintMetrics): string =>
 const getObjectState = (
   frame: FormationFrame,
   object: StageObject,
-): ObjectState => frame.objectStates[object.id] ?? createDefaultObjectState(object);
+): ObjectState => frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
 
 const isMemberAssigned = (
   frame: FormationFrame,
@@ -167,25 +187,119 @@ const isMemberVisible = (frame: FormationFrame, member: Member): boolean =>
   frame.memberVisibility?.[member.id] !== false &&
   !isMemberAssigned(frame, member.id);
 
+export const getPrintOrientation = (project: Project): PrintOrientation =>
+  project.mode === "parade" ? "portrait" : "landscape";
+
+const getPrintPageUsableSize = (
+  orientation: PrintOrientation,
+): { height: number; width: number } =>
+  orientation === "portrait"
+    ? {
+        height: PRINT_A4_LONG_USABLE_MM,
+        width: PRINT_A4_SHORT_USABLE_MM,
+      }
+    : {
+        height: PRINT_A4_SHORT_USABLE_MM,
+        width: PRINT_A4_LONG_USABLE_MM,
+      };
+
 const getPrintMetrics = (
   project: Project,
   frames: FormationFrame[],
   options: ShareExportOptions,
 ): PrintMetrics => {
+  const isParade = project.mode === "parade";
+  const orientation = getPrintOrientation(project);
+  const pageSize = getPrintPageUsableSize(orientation);
   const commonWidthMeters = Math.max(
     1,
     ...frames.map((frame) => getEffectiveSize(project, frame).widthMeters),
-    project.stage.widthMeters,
+    isParade
+      ? (project.paradeSettings?.width ?? project.stage.widthMeters)
+      : project.stage.widthMeters,
   );
   const stageWidthMm =
-    PRINT_PAGE_USABLE_WIDTH_MM - PRINT_RULER_LEFT_MM - PRINT_STAGE_RIGHT_SAFETY_MM;
+    pageSize.width - PRINT_RULER_LEFT_MM - PRINT_STAGE_RIGHT_SAFETY_MM;
   return {
     commonWidthMeters,
     gapRows: Math.max(0, options.sceneGapRows ?? 5),
-    gridSizeMeters: Math.max(project.stage.gridSizeMeters || 0.25, 0.01),
+    gridSizeMeters: Math.max(
+      isParade
+        ? (project.paradeSettings?.cellSizeMeters ?? project.stage.gridSizeMeters ?? 1)
+        : project.stage.gridSizeMeters || 0.25,
+      0.01,
+    ),
     mmPerMeter: stageWidthMm / commonWidthMeters,
-    pageUsableHeightMm: PRINT_PAGE_USABLE_HEIGHT_MM,
+    orientation,
+    pageUsableHeightMm: pageSize.height,
     stageWidthMm,
+  };
+};
+
+const snapDown = (value: number, step: number): number =>
+  Math.floor(value / step + 0.0001) * step;
+
+const snapUp = (value: number, step: number): number =>
+  Math.ceil(value / step - 0.0001) * step;
+
+const getFramePrintVerticalRange = (
+  project: Project,
+  frame: FormationFrame,
+  stageSize: EffectiveStageSize,
+  metrics: PrintMetrics,
+): SceneVerticalRange => {
+  if (project.mode !== "parade") {
+    return {
+      bottomMeters: stageSize.depthMeters,
+      depthMeters: stageSize.depthMeters,
+      topMeters: 0,
+    };
+  }
+
+  const totalDistance = Math.max(stageSize.depthMeters, 1);
+  const memberRadiusMeters = Math.max(project.stage.memberDiameterMeters ?? 0.5, 0.01) / 2;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  project.members.forEach((member) => {
+    const position = frame.positions[member.id];
+    if (!position || !isMemberVisible(frame, member)) {
+      return;
+    }
+    minY = Math.min(minY, position.y - memberRadiusMeters);
+    maxY = Math.max(maxY, position.y + memberRadiusMeters);
+  });
+
+  project.stageObjects.forEach((object) => {
+    const state = getObjectState(frame, object);
+    if (!((state.visible ?? object.visible) !== false)) {
+      return;
+    }
+    minY = Math.min(minY, state.y - state.heightMeters / 2);
+    maxY = Math.max(maxY, state.y + state.heightMeters / 2);
+  });
+
+  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    const emptyDepth = Math.min(totalDistance, Math.max(10, metrics.gridSizeMeters * 10));
+    return {
+      bottomMeters: emptyDepth,
+      depthMeters: emptyDepth,
+      topMeters: 0,
+    };
+  }
+
+  const step = Math.max(metrics.gridSizeMeters, 0.01);
+  const topMeters = Math.max(0, snapDown(minY - 3, step));
+  const bottomMeters = Math.min(totalDistance, snapUp(maxY + 3, step));
+  const safeBottomMeters =
+    bottomMeters > topMeters
+      ? bottomMeters
+      : Math.min(totalDistance, topMeters + Math.min(totalDistance, 6));
+
+  return {
+    bottomMeters: safeBottomMeters,
+    depthMeters: Math.max(safeBottomMeters - topMeters, step),
+    topMeters,
   };
 };
 
@@ -228,10 +342,11 @@ const getSceneBaseHeightMm = (
   options: ShareExportOptions,
 ): number => {
   const stageSize = getEffectiveSize(project, frame);
+  const verticalRange = getFramePrintVerticalRange(project, frame, stageSize, metrics);
   return (
     PRINT_SCENE_TITLE_MM +
     getPrintRulerTopMm(project, metrics, options) +
-    stageSize.depthMeters * metrics.mmPerMeter +
+    verticalRange.depthMeters * metrics.mmPerMeter +
     getPrintRulerBottomMm(project, metrics, options)
   );
 };
@@ -301,7 +416,7 @@ const PrintStagePreview = ({
   gapAfter,
   metrics,
   project,
-  stageSize,
+  verticalRange,
   options,
 }: {
   commonWidthMeters: number;
@@ -309,15 +424,22 @@ const PrintStagePreview = ({
   gapAfter: boolean;
   metrics: PrintMetrics;
   project: Project;
-  stageSize: EffectiveStageSize;
+  verticalRange: SceneVerticalRange;
   options: ShareExportOptions;
 }) => {
-  const horizontalGuideMode = project.stage.horizontalGuideMode ?? "meters";
+  const isParade = project.mode === "parade";
+  const horizontalGuideMode = isParade
+    ? normalizeParadeHorizontalMeasureMode(
+        project.paradeSettings?.horizontalMeasureMode,
+      ) === "centerSplit"
+      ? "centerSplit"
+      : "meters"
+    : project.stage.horizontalGuideMode ?? "meters";
   const centerSplitLabels = createCenterSplitLabels(commonWidthMeters);
   const xTicks = buildTicks(commonWidthMeters);
-  const yTicks = buildTicks(stageSize.depthMeters);
+  const yTicks = buildTicks(verticalRange.depthMeters);
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
-  const totalDepthMeters = stageSize.depthMeters + gapMeters;
+  const totalDepthMeters = verticalRange.depthMeters + gapMeters;
   const stageHeightMm = totalDepthMeters * metrics.mmPerMeter;
   const memberDiameterMm = getPrintMemberDiameterMm(project, metrics);
   const rulerTopMm = getPrintRulerTopMm(project, metrics, options);
@@ -373,14 +495,17 @@ const PrintStagePreview = ({
                 })}
           </div>
           <div className="print-ruler print-ruler-y">
-            {yTicks.map((tick) => (
+            {yTicks.map((tick) => {
+              const actualTick = Number((verticalRange.topMeters + tick).toFixed(2));
+              return (
                 <span
                   key={`y-${tick}`}
                   style={{ top: metersToPrintMm(tick, metrics) }}
                 >
-                  {`${tick}m`}
+                  {`${actualTick}m`}
                 </span>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -401,7 +526,7 @@ const PrintStagePreview = ({
         {gapAfter && (
           <span
             className="print-scene-gap-start"
-            style={{ top: metersToPrintMm(stageSize.depthMeters, metrics) }}
+            style={{ top: metersToPrintMm(verticalRange.depthMeters, metrics) }}
           />
         )}
 
@@ -410,6 +535,12 @@ const PrintStagePreview = ({
           if (!((state.visible ?? object.visible) !== false)) {
             return null;
           }
+          const objectLeftMeters = isParade
+            ? state.x - state.widthMeters / 2
+            : state.x;
+          const objectTopMeters = isParade
+            ? state.y - state.heightMeters / 2 - verticalRange.topMeters
+            : state.y - verticalRange.topMeters;
           return (
             <div
               className={`print-object shape-${object.shape}`}
@@ -418,8 +549,8 @@ const PrintStagePreview = ({
                 backgroundColor: `${object.color}24`,
                 borderColor: object.color,
                 height: metersToPrintMm(state.heightMeters, metrics),
-                left: metersToPrintMm(state.x, metrics),
-                top: metersToPrintMm(state.y, metrics),
+                left: metersToPrintMm(objectLeftMeters, metrics),
+                top: metersToPrintMm(objectTopMeters, metrics),
                 transform: `rotate(${state.rotation}deg)`,
                 width: metersToPrintMm(state.widthMeters, metrics),
                 zIndex: state.zIndex,
@@ -435,20 +566,23 @@ const PrintStagePreview = ({
           if (!position || !isMemberVisible(frame, member)) {
             return null;
           }
+          const memberColor = getMemberDisplayColor(member, {
+            frame,
+            groups: project.memberGroups ?? [],
+          });
+          const labelColor = getReadableMemberLabelColor(memberColor);
           return (
             <span
               className="print-member"
               key={member.id}
               style={{
-                backgroundColor: getMemberDisplayColor(member, {
-                  frame,
-                  groups: project.memberGroups ?? [],
-                }),
+                backgroundColor: memberColor,
+                color: labelColor,
                 left: metersToPrintMm(position.x, metrics),
-                top: metersToPrintMm(position.y, metrics),
+                top: metersToPrintMm(position.y - verticalRange.topMeters, metrics),
               }}
             >
-              {member.name}
+              <span className="print-member__label">{member.name}</span>
             </span>
           );
         })}
@@ -473,20 +607,28 @@ export const PrintPreview = ({
   const resolvedOptions = { ...defaultPrintOptions, ...options };
   const metrics = getPrintMetrics(project, frames, resolvedOptions);
   const pages = paginateFrames(project, frames, metrics, resolvedOptions);
+  const documentClassName = `print-document print-document--${metrics.orientation}`;
 
   if (variant === "stage-only") {
     const frame = frames[0] ?? sortedFrames[0];
     if (!frame) {
-      return <div className="print-document print-document--stage-only" ref={rootRef} />;
+      return (
+        <div
+          className={`${documentClassName} print-document--stage-only`}
+          ref={rootRef}
+        />
+      );
     }
-    const stageSize = {
-      ...getEffectiveSize(project, frame),
-      widthMeters: metrics.commonWidthMeters,
-    };
+    const verticalRange = getFramePrintVerticalRange(
+      project,
+      frame,
+      getEffectiveSize(project, frame),
+      metrics,
+    );
 
     return (
       <div
-        className="print-document print-document--stage-only"
+        className={`${documentClassName} print-document--stage-only`}
         aria-hidden="true"
         ref={rootRef}
       >
@@ -496,7 +638,7 @@ export const PrintPreview = ({
           gapAfter={false}
           metrics={metrics}
           project={project}
-          stageSize={stageSize}
+          verticalRange={verticalRange}
           options={resolvedOptions}
         />
       </div>
@@ -504,16 +646,18 @@ export const PrintPreview = ({
   }
 
   return (
-    <div className="print-document" aria-hidden="true" ref={rootRef}>
+    <div className={documentClassName} aria-hidden="true" ref={rootRef}>
       {pages.map((pageFrames, pageIndex) => (
         <section className="print-page" key={`print-page-${pageIndex}`}>
           {pageFrames.map((frame, frameIndex) => {
             const sceneNumber =
               sortedFrames.findIndex((item) => item.id === frame.id) + 1;
-            const stageSize = {
-              ...getEffectiveSize(project, frame),
-              widthMeters: metrics.commonWidthMeters,
-            };
+            const verticalRange = getFramePrintVerticalRange(
+              project,
+              frame,
+              getEffectiveSize(project, frame),
+              metrics,
+            );
             const gapAfter = frameIndex < pageFrames.length - 1;
 
             return (
@@ -535,7 +679,7 @@ export const PrintPreview = ({
                   gapAfter={gapAfter}
                   metrics={metrics}
                   project={project}
-                  stageSize={stageSize}
+                  verticalRange={verticalRange}
                   options={resolvedOptions}
                 />
               </section>

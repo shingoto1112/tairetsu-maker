@@ -26,11 +26,12 @@ import type {
   StageSnapshot,
 } from "../types";
 import { roundMeters } from "../utils/coordinates";
-import { getMemberDisplayColor } from "../utils/memberAppearance";
+import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
 import {
   formatSignedMeterLabel,
   normalizeParadeHorizontalMeasureMode,
 } from "../utils/parade";
+import { NumericInput } from "./NumericInput";
 
 export type ParadeReflectOptions = {
   target: "all" | "group";
@@ -79,6 +80,17 @@ type DragState =
       startClientY: number;
       startState: ObjectState;
     };
+
+type PinchTouchPoint = {
+  clientX: number;
+  clientY: number;
+};
+
+type PinchZoomState = {
+  pointerIds: [number, number];
+  startDistance: number;
+  startZoom: number;
+};
 
 type CenterSplitLabel = {
   key: string;
@@ -162,26 +174,6 @@ const getMemberLabelFontSize = (diameterPx: number, labelLines: string[]) => {
   const base = labelLines.length > 1 ? diameterPx / 4.6 : diameterPx / 3.8;
   const fitWidth = (diameterPx * 0.82) / Math.max(1, longestLine * 0.72);
   return Math.max(8, Math.min(13, Math.floor(Math.min(base, fitWidth))));
-};
-
-const getReadableTextColor = (backgroundColor: string) => {
-  const hexMatch = backgroundColor.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (!hexMatch) {
-    return "#0f172a";
-  }
-  const raw = hexMatch[1];
-  const normalized =
-    raw.length === 3
-      ? raw
-          .split("")
-          .map((char) => char + char)
-          .join("")
-      : raw;
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
-  return luminance > 0.62 ? "#0f172a" : "#ffffff";
 };
 
 const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
@@ -291,7 +283,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const [reflectMoveMeters, setReflectMoveMeters] = useState(5);
     const [reflectMoveObjects, setReflectMoveObjects] = useState(true);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    const zoomRef = useRef(zoom);
+    const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
+    const pinchZoomRef = useRef<PinchZoomState | null>(null);
     const saveViewTimerRef = useRef<number | null>(null);
+    const [isPinching, setIsPinching] = useState(false);
     const pxPerMeter = BASE_PX_PER_METER * zoom;
     const canvasWidthPx = settings.width * pxPerMeter;
     const canvasHeightPx = settings.totalDistance * pxPerMeter;
@@ -438,6 +434,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     }, [currentFrame?.id, currentFrame?.sceneViewState?.zoom]);
 
     useEffect(() => {
+      zoomRef.current = zoom;
+    }, [zoom]);
+
+    useEffect(() => {
       const container = scrollRef.current;
       if (!container) {
         return undefined;
@@ -530,8 +530,138 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       settings.width,
     ]);
 
-    const updateZoom = (nextZoom: number) => {
-      setZoom(clamp(nextZoom, MIN_ZOOM, MAX_ZOOM));
+    const updateZoom = (
+      nextZoom: number,
+      anchor?: { clientX: number; clientY: number },
+    ) => {
+      const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+      zoomRef.current = clampedZoom;
+      const container = scrollRef.current;
+      if (!container || !anchor) {
+        setZoom(clampedZoom);
+        window.setTimeout(saveViewState, 0);
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const anchorX = anchor.clientX - rect.left;
+      const anchorY = anchor.clientY - rect.top;
+      const ratioX = (container.scrollLeft + anchorX) / Math.max(1, container.scrollWidth);
+      const ratioY =
+        (container.scrollTop + anchorY) / Math.max(1, container.scrollHeight);
+      setZoom(clampedZoom);
+      window.requestAnimationFrame(() => {
+        const nextContainer = scrollRef.current;
+        if (!nextContainer) {
+          return;
+        }
+        nextContainer.scrollLeft = Math.max(
+          0,
+          ratioX * nextContainer.scrollWidth - anchorX,
+        );
+        nextContainer.scrollTop = Math.max(
+          0,
+          ratioY * nextContainer.scrollHeight - anchorY,
+        );
+        saveViewState();
+      });
+    };
+
+    const getPinchDistance = (first: PinchTouchPoint, second: PinchTouchPoint) =>
+      Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+
+    const getPinchMidpoint = (
+      first: PinchTouchPoint,
+      second: PinchTouchPoint,
+    ) => ({
+      clientX: (first.clientX + second.clientX) / 2,
+      clientY: (first.clientY + second.clientY) / 2,
+    });
+
+    const beginPinchIfReady = () => {
+      const touchEntries = Array.from(pinchTouchPointsRef.current.entries());
+      if (touchEntries.length < 2) {
+        return;
+      }
+      const [firstEntry, secondEntry] = touchEntries;
+      pinchZoomRef.current = {
+        pointerIds: [firstEntry[0], secondEntry[0]],
+        startDistance: Math.max(
+          1,
+          getPinchDistance(firstEntry[1], secondEntry[1]),
+        ),
+        startZoom: zoomRef.current,
+      };
+      if (dragState) {
+        setDragState(null);
+        onEndProjectEdit();
+      }
+      setIsPinching(true);
+    };
+
+    const handleViewportPointerDownCapture = (
+      event: PointerEvent<HTMLDivElement>,
+    ) => {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      pinchTouchPointsRef.current.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      if (pinchTouchPointsRef.current.size >= 2) {
+        if (!pinchZoomRef.current) {
+          beginPinchIfReady();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const handleViewportPointerMoveCapture = (
+      event: PointerEvent<HTMLDivElement>,
+    ) => {
+      if (
+        event.pointerType !== "touch" ||
+        !pinchTouchPointsRef.current.has(event.pointerId)
+      ) {
+        return;
+      }
+      pinchTouchPointsRef.current.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      const pinch = pinchZoomRef.current;
+      if (!pinch) {
+        return;
+      }
+      const first = pinchTouchPointsRef.current.get(pinch.pointerIds[0]);
+      const second = pinchTouchPointsRef.current.get(pinch.pointerIds[1]);
+      if (!first || !second) {
+        return;
+      }
+      const distance = Math.max(1, getPinchDistance(first, second));
+      updateZoom(
+        pinch.startZoom * (distance / pinch.startDistance),
+        getPinchMidpoint(first, second),
+      );
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const handleViewportPointerEndCapture = (
+      event: PointerEvent<HTMLDivElement>,
+    ) => {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      pinchTouchPointsRef.current.delete(event.pointerId);
+      if (pinchTouchPointsRef.current.size < 2) {
+        pinchZoomRef.current = null;
+        setIsPinching(false);
+        return;
+      }
+      beginPinchIfReady();
       window.setTimeout(saveViewState, 0);
     };
 
@@ -580,6 +710,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       position: Position,
       event: PointerEvent<HTMLButtonElement>,
     ) => {
+      if (pinchZoomRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "member", id: memberId });
@@ -598,6 +733,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       state: ObjectState,
       event: PointerEvent<HTMLButtonElement>,
     ) => {
+      if (pinchZoomRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
@@ -678,12 +818,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             <label>
               移動量
               <span className="meter-input compact">
-                <input
-                  type="number"
-                  min="0"
+                <NumericInput
+                  min={0}
                   step="0.5"
                   value={reflectMoveMeters}
-                  onChange={(event) => setReflectMoveMeters(Number(event.target.value))}
+                  onValueChange={setReflectMoveMeters}
                 />
                 m
               </span>
@@ -763,7 +902,18 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           </section>
         </aside>
 
-        <div className="parade-viewport" ref={scrollRef} onScroll={scheduleSaveViewState}>
+        <div
+          className={[
+            "parade-viewport",
+            isPinching ? "is-parade-pinching" : "",
+          ].join(" ")}
+          ref={scrollRef}
+          onScroll={scheduleSaveViewState}
+          onPointerDownCapture={handleViewportPointerDownCapture}
+          onPointerMoveCapture={handleViewportPointerMoveCapture}
+          onPointerUpCapture={handleViewportPointerEndCapture}
+          onPointerCancelCapture={handleViewportPointerEndCapture}
+        >
           <div
             className="parade-stage-wrap"
             style={{
@@ -904,7 +1054,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 const isMultiSelected = selectedMemberIds.includes(member.id);
                 const isFocus = focusMode && focusMemberId === member.id;
                 const labelLines = splitMemberLabel(member.name);
-                const labelColor = getReadableTextColor(color);
+                const labelColor = getReadableMemberLabelColor(color);
                 const overlapOffset =
                   memberDisplayOffsets.get(member.id) ?? { x: 0, y: 0 };
                 const memberStyle: ParadeMemberStyle = {

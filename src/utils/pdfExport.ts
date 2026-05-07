@@ -6,6 +6,8 @@ type JpegPage = {
   width: number;
 };
 
+export type PdfOrientation = "landscape" | "portrait";
+
 const PDF_MARGIN_PT = 20;
 
 const getImageSize = (dataUrl: string): Promise<{ width: number; height: number }> =>
@@ -23,11 +25,12 @@ const getImageSize = (dataUrl: string): Promise<{ width: number; height: number 
 const buildPdf = async (
   pages: JpegPage[],
   title = "隊列メーカー 印刷用",
+  orientation: PdfOrientation = "landscape",
 ): Promise<Blob> => {
   const pdf = new jsPDF({
     compress: true,
     format: "a4",
-    orientation: "landscape",
+    orientation,
     unit: "pt",
   });
 
@@ -38,7 +41,7 @@ const buildPdf = async (
 
   pages.forEach((page, index) => {
     if (index > 0) {
-      pdf.addPage("a4", "landscape");
+      pdf.addPage("a4", orientation);
     }
 
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -69,6 +72,7 @@ const buildPdf = async (
 export const jpegDataUrlsToPdfBlob = async (
   dataUrls: string[],
   title?: string,
+  orientation: PdfOrientation = "landscape",
 ): Promise<Blob> => {
   const pages = await Promise.all(
     dataUrls.map(async (dataUrl) => ({
@@ -76,7 +80,7 @@ export const jpegDataUrlsToPdfBlob = async (
       ...(await getImageSize(dataUrl)),
     })),
   );
-  const pdfBlob = await buildPdf(pages, title);
+  const pdfBlob = await buildPdf(pages, title, orientation);
   if (pdfBlob.size <= 0) {
     throw new Error("PDFデータを作成できませんでした。");
   }

@@ -17,6 +17,7 @@ import {
   getCenterSplitSideLabel,
   normalizeParadeHorizontalMeasureMode,
 } from "../utils/parade";
+import { NumericInput } from "./NumericInput";
 
 type DetailsPanelProps = {
   selected: Selection;
@@ -62,13 +63,6 @@ const objectTypeLabel = (type: StageObject["type"]): string => {
 
 const formatMeter = (value?: number): string =>
   value === undefined ? "-" : `${Number(value.toFixed(2))}m`;
-
-const formatNumberInput = (value?: number): string => {
-  if (value === undefined || !Number.isFinite(value)) {
-    return "";
-  }
-  return `${Number(value.toFixed(3))}`;
-};
 
 const parseNumberInput = (value: string): number | null => {
   const parsed = Number(value);
@@ -381,14 +375,13 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="0.01"
                     min={minDisplayX}
                     max={maxDisplayX}
-                    value={formatNumberInput(displayXValue(memberPosition?.x))}
-                    onChange={(event) =>
-                      updateMemberCoordinate("x", event.target.value)
+                    value={displayXValue(memberPosition?.x)}
+                    onValueChange={(value) =>
+                      updateMemberCoordinate("x", String(value))
                     }
                   />
                   <b>m</b>
@@ -402,14 +395,13 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>{yLabel}</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="0.01"
                     min={0}
                     max={stageDepthMeters}
-                    value={formatNumberInput(memberPosition?.y)}
-                    onChange={(event) =>
-                      updateMemberCoordinate("y", event.target.value)
+                    value={memberPosition?.y}
+                    onValueChange={(value) =>
+                      updateMemberCoordinate("y", String(value))
                     }
                   />
                   <b>m</b>
@@ -486,14 +478,13 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="0.01"
                     min={minDisplayX}
                     max={maxDisplayX}
-                    value={formatNumberInput(displayXValue(objectState?.x))}
-                    onChange={(event) =>
-                      updateObjectCoordinate("x", event.target.value)
+                    value={displayXValue(objectState?.x)}
+                    onValueChange={(value) =>
+                      updateObjectCoordinate("x", String(value))
                     }
                   />
                   <b>m</b>
@@ -507,14 +498,13 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>{yLabel}</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="0.01"
                     min={0}
                     max={stageDepthMeters}
-                    value={formatNumberInput(objectState?.y)}
-                    onChange={(event) =>
-                      updateObjectCoordinate("y", event.target.value)
+                    value={objectState?.y}
+                    onValueChange={(value) =>
+                      updateObjectCoordinate("y", String(value))
                     }
                   />
                   <b>m</b>
@@ -523,15 +513,14 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>横幅</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="0.01"
                     min={0.01}
-                    value={formatNumberInput(objectState?.widthMeters)}
-                    onChange={(event) =>
+                    value={objectState?.widthMeters}
+                    onValueChange={(value) =>
                       updateObjectPositiveNumber(
                         "widthMeters",
-                        event.target.value,
+                        String(value),
                       )
                     }
                   />
@@ -541,15 +530,14 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>縦幅</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="0.01"
                     min={0.01}
-                    value={formatNumberInput(objectState?.heightMeters)}
-                    onChange={(event) =>
+                    value={objectState?.heightMeters}
+                    onValueChange={(value) =>
                       updateObjectPositiveNumber(
                         "heightMeters",
-                        event.target.value,
+                        String(value),
                       )
                     }
                   />
@@ -559,11 +547,10 @@ export const DetailsPanel = ({
               <label className="detail-edit-field">
                 <span>回転角度</span>
                 <span className="detail-input-with-unit">
-                  <input
-                    type="number"
+                  <NumericInput
                     step="1"
-                    value={formatNumberInput(objectState?.rotation)}
-                    onChange={(event) => updateObjectRotation(event.target.value)}
+                    value={objectState?.rotation}
+                    onValueChange={(value) => updateObjectRotation(String(value))}
                   />
                   <b>°</b>
                 </span>

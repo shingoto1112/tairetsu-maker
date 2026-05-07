@@ -50,7 +50,7 @@ import {
   resolveMovementPlan,
   sortFrames,
 } from "../utils/interpolation";
-import { getMemberDisplayColor } from "../utils/memberAppearance";
+import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
 import { formatTime } from "../utils/time";
 import { ResizableRotatableObject } from "./ResizableRotatableObject";
 import { StageTimeBar } from "./StageTimeBar";
@@ -100,6 +100,17 @@ type MemberDrag = {
   startPointer: Position;
   startPosition: Position;
   hasMoved: boolean;
+};
+
+type StageTouchPoint = {
+  clientX: number;
+  clientY: number;
+};
+
+type StagePinchZoom = {
+  pointerIds: [number, number];
+  startDistance: number;
+  startZoom: number;
 };
 
 type SnapGuide = {
@@ -241,25 +252,6 @@ const getMemberLabelFontSize = (
   return Math.round(Math.max(8, Math.min(12, widthBased, heightBased)) * 10) / 10;
 };
 
-const getReadableTextColor = (backgroundColor: string): string => {
-  const raw = backgroundColor.trim().replace("#", "");
-  const normalized =
-    raw.length === 3
-      ? raw
-          .split("")
-          .map((character) => `${character}${character}`)
-          .join("")
-      : raw;
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
-    return "#ffffff";
-  }
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
-  return luminance > 0.62 ? "#172033" : "#ffffff";
-};
-
 const createMovementPathD = (
   startX: number,
   startY: number,
@@ -363,8 +355,12 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const stageRef = useRef<HTMLDivElement | null>(null);
     const fitAreaRef = useRef<HTMLDivElement | null>(null);
     const memberDragRef = useRef<MemberDrag | null>(null);
+    const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
+    const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
+    const stageZoomRef = useRef(1);
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
+    const [isStagePinching, setIsStagePinching] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
     const [stageZoom, setStageZoom] = useState(1);
     const stableFitAreaSizeRef = useRef(fitAreaSize);
@@ -455,10 +451,23 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     }, [fitAreaSize, isStageInteracting]);
 
     useEffect(() => {
+      stageZoomRef.current = stageZoom;
+    }, [stageZoom]);
+
+    const clearStagePinch = () => {
+      stageTouchPointsRef.current.clear();
+      stagePinchZoomRef.current = null;
+      setIsStagePinching(false);
+    };
+
+    useEffect(() => {
       if (!isStageInteracting) {
         return undefined;
       }
-      const releaseFitLock = () => setIsStageInteracting(false);
+      const releaseFitLock = () => {
+        clearStagePinch();
+        setIsStageInteracting(false);
+      };
       window.addEventListener("pointerup", releaseFitLock);
       window.addEventListener("pointercancel", releaseFitLock);
       window.addEventListener("blur", releaseFitLock);
@@ -559,6 +568,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         Math.round(
           Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, nextZoom)) * 100,
         ) / 100;
+      stageZoomRef.current = clampedZoom;
       const container = fitAreaRef.current;
       if (!container) {
         setStageZoom(clampedZoom);
@@ -650,6 +660,101 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         clientX: event.clientX,
         clientY: event.clientY,
       });
+    };
+
+    const getTouchDistance = (first: StageTouchPoint, second: StageTouchPoint) =>
+      Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+
+    const getTouchMidpoint = (
+      first: StageTouchPoint,
+      second: StageTouchPoint,
+    ) => ({
+      clientX: (first.clientX + second.clientX) / 2,
+      clientY: (first.clientY + second.clientY) / 2,
+    });
+
+    const beginStagePinchIfReady = () => {
+      const touchEntries = Array.from(stageTouchPointsRef.current.entries());
+      if (touchEntries.length < 2) {
+        return;
+      }
+      const [firstEntry, secondEntry] = touchEntries;
+      const startDistance = Math.max(
+        1,
+        getTouchDistance(firstEntry[1], secondEntry[1]),
+      );
+      stagePinchZoomRef.current = {
+        pointerIds: [firstEntry[0], secondEntry[0]],
+        startDistance,
+        startZoom: stageZoomRef.current,
+      };
+      memberDragRef.current = null;
+      setActiveSnapGuides([]);
+      setIsStagePinching(true);
+    };
+
+    const handleStagePointerDownCapture = (
+      event: PointerEvent<HTMLDivElement>,
+    ) => {
+      setIsStageInteracting(true);
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      stageTouchPointsRef.current.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      if (stageTouchPointsRef.current.size >= 2) {
+        if (!stagePinchZoomRef.current) {
+          beginStagePinchIfReady();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const handleStagePointerMoveCapture = (
+      event: PointerEvent<HTMLDivElement>,
+    ) => {
+      if (
+        event.pointerType !== "touch" ||
+        !stageTouchPointsRef.current.has(event.pointerId)
+      ) {
+        return;
+      }
+      stageTouchPointsRef.current.set(event.pointerId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      const pinch = stagePinchZoomRef.current;
+      if (!pinch) {
+        return;
+      }
+      const first = stageTouchPointsRef.current.get(pinch.pointerIds[0]);
+      const second = stageTouchPointsRef.current.get(pinch.pointerIds[1]);
+      if (!first || !second) {
+        return;
+      }
+      const distance = Math.max(1, getTouchDistance(first, second));
+      const anchor = getTouchMidpoint(first, second);
+      updateStageZoom(pinch.startZoom * (distance / pinch.startDistance), anchor);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const handleStagePointerEndCapture = (
+      event: PointerEvent<HTMLDivElement>,
+    ) => {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      stageTouchPointsRef.current.delete(event.pointerId);
+      if (stageTouchPointsRef.current.size < 2) {
+        stagePinchZoomRef.current = null;
+        setIsStagePinching(false);
+        return;
+      }
+      beginStagePinchIfReady();
     };
 
     const updateStagePointerPosition = (event: PointerEvent<HTMLElement>) => {
@@ -785,6 +890,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       event: PointerEvent<HTMLDivElement>,
       memberId: string,
     ) => {
+      if (stagePinchZoomRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.stopPropagation();
       if (event.button !== 0) {
         return;
@@ -811,6 +921,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
 
     const handleMemberPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+      if (stagePinchZoomRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const drag = memberDragRef.current;
       if (!drag || drag.pointerId !== event.pointerId || !stageRef.current) {
         return;
@@ -1161,10 +1276,14 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             className={[
               "stage-fit-area",
               isStageZoomed ? "is-stage-zoomed" : "",
+              isStagePinching ? "is-stage-pinching" : "",
             ].join(" ")}
             ref={fitAreaRef}
             onWheel={handleStageWheel}
-            onPointerDownCapture={() => setIsStageInteracting(true)}
+            onPointerDownCapture={handleStagePointerDownCapture}
+            onPointerMoveCapture={handleStagePointerMoveCapture}
+            onPointerUpCapture={handleStagePointerEndCapture}
+            onPointerCancelCapture={handleStagePointerEndCapture}
           >
             <div
               ref={exportRef}
@@ -1683,7 +1802,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     groups: memberGroups,
                     snapshot,
                   });
-                  const labelColor = getReadableTextColor(memberColor);
+                  const labelColor = getReadableMemberLabelColor(memberColor);
                   const overlapOffset =
                     memberDisplayOffsets.get(member.id) ?? { x: 0, y: 0 };
                   return (

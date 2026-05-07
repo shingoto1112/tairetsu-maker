@@ -23,6 +23,7 @@ import {
   StageObjectShape,
   StageObjectType,
 } from "../types";
+import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type ObjectPanelProps = {
@@ -833,53 +834,49 @@ export const ObjectPanel = ({
               </label>
               <label>
                 zIndex
-                <input
-                  type="number"
+                <NumericInput
                   value={state?.zIndex ?? object.zIndex}
-                  onChange={(event) =>
+                  onValueChange={(zIndex) =>
                     onUpdateObjectState(object.id, {
-                      zIndex: Number(event.target.value),
+                      zIndex: Math.round(zIndex),
                     })
                   }
                 />
               </label>
               <label>
                 幅 m
-                <input
-                  type="number"
-                  min="0.1"
+                <NumericInput
+                  min={0.1}
                   step="0.1"
                   value={state?.widthMeters ?? object.widthMeters}
-                  onChange={(event) =>
+                  onValueChange={(widthMeters) =>
                     onUpdateObjectState(object.id, {
-                      widthMeters: Number(event.target.value),
+                      widthMeters,
                     })
                   }
                 />
               </label>
               <label>
                 高さ m
-                <input
-                  type="number"
-                  min="0.1"
+                <NumericInput
+                  min={0.1}
                   step="0.1"
                   value={state?.heightMeters ?? object.heightMeters}
-                  onChange={(event) =>
+                  onValueChange={(heightMeters) =>
                     onUpdateObjectState(object.id, {
-                      heightMeters: Number(event.target.value),
+                      heightMeters,
                     })
                   }
                 />
               </label>
               <label>
                 回転
-                <input
-                  type="number"
+                <NumericInput
                   step="1"
                   value={state?.rotation ?? object.defaultRotation}
-                  onChange={(event) =>
+                  onValueChange={(rotation) =>
                     onUpdateObjectState(object.id, {
-                      rotation: Number(event.target.value),
+                      rotation,
                     })
                   }
                 />

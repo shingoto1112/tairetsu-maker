@@ -15,7 +15,7 @@ import { GroupToolsPanel } from "./components/GroupToolsPanel";
 import { MemberPanel } from "./components/MemberPanel";
 import { ObjectPanel } from "./components/ObjectPanel";
 import { PanelTabId, PanelTabs } from "./components/PanelTabs";
-import { PrintPreview } from "./components/PrintPreview";
+import { getPrintOrientation, PrintPreview } from "./components/PrintPreview";
 import { SceneNotesPanel } from "./components/SceneNotesPanel";
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
 import {
@@ -4940,7 +4940,11 @@ function App() {
       for (const page of pages) {
         pageDataUrls.push(await elementToJpegDataUrl(page));
       }
-      return await jpegDataUrlsToPdfBlob(pageDataUrls, title);
+      return await jpegDataUrlsToPdfBlob(
+        pageDataUrls,
+        title,
+        getPrintOrientation(project),
+      );
     } finally {
       cleanupPrintExportElement();
     }

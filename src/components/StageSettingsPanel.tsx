@@ -8,6 +8,7 @@ import {
   StageConfig,
 } from "../types";
 import { normalizeParadeHorizontalMeasureMode } from "../utils/parade";
+import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type StageSettingsPanelProps = {
@@ -52,42 +53,39 @@ export const StageSettingsPanel = ({
         <div className="settings-grid">
           <label>
             全体距離
-            <input
-              type="number"
-              min="1"
+            <NumericInput
+              min={1}
               step="1"
               value={effectiveParadeSettings.totalDistance}
-              onChange={(event) =>
+              onValueChange={(totalDistance) =>
                 onParadeSettingsChange?.({
-                  totalDistance: Math.max(1, Number(event.target.value)),
+                  totalDistance,
                 })
               }
             />
           </label>
           <label>
             横幅
-            <input
-              type="number"
-              min="1"
+            <NumericInput
+              min={1}
               step="0.5"
               value={effectiveParadeSettings.width}
-              onChange={(event) =>
+              onValueChange={(width) =>
                 onParadeSettingsChange?.({
-                  width: Math.max(1, Number(event.target.value)),
+                  width,
                 })
               }
             />
           </label>
           <label>
             1マスあたりの距離
-            <input
-              type="number"
-              min="0.1"
+            <NumericInput
+              min={0.1}
               step="0.1"
               value={effectiveParadeSettings.cellSizeMeters}
-              onChange={(event) =>
+              onValueChange={(cellSizeMeters) =>
                 onParadeSettingsChange?.({
-                  cellSizeMeters: Math.max(0.1, Number(event.target.value)),
+                  cellSizeMeters,
                 })
               }
             />
@@ -182,38 +180,29 @@ export const StageSettingsPanel = ({
     <div className="settings-grid">
       <label>
         デフォルトの横
-        <input
-          type="number"
-          min="1"
+        <NumericInput
+          min={1}
           step="0.5"
           value={stage.widthMeters}
-          onChange={(event) =>
-            onChange({ widthMeters: Math.max(1, Number(event.target.value)) })
-          }
+          onValueChange={(widthMeters) => onChange({ widthMeters })}
         />
       </label>
       <label>
         デフォルトの縦
-        <input
-          type="number"
-          min="1"
+        <NumericInput
+          min={1}
           step="0.5"
           value={stage.depthMeters}
-          onChange={(event) =>
-            onChange({ depthMeters: Math.max(1, Number(event.target.value)) })
-          }
+          onValueChange={(depthMeters) => onChange({ depthMeters })}
         />
       </label>
       <label>
         グリッド間隔
-        <input
-          type="number"
-          min="0.1"
+        <NumericInput
+          min={0.1}
           step="0.1"
           value={stage.gridSizeMeters}
-          onChange={(event) =>
-            onChange({ gridSizeMeters: Math.max(0.1, Number(event.target.value)) })
-          }
+          onValueChange={(gridSizeMeters) => onChange({ gridSizeMeters })}
         />
       </label>
       <label>
@@ -232,19 +221,13 @@ export const StageSettingsPanel = ({
       </label>
       <label>
         メンバー円の直径
-        <input
-          type="number"
-          min="0.2"
-          max="1"
+        <NumericInput
+          min={0.2}
+          max={1}
           step="0.05"
           value={stage.memberDiameterMeters ?? 0.5}
-          onChange={(event) =>
-            onChange({
-              memberDiameterMeters: Math.min(
-                1,
-                Math.max(0.2, Number(event.target.value)),
-              ),
-            })
+          onValueChange={(memberDiameterMeters) =>
+            onChange({ memberDiameterMeters })
           }
         />
       </label>
