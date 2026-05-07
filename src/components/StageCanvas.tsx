@@ -1,6 +1,7 @@
 import {
   Camera,
   FlipHorizontal2,
+  Lock,
   Maximize2,
   Minimize2,
   Pause,
@@ -8,6 +9,7 @@ import {
   Save,
   Redo2,
   Undo2,
+  Unlock,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -357,12 +359,19 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const memberDragRef = useRef<MemberDrag | null>(null);
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
     const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
+    const pendingStageZoomRef = useRef<{
+      zoom: number;
+      anchor?: { clientX: number; clientY: number };
+    } | null>(null);
+    const stageZoomFrameRef = useRef<number | null>(null);
     const stageZoomRef = useRef(1);
+    const isStagePinchLockedRef = useRef(false);
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
     const [isStagePinching, setIsStagePinching] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
     const [stageZoom, setStageZoom] = useState(1);
+    const [isStagePinchLocked, setIsStagePinchLocked] = useState(false);
     const stableFitAreaSizeRef = useRef(fitAreaSize);
     const stage = project.stage;
     const memberGroups = project.memberGroups ?? [];
@@ -454,11 +463,34 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       stageZoomRef.current = stageZoom;
     }, [stageZoom]);
 
+    const cancelPendingStageZoom = () => {
+      pendingStageZoomRef.current = null;
+      if (stageZoomFrameRef.current !== null) {
+        window.cancelAnimationFrame(stageZoomFrameRef.current);
+        stageZoomFrameRef.current = null;
+      }
+    };
+
     const clearStagePinch = () => {
       stageTouchPointsRef.current.clear();
       stagePinchZoomRef.current = null;
       setIsStagePinching(false);
     };
+
+    useEffect(() => {
+      isStagePinchLockedRef.current = isStagePinchLocked;
+      if (isStagePinchLocked) {
+        cancelPendingStageZoom();
+        clearStagePinch();
+      }
+    }, [isStagePinchLocked]);
+
+    useEffect(
+      () => () => {
+        cancelPendingStageZoom();
+      },
+      [],
+    );
 
     useEffect(() => {
       if (!isStageInteracting) {
@@ -560,14 +592,16 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
     const isStageZoomed = stageZoom > STAGE_ZOOM_MIN + 0.001;
 
-    const updateStageZoom = (
+    const clampStageZoom = (nextZoom: number) =>
+      Math.round(
+        Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, nextZoom)) * 100,
+      ) / 100;
+
+    const applyStageZoom = (
       nextZoom: number,
       anchor?: { clientX: number; clientY: number },
     ) => {
-      const clampedZoom =
-        Math.round(
-          Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, nextZoom)) * 100,
-        ) / 100;
+      const clampedZoom = clampStageZoom(nextZoom);
       stageZoomRef.current = clampedZoom;
       const container = fitAreaRef.current;
       if (!container) {
@@ -650,8 +684,40 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       });
     };
 
+    const scheduleStageZoom = (
+      nextZoom: number,
+      anchor?: { clientX: number; clientY: number },
+    ) => {
+      const clampedZoom = clampStageZoom(nextZoom);
+      stageZoomRef.current = clampedZoom;
+      pendingStageZoomRef.current = { zoom: clampedZoom, anchor };
+      if (stageZoomFrameRef.current !== null) {
+        return;
+      }
+      stageZoomFrameRef.current = window.requestAnimationFrame(() => {
+        stageZoomFrameRef.current = null;
+        const pending = pendingStageZoomRef.current;
+        pendingStageZoomRef.current = null;
+        if (!pending) {
+          return;
+        }
+        applyStageZoom(pending.zoom, pending.anchor);
+      });
+    };
+
+    const updateStageZoom = (
+      nextZoom: number,
+      anchor?: { clientX: number; clientY: number },
+    ) => {
+      cancelPendingStageZoom();
+      applyStageZoom(nextZoom, anchor);
+    };
+
     const handleStageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
       if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      if (isStagePinchLockedRef.current) {
         return;
       }
       event.preventDefault();
@@ -674,6 +740,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     });
 
     const beginStagePinchIfReady = () => {
+      if (isStagePinchLockedRef.current) {
+        return;
+      }
       const touchEntries = Array.from(stageTouchPointsRef.current.entries());
       if (touchEntries.length < 2) {
         return;
@@ -697,7 +766,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       event: PointerEvent<HTMLDivElement>,
     ) => {
       setIsStageInteracting(true);
-      if (event.pointerType !== "touch") {
+      if (event.pointerType !== "touch" || isStagePinchLockedRef.current) {
         return;
       }
       stageTouchPointsRef.current.set(event.pointerId, {
@@ -718,6 +787,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     ) => {
       if (
         event.pointerType !== "touch" ||
+        isStagePinchLockedRef.current ||
         !stageTouchPointsRef.current.has(event.pointerId)
       ) {
         return;
@@ -737,7 +807,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
       const distance = Math.max(1, getTouchDistance(first, second));
       const anchor = getTouchMidpoint(first, second);
-      updateStageZoom(pinch.startZoom * (distance / pinch.startDistance), anchor);
+      scheduleStageZoom(
+        pinch.startZoom * (distance / pinch.startDistance),
+        anchor,
+      );
       event.preventDefault();
       event.stopPropagation();
     };
@@ -1230,6 +1303,30 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 >
                   <ZoomIn size={15} />
                 </button>
+                <button
+                  className={[
+                    "mini-button icon-only stage-zoom-button stage-pinch-lock-button",
+                    isStagePinchLocked ? "is-locked" : "",
+                  ].join(" ")}
+                  onClick={() => setIsStagePinchLocked((locked) => !locked)}
+                  type="button"
+                  title={
+                    isStagePinchLocked
+                      ? "ピンチ/ホイール拡大縮小を有効にする"
+                      : "ピンチ/ホイール拡大縮小をロック"
+                  }
+                  aria-label={
+                    isStagePinchLocked
+                      ? "ピンチ拡大縮小のロックを解除"
+                      : "ピンチ拡大縮小をロック"
+                  }
+                >
+                  {isStagePinchLocked ? (
+                    <Lock size={14} />
+                  ) : (
+                    <Unlock size={14} />
+                  )}
+                </button>
               </div>
               <button
                 className="mini-button"
@@ -1277,6 +1374,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               "stage-fit-area",
               isStageZoomed ? "is-stage-zoomed" : "",
               isStagePinching ? "is-stage-pinching" : "",
+              isStagePinchLocked ? "is-stage-pinch-locked" : "",
             ].join(" ")}
             ref={fitAreaRef}
             onWheel={handleStageWheel}
