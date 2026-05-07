@@ -115,6 +115,15 @@ type StagePinchZoom = {
   startZoom: number;
 };
 
+type StagePanState = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startScrollLeft: number;
+  startScrollTop: number;
+  hasMoved: boolean;
+};
+
 type SnapGuide = {
   axis: "x" | "y";
   value: number;
@@ -359,6 +368,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const memberDragRef = useRef<MemberDrag | null>(null);
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
     const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
+    const stagePanRef = useRef<StagePanState | null>(null);
     const pendingStageZoomRef = useRef<{
       zoom: number;
       anchor?: { clientX: number; clientY: number };
@@ -369,6 +379,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
     const [isStagePinching, setIsStagePinching] = useState(false);
+    const [isStagePanning, setIsStagePanning] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
     const [stageZoom, setStageZoom] = useState(1);
     const [isStagePinchLocked, setIsStagePinchLocked] = useState(false);
@@ -477,6 +488,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       setIsStagePinching(false);
     };
 
+    const clearStagePan = () => {
+      stagePanRef.current = null;
+      setIsStagePanning(false);
+    };
+
     useEffect(() => {
       isStagePinchLockedRef.current = isStagePinchLocked;
       if (isStagePinchLocked) {
@@ -498,6 +514,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
       const releaseFitLock = () => {
         clearStagePinch();
+        clearStagePan();
         setIsStageInteracting(false);
       };
       window.addEventListener("pointerup", releaseFitLock);
@@ -757,16 +774,50 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         startDistance,
         startZoom: stageZoomRef.current,
       };
+      clearStagePan();
       memberDragRef.current = null;
       setActiveSnapGuides([]);
       setIsStagePinching(true);
+    };
+
+    const canPanStageFromTarget = (target: EventTarget | null) => {
+      if (!isStageZoomed || !(target instanceof Element)) {
+        return false;
+      }
+      return !target.closest(
+        [
+          "button",
+          "input",
+          "textarea",
+          "select",
+          "[contenteditable='true']",
+          ".member-token",
+          ".stage-object",
+          ".object-resize-handle",
+          ".object-rotate-handle",
+          ".stage-zoom-controls",
+        ].join(","),
+      );
     };
 
     const handleStagePointerDownCapture = (
       event: PointerEvent<HTMLDivElement>,
     ) => {
       setIsStageInteracting(true);
-      if (event.pointerType !== "touch" || isStagePinchLockedRef.current) {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+      if (canPanStageFromTarget(event.target) && fitAreaRef.current) {
+        stagePanRef.current = {
+          pointerId: event.pointerId,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startScrollLeft: fitAreaRef.current.scrollLeft,
+          startScrollTop: fitAreaRef.current.scrollTop,
+          hasMoved: false,
+        };
+      }
+      if (isStagePinchLockedRef.current) {
         return;
       }
       stageTouchPointsRef.current.set(event.pointerId, {
@@ -785,6 +836,25 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const handleStagePointerMoveCapture = (
       event: PointerEvent<HTMLDivElement>,
     ) => {
+      const pan = stagePanRef.current;
+      if (
+        event.pointerType === "touch" &&
+        pan?.pointerId === event.pointerId &&
+        !stagePinchZoomRef.current &&
+        fitAreaRef.current
+      ) {
+        const dx = event.clientX - pan.startClientX;
+        const dy = event.clientY - pan.startClientY;
+        if (pan.hasMoved || Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          pan.hasMoved = true;
+          setIsStagePanning(true);
+          fitAreaRef.current.scrollLeft = Math.max(0, pan.startScrollLeft - dx);
+          fitAreaRef.current.scrollTop = Math.max(0, pan.startScrollTop - dy);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
       if (
         event.pointerType !== "touch" ||
         isStagePinchLockedRef.current ||
@@ -820,6 +890,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     ) => {
       if (event.pointerType !== "touch") {
         return;
+      }
+      if (stagePanRef.current?.pointerId === event.pointerId) {
+        clearStagePan();
       }
       stageTouchPointsRef.current.delete(event.pointerId);
       if (stageTouchPointsRef.current.size < 2) {
@@ -1374,6 +1447,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               "stage-fit-area",
               isStageZoomed ? "is-stage-zoomed" : "",
               isStagePinching ? "is-stage-pinching" : "",
+              isStagePanning ? "is-stage-panning" : "",
               isStagePinchLocked ? "is-stage-pinch-locked" : "",
             ].join(" ")}
             ref={fitAreaRef}

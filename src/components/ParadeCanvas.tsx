@@ -1,9 +1,11 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Lock,
   Maximize2,
   Minimize2,
   RotateCcw,
+  Unlock,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -286,8 +288,15 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const zoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
+    const pendingZoomRef = useRef<{
+      zoom: number;
+      anchor?: { clientX: number; clientY: number };
+    } | null>(null);
+    const zoomFrameRef = useRef<number | null>(null);
+    const isPinchLockedRef = useRef(false);
     const saveViewTimerRef = useRef<number | null>(null);
     const [isPinching, setIsPinching] = useState(false);
+    const [isPinchLocked, setIsPinchLocked] = useState(false);
     const pxPerMeter = BASE_PX_PER_METER * zoom;
     const canvasWidthPx = settings.width * pxPerMeter;
     const canvasHeightPx = settings.totalDistance * pxPerMeter;
@@ -437,6 +446,28 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       zoomRef.current = zoom;
     }, [zoom]);
 
+    const cancelPendingZoom = () => {
+      pendingZoomRef.current = null;
+      if (zoomFrameRef.current !== null) {
+        window.cancelAnimationFrame(zoomFrameRef.current);
+        zoomFrameRef.current = null;
+      }
+    };
+
+    const clearPinch = () => {
+      pinchTouchPointsRef.current.clear();
+      pinchZoomRef.current = null;
+      setIsPinching(false);
+    };
+
+    useEffect(() => {
+      isPinchLockedRef.current = isPinchLocked;
+      if (isPinchLocked) {
+        cancelPendingZoom();
+        clearPinch();
+      }
+    }, [isPinchLocked]);
+
     useEffect(() => {
       const container = scrollRef.current;
       if (!container) {
@@ -468,6 +499,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (saveViewTimerRef.current !== null) {
           window.clearTimeout(saveViewTimerRef.current);
         }
+        cancelPendingZoom();
       },
       [],
     );
@@ -530,7 +562,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       settings.width,
     ]);
 
-    const updateZoom = (
+    const applyZoom = (
       nextZoom: number,
       anchor?: { clientX: number; clientY: number },
     ) => {
@@ -567,6 +599,35 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       });
     };
 
+    const scheduleZoom = (
+      nextZoom: number,
+      anchor?: { clientX: number; clientY: number },
+    ) => {
+      const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+      zoomRef.current = clampedZoom;
+      pendingZoomRef.current = { zoom: clampedZoom, anchor };
+      if (zoomFrameRef.current !== null) {
+        return;
+      }
+      zoomFrameRef.current = window.requestAnimationFrame(() => {
+        zoomFrameRef.current = null;
+        const pending = pendingZoomRef.current;
+        pendingZoomRef.current = null;
+        if (!pending) {
+          return;
+        }
+        applyZoom(pending.zoom, pending.anchor);
+      });
+    };
+
+    const updateZoom = (
+      nextZoom: number,
+      anchor?: { clientX: number; clientY: number },
+    ) => {
+      cancelPendingZoom();
+      applyZoom(nextZoom, anchor);
+    };
+
     const getPinchDistance = (first: PinchTouchPoint, second: PinchTouchPoint) =>
       Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
 
@@ -579,6 +640,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     });
 
     const beginPinchIfReady = () => {
+      if (isPinchLockedRef.current) {
+        return;
+      }
       const touchEntries = Array.from(pinchTouchPointsRef.current.entries());
       if (touchEntries.length < 2) {
         return;
@@ -602,7 +666,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const handleViewportPointerDownCapture = (
       event: PointerEvent<HTMLDivElement>,
     ) => {
-      if (event.pointerType !== "touch") {
+      if (event.pointerType !== "touch" || isPinchLockedRef.current) {
         return;
       }
       pinchTouchPointsRef.current.set(event.pointerId, {
@@ -623,6 +687,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     ) => {
       if (
         event.pointerType !== "touch" ||
+        isPinchLockedRef.current ||
         !pinchTouchPointsRef.current.has(event.pointerId)
       ) {
         return;
@@ -641,7 +706,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       const distance = Math.max(1, getPinchDistance(first, second));
-      updateZoom(
+      scheduleZoom(
         pinch.startZoom * (distance / pinch.startDistance),
         getPinchMidpoint(first, second),
       );
@@ -869,6 +934,23 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               <button type="button" className="icon-button" title="拡大" onClick={() => updateZoom(zoom + 0.1)}>
                 <ZoomIn size={16} />
               </button>
+              <button
+                type="button"
+                className={`icon-button stage-pinch-lock-button ${isPinchLocked ? "is-locked" : ""}`}
+                title={
+                  isPinchLocked
+                    ? "ピンチ拡大縮小のロックを解除"
+                    : "ピンチ拡大縮小をロック"
+                }
+                aria-label={
+                  isPinchLocked
+                    ? "ピンチ拡大縮小のロックを解除"
+                    : "ピンチ拡大縮小をロック"
+                }
+                onClick={() => setIsPinchLocked((locked) => !locked)}
+              >
+                {isPinchLocked ? <Lock size={16} /> : <Unlock size={16} />}
+              </button>
             </div>
             <div className="parade-control-row">
               <button type="button" className="mini-button" title="全体表示" onClick={fitAll}>
@@ -906,6 +988,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           className={[
             "parade-viewport",
             isPinching ? "is-parade-pinching" : "",
+            isPinchLocked ? "is-parade-pinch-locked" : "",
           ].join(" ")}
           ref={scrollRef}
           onScroll={scheduleSaveViewState}

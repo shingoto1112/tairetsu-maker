@@ -178,10 +178,15 @@
   padding: 10px 14px 14px;
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .parade-viewport.is-parade-pinching {
   cursor: zoom-in;
+}
+
+.parade-viewport.is-parade-pinch-locked {
+  cursor: default;
 }
 
 .parade-stage-wrap {
@@ -2699,10 +2704,12 @@ h2 {
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
   width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
 
 .stage-fit-area.is-stage-zoomed {
   align-items: flex-start;
+  cursor: grab;
   justify-content: flex-start;
   overflow: auto;
   padding: 8px;
@@ -2715,6 +2722,15 @@ h2 {
 
 .stage-fit-area.is-stage-pinch-locked {
   cursor: default;
+}
+
+.stage-fit-area.is-stage-zoomed.is-stage-pinch-locked {
+  cursor: grab;
+}
+
+.stage-fit-area.is-stage-panning {
+  cursor: grabbing;
+  touch-action: none;
 }
 
 .stage-canvas-with-rulers {
