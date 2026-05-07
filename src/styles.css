@@ -2271,6 +2271,49 @@ h2 {
   min-width: 0;
 }
 
+.stage-zoom-controls {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 2px;
+}
+
+.stage-zoom-button {
+  flex: 0 0 30px;
+  height: 30px;
+  max-width: 30px;
+  min-height: 30px;
+  min-width: 30px;
+  padding: 0;
+  width: 30px;
+}
+
+.stage-zoom-reset {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #0f766e;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  height: 30px;
+  justify-content: center;
+  min-width: 46px;
+  padding: 0 7px;
+}
+
+.stage-zoom-reset:hover,
+.stage-zoom-reset:focus-visible {
+  background: #e6fffb;
+  outline: none;
+}
+
 .stage-export-header__actions > .stage-current-scene {
   align-items: center;
   background: #ecfdf5;
@@ -2591,6 +2634,14 @@ h2 {
   width: 100%;
 }
 
+.stage-fit-area.is-stage-zoomed {
+  align-items: flex-start;
+  justify-content: flex-start;
+  overflow: auto;
+  padding: 8px;
+  overscroll-behavior: contain;
+}
+
 .stage-canvas-with-rulers {
   box-sizing: content-box;
   display: grid;
@@ -2599,6 +2650,11 @@ h2 {
   max-width: 100%;
   min-width: 0;
   overflow: visible;
+}
+
+.stage-fit-area.is-stage-zoomed .stage-canvas-with-rulers {
+  max-height: none;
+  max-width: none;
 }
 
 .stage-canvas-with-rulers.hide-rulers {

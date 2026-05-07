@@ -8,12 +8,15 @@ import {
   Save,
   Redo2,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import {
   CSSProperties,
   forwardRef,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
+  WheelEvent as ReactWheelEvent,
   useEffect,
   useMemo,
   useRef,
@@ -124,6 +127,9 @@ const RULER_LABEL_WIDTH_PX = 30;
 const RULER_LABEL_HEIGHT_PX = 20;
 const RULER_BOTTOM_PADDING_PX = 18;
 const MEMBER_OVERLAP_KEY_SCALE = 100;
+const STAGE_ZOOM_MIN = 1;
+const STAGE_ZOOM_MAX = 4;
+const STAGE_ZOOM_STEP = 0.25;
 
 const createMajorTicks = (lengthMeters: number): number[] => {
   const safeLength = Math.max(0, lengthMeters);
@@ -346,6 +352,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
+    const [stageZoom, setStageZoom] = useState(1);
     const stableFitAreaSizeRef = useRef(fitAreaSize);
     const stage = project.stage;
     const memberGroups = project.memberGroups ?? [];
@@ -501,6 +508,136 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       stage.widthMeters,
     ]);
 
+    const visibleStageSize = useMemo(() => {
+      const safeWidthMeters = Math.max(1, stage.widthMeters);
+      const safeDepthMeters = Math.max(1, stage.depthMeters);
+      const pxPerMeter = fittedStageSize.pxPerMeter * stageZoom;
+      const memberBleedMeters = showMeterRulers ? memberDiameterMeters / 2 : 0;
+      const memberBleedPx = memberBleedMeters * pxPerMeter;
+
+      return {
+        heightPx: safeDepthMeters * pxPerMeter,
+        memberBleedPx,
+        pxPerMeter,
+        rulerBottomPadding: fittedStageSize.rulerBottomPadding,
+        rulerHeight: showMeterRulers ? RULER_LABEL_HEIGHT_PX + memberBleedPx : 0,
+        rulerLabelOffset: memberBleedPx + 7,
+        rulerWidth: showMeterRulers ? RULER_LABEL_WIDTH_PX + memberBleedPx : 0,
+        widthPx: safeWidthMeters * pxPerMeter,
+      };
+    }, [
+      fittedStageSize.pxPerMeter,
+      fittedStageSize.rulerBottomPadding,
+      memberDiameterMeters,
+      showMeterRulers,
+      stage.depthMeters,
+      stage.widthMeters,
+      stageZoom,
+    ]);
+
+    const isStageZoomed = stageZoom > STAGE_ZOOM_MIN + 0.001;
+
+    const updateStageZoom = (
+      nextZoom: number,
+      anchor?: { clientX: number; clientY: number },
+    ) => {
+      const clampedZoom =
+        Math.round(
+          Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, nextZoom)) * 100,
+        ) / 100;
+      const container = fitAreaRef.current;
+      if (!container) {
+        setStageZoom(clampedZoom);
+        return;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const anchorX = anchor
+        ? anchor.clientX - rect.left
+        : container.clientWidth / 2;
+      const anchorY = anchor
+        ? anchor.clientY - rect.top
+        : container.clientHeight / 2;
+      const stageRect = stageRef.current?.getBoundingClientRect();
+      const anchorStageRatio =
+        anchor && stageRect
+          ? {
+              x: Math.min(
+                1,
+                Math.max(
+                  0,
+                  (anchor.clientX - stageRect.left) / Math.max(1, stageRect.width),
+                ),
+              ),
+              y: Math.min(
+                1,
+                Math.max(
+                  0,
+                  (anchor.clientY - stageRect.top) / Math.max(1, stageRect.height),
+                ),
+              ),
+            }
+          : null;
+      const scrollWidth = Math.max(1, container.scrollWidth);
+      const scrollHeight = Math.max(1, container.scrollHeight);
+      const ratioX = (container.scrollLeft + anchorX) / scrollWidth;
+      const ratioY = (container.scrollTop + anchorY) / scrollHeight;
+
+      setStageZoom(clampedZoom);
+      window.requestAnimationFrame(() => {
+        const nextContainer = fitAreaRef.current;
+        if (!nextContainer) {
+          return;
+        }
+        if (clampedZoom <= STAGE_ZOOM_MIN + 0.001) {
+          nextContainer.scrollLeft = 0;
+          nextContainer.scrollTop = 0;
+          return;
+        }
+        if (anchorStageRatio && stageRef.current) {
+          const nextContainerRect = nextContainer.getBoundingClientRect();
+          const nextStageRect = stageRef.current.getBoundingClientRect();
+          const nextAnchorX =
+            nextStageRect.left -
+            nextContainerRect.left +
+            nextStageRect.width * anchorStageRatio.x;
+          const nextAnchorY =
+            nextStageRect.top -
+            nextContainerRect.top +
+            nextStageRect.height * anchorStageRatio.y;
+          nextContainer.scrollLeft = Math.max(
+            0,
+            nextContainer.scrollLeft + nextAnchorX - anchorX,
+          );
+          nextContainer.scrollTop = Math.max(
+            0,
+            nextContainer.scrollTop + nextAnchorY - anchorY,
+          );
+          return;
+        }
+        nextContainer.scrollLeft = Math.max(
+          0,
+          ratioX * nextContainer.scrollWidth - anchorX,
+        );
+        nextContainer.scrollTop = Math.max(
+          0,
+          ratioY * nextContainer.scrollHeight - anchorY,
+        );
+      });
+    };
+
+    const handleStageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.14 : 1 / 1.14;
+      updateStageZoom(stageZoom * factor, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+    };
+
     const updateStagePointerPosition = (event: PointerEvent<HTMLElement>) => {
       if (!stageRef.current) {
         return;
@@ -535,7 +672,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!guideSettings.snapGuideEnabled) {
         return { position, guides: [] };
       }
-      const thresholdMeters = Math.max(0.02, 8 / fittedStageSize.pxPerMeter);
+      const thresholdMeters = Math.max(0.02, 8 / visibleStageSize.pxPerMeter);
       const xGuides = [stage.widthMeters / 2];
       const yGuides: number[] = [];
 
@@ -759,7 +896,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const offsets = new Map<string, MemberDisplayOffset>();
       const radiusPx = Math.min(
         14,
-        Math.max(7, fittedStageSize.pxPerMeter * memberDiameterMeters * 0.22),
+        Math.max(7, visibleStageSize.pxPerMeter * memberDiameterMeters * 0.22),
       );
       clusters.forEach((ids) => {
         if (ids.length <= 1) {
@@ -777,7 +914,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
       return offsets;
     }, [
-      fittedStageSize.pxPerMeter,
+      visibleStageSize.pxPerMeter,
       memberDiameterMeters,
       snapshot.positions,
       stage,
@@ -928,6 +1065,37 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               >
                 <Camera size={15} />
               </button>
+              <div className="stage-zoom-controls" aria-label="ステージ表示倍率">
+                <button
+                  className="mini-button icon-only stage-zoom-button"
+                  onClick={() => updateStageZoom(stageZoom - STAGE_ZOOM_STEP)}
+                  disabled={stageZoom <= STAGE_ZOOM_MIN + 0.001}
+                  type="button"
+                  title="ステージを縮小"
+                  aria-label="ステージを縮小"
+                >
+                  <ZoomOut size={15} />
+                </button>
+                <button
+                  className="stage-zoom-reset"
+                  onClick={() => updateStageZoom(STAGE_ZOOM_MIN)}
+                  type="button"
+                  title="全体表示に戻す"
+                  aria-label="ステージを全体表示に戻す"
+                >
+                  {Math.round(stageZoom * 100)}%
+                </button>
+                <button
+                  className="mini-button icon-only stage-zoom-button"
+                  onClick={() => updateStageZoom(stageZoom + STAGE_ZOOM_STEP)}
+                  disabled={stageZoom >= STAGE_ZOOM_MAX - 0.001}
+                  type="button"
+                  title="ステージを拡大"
+                  aria-label="ステージを拡大"
+                >
+                  <ZoomIn size={15} />
+                </button>
+              </div>
               <button
                 className="mini-button"
                 onClick={onTogglePerspective}
@@ -970,8 +1138,12 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             0.01m移動
           </div>
           <div
-            className="stage-fit-area"
+            className={[
+              "stage-fit-area",
+              isStageZoomed ? "is-stage-zoomed" : "",
+            ].join(" ")}
             ref={fitAreaRef}
+            onWheel={handleStageWheel}
             onPointerDownCapture={() => setIsStageInteracting(true)}
           >
             <div
@@ -983,17 +1155,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               }
               style={{
                 gridTemplateColumns: showMeterRulers
-                  ? `${fittedStageSize.rulerWidth}px ${fittedStageSize.widthPx}px`
-                  : `${fittedStageSize.widthPx}px`,
+                  ? `${visibleStageSize.rulerWidth}px ${visibleStageSize.widthPx}px`
+                  : `${visibleStageSize.widthPx}px`,
                 gridTemplateRows: showMeterRulers
-                  ? `${fittedStageSize.rulerHeight}px ${fittedStageSize.heightPx}px`
-                  : `${fittedStageSize.heightPx}px`,
+                  ? `${visibleStageSize.rulerHeight}px ${visibleStageSize.heightPx}px`
+                  : `${visibleStageSize.heightPx}px`,
                 paddingBottom: showMeterRulers
-                  ? `${fittedStageSize.rulerBottomPadding}px`
+                  ? `${visibleStageSize.rulerBottomPadding}px`
                   : undefined,
-                "--ruler-member-bleed-px": `${fittedStageSize.memberBleedPx}px`,
-                "--ruler-label-offset-px": `${fittedStageSize.rulerLabelOffset}px`,
-                "--ruler-label-offset-negative-px": `-${fittedStageSize.rulerLabelOffset}px`,
+                "--ruler-member-bleed-px": `${visibleStageSize.memberBleedPx}px`,
+                "--ruler-label-offset-px": `${visibleStageSize.rulerLabelOffset}px`,
+                "--ruler-label-offset-negative-px": `-${visibleStageSize.rulerLabelOffset}px`,
               } as CSSProperties}
             >
               <div className="ruler-corner" aria-hidden="true" />
@@ -1058,8 +1230,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 ].join(" ")}
                 style={{
                   ...gridStyle,
-                  height: `${fittedStageSize.heightPx}px`,
-                  width: `${fittedStageSize.widthPx}px`,
+                  height: `${visibleStageSize.heightPx}px`,
+                  width: `${visibleStageSize.widthPx}px`,
                 }}
                 onPointerDown={(event) => {
                   updateStagePointerPosition(event);
@@ -1497,7 +1669,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                         backgroundColor: memberColor,
                         color: labelColor,
                         fontSize: `${getMemberLabelFontSize(
-                          fittedStageSize.pxPerMeter * memberDiameterMeters,
+                          visibleStageSize.pxPerMeter * memberDiameterMeters,
                           labelLines,
                         )}px`,
                         textShadow:
