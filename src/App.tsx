@@ -74,6 +74,7 @@ import {
   elementToJpegDataUrl,
   elementToPngBlob,
   exportElementAsPng,
+  visibleElementToPngBlob,
 } from "./utils/exportImage";
 import { saveGeneratedBlob, UserFileSaveStatus } from "./utils/fileSave";
 import { jpegDataUrlsToPdfBlob } from "./utils/pdfExport";
@@ -523,7 +524,41 @@ const createDefaultParadeSettings = (
 
 const normalizeProject = (project: Project): Project => {
   const sample = createSampleProject();
-  const legacyStage = project.stage as StageConfig & {
+  const legacyProject = project as Partial<Project> & {
+    stageWidthM?: number;
+    stageHeightM?: number;
+    stageDepthM?: number;
+    widthM?: number;
+    heightM?: number;
+    depthM?: number;
+    fixedForAllScenes?: boolean;
+    gridIntervalM?: number;
+    horizontalDisplayMode?: StageConfig["horizontalGuideMode"];
+    memberCircleDiameterM?: number;
+  };
+  const rawStage = legacyProject.stage ?? sample.stage;
+  const inputMembers = Array.isArray(legacyProject.members)
+    ? legacyProject.members
+    : [];
+  const inputStageObjects = Array.isArray(legacyProject.stageObjects)
+    ? legacyProject.stageObjects
+    : [];
+  const inputFrames = Array.isArray(legacyProject.frames)
+    ? legacyProject.frames
+    : [];
+  const inputMemberGroups = Array.isArray(legacyProject.memberGroups)
+    ? legacyProject.memberGroups
+    : [];
+  const inputObjectGroups = Array.isArray(legacyProject.objectGroups)
+    ? legacyProject.objectGroups
+    : [];
+  const inputMovementPaths = Array.isArray(legacyProject.movementPaths)
+    ? legacyProject.movementPaths
+    : [];
+  const inputMovementPlans = Array.isArray(legacyProject.movementPlans)
+    ? legacyProject.movementPlans
+    : [];
+  const legacyStage = rawStage as StageConfig & {
     centerSplitBandEnabled?: boolean;
     coneGuideEnabled?: boolean;
     stageWidthM?: number;
@@ -536,25 +571,13 @@ const normalizeProject = (project: Project): Project => {
     horizontalDisplayMode?: StageConfig["horizontalGuideMode"];
     memberCircleDiameterM?: number;
   };
-  const legacyProject = project as Project & {
-    stageWidthM?: number;
-    stageHeightM?: number;
-    stageDepthM?: number;
-    widthM?: number;
-    heightM?: number;
-    depthM?: number;
-    fixedForAllScenes?: boolean;
-    gridIntervalM?: number;
-    horizontalDisplayMode?: StageConfig["horizontalGuideMode"];
-    memberCircleDiameterM?: number;
-  };
   const now = new Date().toISOString();
-  const mode = project.mode === "parade" ? "parade" : "stage";
+  const mode = legacyProject.mode === "parade" ? "parade" : "stage";
   let stage: StageConfig = {
     ...sample.stage,
-    ...project.stage,
+    ...rawStage,
     widthMeters: positiveNumber(
-      project.stage.widthMeters ??
+      rawStage.widthMeters ??
         legacyStage.stageWidthM ??
         legacyStage.widthM ??
         legacyProject.stageWidthM ??
@@ -563,7 +586,7 @@ const normalizeProject = (project: Project): Project => {
       1,
     ),
     depthMeters: positiveNumber(
-      project.stage.depthMeters ??
+      rawStage.depthMeters ??
         legacyStage.stageHeightM ??
         legacyStage.heightM ??
         legacyStage.depthM ??
@@ -575,21 +598,21 @@ const normalizeProject = (project: Project): Project => {
       1,
     ),
     gridSizeMeters: positiveNumber(
-      project.stage.gridSizeMeters ??
+      rawStage.gridSizeMeters ??
         legacyStage.gridIntervalM ??
         legacyProject.gridIntervalM,
       sample.stage.gridSizeMeters,
       0.1,
     ),
     frontDirection:
-      project.stage.frontDirection ?? project.stage.audienceSide ?? "bottom",
-    originMode: project.stage.originMode ?? "center",
-    showCenterMarker: project.stage.showCenterMarker ?? true,
-    showCenterLine: project.stage.showCenterLine ?? true,
+      rawStage.frontDirection ?? rawStage.audienceSide ?? "bottom",
+    originMode: rawStage.originMode ?? "center",
+    showCenterMarker: rawStage.showCenterMarker ?? true,
+    showCenterLine: rawStage.showCenterLine ?? true,
     memberDiameterMeters: Math.min(
       1,
       positiveNumber(
-        project.stage.memberDiameterMeters ??
+        rawStage.memberDiameterMeters ??
           legacyStage.memberCircleDiameterM ??
           legacyProject.memberCircleDiameterM,
         0.5,
@@ -597,9 +620,9 @@ const normalizeProject = (project: Project): Project => {
       ),
     ),
     horizontalGuideMode:
-      project.stage.horizontalGuideMode === "centerSplit"
+      rawStage.horizontalGuideMode === "centerSplit"
         ? "centerSplit"
-      : project.stage.horizontalGuideMode === "meters"
+      : rawStage.horizontalGuideMode === "meters"
           ? "meters"
           : legacyStage.horizontalDisplayMode === "centerSplit" ||
               legacyProject.horizontalDisplayMode === "centerSplit"
@@ -611,17 +634,17 @@ const normalizeProject = (project: Project): Project => {
   const paradeSettings =
     mode === "parade"
       ? createDefaultParadeSettings({
-          ...(project.paradeSettings ?? {}),
+          ...(legacyProject.paradeSettings ?? {}),
           width:
-            project.paradeSettings?.width ??
-            project.stage.widthMeters ??
+            legacyProject.paradeSettings?.width ??
+            rawStage.widthMeters ??
             legacyStage.stageWidthM ??
             legacyStage.widthM ??
             legacyProject.stageWidthM ??
             legacyProject.widthM,
           totalDistance:
-            project.paradeSettings?.totalDistance ??
-            project.stage.depthMeters ??
+            legacyProject.paradeSettings?.totalDistance ??
+            rawStage.depthMeters ??
             legacyStage.stageHeightM ??
             legacyStage.heightM ??
             legacyStage.depthM ??
@@ -630,8 +653,8 @@ const normalizeProject = (project: Project): Project => {
             legacyProject.stageDepthM ??
             legacyProject.depthM,
           cellSizeMeters:
-            project.paradeSettings?.cellSizeMeters ??
-            project.stage.gridSizeMeters ??
+            legacyProject.paradeSettings?.cellSizeMeters ??
+            rawStage.gridSizeMeters ??
             legacyStage.gridIntervalM ??
             legacyProject.gridIntervalM,
         })
@@ -646,7 +669,7 @@ const normalizeProject = (project: Project): Project => {
     };
   }
 
-  const stageObjects = project.stageObjects.map((object, index) => ({
+  const stageObjects = inputStageObjects.map((object, index) => ({
     ...object,
     visible: object.visible ?? true,
     locked: object.locked ?? false,
@@ -656,8 +679,8 @@ const normalizeProject = (project: Project): Project => {
   }));
 
   const frames = (
-    project.frames.length > 0
-      ? project.frames
+    inputFrames.length > 0
+      ? inputFrames
       : [
           {
             id: createId("f"),
@@ -673,7 +696,7 @@ const normalizeProject = (project: Project): Project => {
       ? Object.fromEntries(
           Object.entries(frame.memberVisibility)
             .filter(([memberId]) =>
-              project.members.some((member) => member.id === memberId),
+              inputMembers.some((member) => member.id === memberId),
             )
             .map(([memberId, visible]) => [memberId, visible !== false]),
         )
@@ -682,7 +705,7 @@ const normalizeProject = (project: Project): Project => {
       ? Object.fromEntries(
           Object.entries(frame.groupVisibility)
             .filter(([groupId]) =>
-              (project.memberGroups ?? []).some((group) => group.id === groupId),
+              inputMemberGroups.some((group) => group.id === groupId),
             )
             .map(([groupId, visible]) => [groupId, visible !== false]),
         )
@@ -691,12 +714,12 @@ const normalizeProject = (project: Project): Project => {
       ? Object.fromEntries(
           Object.entries(frame.objectAssignments)
             .filter(([objectId]) =>
-              project.stageObjects.some((object) => object.id === objectId),
+              inputStageObjects.some((object) => object.id === objectId),
             )
             .map(([objectId, memberIds]) => [
               objectId,
               [...new Set(memberIds)].filter((memberId) =>
-                project.members.some((member) => member.id === memberId),
+                inputMembers.some((member) => member.id === memberId),
               ),
             ])
             .filter(([, memberIds]) => memberIds.length > 0),
@@ -707,7 +730,7 @@ const normalizeProject = (project: Project): Project => {
           Object.entries(frame.memberAppearanceOverrides)
             .filter(
               ([memberId, override]) =>
-                project.members.some((member) => member.id === memberId) &&
+                inputMembers.some((member) => member.id === memberId) &&
                 typeof override?.color === "string" &&
                 override.color.trim().length > 0,
             )
@@ -737,7 +760,7 @@ const normalizeProject = (project: Project): Project => {
         : positiveNumber(frame.stageDepthMeters, stage.depthMeters, 1),
   }));
 
-  const movementPaths = (project.movementPaths ?? [])
+  const movementPaths = inputMovementPaths
     .map((path) => {
       const targetId = path.targetId ?? path.memberId;
       if (!targetId) {
@@ -755,12 +778,12 @@ const normalizeProject = (project: Project): Project => {
     })
     .filter((path): path is MovementPath => Boolean(path));
 
-  const movementPlans = (project.movementPlans ?? [])
+  const movementPlans = inputMovementPlans
     .filter((plan) => {
       const targetExists =
         plan.targetType === "member"
-          ? project.members.some((member) => member.id === plan.targetId)
-          : project.stageObjects.some((object) => object.id === plan.targetId);
+          ? inputMembers.some((member) => member.id === plan.targetId)
+          : inputStageObjects.some((object) => object.id === plan.targetId);
       return (
         targetExists &&
         frames.some((frame) => frame.id === plan.fromFrameId) &&
@@ -775,19 +798,19 @@ const normalizeProject = (project: Project): Project => {
     }));
 
   const animationSettings: AnimationSettings = {
-    membersEnabled: project.animationSettings?.membersEnabled ?? true,
-    objectsEnabled: project.animationSettings?.objectsEnabled ?? true,
-    curtainsEnabled: project.animationSettings?.curtainsEnabled ?? true,
+    membersEnabled: legacyProject.animationSettings?.membersEnabled ?? true,
+    objectsEnabled: legacyProject.animationSettings?.objectsEnabled ?? true,
+    curtainsEnabled: legacyProject.animationSettings?.curtainsEnabled ?? true,
   };
 
   const guideSettings = {
-    snapGuideEnabled: project.guideSettings?.snapGuideEnabled ?? true,
-    snapToGuideEnabled: project.guideSettings?.snapToGuideEnabled ?? false,
+    snapGuideEnabled: legacyProject.guideSettings?.snapGuideEnabled ?? true,
+    snapToGuideEnabled: legacyProject.guideSettings?.snapToGuideEnabled ?? false,
   };
 
-  const memberIds = new Set(project.members.map((member) => member.id));
+  const memberIds = new Set(inputMembers.map((member) => member.id));
   const groupedMemberIds = new Set<string>();
-  const memberGroups = (project.memberGroups ?? []).map((group, index) => {
+  const memberGroups = inputMemberGroups.map((group, index) => {
     const safeMemberIds = [...new Set(group.memberIds)].filter((id) => {
       if (!memberIds.has(id) || groupedMemberIds.has(id)) {
         return false;
@@ -805,7 +828,7 @@ const normalizeProject = (project: Project): Project => {
 
   const objectIds = new Set(stageObjects.map((object) => object.id));
   const groupedObjectIds = new Set<string>();
-  const objectGroups = (project.objectGroups ?? []).map((group, index) => {
+  const objectGroups = inputObjectGroups.map((group, index) => {
     const safeObjectIds = [...new Set(group.objectIds)].filter((id) => {
       if (!objectIds.has(id) || groupedObjectIds.has(id)) {
         return false;
@@ -823,7 +846,7 @@ const normalizeProject = (project: Project): Project => {
     };
   });
 
-  const normalizedMembers = project.members.map((member, index) => ({
+  const normalizedMembers = inputMembers.map((member, index) => ({
     ...member,
     visible: member.visible ?? true,
     zIndex: member.zIndex ?? 20 + index,
@@ -4885,16 +4908,26 @@ function App() {
   };
 
   const generateStageScreenshotBlob = async (): Promise<Blob> => {
+    const visibleStageElement = stageExportRef.current;
+    const captureOptions = {
+      backgroundColor: "#ffffff",
+      pixelRatio: Math.max(2, window.devicePixelRatio || 1),
+    };
+
+    if (visibleStageElement) {
+      await waitForPaint();
+      return await visibleElementToPngBlob(visibleStageElement, captureOptions);
+    }
+
     const element = await preparePrintExportElement(
       "current",
       stageScreenshotOptions,
       "stage-only",
     );
     try {
-      return await elementToPngBlob(element, {
-        backgroundColor: "#ffffff",
-        pixelRatio: Math.max(2, window.devicePixelRatio || 1),
-      });
+      const stageElement =
+        element.querySelector<HTMLElement>(".print-stage-preview") ?? element;
+      return await elementToPngBlob(stageElement, captureOptions);
     } finally {
       cleanupPrintExportElement();
     }

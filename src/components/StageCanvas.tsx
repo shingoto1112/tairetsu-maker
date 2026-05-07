@@ -852,7 +852,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
     return (
       <main className="stage-area">
-        <div className="stage-frame" ref={exportRef}>
+        <div className="stage-frame">
           <div className="stage-export-header">
             <div className="stage-primary-controls">
               <button
@@ -975,6 +975,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             onPointerDownCapture={() => setIsStageInteracting(true)}
           >
             <div
+              ref={exportRef}
               className={
                 showMeterRulers
                   ? "stage-canvas-with-rulers"

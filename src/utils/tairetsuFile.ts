@@ -71,19 +71,28 @@ const getAudioExtension = (project: Project): string => {
 };
 
 const isProjectLike = (value: unknown): value is Project => {
-  const maybe = value as Project;
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const maybe = value as Partial<Project>;
+  const hasRecognizableProjectShape =
+    "title" in maybe ||
+    "stage" in maybe ||
+    "members" in maybe ||
+    "stageObjects" in maybe ||
+    "frames" in maybe;
   return (
-    Boolean(maybe) &&
-    typeof maybe === "object" &&
-    typeof maybe.title === "string" &&
-    Boolean(maybe.stage) &&
-    Array.isArray(maybe.members) &&
-    Array.isArray(maybe.stageObjects) &&
-    Array.isArray(maybe.frames)
+    hasRecognizableProjectShape &&
+    (maybe.title === undefined || typeof maybe.title === "string") &&
+    (maybe.stage === undefined || typeof maybe.stage === "object") &&
+    (maybe.members === undefined || Array.isArray(maybe.members)) &&
+    (maybe.stageObjects === undefined || Array.isArray(maybe.stageObjects)) &&
+    (maybe.frames === undefined || Array.isArray(maybe.frames))
   );
 };
 
-const normalizeZipPath = (path: string): string => path.replace(/\\/g, "/");
+const normalizeZipPath = (path: string): string =>
+  path.replace(/\\/g, "/").replace(/^\/+/, "");
 
 const getParentPath = (path: string): string => {
   const normalized = normalizeZipPath(path);
