@@ -37,6 +37,11 @@ export const saveGeneratedBlob = async ({
   pickerTypes: FilePickerAcceptType[];
 }): Promise<UserFileSaveStatus> => {
   const savePicker = (window as WindowWithSavePicker).showSaveFilePicker;
+  const blob = await generateBlob();
+
+  if (blob.size <= 0) {
+    throw new Error("保存するファイルの作成に失敗しました。");
+  }
 
   if (savePicker) {
     try {
@@ -44,7 +49,6 @@ export const saveGeneratedBlob = async ({
         suggestedName: fallbackFileName,
         types: pickerTypes,
       });
-      const blob = await generateBlob();
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
@@ -57,7 +61,6 @@ export const saveGeneratedBlob = async ({
     }
   }
 
-  const blob = await generateBlob();
   downloadBlob(blob, fallbackFileName);
   return "downloaded";
 };
