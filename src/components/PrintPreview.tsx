@@ -39,7 +39,8 @@ const PRINT_RULER_LEFT_MM = 10;
 const PRINT_RULER_TOP_MM = 6;
 const PRINT_RULER_BOTTOM_MM = 3;
 const PRINT_SCENE_TITLE_MM = 9;
-const PRINT_STAGE_RIGHT_SAFETY_MM = 2;
+const PRINT_STAGE_RIGHT_SAFETY_MM = 8;
+const PRINT_STAGE_MEMBER_CLEARANCE_MM = 1.5;
 
 const defaultPrintOptions: ShareExportOptions = {
   includeAssignments: false,
@@ -151,17 +152,50 @@ const getPrintMetrics = (
   };
 };
 
+const getPrintMemberDiameterMm = (
+  project: Project,
+  metrics: PrintMetrics,
+): number => (project.stage.memberDiameterMeters ?? 0.5) * metrics.mmPerMeter;
+
+const getPrintRulerTopMm = (
+  project: Project,
+  metrics: PrintMetrics,
+  options: ShareExportOptions,
+): number => {
+  if (!options.includeMeterRulers) {
+    return 0;
+  }
+  const memberRadiusMm = getPrintMemberDiameterMm(project, metrics) / 2;
+  return Math.max(
+    PRINT_RULER_TOP_MM,
+    memberRadiusMm + PRINT_STAGE_MEMBER_CLEARANCE_MM + 3,
+  );
+};
+
+const getPrintRulerBottomMm = (
+  project: Project,
+  metrics: PrintMetrics,
+  options: ShareExportOptions,
+): number => {
+  const memberRadiusMm = getPrintMemberDiameterMm(project, metrics) / 2;
+  return Math.max(
+    options.includeMeterRulers ? PRINT_RULER_BOTTOM_MM : 0,
+    memberRadiusMm + PRINT_STAGE_MEMBER_CLEARANCE_MM,
+  );
+};
+
 const getSceneBaseHeightMm = (
   project: Project,
   frame: FormationFrame,
   metrics: PrintMetrics,
+  options: ShareExportOptions,
 ): number => {
   const stageSize = getEffectiveSize(project, frame);
   return (
     PRINT_SCENE_TITLE_MM +
-    PRINT_RULER_TOP_MM +
+    getPrintRulerTopMm(project, metrics, options) +
     stageSize.depthMeters * metrics.mmPerMeter +
-    PRINT_RULER_BOTTOM_MM
+    getPrintRulerBottomMm(project, metrics, options)
   );
 };
 
@@ -200,7 +234,7 @@ const paginateFrames = (
   let usedHeight = 0;
 
   frames.forEach((frame) => {
-    const sceneHeight = getSceneBaseHeightMm(project, frame, metrics);
+    const sceneHeight = getSceneBaseHeightMm(project, frame, metrics, options);
     const additionalHeight =
       sceneHeight + (currentPage.length > 0 ? gapHeightMm : 0);
 
@@ -247,13 +281,15 @@ const PrintStagePreview = ({
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
   const totalDepthMeters = stageSize.depthMeters + gapMeters;
   const stageHeightMm = totalDepthMeters * metrics.mmPerMeter;
-  const memberDiameterMm =
-    (project.stage.memberDiameterMeters ?? 0.5) * metrics.mmPerMeter;
+  const memberDiameterMm = getPrintMemberDiameterMm(project, metrics);
+  const rulerTopMm = getPrintRulerTopMm(project, metrics, options);
+  const rulerBottomMm = getPrintRulerBottomMm(project, metrics, options);
   const previewStyle = {
     "--print-member-size": `${memberDiameterMm}mm`,
-    "--print-ruler-bottom-mm": `${PRINT_RULER_BOTTOM_MM}mm`,
+    "--print-ruler-bottom-mm": `${rulerBottomMm}mm`,
     "--print-ruler-left-mm": `${options.includeMeterRulers ? PRINT_RULER_LEFT_MM : 0}mm`,
-    "--print-ruler-top-mm": `${options.includeMeterRulers ? PRINT_RULER_TOP_MM : 0}mm`,
+    "--print-ruler-top-mm": `${rulerTopMm}mm`,
+    "--print-stage-right-safety-mm": `${PRINT_STAGE_RIGHT_SAFETY_MM}mm`,
     "--print-stage-height-mm": `${stageHeightMm}mm`,
     "--print-stage-width-mm": `${metrics.stageWidthMm}mm`,
   } as CSSProperties;

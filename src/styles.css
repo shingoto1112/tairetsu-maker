@@ -4121,7 +4121,11 @@ h2 {
   grid-template-rows: var(--print-ruler-top-mm, 6mm) var(--print-stage-height-mm);
   min-width: 0;
   padding-bottom: var(--print-ruler-bottom-mm, 3mm);
-  width: calc(var(--print-ruler-left-mm, 10mm) + var(--print-stage-width-mm));
+  padding-right: var(--print-stage-right-safety-mm, 0mm);
+  width: calc(
+    var(--print-ruler-left-mm, 10mm) + var(--print-stage-width-mm) +
+      var(--print-stage-right-safety-mm, 0mm)
+  );
 }
 
 .print-stage-preview.without-rulers {
@@ -4162,7 +4166,7 @@ h2 {
   justify-content: center;
   line-height: 1;
   position: absolute;
-  top: 2.2mm;
+  top: 1.2mm;
   transform: translateX(-50%);
   white-space: nowrap;
 }
@@ -4190,7 +4194,7 @@ h2 {
   grid-row: 2;
   height: var(--print-stage-height-mm);
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   width: var(--print-stage-width-mm);
 }
