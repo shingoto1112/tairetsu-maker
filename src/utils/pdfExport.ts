@@ -1,3 +1,5 @@
+import { jsPDF } from "jspdf";
+
 type JpegPage = {
   dataUrl: string;
   height: number;
@@ -22,7 +24,6 @@ const buildPdf = async (
   pages: JpegPage[],
   title = "隊列メーカー 印刷用",
 ): Promise<Blob> => {
-  const { jsPDF } = await import("jspdf");
   const pdf = new jsPDF({
     compress: true,
     format: "a4",

@@ -70,7 +70,6 @@ import {
   snapToGrid,
 } from "./utils/coordinates";
 import {
-  downloadBlob,
   elementToJpegDataUrl,
   elementToPngBlob,
   exportElementAsPng,
@@ -4846,16 +4845,70 @@ function App() {
   };
 
   const getSaveStatusNotice = (
-    status: UserFileSaveStatus,
+    status: UserFileSaveStatus | "shared",
     fileType: "PDF" | "画像",
   ): string => {
+    if (status === "shared") {
+      return `${fileType}を作成しました。共有シートから“ファイル”などに保存できます。`;
+    }
     if (status === "saved") {
       return `${fileType}を保存しました。`;
     }
     if (status === "downloaded") {
       return `このブラウザでは保存先選択に対応していないため、通常のダウンロードとして${fileType}を保存しました。`;
     }
-    return "保存をキャンセルしました。";
+    return "共有または保存をキャンセルしました。";
+  };
+
+  const shareOrSaveGeneratedBlob = async ({
+    fallbackFileName,
+    fileType,
+    generateBlob,
+    pickerTypes,
+    title,
+  }: {
+    fallbackFileName: string;
+    fileType: "PDF" | "画像";
+    generateBlob: () => Promise<Blob>;
+    pickerTypes: Parameters<typeof saveGeneratedBlob>[0]["pickerTypes"];
+    title: string;
+  }): Promise<UserFileSaveStatus | "shared"> => {
+    const blob = await generateBlob();
+    if (blob.size <= 0) {
+      throw new Error("保存するファイルの作成に失敗しました。");
+    }
+
+    const file = new File([blob], fallbackFileName, {
+      type: blob.type || "application/octet-stream",
+    });
+    const shareData: ShareData = {
+      files: [file],
+      text: "隊列メーカーから書き出しました。",
+      title,
+    };
+    const nav = navigator as NavigatorWithFileShare;
+
+    if (
+      isAppleTouchDevice() &&
+      navigator.share &&
+      (!nav.canShare || nav.canShare(shareData))
+    ) {
+      try {
+        await navigator.share(shareData);
+        return "shared";
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return "cancelled";
+        }
+        console.error(`${fileType}の共有に失敗しました。保存処理へ切り替えます。`, error);
+      }
+    }
+
+    return await saveGeneratedBlob({
+      fallbackFileName,
+      generateBlob: async () => blob,
+      pickerTypes,
+    });
   };
 
   const generatePrintImageBlob = async (
@@ -5013,38 +5066,6 @@ function App() {
     });
   };
 
-  const shareFileOrDownload = async (
-    blob: Blob,
-    filename: string,
-    title: string,
-  ) => {
-    const file = new File([blob], filename, {
-      type: blob.type || "application/octet-stream",
-    });
-    const shareData: ShareData = {
-      files: [file],
-      text: "隊列メーカーから書き出しました。",
-      title,
-    };
-    const nav = navigator as NavigatorWithFileShare;
-    if (navigator.share && (!nav.canShare || nav.canShare(shareData))) {
-      try {
-        await navigator.share(shareData);
-        setNotice("共有シートを開きました。");
-        return;
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          setNotice("共有をキャンセルしました。");
-          return;
-        }
-      }
-    }
-    downloadBlob(blob, filename);
-    setNotice(
-      "この環境では共有シートを使用できないため、ファイルをダウンロードしました。",
-    );
-  };
-
   const handleShareExport = async (request: ShareExportRequest) => {
     const filenameBase =
       request.fileName ||
@@ -5054,8 +5075,10 @@ function App() {
 
     if (request.format === "image") {
       try {
-        const status = await saveGeneratedBlob({
-          fallbackFileName: withFileExtension(filenameBase, "png"),
+        const fallbackFileName = withFileExtension(filenameBase, "png");
+        const status = await shareOrSaveGeneratedBlob({
+          fallbackFileName,
+          fileType: "画像",
           generateBlob: () => generatePrintImageBlob(request.scope, request.options),
           pickerTypes: [
             {
@@ -5063,6 +5086,7 @@ function App() {
               description: "PNG画像",
             },
           ],
+          title: fallbackFileName,
         });
         setNotice(getSaveStatusNotice(status, "画像"));
       } catch (error) {
@@ -5076,8 +5100,10 @@ function App() {
     }
 
     try {
-      const status = await saveGeneratedBlob({
-        fallbackFileName: withFileExtension(filenameBase, "pdf"),
+      const fallbackFileName = withFileExtension(filenameBase, "pdf");
+      const status = await shareOrSaveGeneratedBlob({
+        fallbackFileName,
+        fileType: "PDF",
         generateBlob: () =>
           generatePrintPdfBlob(request.scope, request.options, filenameBase),
         pickerTypes: [
@@ -5086,6 +5112,7 @@ function App() {
             description: "PDFファイル",
           },
         ],
+        title: fallbackFileName,
       });
       setNotice(getSaveStatusNotice(status, "PDF"));
     } catch (error) {
