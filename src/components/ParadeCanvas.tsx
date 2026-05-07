@@ -8,6 +8,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import {
+  CSSProperties,
   forwardRef,
   PointerEvent,
   useEffect,
@@ -85,10 +86,21 @@ type CenterSplitLabel = {
   positionMeters: number;
 };
 
+type MemberDisplayOffset = {
+  x: number;
+  y: number;
+};
+
+type ParadeMemberStyle = CSSProperties & {
+  "--member-overlap-x": string;
+  "--member-overlap-y": string;
+};
+
 const BASE_PX_PER_METER = 32;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.5;
 const RULER_WIDTH = 58;
+const MEMBER_OVERLAP_KEY_SCALE = 100;
 
 const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
   totalDistance: 100,
@@ -109,6 +121,67 @@ const snapMeters = (value: number, gridSize: number) => {
     return roundMeters(value);
   }
   return roundMeters(Math.round(value / gridSize) * gridSize);
+};
+
+const createMeterGridTicks = (lengthMeters: number, stepMeters: number) => {
+  const safeLength = Math.max(0, lengthMeters);
+  const safeStep = Number.isFinite(stepMeters) && stepMeters > 0 ? stepMeters : 1;
+  const ticks: number[] = [];
+  for (let value = 0; value <= safeLength + 0.001; value += safeStep) {
+    ticks.push(roundMeters(value));
+  }
+  const roundedEnd = roundMeters(safeLength);
+  if (!ticks.some((tick) => Math.abs(tick - roundedEnd) < 0.001)) {
+    ticks.push(roundedEnd);
+  }
+  return Array.from(new Set(ticks)).sort((a, b) => a - b);
+};
+
+const isMeterMultiple = (value: number, intervalMeters: number) => {
+  if (!Number.isFinite(intervalMeters) || intervalMeters <= 0) {
+    return false;
+  }
+  return Math.abs(value / intervalMeters - Math.round(value / intervalMeters)) < 0.001;
+};
+
+const splitMemberLabel = (name: string): string[] => {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return [""];
+  }
+  const characters = Array.from(trimmed);
+  if (characters.length <= 4) {
+    return [trimmed];
+  }
+  const midpoint = Math.ceil(characters.length / 2);
+  return [characters.slice(0, midpoint).join(""), characters.slice(midpoint).join("")];
+};
+
+const getMemberLabelFontSize = (diameterPx: number, labelLines: string[]) => {
+  const longestLine = Math.max(1, ...labelLines.map((line) => Array.from(line).length));
+  const base = labelLines.length > 1 ? diameterPx / 4.6 : diameterPx / 3.8;
+  const fitWidth = (diameterPx * 0.82) / Math.max(1, longestLine * 0.72);
+  return Math.max(8, Math.min(13, Math.floor(Math.min(base, fitWidth))));
+};
+
+const getReadableTextColor = (backgroundColor: string) => {
+  const hexMatch = backgroundColor.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!hexMatch) {
+    return "#0f172a";
+  }
+  const raw = hexMatch[1];
+  const normalized =
+    raw.length === 3
+      ? raw
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : raw;
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.62 ? "#0f172a" : "#ffffff";
 };
 
 const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
@@ -270,6 +343,19 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       return ticks;
     }, [settings.totalDistance]);
 
+    const gridStepMeters =
+      Number.isFinite(settings.cellSizeMeters) && settings.cellSizeMeters > 0
+        ? settings.cellSizeMeters
+        : 1;
+    const verticalGridTicks = useMemo(
+      () => createMeterGridTicks(settings.width, gridStepMeters),
+      [gridStepMeters, settings.width],
+    );
+    const horizontalGridTicks = useMemo(
+      () => createMeterGridTicks(settings.totalDistance, gridStepMeters),
+      [gridStepMeters, settings.totalDistance],
+    );
+
     const horizontalTicks = useMemo(() => {
       const ticks: number[] = [];
       const step = Math.max(0.5, Math.min(1, settings.cellSizeMeters || 1));
@@ -290,6 +376,44 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const formatHorizontalTick = (xMeters: number) => {
       return formatSignedMeterLabel(xMeters - settings.width / 2);
     };
+
+    const memberDisplayOffsets = useMemo(() => {
+      const clusters = new Map<string, string[]>();
+      visibleMembers.forEach((member) => {
+        const position = snapshot.positions[member.id];
+        if (!position) {
+          return;
+        }
+        const key = `${Math.round(position.x * MEMBER_OVERLAP_KEY_SCALE)}:${Math.round(
+          position.y * MEMBER_OVERLAP_KEY_SCALE,
+        )}`;
+        const ids = clusters.get(key) ?? [];
+        ids.push(member.id);
+        clusters.set(key, ids);
+      });
+
+      const offsets = new Map<string, MemberDisplayOffset>();
+      const diameterMeters = project.stage.memberDiameterMeters ?? 0.5;
+      const radiusPx = Math.min(
+        14,
+        Math.max(7, pxPerMeter * diameterMeters * 0.22),
+      );
+      clusters.forEach((ids) => {
+        if (ids.length <= 1) {
+          offsets.set(ids[0], { x: 0, y: 0 });
+          return;
+        }
+        ids.forEach((id, index) => {
+          const angle = -Math.PI / 2 + (Math.PI * 2 * index) / ids.length;
+          offsets.set(id, {
+            x: Math.round(Math.cos(angle) * radiusPx * 10) / 10,
+            y: Math.round(Math.sin(angle) * radiusPx * 10) / 10,
+          });
+        });
+      });
+
+      return offsets;
+    }, [project.stage.memberDiameterMeters, pxPerMeter, snapshot.positions, visibleMembers]);
 
     const saveViewState = () => {
       if (!currentFrame?.id || !scrollRef.current) {
@@ -698,26 +822,43 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 gridRow: 2,
                 width: canvasWidthPx,
                 height: canvasHeightPx,
-                backgroundSize: `${pxPerMeter}px ${pxPerMeter}px`,
               }}
               onPointerDown={() => onSelect(null)}
             >
+              <div className="parade-grid-layer" aria-hidden="true">
+                {verticalGridTicks.map((meter) => (
+                  <span
+                    key={`grid-vertical-${meter}`}
+                    className="parade-grid-line parade-grid-line--vertical"
+                    style={{ left: meter * pxPerMeter }}
+                  />
+                ))}
+                {horizontalGridTicks.map((meter) => {
+                  const top = (settings.totalDistance - meter) * pxPerMeter;
+                  const isMajor =
+                    settings.emphasizeEvery10m && isMeterMultiple(meter, 10);
+                  const isMedium =
+                    !isMajor &&
+                    settings.emphasizeEvery5m &&
+                    isMeterMultiple(meter, 5);
+                  return (
+                    <span
+                      key={`grid-horizontal-${meter}`}
+                      className={[
+                        "parade-grid-line",
+                        "parade-grid-line--horizontal",
+                        isMajor ? "is-major" : "",
+                        isMedium ? "is-medium" : "",
+                      ].join(" ")}
+                      style={{ top }}
+                    />
+                  );
+                })}
+              </div>
               <div
                 className="parade-center-line"
                 style={{ left: canvasWidthPx / 2 }}
               />
-              {meterTicks.map((meter) => {
-                const top = (settings.totalDistance - meter) * pxPerMeter;
-                const isMajor = meter % 10 === 0 && settings.emphasizeEvery10m;
-                const isMedium = meter % 5 === 0 && settings.emphasizeEvery5m;
-                return (
-                  <div
-                    key={`line-${meter}`}
-                    className={`parade-distance-line ${isMajor ? "major" : isMedium ? "medium" : ""}`}
-                    style={{ top }}
-                  />
-                );
-              })}
               {visibleObjects.map(({ object, state }) => {
                 const left = state.x * pxPerMeter;
                 const top = state.y * pxPerMeter;
@@ -762,22 +903,44 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   selected?.type === "member" && selected.id === member.id;
                 const isMultiSelected = selectedMemberIds.includes(member.id);
                 const isFocus = focusMode && focusMemberId === member.id;
+                const labelLines = splitMemberLabel(member.name);
+                const labelColor = getReadableTextColor(color);
+                const overlapOffset =
+                  memberDisplayOffsets.get(member.id) ?? { x: 0, y: 0 };
+                const memberStyle: ParadeMemberStyle = {
+                  "--member-overlap-x": `${overlapOffset.x}px`,
+                  "--member-overlap-y": `${overlapOffset.y}px`,
+                  left: position.x * pxPerMeter,
+                  top: position.y * pxPerMeter,
+                  width: diameter,
+                  height: diameter,
+                  backgroundColor: color,
+                  color: labelColor,
+                  fontSize: getMemberLabelFontSize(diameter, labelLines),
+                  textShadow:
+                    labelColor === "#ffffff"
+                      ? "0 1px 2px rgba(15, 23, 42, 0.45)"
+                      : "0 1px 1px rgba(255, 255, 255, 0.6)",
+                  zIndex: member.zIndex,
+                };
                 return (
                   <button
                     key={member.id}
                     type="button"
                     className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""}`}
-                    style={{
-                      left: position.x * pxPerMeter,
-                      top: position.y * pxPerMeter,
-                      width: diameter,
-                      height: diameter,
-                      backgroundColor: color,
-                      zIndex: member.zIndex,
-                    }}
+                    style={memberStyle}
                     onPointerDown={(event) => startMemberDrag(member.id, position, event)}
                   >
-                    <span>{member.name}</span>
+                    <span className="parade-member__label" aria-hidden="true">
+                      {labelLines.map((line, index) => (
+                        <span
+                          className="parade-member__label-line"
+                          key={`${member.id}-label-${index}`}
+                        >
+                          {line}
+                        </span>
+                      ))}
+                    </span>
                   </button>
                 );
               })}

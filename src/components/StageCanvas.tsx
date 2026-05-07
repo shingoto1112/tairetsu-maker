@@ -195,6 +195,20 @@ const formatDepthMeter = (value: number): string => {
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}m`;
 };
 
+const createStageGridTicks = (lengthMeters: number, stepMeters: number) => {
+  const safeLength = Math.max(0, lengthMeters);
+  const safeStep = Number.isFinite(stepMeters) && stepMeters > 0 ? stepMeters : 1;
+  const ticks: number[] = [];
+  for (let value = 0; value <= safeLength + 0.001; value += safeStep) {
+    ticks.push(roundMeters(value));
+  }
+  const roundedEnd = roundMeters(safeLength);
+  if (!ticks.some((tick) => Math.abs(tick - roundedEnd) < 0.001)) {
+    ticks.push(roundedEnd);
+  }
+  return Array.from(new Set(ticks)).sort((a, b) => a - b);
+};
+
 const splitMemberLabel = (name: string): string[] => {
   const trimmed = name.trim();
   if (!trimmed) {
@@ -846,14 +860,20 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
     };
 
-    const gridStyle =
-      stage.showGrid && stage.gridSizeMeters > 0
-        ? {
-            backgroundSize: `${(stage.gridSizeMeters / stage.widthMeters) * 100}% ${
-              (stage.gridSizeMeters / stage.depthMeters) * 100
-            }%`,
-          }
-        : undefined;
+    const stageGridVerticalTicks = useMemo(
+      () =>
+        stage.showGrid && stage.gridSizeMeters > 0
+          ? createStageGridTicks(stage.widthMeters, stage.gridSizeMeters)
+          : [],
+      [stage.gridSizeMeters, stage.showGrid, stage.widthMeters],
+    );
+    const stageGridHorizontalTicks = useMemo(
+      () =>
+        stage.showGrid && stage.gridSizeMeters > 0
+          ? createStageGridTicks(stage.depthMeters, stage.gridSizeMeters)
+          : [],
+      [stage.depthMeters, stage.gridSizeMeters, stage.showGrid],
+    );
 
     const visibleObjects = project.stageObjects
       .filter((object) => snapshot.objectStates[object.id]?.visible ?? object.visible)
@@ -1229,7 +1249,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   mode === "animation" ? "is-animation-editing" : "",
                 ].join(" ")}
                 style={{
-                  ...gridStyle,
                   height: `${visibleStageSize.heightPx}px`,
                   width: `${visibleStageSize.widthPx}px`,
                 }}
@@ -1241,6 +1260,24 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onPointerMove={updateStagePointerPosition}
                 onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
               >
+              {stage.showGrid && (
+                <div className="stage-grid-layer" aria-hidden="true">
+                  {stageGridVerticalTicks.map((tick) => (
+                    <span
+                      className="stage-grid-line stage-grid-line--vertical"
+                      key={`stage-grid-x-${tick}`}
+                      style={{ left: `${(tick / stage.widthMeters) * 100}%` }}
+                    />
+                  ))}
+                  {stageGridHorizontalTicks.map((tick) => (
+                    <span
+                      className="stage-grid-line stage-grid-line--horizontal"
+                      key={`stage-grid-y-${tick}`}
+                      style={{ top: `${(tick / stage.depthMeters) * 100}%` }}
+                    />
+                  ))}
+                </div>
+              )}
               {stage.showStageLabels && (
                 <>
                   <span
