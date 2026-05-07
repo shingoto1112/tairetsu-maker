@@ -4266,10 +4266,11 @@ h2 {
 .print-center-line {
   background: rgba(13, 139, 120, 0.45);
   bottom: 0;
-  left: 50%;
+  left: var(--print-stage-center-x-mm, 50%);
   position: absolute;
   top: 0;
-  width: 1px;
+  transform: translateX(-50%);
+  width: 2px;
 }
 
 .print-scene-gap-start {

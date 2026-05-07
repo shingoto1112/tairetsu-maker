@@ -33,6 +33,12 @@ type PrintMetrics = {
   stageWidthMm: number;
 };
 
+type CenterSplitLabel = {
+  key: string;
+  label: string;
+  positionMeters: number;
+};
+
 const PRINT_PAGE_USABLE_WIDTH_MM = 190;
 const PRINT_PAGE_USABLE_HEIGHT_MM = 277;
 const PRINT_RULER_LEFT_MM = 10;
@@ -93,6 +99,34 @@ const formatHorizontalRulerLabel = (
   return Number.isInteger(absolute) ? String(absolute) : String(Number(absolute.toFixed(2)));
 };
 
+const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
+  const safeWidth = Math.max(0, widthMeters);
+  const center = safeWidth / 2;
+  const leftCount = Math.floor(center + 0.001);
+  const rightCount = Math.floor(safeWidth - center + 0.001);
+  const labels: CenterSplitLabel[] = [];
+
+  for (let index = leftCount; index >= 1; index -= 1) {
+    labels.push({
+      key: `left-${index}`,
+      label: String(index),
+      positionMeters: center - index + 0.5,
+    });
+  }
+
+  for (let index = 1; index <= rightCount; index += 1) {
+    labels.push({
+      key: `right-${index}`,
+      label: String(index),
+      positionMeters: center + index - 0.5,
+    });
+  }
+
+  return labels.filter(
+    (item) => item.positionMeters >= 0 && item.positionMeters <= safeWidth,
+  );
+};
+
 const getTickStep = (meters: number): number => {
   if (meters > 24) return 4;
   if (meters > 14) return 2;
@@ -111,6 +145,9 @@ const buildTicks = (meters: number): number[] => {
   }
   return ticks;
 };
+
+const metersToPrintMm = (meters: number, metrics: PrintMetrics): string =>
+  `${meters * metrics.mmPerMeter}mm`;
 
 const getObjectState = (
   frame: FormationFrame,
@@ -276,6 +313,7 @@ const PrintStagePreview = ({
   options: ShareExportOptions;
 }) => {
   const horizontalGuideMode = project.stage.horizontalGuideMode ?? "meters";
+  const centerSplitLabels = createCenterSplitLabels(commonWidthMeters);
   const xTicks = buildTicks(commonWidthMeters);
   const yTicks = buildTicks(stageSize.depthMeters);
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
@@ -290,6 +328,7 @@ const PrintStagePreview = ({
     "--print-ruler-left-mm": `${options.includeMeterRulers ? PRINT_RULER_LEFT_MM : 0}mm`,
     "--print-ruler-top-mm": `${rulerTopMm}mm`,
     "--print-stage-right-safety-mm": `${PRINT_STAGE_RIGHT_SAFETY_MM}mm`,
+    "--print-stage-center-x-mm": metersToPrintMm(commonWidthMeters / 2, metrics),
     "--print-stage-height-mm": `${stageHeightMm}mm`,
     "--print-stage-width-mm": `${metrics.stageWidthMm}mm`,
   } as CSSProperties;
@@ -308,30 +347,39 @@ const PrintStagePreview = ({
         <>
           <div className="print-ruler-corner" />
           <div className="print-ruler print-ruler-x">
-            {xTicks.map((tick) => {
-              const label = formatHorizontalRulerLabel(
-                tick,
-                commonWidthMeters,
-                horizontalGuideMode,
-              );
-              return (
-                <span
-                  key={`x-${tick}`}
-                  style={{ left: `${(tick / commonWidthMeters) * 100}%` }}
-                >
-                  {label}
-                </span>
-              );
-            })}
+            {horizontalGuideMode === "centerSplit"
+              ? centerSplitLabels.map((item) => (
+                  <span
+                    key={`x-center-split-${item.key}`}
+                    style={{ left: metersToPrintMm(item.positionMeters, metrics) }}
+                  >
+                    {item.label}
+                  </span>
+                ))
+              : xTicks.map((tick) => {
+                  const label = formatHorizontalRulerLabel(
+                    tick,
+                    commonWidthMeters,
+                    horizontalGuideMode,
+                  );
+                  return (
+                    <span
+                      key={`x-${tick}`}
+                      style={{ left: metersToPrintMm(tick, metrics) }}
+                    >
+                      {label}
+                    </span>
+                  );
+                })}
           </div>
           <div className="print-ruler print-ruler-y">
             {yTicks.map((tick) => (
-              <span
-                key={`y-${tick}`}
-                style={{ top: `${(tick / totalDepthMeters) * 100}%` }}
-              >
-                {`${tick}m`}
-              </span>
+                <span
+                  key={`y-${tick}`}
+                  style={{ top: metersToPrintMm(tick, metrics) }}
+                >
+                  {`${tick}m`}
+                </span>
             ))}
           </div>
         </>
@@ -343,19 +391,17 @@ const PrintStagePreview = ({
           !options.includeBackground ? "without-background" : "",
           !options.includeGrid ? "without-grid" : "",
         ]
-          .filter(Boolean)
-          .join(" ")}
+        .filter(Boolean)
+        .join(" ")}
         style={{
-          backgroundSize: `${(metrics.gridSizeMeters / commonWidthMeters) * 100}% ${
-            (metrics.gridSizeMeters / totalDepthMeters) * 100
-          }%`,
+          backgroundSize: `${metersToPrintMm(metrics.gridSizeMeters, metrics)} ${metersToPrintMm(metrics.gridSizeMeters, metrics)}`,
         }}
       >
         <span className="print-center-line" />
         {gapAfter && (
           <span
             className="print-scene-gap-start"
-            style={{ top: `${(stageSize.depthMeters / totalDepthMeters) * 100}%` }}
+            style={{ top: metersToPrintMm(stageSize.depthMeters, metrics) }}
           />
         )}
 
@@ -371,11 +417,11 @@ const PrintStagePreview = ({
               style={{
                 backgroundColor: `${object.color}24`,
                 borderColor: object.color,
-                height: `${(state.heightMeters / totalDepthMeters) * 100}%`,
-                left: `${(state.x / commonWidthMeters) * 100}%`,
-                top: `${(state.y / totalDepthMeters) * 100}%`,
+                height: metersToPrintMm(state.heightMeters, metrics),
+                left: metersToPrintMm(state.x, metrics),
+                top: metersToPrintMm(state.y, metrics),
                 transform: `rotate(${state.rotation}deg)`,
-                width: `${(state.widthMeters / commonWidthMeters) * 100}%`,
+                width: metersToPrintMm(state.widthMeters, metrics),
                 zIndex: state.zIndex,
               }}
             >
@@ -398,8 +444,8 @@ const PrintStagePreview = ({
                   frame,
                   groups: project.memberGroups ?? [],
                 }),
-                left: `${(position.x / commonWidthMeters) * 100}%`,
-                top: `${(position.y / totalDepthMeters) * 100}%`,
+                left: metersToPrintMm(position.x, metrics),
+                top: metersToPrintMm(position.y, metrics),
               }}
             >
               {member.name}
