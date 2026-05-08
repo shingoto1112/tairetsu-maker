@@ -159,6 +159,7 @@ const MEMBER_OVERLAP_KEY_SCALE = 100;
 const STAGE_ZOOM_MIN = 1;
 const STAGE_ZOOM_MAX = 4;
 const STAGE_ZOOM_STEP = 0.25;
+const STAGE_ZOOM_DEFAULT = 1.75;
 
 const createMajorTicks = (lengthMeters: number): number[] => {
   const safeLength = Math.max(0, lengthMeters);
@@ -349,7 +350,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       anchor?: { clientX: number; clientY: number };
     } | null>(null);
     const stageZoomFrameRef = useRef<number | null>(null);
-    const stageZoomRef = useRef(1);
+    const stageZoomRef = useRef(STAGE_ZOOM_DEFAULT);
     const isStagePinchLockedRef = useRef(false);
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
@@ -357,7 +358,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const [isStagePanning, setIsStagePanning] = useState(false);
     const [isMemberDragging, setIsMemberDragging] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
-    const [stageZoom, setStageZoom] = useState(1);
+    const [stageZoom, setStageZoom] = useState(STAGE_ZOOM_DEFAULT);
     const [isStagePinchLocked, setIsStagePinchLocked] = useState(false);
     const stableFitAreaSizeRef = useRef(fitAreaSize);
     const stage = project.stage;

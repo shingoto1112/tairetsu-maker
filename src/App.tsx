@@ -97,7 +97,10 @@ import {
   sortFrames,
 } from "./utils/interpolation";
 import { getMemberDisplayColor } from "./utils/memberAppearance";
-import { normalizeParadeHorizontalMeasureMode } from "./utils/parade";
+import {
+  getSafeParadeCanvasDistance,
+  normalizeParadeHorizontalMeasureMode,
+} from "./utils/parade";
 import { readProjectFromHash } from "./utils/share";
 import {
   loadProjectFromStorage,
@@ -515,6 +518,11 @@ const createDefaultParadeSettings = (
       : "both",
   horizontalMeasureMode: normalizeParadeHorizontalMeasureMode(
     (settings as { horizontalMeasureMode?: unknown }).horizontalMeasureMode,
+  ),
+  backwardDistanceMeters: positiveNumber(
+    settings.backwardDistanceMeters,
+    0,
+    0,
   ),
   emphasizeEvery5m: settings.emphasizeEvery5m ?? true,
   emphasizeEvery10m: settings.emphasizeEvery10m ?? true,
@@ -2016,6 +2024,10 @@ function App() {
           totalDistance: previous.stage.depthMeters,
           cellSizeMeters: previous.stage.gridSizeMeters,
         });
+        const canvasDistanceMeters = getSafeParadeCanvasDistance(
+          settings.totalDistance,
+          settings.backwardDistanceMeters,
+        );
         const groupMemberIds =
           options.target === "group" && options.groupId
             ? new Set(
@@ -2054,7 +2066,7 @@ function App() {
               moved.x < 0 ||
               moved.x > settings.width ||
               moved.y < 0 ||
-              moved.y > settings.totalDistance
+              moved.y > canvasDistanceMeters
             ) {
               outOfRangeCount += 1;
             }
@@ -2071,7 +2083,7 @@ function App() {
               moved.x < 0 ||
               moved.x > settings.width ||
               moved.y < 0 ||
-              moved.y > settings.totalDistance
+              moved.y > canvasDistanceMeters
             ) {
               outOfRangeCount += 1;
             }
@@ -2495,7 +2507,9 @@ function App() {
     setActivePanelTab("members");
     setMemberVisibilityTab(visibleInCurrentFrame ? "visible" : "hidden");
     setIsPanelOpen(true);
-    requestPanelScroll("member", id);
+    if (input.shouldScrollToNewMember !== false) {
+      requestPanelScroll("member", id);
+    }
     setNotice(
       group
         ? `${group.name} に ${member.name} を追加しました。`
@@ -2507,7 +2521,11 @@ function App() {
     group: MemberGroup,
     visibleInCurrentFrame = true,
   ) => {
-    addMember({ groupId: group.id, visibleInCurrentFrame });
+    addMember({
+      groupId: group.id,
+      visibleInCurrentFrame,
+      shouldScrollToNewMember: false,
+    });
   };
 
   const addStageObject = (

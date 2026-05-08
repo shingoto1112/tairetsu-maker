@@ -14,6 +14,8 @@ import {
   splitMemberLabel,
 } from "../utils/memberLabel";
 import {
+  getSafeParadeBackwardDistance,
+  getSafeParadeCanvasDistance,
   internalYToParadeDistance,
   normalizeParadeHorizontalMeasureMode,
   paradeDistanceToInternalY,
@@ -96,12 +98,12 @@ const getEffectiveSize = (
   frame: FormationFrame,
 ): EffectiveStageSize => {
   if (project.mode === "parade") {
+    const totalDistance =
+      project.paradeSettings?.totalDistance ?? project.stage.depthMeters;
+    const backwardDistance = project.paradeSettings?.backwardDistanceMeters;
     return {
       widthMeters: Math.max(project.paradeSettings?.width ?? project.stage.widthMeters, 1),
-      depthMeters: Math.max(
-        project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
-        1,
-      ),
+      depthMeters: Math.max(getSafeParadeCanvasDistance(totalDistance, backwardDistance), 1),
     };
   }
 
@@ -289,7 +291,17 @@ const getFramePrintVerticalRange = (
     };
   }
 
-  const totalDistance = Math.max(stageSize.depthMeters, 1);
+  const totalDistance = Math.max(
+    project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
+    1,
+  );
+  const backwardDistanceMeters = getSafeParadeBackwardDistance(
+    project.paradeSettings?.backwardDistanceMeters,
+  );
+  const canvasDistanceMeters = getSafeParadeCanvasDistance(
+    totalDistance,
+    backwardDistanceMeters,
+  );
   const memberRadiusMeters = Math.max(project.stage.memberDiameterMeters ?? 0.5, 0.01) / 2;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
@@ -313,7 +325,10 @@ const getFramePrintVerticalRange = (
   });
 
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
-    const emptyDepth = Math.min(totalDistance, Math.max(10, metrics.gridSizeMeters * 10));
+    const emptyDepth = Math.min(
+      canvasDistanceMeters,
+      Math.max(10, metrics.gridSizeMeters * 10),
+    );
     return {
       bottomMeters: emptyDepth,
       depthMeters: emptyDepth,
@@ -323,11 +338,11 @@ const getFramePrintVerticalRange = (
 
   const step = Math.max(metrics.gridSizeMeters, 0.01);
   const topMeters = Math.max(0, snapDown(minY - 3, step));
-  const bottomMeters = Math.min(totalDistance, snapUp(maxY + 3, step));
+  const bottomMeters = Math.min(canvasDistanceMeters, snapUp(maxY + 3, step));
   const safeBottomMeters =
     bottomMeters > topMeters
       ? bottomMeters
-      : Math.min(totalDistance, topMeters + Math.min(totalDistance, 6));
+      : Math.min(canvasDistanceMeters, topMeters + Math.min(canvasDistanceMeters, 6));
 
   return {
     bottomMeters: safeBottomMeters,
@@ -490,18 +505,33 @@ const PrintStagePreview = ({
     leftRulerMm + metrics.stageWidthMm + rightRulerMm + stageRightSafetyMm;
   const totalDistance =
     project.paradeSettings?.totalDistance ?? project.stage.depthMeters;
+  const backwardDistanceMeters = getSafeParadeBackwardDistance(
+    project.paradeSettings?.backwardDistanceMeters,
+  );
   const verticalRulerLabels = isParade
     ? (() => {
         const minDistance =
-          internalYToParadeDistance(verticalRange.bottomMeters, totalDistance) ?? 0;
+          internalYToParadeDistance(
+            verticalRange.bottomMeters,
+            totalDistance,
+            backwardDistanceMeters,
+          ) ?? 0;
         const maxDistance =
-          internalYToParadeDistance(verticalRange.topMeters, totalDistance) ??
+          internalYToParadeDistance(
+            verticalRange.topMeters,
+            totalDistance,
+            backwardDistanceMeters,
+          ) ??
           totalDistance;
         const start = Math.ceil(minDistance / 5) * 5;
         const end = Math.floor(maxDistance / 5) * 5;
         const labels: Array<{ key: number; label: string; top: string }> = [];
         for (let meter = start; meter <= end + 0.001; meter += 5) {
-          const internalY = paradeDistanceToInternalY(meter, totalDistance);
+          const internalY = paradeDistanceToInternalY(
+            meter,
+            totalDistance,
+            backwardDistanceMeters,
+          );
           labels.push({
             key: meter,
             label: `${meter}m`,
@@ -510,7 +540,11 @@ const PrintStagePreview = ({
         }
         if (labels.length === 0) {
           const fallbackMeter = Math.round((minDistance + maxDistance) / 2);
-          const internalY = paradeDistanceToInternalY(fallbackMeter, totalDistance);
+          const internalY = paradeDistanceToInternalY(
+            fallbackMeter,
+            totalDistance,
+            backwardDistanceMeters,
+          );
           labels.push({
             key: fallbackMeter,
             label: `${fallbackMeter}m`,
@@ -536,23 +570,35 @@ const PrintStagePreview = ({
         }
 
         const minDistance =
-          internalYToParadeDistance(verticalRange.bottomMeters, totalDistance) ?? 0;
+          internalYToParadeDistance(
+            verticalRange.bottomMeters,
+            totalDistance,
+            backwardDistanceMeters,
+          ) ?? 0;
         const maxDistance =
-          internalYToParadeDistance(verticalRange.topMeters, totalDistance) ??
+          internalYToParadeDistance(
+            verticalRange.topMeters,
+            totalDistance,
+            backwardDistanceMeters,
+          ) ??
           totalDistance;
         const start = Math.ceil(minDistance / 5) * 5;
         const end = Math.floor(maxDistance / 5) * 5;
         const lines: Array<{ isMajor: boolean; key: number; top: string }> = [];
 
         for (let meter = start; meter <= end + 0.001; meter += 5) {
-          if (meter <= 0 || meter > totalDistance) {
+          if (meter < -backwardDistanceMeters || meter > totalDistance) {
             continue;
           }
           const isMajor = Math.abs(meter % 10) < 0.001;
           if ((isMajor && !show10m) || (!isMajor && !show5m)) {
             continue;
           }
-          const internalY = paradeDistanceToInternalY(meter, totalDistance);
+          const internalY = paradeDistanceToInternalY(
+            meter,
+            totalDistance,
+            backwardDistanceMeters,
+          );
           lines.push({
             isMajor,
             key: meter,

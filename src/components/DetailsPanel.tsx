@@ -15,6 +15,8 @@ import { PanelStickyHeader } from "./PanelStickyHeader";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import {
   getCenterSplitSideLabel,
+  getSafeParadeBackwardDistance,
+  getSafeParadeCanvasDistance,
   internalYToParadeDistance,
   normalizeParadeHorizontalMeasureMode,
   paradeDistanceToInternalY,
@@ -131,6 +133,7 @@ const getObjectDisplayYBounds = (
   objectHeightMeters: number | undefined,
   stageDepth: number,
   projectMode: "stage" | "parade",
+  backwardDistanceMeters = 0,
 ) => {
   const safeObjectHeight =
     Number.isFinite(objectHeightMeters) && (objectHeightMeters ?? 0) > 0
@@ -139,7 +142,7 @@ const getObjectDisplayYBounds = (
   if (projectMode === "parade") {
     return {
       max: stageDepth,
-      min: Math.min(stageDepth, safeObjectHeight),
+      min: Math.max(-backwardDistanceMeters, -backwardDistanceMeters + safeObjectHeight),
     };
   }
   return {
@@ -227,6 +230,14 @@ export const DetailsPanel = ({
       ? paradeSettings?.totalDistance ?? stage.depthMeters
       : stage.depthMeters,
   );
+  const paradeBackwardDistanceMeters =
+    projectMode === "parade"
+      ? getSafeParadeBackwardDistance(paradeSettings?.backwardDistanceMeters)
+      : 0;
+  const coordinateDepthMeters =
+    projectMode === "parade"
+      ? getSafeParadeCanvasDistance(stageDepthMeters, paradeBackwardDistanceMeters)
+      : stageDepthMeters;
   const paradeHorizontalMeasureMode = normalizeParadeHorizontalMeasureMode(
     paradeSettings?.horizontalMeasureMode,
   );
@@ -242,11 +253,19 @@ export const DetailsPanel = ({
   const yLabel = projectMode === "parade" ? "m位置" : "y（上端基準）";
   const displayYValue = (internalY: number | undefined) =>
     projectMode === "parade"
-      ? internalYToParadeDistance(internalY, stageDepthMeters)
+      ? internalYToParadeDistance(
+          internalY,
+          stageDepthMeters,
+          paradeBackwardDistanceMeters,
+        )
       : internalY;
   const internalYValue = (displayY: number) =>
     projectMode === "parade"
-      ? paradeDistanceToInternalY(displayY, stageDepthMeters)
+      ? paradeDistanceToInternalY(
+          displayY,
+          stageDepthMeters,
+          paradeBackwardDistanceMeters,
+        )
       : displayY;
   const displayXValue = (internalX: number | undefined) =>
     useParadeCenterSplitX
@@ -273,6 +292,7 @@ export const DetailsPanel = ({
     objectState?.heightMeters,
     stageDepthMeters,
     projectMode,
+    paradeBackwardDistanceMeters,
   );
 
   const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
@@ -288,7 +308,7 @@ export const DetailsPanel = ({
     const nextInternalY = axis === "y" ? internalYValue(value) : memberPosition.y;
     onMoveMember(selectedMember.id, {
       x: roundDetailMeters(clamp(nextInternalX, 0, stageWidthMeters)),
-      y: roundDetailMeters(clamp(nextInternalY, 0, stageDepthMeters)),
+      y: roundDetailMeters(clamp(nextInternalY, 0, coordinateDepthMeters)),
     });
   };
 
@@ -306,7 +326,7 @@ export const DetailsPanel = ({
     );
     const maxObjectY = Math.max(
       0,
-      stageDepthMeters - objectState.heightMeters,
+      coordinateDepthMeters - objectState.heightMeters,
     );
     onUpdateObjectState(selectedObject.id, {
       [axis]:
@@ -352,7 +372,7 @@ export const DetailsPanel = ({
         : currentWidth;
     const nextHeight =
       field === "heightMeters"
-        ? roundDetailMeters(clamp(value, 0.01, stageDepthMeters))
+        ? roundDetailMeters(clamp(value, 0.01, coordinateDepthMeters))
         : currentHeight;
     const nextX = roundDetailMeters(
       clamp(objectState?.x ?? 0, 0, Math.max(0, stageWidthMeters - nextWidth)),
@@ -361,7 +381,7 @@ export const DetailsPanel = ({
       clamp(
         objectState?.y ?? 0,
         0,
-        Math.max(0, stageDepthMeters - nextHeight),
+        Math.max(0, coordinateDepthMeters - nextHeight),
       ),
     );
     onUpdateObjectState(selectedObject.id, {
@@ -506,7 +526,11 @@ export const DetailsPanel = ({
                 <span className="detail-input-with-unit">
                   <NumericInput
                     step="0.01"
-                    min={0}
+                    min={
+                      projectMode === "parade"
+                        ? -paradeBackwardDistanceMeters
+                        : 0
+                    }
                     max={stageDepthMeters}
                     value={displayYValue(memberPosition?.y)}
                     onValueChange={(value) =>

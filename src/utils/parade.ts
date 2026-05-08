@@ -18,41 +18,71 @@ export const getSafeParadeTotalDistance = (
     ? (totalDistance as number)
     : 100;
 
+export const getSafeParadeBackwardDistance = (
+  backwardDistance: number | undefined,
+): number =>
+  Number.isFinite(backwardDistance) && (backwardDistance ?? 0) > 0
+    ? (backwardDistance as number)
+    : 0;
+
+export const getSafeParadeCanvasDistance = (
+  totalDistance: number | undefined,
+  backwardDistance: number | undefined,
+): number =>
+  getSafeParadeTotalDistance(totalDistance) +
+  getSafeParadeBackwardDistance(backwardDistance);
+
 export const internalYToParadeDistance = (
   internalY: number | undefined,
   totalDistance: number | undefined,
+  backwardDistance?: number | undefined,
 ): number | undefined => {
   if (internalY === undefined || !Number.isFinite(internalY)) {
     return undefined;
   }
   const safeTotalDistance = getSafeParadeTotalDistance(totalDistance);
+  const safeBackwardDistance = getSafeParadeBackwardDistance(backwardDistance);
   return roundParadeMeters(
-    clamp(safeTotalDistance - internalY, 0, safeTotalDistance),
+    clamp(
+      safeTotalDistance - internalY,
+      -safeBackwardDistance,
+      safeTotalDistance,
+    ),
   );
 };
 
 export const paradeDistanceToInternalY = (
   distance: number,
   totalDistance: number | undefined,
+  backwardDistance?: number | undefined,
 ): number => {
   const safeTotalDistance = getSafeParadeTotalDistance(totalDistance);
-  return roundParadeMeters(
-    clamp(safeTotalDistance - distance, 0, safeTotalDistance),
+  const safeBackwardDistance = getSafeParadeBackwardDistance(backwardDistance);
+  const clampedDistance = clamp(
+    distance,
+    -safeBackwardDistance,
+    safeTotalDistance,
   );
+  return roundParadeMeters(safeTotalDistance - clampedDistance);
 };
 
 export const clampParadeObjectTopY = (
   internalY: number,
   heightMeters: number | undefined,
   totalDistance: number | undefined,
+  backwardDistance?: number | undefined,
 ): number => {
   const safeTotalDistance = getSafeParadeTotalDistance(totalDistance);
+  const safeCanvasDistance = getSafeParadeCanvasDistance(
+    safeTotalDistance,
+    backwardDistance,
+  );
   const safeHeight =
     Number.isFinite(heightMeters) && (heightMeters ?? 0) > 0
       ? (heightMeters as number)
       : 0;
   return roundParadeMeters(
-    clamp(internalY, 0, Math.max(0, safeTotalDistance - safeHeight)),
+    clamp(internalY, 0, Math.max(0, safeCanvasDistance - safeHeight)),
   );
 };
 

@@ -1878,27 +1878,67 @@ h2 {
 
 .object-group-card {
   background: #ffffff;
+  gap: 12px;
 }
 
 .object-group-card__summary,
 .object-group-item {
   align-items: center;
   display: grid;
-  gap: 7px;
+  gap: 8px 10px;
 }
 
 .object-group-card__summary {
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(84px, 1fr) auto;
+}
+
+.object-group-card .group-card__actions {
+  gap: 9px;
+}
+
+.object-group-card .group-visibility-count {
+  flex: 1 1 100%;
+}
+
+.object-group-card .compact-select {
+  flex: 1 1 118px;
+  min-width: 118px;
+}
+
+.object-group-card .mini-button {
+  flex: 0 0 auto;
 }
 
 .object-group-item {
   background: #f8fafc;
   border: 1px solid transparent;
   border-radius: 8px;
-  grid-template-columns: auto minmax(0, 1fr) minmax(92px, 0.8fr) auto;
-  min-height: 38px;
-  padding: 6px 8px;
+  grid-template-areas:
+    "color name name"
+    ". group visibility";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 70px;
+  padding: 10px 12px;
   scroll-margin-top: 96px;
+}
+
+.object-group-item > .color-dot {
+  align-self: center;
+  grid-area: color;
+}
+
+.object-group-item > input {
+  grid-area: name;
+  min-width: 0;
+}
+
+.object-group-item > select {
+  grid-area: group;
+  min-width: 130px;
+}
+
+.object-group-item > .mini-button {
+  grid-area: visibility;
 }
 
 .object-group-item.is-selected {
@@ -4727,11 +4767,15 @@ h2 {
 .print-object {
   align-items: center;
   border: 1px solid currentColor;
+  box-sizing: border-box;
   display: flex;
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 800;
   justify-content: center;
+  line-height: 1.15;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  padding: 2px;
   position: absolute;
   text-align: center;
   transform-origin: center center;

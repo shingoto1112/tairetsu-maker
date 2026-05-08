@@ -82,6 +82,7 @@ export type ParadeHorizontalMeasureMode = "centerSplit" | "normalMeter";
 
 export type ParadeSettings = {
   totalDistance: number;
+  backwardDistanceMeters?: number;
   width: number;
   cellSizeMeters: number;
   direction: ParadeDirection;
@@ -232,6 +233,7 @@ export type MemberCreateInput = {
   color?: string;
   visibleInCurrentFrame?: boolean;
   position?: Position;
+  shouldScrollToNewMember?: boolean;
 };
 
 export type Project = {

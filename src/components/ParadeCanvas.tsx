@@ -41,6 +41,8 @@ import {
 import {
   clampParadeObjectTopY,
   formatSignedMeterLabel,
+  getSafeParadeBackwardDistance,
+  getSafeParadeCanvasDistance,
   normalizeParadeHorizontalMeasureMode,
 } from "../utils/parade";
 import { NumericInput } from "./NumericInput";
@@ -154,6 +156,7 @@ const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
   horizontalMeasureMode: "centerSplit",
   emphasizeEvery5m: true,
   emphasizeEvery10m: true,
+  backwardDistanceMeters: 0,
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -167,16 +170,31 @@ const snapMeters = (value: number, gridSize: number) => {
 };
 
 const createMeterGridTicks = (lengthMeters: number, stepMeters: number) => {
-  const safeLength = Math.max(0, lengthMeters);
+  return createMeterGridTicksInRange(0, lengthMeters, stepMeters);
+};
+
+const createMeterGridTicksInRange = (
+  minMeters: number,
+  maxMeters: number,
+  stepMeters: number,
+) => {
+  const safeMin = Math.min(minMeters, maxMeters);
+  const safeMax = Math.max(minMeters, maxMeters);
   const safeStep = Number.isFinite(stepMeters) && stepMeters > 0 ? stepMeters : 1;
   const ticks: number[] = [];
-  for (let value = 0; value <= safeLength + 0.001; value += safeStep) {
+
+  const firstTick = Math.ceil((safeMin - 0.001) / safeStep) * safeStep;
+  for (let value = firstTick; value <= safeMax + 0.001; value += safeStep) {
     ticks.push(roundMeters(value));
   }
-  const roundedEnd = roundMeters(safeLength);
-  if (!ticks.some((tick) => Math.abs(tick - roundedEnd) < 0.001)) {
-    ticks.push(roundedEnd);
-  }
+
+  [safeMin, safeMax].forEach((edge) => {
+    const roundedEdge = roundMeters(edge);
+    if (!ticks.some((tick) => Math.abs(tick - roundedEdge) < 0.001)) {
+      ticks.push(roundedEdge);
+    }
+  });
+
   return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
@@ -310,9 +328,16 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const saveViewTimerRef = useRef<number | null>(null);
     const [isPinching, setIsPinching] = useState(false);
     const [isPinchLocked, setIsPinchLocked] = useState(false);
+    const backwardDistanceMeters = getSafeParadeBackwardDistance(
+      settings.backwardDistanceMeters,
+    );
+    const canvasDistanceMeters = getSafeParadeCanvasDistance(
+      settings.totalDistance,
+      backwardDistanceMeters,
+    );
     const pxPerMeter = BASE_PX_PER_METER * zoom;
     const canvasWidthPx = settings.width * pxPerMeter;
-    const canvasHeightPx = settings.totalDistance * pxPerMeter;
+    const canvasHeightPx = canvasDistanceMeters * pxPerMeter;
     const horizontalRulerHeight = 28;
     const leftRulerVisible =
       settings.rulerPosition === "both" || settings.rulerPosition === "left";
@@ -357,12 +382,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     );
 
     const meterTicks = useMemo(() => {
-      const ticks: number[] = [];
-      for (let value = 0; value <= settings.totalDistance + 0.001; value += 5) {
-        ticks.push(roundMeters(value));
-      }
-      return ticks;
-    }, [settings.totalDistance]);
+      return createMeterGridTicksInRange(
+        -backwardDistanceMeters,
+        settings.totalDistance,
+        5,
+      );
+    }, [backwardDistanceMeters, settings.totalDistance]);
 
     const gridStepMeters =
       Number.isFinite(settings.cellSizeMeters) && settings.cellSizeMeters > 0
@@ -373,8 +398,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       [gridStepMeters, settings.width],
     );
     const horizontalGridTicks = useMemo(
-      () => createMeterGridTicks(settings.totalDistance, gridStepMeters),
-      [gridStepMeters, settings.totalDistance],
+      () =>
+        createMeterGridTicksInRange(
+          -backwardDistanceMeters,
+          settings.totalDistance,
+          gridStepMeters,
+        ),
+      [backwardDistanceMeters, gridStepMeters, settings.totalDistance],
     );
 
     const horizontalTicks = useMemo(() => {
@@ -468,7 +498,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           ((clientX - rect.left) / Math.max(1, rect.width)) * settings.width;
         const rawY =
           ((clientY - rect.top) / Math.max(1, rect.height)) *
-          settings.totalDistance;
+          canvasDistanceMeters;
         return {
           x: clamp(
             snapMeters(rawX, settings.cellSizeMeters),
@@ -478,11 +508,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           y: clamp(
             snapMeters(rawY, settings.cellSizeMeters),
             0,
-            settings.totalDistance,
+            canvasDistanceMeters,
           ),
         };
       },
-      [settings.cellSizeMeters, settings.totalDistance, settings.width],
+      [canvasDistanceMeters, settings.cellSizeMeters, settings.totalDistance, settings.width],
     );
 
     const trackStagePointerPosition = useCallback(
@@ -630,7 +660,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             y: clamp(
               snapMeters(dragState.startPosition.y + dy, settings.cellSizeMeters),
               0,
-              settings.totalDistance,
+              canvasDistanceMeters,
             ),
           };
           onMoveMember(dragState.id, nextPosition);
@@ -641,7 +671,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           );
           const maxHeight = Math.max(
             MIN_OBJECT_SIZE_METERS,
-            settings.totalDistance - dragState.startState.y,
+            canvasDistanceMeters - dragState.startState.y,
           );
           const nextWidth = clamp(
             snapMeters(
@@ -691,6 +721,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             snapMeters(dragState.startState.y + dy, settings.cellSizeMeters),
             dragState.startState.heightMeters,
             settings.totalDistance,
+            backwardDistanceMeters,
           );
           onUpdateObjectState(dragState.id, { x: nextX, y: nextY });
         }
@@ -718,6 +749,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onUpdateObjectState,
       pxPerMeter,
       settings.cellSizeMeters,
+      backwardDistanceMeters,
+      canvasDistanceMeters,
       settings.totalDistance,
       settings.width,
     ]);
@@ -923,7 +956,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         (settings.width * BASE_PX_PER_METER);
       const heightZoom =
         (scrollRef.current.clientHeight - 32) /
-        (settings.totalDistance * BASE_PX_PER_METER);
+        (canvasDistanceMeters * BASE_PX_PER_METER);
       updateZoom(clamp(Math.min(widthZoom, heightZoom), MIN_ZOOM, 1));
       window.setTimeout(() => {
         if (scrollRef.current) {

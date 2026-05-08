@@ -7,7 +7,10 @@ import {
   ParadeSettings,
   StageConfig,
 } from "../types";
-import { normalizeParadeHorizontalMeasureMode } from "../utils/parade";
+import {
+  getSafeParadeBackwardDistance,
+  normalizeParadeHorizontalMeasureMode,
+} from "../utils/parade";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
@@ -32,6 +35,9 @@ export const StageSettingsPanel = ({
 }: StageSettingsPanelProps) => {
   const effectiveParadeSettings: ParadeSettings = {
     totalDistance: paradeSettings?.totalDistance ?? stage.depthMeters,
+    backwardDistanceMeters: getSafeParadeBackwardDistance(
+      paradeSettings?.backwardDistanceMeters,
+    ),
     width: paradeSettings?.width ?? stage.widthMeters,
     cellSizeMeters: paradeSettings?.cellSizeMeters ?? stage.gridSizeMeters,
     direction: paradeSettings?.direction ?? "up",
@@ -48,7 +54,7 @@ export const StageSettingsPanel = ({
       <section className="panel-section">
         <PanelStickyHeader
           title="パレード設定"
-          meta={`現在: 全体距離${effectiveParadeSettings.totalDistance}m / 横幅${effectiveParadeSettings.width}m`}
+          meta={`現在: 全体距離${effectiveParadeSettings.totalDistance}m / 0m後方${effectiveParadeSettings.backwardDistanceMeters ?? 0}m / 横幅${effectiveParadeSettings.width}m`}
         />
         <div className="settings-grid">
           <label>
@@ -60,6 +66,19 @@ export const StageSettingsPanel = ({
               onValueChange={(totalDistance) =>
                 onParadeSettingsChange?.({
                   totalDistance,
+                })
+              }
+            />
+          </label>
+          <label>
+            0mライン後方
+            <NumericInput
+              min={0}
+              step="1"
+              value={effectiveParadeSettings.backwardDistanceMeters ?? 0}
+              onValueChange={(backwardDistanceMeters) =>
+                onParadeSettingsChange?.({
+                  backwardDistanceMeters,
                 })
               }
             />
@@ -149,7 +168,7 @@ export const StageSettingsPanel = ({
           </label>
         </div>
         <p className="notice muted">
-          横方向表示方式は表示だけを切り替えます。配置データはこれまで通りm単位で保存します。
+          0mライン後方を増やすと、スタート後ろに -1m、-2m... の範囲を追加できます。横方向表示方式は表示だけを切り替えます。
         </p>
       </section>
     );
