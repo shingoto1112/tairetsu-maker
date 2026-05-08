@@ -180,12 +180,18 @@ const HISTORY_COALESCE_MS = 1200;
 const FLOATING_MENU_MARGIN_PX = 10;
 const APP_NAME = "隊列メーカー";
 const MEMBER_COLOR_PRESETS = [
+  { label: "深緑", value: "#0f766e" },
+  { label: "青緑", value: "#14b8a6" },
   { label: "黄色", value: "#facc15" },
   { label: "赤", value: "#ef4444" },
   { label: "青", value: "#3b82f6" },
   { label: "紫", value: "#a855f7" },
   { label: "緑", value: "#22c55e" },
   { label: "オレンジ", value: "#f97316" },
+  { label: "ピンク", value: "#ec4899" },
+  { label: "水色", value: "#06b6d4" },
+  { label: "グレー", value: "#64748b" },
+  { label: "黒", value: "#111827" },
 ];
 
 const clampFloatingMenuPosition = (
@@ -6910,6 +6916,15 @@ function App() {
           if (!member) {
             return null;
           }
+          const memberColorOptions = MEMBER_COLOR_PRESETS.some(
+            (preset) =>
+              preset.value.toLowerCase() === memberColorEditor.color.toLowerCase(),
+          )
+            ? MEMBER_COLOR_PRESETS
+            : [
+                { label: "現在の色", value: memberColorEditor.color },
+                ...MEMBER_COLOR_PRESETS,
+              ];
           return (
             <div
               className="stage-context-menu member-color-popover"
@@ -6928,7 +6943,7 @@ function App() {
               <div className="member-color-popover__section">
                 <span className="member-color-popover__label">色</span>
                 <div className="member-color-presets">
-                  {MEMBER_COLOR_PRESETS.map((preset) => (
+                  {memberColorOptions.map((preset) => (
                     <button
                       aria-label={preset.label}
                       className={
@@ -6949,20 +6964,6 @@ function App() {
                       type="button"
                     />
                   ))}
-                  <label className="member-color-picker">
-                    その他
-                    <input
-                      type="color"
-                      value={memberColorEditor.color}
-                      onChange={(event) =>
-                        setMemberColorEditor((previous) =>
-                          previous
-                            ? { ...previous, color: event.target.value }
-                            : previous,
-                        )
-                      }
-                    />
-                  </label>
                 </div>
               </div>
               <fieldset className="member-color-popover__section">

@@ -18,6 +18,7 @@ import {
   StageObject,
 } from "../types";
 import { PanelStickyHeader } from "./PanelStickyHeader";
+import { ColorPaletteInput } from "./ColorPaletteInput";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import { formatTime } from "../utils/time";
 
@@ -335,17 +336,15 @@ export const MemberPanel = ({
         </div>
         {!compact && (
           <div className="member-row__settings">
-            <label>
-              色
-              <input
-                type="color"
+            <div className="palette-field">
+              <span>色</span>
+              <ColorPaletteInput
+                compact
                 value={member.color}
-                onChange={(event) =>
-                  onUpdate(member.id, { color: event.target.value })
-                }
-                onClick={(event) => event.stopPropagation()}
+                onChange={(color) => onUpdate(member.id, { color })}
+                label={`${member.name} の色`}
               />
-            </label>
+            </div>
             <label>
               所属
               <select
@@ -698,14 +697,14 @@ export const MemberPanel = ({
               placeholder="未入力なら グループ1"
             />
           </label>
-          <label>
-            グループカラー
-            <input
-              type="color"
+          <div className="palette-field">
+            <span>グループカラー</span>
+            <ColorPaletteInput
               value={draftGroupColor}
-              onChange={(event) => setDraftGroupColor(event.target.value)}
+              onChange={setDraftGroupColor}
+              label="グループカラー"
             />
-          </label>
+          </div>
         </div>
         <p className="muted-text">
           先にグループを作り、カード内の「＋メンバー」から追加すると名前と色が自動でそろいます。
@@ -798,16 +797,17 @@ export const MemberPanel = ({
                   <span className={`group-status ${status}`}>{statusText}</span>
                 </div>
                 <div className="group-card__actions">
-                  <label className="group-color-field" onClick={(event) => event.stopPropagation()}>
-                    色
-                    <input
-                      type="color"
+                  <div className="group-color-field" onClick={(event) => event.stopPropagation()}>
+                    <span>色</span>
+                    <ColorPaletteInput
+                      compact
                       value={color}
-                      onChange={(event) =>
-                        onUpdateGroup(group.id, { color: event.target.value })
+                      onChange={(nextColor) =>
+                        onUpdateGroup(group.id, { color: nextColor })
                       }
+                      label={`${group.name} の色`}
                     />
-                  </label>
+                  </div>
                   <button
                     className="mini-button primary"
                     onClick={() => onAddMemberToGroup(group, isVisibleTab)}

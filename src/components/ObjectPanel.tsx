@@ -25,6 +25,7 @@ import {
 } from "../types";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
+import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type ObjectPanelProps = {
   objects: StageObject[];
@@ -435,14 +436,14 @@ export const ObjectPanel = ({
               placeholder="例：中旗"
             />
           </label>
-          <label>
-            色
-            <input
-              type="color"
+          <div className="palette-field">
+            <span>色</span>
+            <ColorPaletteInput
               value={groupDraftColor}
-              onChange={(event) => setGroupDraftColor(event.target.value)}
+              onChange={setGroupDraftColor}
+              label="道具グループの色"
             />
-          </label>
+          </div>
           <label>
             種類
             <select
@@ -535,16 +536,15 @@ export const ObjectPanel = ({
                       <span className="group-visibility-count">
                         表示{visibleCount} / 非表示{hiddenCount}
                       </span>
-                      <input
-                        className="compact-color-input"
-                        type="color"
+                      <ColorPaletteInput
+                        compact
                         value={group.color ?? "#0d8b78"}
-                        onChange={(event) =>
+                        onChange={(color) =>
                           onUpdateObjectGroup(group.id, {
-                            color: event.target.value,
+                            color,
                           })
                         }
-                        aria-label={`${group.name} の色`}
+                        label={`${group.name} の色`}
                       />
                       <select
                         className="compact-select"
@@ -822,16 +822,17 @@ export const ObjectPanel = ({
                   ))}
                 </select>
               </label>
-              <label>
-                色
-                <input
-                  type="color"
+              <div className="palette-field">
+                <span>色</span>
+                <ColorPaletteInput
+                  compact
                   value={object.color}
-                  onChange={(event) =>
-                    onUpdateObject(object.id, { color: event.target.value })
+                  onChange={(color) =>
+                    onUpdateObject(object.id, { color })
                   }
+                  label={`${object.name} の色`}
                 />
-              </label>
+              </div>
               <label>
                 zIndex
                 <NumericInput

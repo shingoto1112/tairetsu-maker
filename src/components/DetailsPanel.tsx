@@ -22,6 +22,7 @@ import {
   paradeDistanceToInternalY,
 } from "../utils/parade";
 import { NumericInput } from "./NumericInput";
+import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type DetailsPanelProps = {
   selected: Selection;
@@ -488,19 +489,18 @@ export const DetailsPanel = ({
                   ))}
                 </select>
               </label>
-              <label className="detail-edit-field">
+              <div className="detail-edit-field">
                 <span>表示色</span>
-                <input
-                  className="detail-color-input"
-                  type="color"
+                <ColorPaletteInput
                   value={selectedMember.color}
-                  onChange={(event) =>
+                  onChange={(color) =>
                     onUpdateMember(selectedMember.id, {
-                      color: event.target.value,
+                      color,
                     })
                   }
+                  label={`${selectedMember.name} の表示色`}
                 />
-              </label>
+              </div>
               <label className="detail-edit-field">
                 <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
@@ -595,19 +595,18 @@ export const DetailsPanel = ({
                     : "非表示"}
                 </strong>
               </div>
-              <label className="detail-edit-field">
+              <div className="detail-edit-field">
                 <span>色</span>
-                <input
-                  className="detail-color-input"
-                  type="color"
+                <ColorPaletteInput
                   value={selectedObject.color}
-                  onChange={(event) =>
+                  onChange={(color) =>
                     onUpdateObject(selectedObject.id, {
-                      color: event.target.value,
+                      color,
                     })
                   }
+                  label={`${selectedObject.name} の色`}
                 />
-              </label>
+              </div>
               <label className="detail-edit-field">
                 <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
