@@ -5205,6 +5205,16 @@ function App() {
     }
   };
 
+  const handleShareExportZip = async (includeAudio: boolean) => {
+    if (isDirty && !isSharedProject) {
+      const saved = await saveProjectManually({ showNotice: false });
+      if (!saved) {
+        return;
+      }
+    }
+    await exportTairetsuProject(projectRef.current, includeAudio);
+  };
+
   const changeLoop = (patch: {
     loopEnabled?: boolean;
     loopStart?: number;
@@ -6988,8 +6998,10 @@ function App() {
       isOpen={isShareExportOpen}
       projectTitle={project.title}
       currentSceneLabel={displayFrame?.label ?? selectedFrame?.label ?? "現在シーン"}
+      hasAudio={Boolean(project.audio?.id)}
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
+      onExportZip={handleShareExportZip}
     />
     {isPrintPreviewMounted && (
       <PrintPreview

@@ -4112,6 +4112,37 @@ h2 {
   margin-top: 3px;
 }
 
+.share-export-check {
+  align-items: flex-start;
+  background: #ffffff;
+  border: 1px solid #dbe7f0;
+  border-radius: 16px;
+  color: var(--ink);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  padding: 12px 14px;
+}
+
+.share-export-check.is-disabled {
+  color: var(--muted);
+}
+
+.share-export-check input {
+  accent-color: var(--accent);
+  height: 18px;
+  margin-top: 2px;
+  width: 18px;
+}
+
+.share-export-check small {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
 .share-format-grid {
   display: grid;
   gap: 12px;
@@ -4416,10 +4447,9 @@ h2 {
 .print-member {
   border-radius: 999px;
   display: inline-flex;
-  font-size: 7pt;
   font-weight: 800;
   height: var(--print-member-size, 7mm);
-  line-height: 1;
+  line-height: 0.94;
   overflow: hidden;
   padding: 0;
   position: absolute;
@@ -4429,16 +4459,31 @@ h2 {
 }
 
 .print-member__label {
-  left: 7%;
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  justify-content: center;
+  left: 8%;
+  min-height: 78%;
   overflow: hidden;
   pointer-events: none;
   position: absolute;
-  right: 7%;
+  right: 8%;
   text-align: center;
   text-overflow: clip;
-  top: 30%;
+  top: 50%;
   transform: translateY(-50%);
+  white-space: normal;
+}
+
+.print-member__label-line {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
   white-space: nowrap;
+  word-break: keep-all;
 }
 
 .print-object {

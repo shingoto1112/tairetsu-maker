@@ -150,6 +150,39 @@ const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
   );
 };
 
+const splitPrintMemberLabel = (name: string): string[] => {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return [""];
+  }
+  const characters = Array.from(trimmed);
+  const hasWideCharacters = /[^\u0020-\u007e]/.test(trimmed);
+  if (characters.length <= 3 || (characters.length <= 4 && !hasWideCharacters)) {
+    return [trimmed];
+  }
+  const midpoint = Math.ceil(characters.length / 2);
+  return [
+    characters.slice(0, midpoint).join(""),
+    characters.slice(midpoint).join(""),
+  ].filter(Boolean);
+};
+
+const getPrintMemberLabelFontSizeMm = (
+  diameterMm: number,
+  labelLines: string[],
+): number => {
+  const safeDiameter = Math.max(4, diameterMm);
+  const longestLine = Math.max(
+    1,
+    ...labelLines.map((line) => Array.from(line).length),
+  );
+  const lineCount = Math.max(1, labelLines.length);
+  const widthBased = (safeDiameter * 0.92) / Math.max(1.3, longestLine * 0.72);
+  const heightBased = (safeDiameter * 0.82) / lineCount;
+  const maxReadable = safeDiameter * 0.46;
+  return Math.round(Math.max(1.8, Math.min(maxReadable, widthBased, heightBased)) * 100) / 100;
+};
+
 const getTickStep = (meters: number): number => {
   if (meters > 24) return 4;
   if (meters > 14) return 2;
@@ -575,6 +608,7 @@ const PrintStagePreview = ({
             frame,
             groups: project.memberGroups ?? [],
           });
+          const labelLines = splitPrintMemberLabel(member.name);
           const labelColor = getReadableMemberLabelColor(memberColor);
           return (
             <span
@@ -583,11 +617,18 @@ const PrintStagePreview = ({
               style={{
                 backgroundColor: memberColor,
                 color: labelColor,
+                fontSize: `${getPrintMemberLabelFontSizeMm(memberDiameterMm, labelLines)}mm`,
                 left: metersToPrintMm(position.x, metrics),
                 top: metersToPrintMm(position.y - verticalRange.topMeters, metrics),
               }}
             >
-              <span className="print-member__label">{member.name}</span>
+              <span className="print-member__label" aria-hidden="true">
+                {labelLines.map((line, index) => (
+                  <span className="print-member__label-line" key={`${member.id}-print-label-${index}`}>
+                    {line}
+                  </span>
+                ))}
+              </span>
             </span>
           );
         })}

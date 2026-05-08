@@ -29,8 +29,10 @@ type ShareExportModalProps = {
   isOpen: boolean;
   projectTitle: string;
   currentSceneLabel: string;
+  hasAudio?: boolean;
   onClose: () => void;
   onExport: (request: ShareExportRequest) => void | Promise<void>;
+  onExportZip?: (includeAudio: boolean) => void | Promise<void>;
 };
 
 const fixedExportOptions: ShareExportOptions = {
@@ -83,12 +85,15 @@ export const ShareExportModal = ({
   isOpen,
   projectTitle,
   currentSceneLabel,
+  hasAudio = false,
   onClose,
   onExport,
+  onExportZip,
 }: ShareExportModalProps) => {
   const [scope, setScope] = useState<ShareExportScope | null>(null);
   const [format, setFormat] = useState<ShareExportFormat>("pdf");
   const [fileName, setFileName] = useState("");
+  const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -114,8 +119,15 @@ export const ShareExportModal = ({
       setScope(null);
       setFormat("pdf");
       setFileName("");
+      setIncludeAudioInZip(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!hasAudio) {
+      setIncludeAudioInZip(false);
+    }
+  }, [hasAudio]);
 
   if (!isOpen) {
     return null;
@@ -149,6 +161,14 @@ export const ShareExportModal = ({
       fileName: makeDefaultFileName(nextScope, projectTitle, currentSceneLabel),
       options: fixedExportOptions,
     });
+    onClose();
+  };
+
+  const runZipExport = async () => {
+    if (!onExportZip) {
+      return;
+    }
+    await onExportZip(hasAudio ? includeAudioInZip : false);
     onClose();
   };
 
@@ -271,6 +291,45 @@ export const ShareExportModal = ({
                 </span>
               </button>
             </section>
+
+            {onExportZip && (
+              <section className="share-export-section">
+                <h3>隊列表共有</h3>
+                <button
+                  className="share-export-row"
+                  onClick={() => void runZipExport()}
+                  type="button"
+                >
+                  <Download size={26} />
+                  <span>
+                    <strong>隊列表ZIPを書き出す</strong>
+                    <small>他の人の隊列メーカーへ読み込める .zip ファイルを保存します</small>
+                  </span>
+                </button>
+                <label
+                  className={
+                    hasAudio
+                      ? "share-export-check"
+                      : "share-export-check is-disabled"
+                  }
+                >
+                  <input
+                    checked={includeAudioInZip}
+                    disabled={!hasAudio}
+                    onChange={(event) => setIncludeAudioInZip(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    音源ファイルも含める
+                    <small>
+                      {hasAudio
+                        ? "共有先でも音源を再選択せずに再生できます。ファイルサイズは大きくなります。"
+                        : "この隊列表には音源が設定されていません。"}
+                    </small>
+                  </span>
+                </label>
+              </section>
+            )}
           </div>
         ) : (
           <div className="share-export-detail">
