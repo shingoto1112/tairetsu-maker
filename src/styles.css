@@ -358,6 +358,22 @@
   writing-mode: horizontal-tb;
 }
 
+.parade-member--three-character {
+  overflow: visible;
+}
+
+.parade-member--three-character .parade-member__label {
+  inset: auto -48% auto -48%;
+  line-height: 0.9;
+  min-height: auto;
+  overflow: visible;
+  top: 50%;
+}
+
+.parade-member--three-character .parade-member__label-line {
+  overflow: visible;
+}
+
 .parade-member.is-selected,
 .parade-object.is-selected {
   outline: 3px solid rgba(20, 184, 166, 0.8);
@@ -3153,6 +3169,22 @@ h2 {
   word-break: keep-all;
 }
 
+.member-token--three-character {
+  overflow: visible;
+}
+
+.member-token--three-character .member-token__label {
+  inset: auto -48% auto -48%;
+  line-height: 0.9;
+  min-height: auto;
+  overflow: visible;
+  top: 50%;
+}
+
+.member-token--three-character .member-token__label-line {
+  overflow: visible;
+}
+
 .member-token.is-selected {
   outline: 2px solid rgba(15, 118, 110, 0.85);
   outline-offset: 3px;
@@ -4484,6 +4516,22 @@ h2 {
   text-overflow: clip;
   white-space: nowrap;
   word-break: keep-all;
+}
+
+.print-member--three-character {
+  overflow: visible;
+}
+
+.print-member--three-character .print-member__label {
+  left: -48%;
+  line-height: 0.9;
+  min-height: auto;
+  overflow: visible;
+  right: -48%;
+}
+
+.print-member--three-character .print-member__label-line {
+  overflow: visible;
 }
 
 .print-object {

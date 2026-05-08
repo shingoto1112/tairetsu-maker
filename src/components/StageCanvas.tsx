@@ -260,10 +260,17 @@ const getMemberLabelFontSize = (
     ...labelLines.map((line) => Array.from(line).length),
   );
   const lineCount = Math.max(1, labelLines.length);
-  const widthBased = (safeDiameter * 0.78) / Math.max(1.8, longestLine * 0.78);
-  const heightBased = (safeDiameter * 0.74) / lineCount;
-  return Math.round(Math.max(8, Math.min(16, widthBased, heightBased)) * 10) / 10;
+  if (lineCount === 1 && longestLine === 3) {
+    return Math.round(Math.max(18, safeDiameter * 0.62) * 10) / 10;
+  }
+  const widthBased = (safeDiameter * 0.9) / Math.max(1.8, longestLine * 0.74);
+  const heightBased = (safeDiameter * 0.82) / lineCount;
+  const maxReadable = safeDiameter * (lineCount === 1 ? 0.56 : 0.46);
+  return Math.round(Math.max(8, Math.min(maxReadable, widthBased, heightBased)) * 10) / 10;
 };
+
+const isThreeCharacterLabel = (labelLines: string[]): boolean =>
+  labelLines.length === 1 && Array.from(labelLines[0] ?? "").length === 3;
 
 const createMovementPathD = (
   startX: number,
@@ -1992,6 +1999,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   const isFocus = focusMemberId === member.id;
                   const isDimmed = focusMode && Boolean(focusMemberId) && !isFocus;
                   const labelLines = splitMemberLabel(member.name);
+                  const hasThreeCharacterLabel = isThreeCharacterLabel(labelLines);
                   const memberColor = getMemberDisplayColor(member, {
                     groups: memberGroups,
                     snapshot,
@@ -2009,6 +2017,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                           : "",
                         isFocus ? "is-focus" : "",
                         isDimmed ? "is-dimmed" : "",
+                        hasThreeCharacterLabel ? "member-token--three-character" : "",
                         simplifyMemberLabels && !isSelected && !isFocus
                           ? "is-label-simplified"
                           : "",

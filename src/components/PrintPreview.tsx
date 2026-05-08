@@ -177,11 +177,17 @@ const getPrintMemberLabelFontSizeMm = (
     ...labelLines.map((line) => Array.from(line).length),
   );
   const lineCount = Math.max(1, labelLines.length);
+  if (lineCount === 1 && longestLine === 3) {
+    return Math.round(Math.max(2.8, safeDiameter * 0.62) * 100) / 100;
+  }
   const widthBased = (safeDiameter * 0.92) / Math.max(1.3, longestLine * 0.72);
   const heightBased = (safeDiameter * 0.82) / lineCount;
-  const maxReadable = safeDiameter * 0.46;
+  const maxReadable = safeDiameter * (lineCount === 1 ? 0.56 : 0.46);
   return Math.round(Math.max(1.8, Math.min(maxReadable, widthBased, heightBased)) * 100) / 100;
 };
+
+const isThreeCharacterPrintLabel = (labelLines: string[]): boolean =>
+  labelLines.length === 1 && Array.from(labelLines[0] ?? "").length === 3;
 
 const getTickStep = (meters: number): number => {
   if (meters > 24) return 4;
@@ -609,10 +615,11 @@ const PrintStagePreview = ({
             groups: project.memberGroups ?? [],
           });
           const labelLines = splitPrintMemberLabel(member.name);
+          const hasThreeCharacterLabel = isThreeCharacterPrintLabel(labelLines);
           const labelColor = getReadableMemberLabelColor(memberColor);
           return (
             <span
-              className="print-member"
+              className={`print-member ${hasThreeCharacterLabel ? "print-member--three-character" : ""}`}
               key={member.id}
               style={{
                 backgroundColor: memberColor,

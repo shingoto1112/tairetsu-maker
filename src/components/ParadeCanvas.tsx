@@ -178,10 +178,17 @@ const splitMemberLabel = (name: string): string[] => {
 const getMemberLabelFontSize = (diameterPx: number, labelLines: string[]) => {
   const longestLine = Math.max(1, ...labelLines.map((line) => Array.from(line).length));
   const lineCount = Math.max(1, labelLines.length);
-  const fitWidth = (diameterPx * 0.78) / Math.max(1.8, longestLine * 0.78);
-  const fitHeight = (diameterPx * 0.74) / lineCount;
-  return Math.round(Math.max(8, Math.min(16, fitWidth, fitHeight)) * 10) / 10;
+  if (lineCount === 1 && longestLine === 3) {
+    return Math.round(Math.max(18, diameterPx * 0.62) * 10) / 10;
+  }
+  const fitWidth = (diameterPx * 0.9) / Math.max(1.8, longestLine * 0.74);
+  const fitHeight = (diameterPx * 0.82) / lineCount;
+  const maxReadable = diameterPx * (lineCount === 1 ? 0.56 : 0.46);
+  return Math.round(Math.max(8, Math.min(maxReadable, fitWidth, fitHeight)) * 10) / 10;
 };
+
+const isThreeCharacterLabel = (labelLines: string[]): boolean =>
+  labelLines.length === 1 && Array.from(labelLines[0] ?? "").length === 3;
 
 const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
   const safeWidth = Math.max(0, widthMeters);
@@ -1167,6 +1174,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 const isMultiSelected = selectedMemberIds.includes(member.id);
                 const isFocus = focusMode && focusMemberId === member.id;
                 const labelLines = splitMemberLabel(member.name);
+                const hasThreeCharacterLabel = isThreeCharacterLabel(labelLines);
                 const labelColor = getReadableMemberLabelColor(color);
                 const overlapOffset =
                   memberDisplayOffsets.get(member.id) ?? { x: 0, y: 0 };
@@ -1191,6 +1199,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     key={member.id}
                     type="button"
                     className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""} ${
+                      hasThreeCharacterLabel ? "parade-member--three-character" : ""
+                    } ${
                       simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus
                         ? "is-label-simplified"
                         : ""
