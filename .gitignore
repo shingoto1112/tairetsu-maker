@@ -21,3 +21,6 @@ vite-dev.log
 
 # Hosting/provider local state
 .vercel
+
+# Local handoff/export bundles for external review
+handoff/

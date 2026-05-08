@@ -332,14 +332,14 @@
   align-items: center;
   display: flex;
   flex-direction: column;
-  inset: auto 6% auto 6%;
+  inset: auto 8% auto 8%;
   justify-content: center;
-  line-height: 1.05;
-  min-height: 42%;
+  line-height: 0.96;
+  min-height: 72%;
   overflow: hidden;
   position: absolute;
   text-align: center;
-  top: 30%;
+  top: 50%;
   transform: translateY(-50%);
   user-select: none;
   white-space: normal;
@@ -2298,6 +2298,8 @@ h2 {
   gap: 10px;
   min-height: 58px;
   padding: 10px;
+  position: relative;
+  z-index: 3;
 }
 
 .stage-primary-controls {
@@ -2764,13 +2766,26 @@ h2 {
 }
 
 .ruler-reference-labels {
-  color: #64748b;
+  align-self: stretch;
+  box-sizing: border-box;
+  color: #334155;
   display: flex;
   flex-wrap: wrap;
   font-size: 11px;
-  gap: 8px 14px;
-  justify-content: flex-end;
-  margin-top: -4px;
+  gap: 4px 14px;
+  justify-content: flex-start;
+  line-height: 1.45;
+  margin-top: 0;
+  min-height: 18px;
+  min-width: 0;
+  padding: 0 4px;
+  position: relative;
+  z-index: 1;
+}
+
+.ruler-reference-labels span {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .stage-keyboard-hint {
@@ -3112,16 +3127,16 @@ h2 {
   flex-direction: column;
   font-weight: 800;
   gap: 0;
-  inset: auto 6% auto 6%;
+  inset: auto 8% auto 8%;
   justify-content: center;
-  line-height: 1.02;
-  min-height: 42%;
+  line-height: 0.96;
+  min-height: 72%;
   overflow: hidden;
   pointer-events: none;
   position: absolute;
   text-align: center;
   text-overflow: clip;
-  top: 30%;
+  top: 50%;
   transform: translateY(-50%);
   user-select: none;
   white-space: normal;

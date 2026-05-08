@@ -15,7 +15,9 @@ import { PanelStickyHeader } from "./PanelStickyHeader";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import {
   getCenterSplitSideLabel,
+  internalYToParadeDistance,
   normalizeParadeHorizontalMeasureMode,
+  paradeDistanceToInternalY,
 } from "../utils/parade";
 import { NumericInput } from "./NumericInput";
 
@@ -187,6 +189,14 @@ export const DetailsPanel = ({
         : "x（中心基準）"
       : "x（中心基準）";
   const yLabel = projectMode === "parade" ? "m位置" : "y（上端基準）";
+  const displayYValue = (internalY: number | undefined) =>
+    projectMode === "parade"
+      ? internalYToParadeDistance(internalY, stageDepthMeters)
+      : internalY;
+  const internalYValue = (displayY: number) =>
+    projectMode === "parade"
+      ? paradeDistanceToInternalY(displayY, stageDepthMeters)
+      : displayY;
   const displayXValue = (internalX: number | undefined) =>
     useParadeCenterSplitX
       ? internalX === undefined
@@ -213,7 +223,7 @@ export const DetailsPanel = ({
     }
     const nextInternalX =
       axis === "x" ? internalXValue(value, memberPosition.x) : memberPosition.x;
-    const nextInternalY = axis === "y" ? value : memberPosition.y;
+    const nextInternalY = axis === "y" ? internalYValue(value) : memberPosition.y;
     onMoveMember(selectedMember.id, {
       x: roundDetailMeters(clamp(nextInternalX, 0, stageWidthMeters)),
       y: roundDetailMeters(clamp(nextInternalY, 0, stageDepthMeters)),
@@ -242,7 +252,7 @@ export const DetailsPanel = ({
           ? roundDetailMeters(
               clamp(internalXValue(value, objectState.x), 0, maxObjectX),
             )
-          : roundDetailMeters(clamp(value, 0, maxObjectY)),
+          : roundDetailMeters(clamp(internalYValue(value), 0, maxObjectY)),
     });
   };
 
@@ -399,7 +409,7 @@ export const DetailsPanel = ({
                     step="0.01"
                     min={0}
                     max={stageDepthMeters}
-                    value={memberPosition?.y}
+                    value={displayYValue(memberPosition?.y)}
                     onValueChange={(value) =>
                       updateMemberCoordinate("y", String(value))
                     }
@@ -502,7 +512,7 @@ export const DetailsPanel = ({
                     step="0.01"
                     min={0}
                     max={stageDepthMeters}
-                    value={objectState?.y}
+                    value={displayYValue(objectState?.y)}
                     onValueChange={(value) =>
                       updateObjectCoordinate("y", String(value))
                     }

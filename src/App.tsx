@@ -1148,6 +1148,7 @@ function App() {
   const [printVariant, setPrintVariant] = useState<
     "document" | "stage-only"
   >("document");
+  const [isPrintPreviewMounted, setIsPrintPreviewMounted] = useState(false);
   const [isSceneThumbnailRailCollapsed, setIsSceneThumbnailRailCollapsed] =
     useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -1203,6 +1204,7 @@ function App() {
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const redoStackRef = useRef<HistoryEntry[]>([]);
   const historyBatchRef = useRef<{ label?: string } | null>(null);
+  const isProjectEditBatchActiveRef = useRef(false);
   const lastHistoryPushRef = useRef<{ label?: string; time: number } | null>(
     null,
   );
@@ -1217,6 +1219,8 @@ function App() {
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const sceneContextMenuRef = useRef<HTMLDivElement | null>(null);
   const memberColorEditorRef = useRef<HTMLDivElement | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const pendingAutoSaveProjectRef = useRef<Project | null>(null);
 
   useEffect(() => {
     document.title =
@@ -1340,22 +1344,6 @@ function App() {
     [pushUndoSnapshot, refreshHistoryCounts],
   );
 
-  const beginProjectHistoryBatch = useCallback(
-    (label?: string) => {
-      if (historyBatchRef.current) {
-        return;
-      }
-      historyBatchRef.current = { label };
-      pushUndoSnapshot(projectRef.current, label);
-      refreshHistoryCounts();
-    },
-    [pushUndoSnapshot, refreshHistoryCounts],
-  );
-
-  const endProjectHistoryBatch = useCallback(() => {
-    historyBatchRef.current = null;
-  }, []);
-
   const undoProject = useCallback(() => {
     const entry = undoStackRef.current.pop();
     if (!entry) {
@@ -1366,6 +1354,7 @@ function App() {
       { project: cloneProject(projectRef.current), label: entry.label },
     ].slice(-HISTORY_LIMIT);
     historyBatchRef.current = null;
+    isProjectEditBatchActiveRef.current = false;
     lastHistoryPushRef.current = null;
     const nextProject = cloneProject(entry.project);
     projectRef.current = nextProject;
@@ -1385,6 +1374,7 @@ function App() {
       { project: cloneProject(projectRef.current), label: entry.label },
     ].slice(-HISTORY_LIMIT);
     historyBatchRef.current = null;
+    isProjectEditBatchActiveRef.current = false;
     lastHistoryPushRef.current = null;
     const nextProject = cloneProject(entry.project);
     projectRef.current = nextProject;
@@ -1394,19 +1384,98 @@ function App() {
     setNotice(entry.label ? `${entry.label}をやり直しました。` : "やり直しました。");
   }, [refreshHistoryCounts]);
 
-  useEffect(() => {
+  const clearPendingAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    pendingAutoSaveProjectRef.current = null;
+  }, []);
+
+  const flushPendingAutoSave = useCallback(() => {
     if (appView !== "editor" || isSharedProject) {
+      clearPendingAutoSave();
       return;
     }
+    const targetProject = pendingAutoSaveProjectRef.current;
+    if (!targetProject) {
+      return;
+    }
+    clearPendingAutoSave();
     try {
-      saveProjectToStorage(project);
+      saveProjectToStorage(targetProject);
       setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
-      setIsDirty(false);
-    } catch {
+      if (projectRef.current.updatedAt === targetProject.updatedAt) {
+        setIsDirty(false);
+      }
+    } catch (error) {
+      console.error("自動保存に失敗しました。", error);
       setIsDirty(true);
       setNotice("自動保存に失敗しました。保存ボタンで再度保存してください。");
     }
-  }, [appView, isSharedProject, project]);
+  }, [appView, clearPendingAutoSave, isSharedProject]);
+
+  useEffect(() => {
+    if (appView !== "editor" || isSharedProject) {
+      clearPendingAutoSave();
+      return;
+    }
+    pendingAutoSaveProjectRef.current = project;
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (isProjectEditBatchActiveRef.current) {
+      return;
+    }
+    autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 800);
+  }, [
+    appView,
+    clearPendingAutoSave,
+    flushPendingAutoSave,
+    isSharedProject,
+    project,
+  ]);
+
+  useEffect(() => {
+    const handlePageHide = () => flushPendingAutoSave();
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("beforeunload", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("beforeunload", handlePageHide);
+      flushPendingAutoSave();
+    };
+  }, [flushPendingAutoSave]);
+
+  const beginProjectHistoryBatch = useCallback(
+    (label?: string) => {
+      isProjectEditBatchActiveRef.current = true;
+      if (historyBatchRef.current) {
+        return;
+      }
+      historyBatchRef.current = { label };
+      pushUndoSnapshot(projectRef.current, label);
+      refreshHistoryCounts();
+    },
+    [pushUndoSnapshot, refreshHistoryCounts],
+  );
+
+  const endProjectHistoryBatch = useCallback(() => {
+    historyBatchRef.current = null;
+    isProjectEditBatchActiveRef.current = false;
+    if (
+      appView !== "editor" ||
+      isSharedProject ||
+      !pendingAutoSaveProjectRef.current
+    ) {
+      return;
+    }
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 250);
+  }, [appView, flushPendingAutoSave, isSharedProject]);
 
   useEffect(() => {
     if (project.frames.length === 0) {
@@ -3425,6 +3494,7 @@ function App() {
       return false;
     }
     setIsSaving(true);
+    clearPendingAutoSave();
     const nextProject = {
       ...projectRef.current,
       updatedAt: new Date().toISOString(),
@@ -4505,6 +4575,7 @@ function App() {
     redoStackRef.current = [];
     historyBatchRef.current = null;
     lastHistoryPushRef.current = null;
+    clearPendingAutoSave();
     refreshHistoryCounts();
     projectRef.current = nextProject;
     setProject(nextProject);
@@ -4829,6 +4900,7 @@ function App() {
     setPrintScope(scope);
     setPrintOptions(options);
     setPrintVariant(variant);
+    setIsPrintPreviewMounted(true);
     await waitForPaint();
     const element = printExportRef.current;
     if (!element) {
@@ -4842,6 +4914,7 @@ function App() {
   const cleanupPrintExportElement = () => {
     printExportRef.current?.classList.remove("is-exporting");
     setPrintVariant("document");
+    setIsPrintPreviewMounted(false);
   };
 
   const getSaveStatusNotice = (
@@ -5055,19 +5128,23 @@ function App() {
     }
   };
 
-  const printProject = (scope: "all" | "current" = "all") => {
+  const printProject = async (scope: "all" | "current" = "all") => {
     setPrintScope(scope);
     setPrintVariant("document");
+    setIsPrintPreviewMounted(true);
     setNotice(
       scope === "current"
         ? "現在のシーンを印刷画面でPDF保存できます。"
         : "全シーンの印刷用プレビューを開きます。ブラウザの印刷画面でPDF保存できます。",
     );
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        window.print();
-      });
-    });
+    await waitForPaint();
+    const cleanupAfterPrint = () => {
+      setIsPrintPreviewMounted(false);
+      window.removeEventListener("afterprint", cleanupAfterPrint);
+    };
+    window.addEventListener("afterprint", cleanupAfterPrint, { once: true });
+    window.print();
+    window.setTimeout(cleanupAfterPrint, 3000);
   };
 
   const handleShareExport = async (request: ShareExportRequest) => {
@@ -6914,14 +6991,16 @@ function App() {
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
     />
-    <PrintPreview
-      project={project}
-      scope={printScope}
-      selectedFrameId={displayFrame?.id ?? selectedFrame?.id ?? null}
-      options={printOptions ?? undefined}
-      rootRef={printExportRef}
-      variant={printVariant}
-    />
+    {isPrintPreviewMounted && (
+      <PrintPreview
+        project={project}
+        scope={printScope}
+        selectedFrameId={displayFrame?.id ?? selectedFrame?.id ?? null}
+        options={printOptions ?? undefined}
+        rootRef={printExportRef}
+        variant={printVariant}
+      />
+    )}
     </>
   );
 }

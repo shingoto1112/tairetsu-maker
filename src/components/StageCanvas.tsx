@@ -99,6 +99,8 @@ type StageCanvasProps = {
 type MemberDrag = {
   pointerId: number;
   memberId: string;
+  startClientX: number;
+  startClientY: number;
   startPointer: Position;
   startPosition: Position;
   hasMoved: boolean;
@@ -258,9 +260,9 @@ const getMemberLabelFontSize = (
     ...labelLines.map((line) => Array.from(line).length),
   );
   const lineCount = Math.max(1, labelLines.length);
-  const widthBased = (safeDiameter * 0.72) / Math.max(2.2, longestLine * 0.82);
-  const heightBased = (safeDiameter * 0.58) / lineCount;
-  return Math.round(Math.max(8, Math.min(12, widthBased, heightBased)) * 10) / 10;
+  const widthBased = (safeDiameter * 0.78) / Math.max(1.8, longestLine * 0.78);
+  const heightBased = (safeDiameter * 0.74) / lineCount;
+  return Math.round(Math.max(8, Math.min(16, widthBased, heightBased)) * 10) / 10;
 };
 
 const createMovementPathD = (
@@ -380,6 +382,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const [isStageInteracting, setIsStageInteracting] = useState(false);
     const [isStagePinching, setIsStagePinching] = useState(false);
     const [isStagePanning, setIsStagePanning] = useState(false);
+    const [isMemberDragging, setIsMemberDragging] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
     const [stageZoom, setStageZoom] = useState(1);
     const [isStagePinchLocked, setIsStagePinchLocked] = useState(false);
@@ -403,6 +406,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
     const memberEditing = mode === "members" && !isPlaying;
     const objectEditing = mode === "objects" && !isPlaying;
+    const isDenseProject = project.members.length >= 120;
+    const simplifyMemberLabels =
+      isDenseProject && (isMemberDragging || isStagePinching || isStagePanning);
     const horizontalTicks = useMemo(
       () => createMajorTicks(stage.widthMeters),
       [stage.widthMeters],
@@ -774,8 +780,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         startDistance,
         startZoom: stageZoomRef.current,
       };
+      const activeMemberDrag = memberDragRef.current;
       clearStagePan();
       memberDragRef.current = null;
+      setIsMemberDragging(false);
+      if (activeMemberDrag?.hasMoved) {
+        onEndProjectEdit();
+      }
       setActiveSnapGuides([]);
       setIsStagePinching(true);
     };
@@ -1059,6 +1070,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       memberDragRef.current = {
         pointerId: event.pointerId,
         memberId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
         startPointer,
         startPosition: snapshot.positions[memberId] ?? { x: 0, y: 0 },
         hasMoved: false,
@@ -1077,8 +1090,16 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         return;
       }
       if (!drag.hasMoved) {
+        const movementPx = Math.hypot(
+          event.clientX - drag.startClientX,
+          event.clientY - drag.startClientY,
+        );
+        if (movementPx < 3) {
+          return;
+        }
         onBeginProjectEdit("メンバー移動");
         drag.hasMoved = true;
+        setIsMemberDragging(true);
       }
       const pointer = clientPointToMeters(
         event.clientX,
@@ -1118,6 +1139,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         if (drag.hasMoved) {
           onEndProjectEdit();
         }
+        setIsMemberDragging(false);
       }
     };
 
@@ -1987,6 +2009,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                           : "",
                         isFocus ? "is-focus" : "",
                         isDimmed ? "is-dimmed" : "",
+                        simplifyMemberLabels && !isSelected && !isFocus
+                          ? "is-label-simplified"
+                          : "",
                       ].join(" ")}
                       style={{
                         "--member-overlap-x": `${overlapOffset.x}px`,
@@ -2020,16 +2045,18 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       title={member.name}
                       aria-label={member.name}
                     >
-                      <span className="member-token__label" aria-hidden="true">
-                        {labelLines.map((line, index) => (
-                          <span
-                            className="member-token__label-line"
-                            key={`${member.id}-label-${index}`}
-                          >
-                            {line}
-                          </span>
-                        ))}
-                      </span>
+                      {!(simplifyMemberLabels && !isSelected && !isFocus) && (
+                        <span className="member-token__label" aria-hidden="true">
+                          {labelLines.map((line, index) => (
+                            <span
+                              className="member-token__label-line"
+                              key={`${member.id}-label-${index}`}
+                            >
+                              {line}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

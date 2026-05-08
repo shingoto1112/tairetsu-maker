@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { FormationFrame, Project, StageObject } from "../types";
 import {
   createDefaultObjectState,
@@ -40,16 +40,17 @@ const getFrameStageSize = (
 const objectOpacity = (object: StageObject): number =>
   object.type === "curtain" ? 0.42 : 0.32;
 
-export const SceneThumbnailRail = ({
+export const SceneThumbnailRail = memo(function SceneThumbnailRail({
   project,
   selectedFrameId,
   collapsed,
   onToggleCollapsed,
   onSelectFrame,
   onFrameContextMenu,
-}: SceneThumbnailRailProps) => {
+}: SceneThumbnailRailProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
-  const sortedFrames = sortFrames(project.frames);
+  const sortedFrames = useMemo(() => sortFrames(project.frames), [project.frames]);
+  const isDenseProject = project.members.length >= 120;
 
   useEffect(() => {
     if (collapsed || !selectedFrameId) {
@@ -156,8 +157,8 @@ export const SceneThumbnailRail = ({
                       }
                       const objectWidth = Math.max(0.08, state.widthMeters);
                       const objectHeight = Math.max(0.08, state.heightMeters);
-                      const x = state.x + width / 2 - objectWidth / 2;
-                      const y = state.y - objectHeight / 2;
+                      const x = state.x;
+                      const y = state.y;
                       return (
                         <rect
                           key={object.id}
@@ -187,15 +188,15 @@ export const SceneThumbnailRail = ({
                       return (
                         <circle
                           key={member.id}
-                          cx={position.x + width / 2}
+                          cx={position.x}
                           cy={position.y}
-                          r="0.11"
+                          r={isDenseProject ? "0.075" : "0.11"}
                           fill={getMemberDisplayColor(member, {
                             groups: project.memberGroups ?? [],
                             snapshot,
                           })}
                           stroke="#ffffff"
-                          strokeWidth="0.04"
+                          strokeWidth={isDenseProject ? "0.025" : "0.04"}
                         />
                       );
                     })}
@@ -208,4 +209,6 @@ export const SceneThumbnailRail = ({
       )}
     </aside>
   );
-};
+});
+
+SceneThumbnailRail.displayName = "SceneThumbnailRail";

@@ -8,6 +8,54 @@ export const normalizeParadeHorizontalMeasureMode = (
 export const roundParadeMeters = (value: number): number =>
   Math.round(value * 1000) / 1000;
 
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+export const getSafeParadeTotalDistance = (
+  totalDistance: number | undefined,
+): number =>
+  Number.isFinite(totalDistance) && (totalDistance ?? 0) > 0
+    ? (totalDistance as number)
+    : 100;
+
+export const internalYToParadeDistance = (
+  internalY: number | undefined,
+  totalDistance: number | undefined,
+): number | undefined => {
+  if (internalY === undefined || !Number.isFinite(internalY)) {
+    return undefined;
+  }
+  const safeTotalDistance = getSafeParadeTotalDistance(totalDistance);
+  return roundParadeMeters(
+    clamp(safeTotalDistance - internalY, 0, safeTotalDistance),
+  );
+};
+
+export const paradeDistanceToInternalY = (
+  distance: number,
+  totalDistance: number | undefined,
+): number => {
+  const safeTotalDistance = getSafeParadeTotalDistance(totalDistance);
+  return roundParadeMeters(
+    clamp(safeTotalDistance - distance, 0, safeTotalDistance),
+  );
+};
+
+export const clampParadeObjectTopY = (
+  internalY: number,
+  heightMeters: number | undefined,
+  totalDistance: number | undefined,
+): number => {
+  const safeTotalDistance = getSafeParadeTotalDistance(totalDistance);
+  const safeHeight =
+    Number.isFinite(heightMeters) && (heightMeters ?? 0) > 0
+      ? (heightMeters as number)
+      : 0;
+  return roundParadeMeters(
+    clamp(internalY, 0, Math.max(0, safeTotalDistance - safeHeight)),
+  );
+};
+
 export const formatSignedMeterLabel = (value: number): string => {
   const rounded = roundParadeMeters(Math.abs(value) < 0.001 ? 0 : value);
   const text = Number.isInteger(rounded)

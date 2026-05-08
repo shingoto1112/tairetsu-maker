@@ -8,7 +8,10 @@ import {
 } from "../types";
 import { createDefaultObjectState, sortFrames } from "../utils/interpolation";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
-import { normalizeParadeHorizontalMeasureMode } from "../utils/parade";
+import {
+  internalYToParadeDistance,
+  normalizeParadeHorizontalMeasureMode,
+} from "../utils/parade";
 import type { ShareExportOptions } from "./ShareExportModal";
 
 type PrintPreviewProps = {
@@ -275,8 +278,8 @@ const getFramePrintVerticalRange = (
     if (!((state.visible ?? object.visible) !== false)) {
       return;
     }
-    minY = Math.min(minY, state.y - state.heightMeters / 2);
-    maxY = Math.max(maxY, state.y + state.heightMeters / 2);
+    minY = Math.min(minY, state.y);
+    maxY = Math.max(maxY, state.y + state.heightMeters);
   });
 
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
@@ -497,12 +500,18 @@ const PrintStagePreview = ({
           <div className="print-ruler print-ruler-y">
             {yTicks.map((tick) => {
               const actualTick = Number((verticalRange.topMeters + tick).toFixed(2));
+              const label = isParade
+                ? internalYToParadeDistance(
+                    actualTick,
+                    project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
+                  )
+                : actualTick;
               return (
                 <span
                   key={`y-${tick}`}
                   style={{ top: metersToPrintMm(tick, metrics) }}
                 >
-                  {`${actualTick}m`}
+                  {`${label ?? actualTick}m`}
                 </span>
               );
             })}
@@ -535,12 +544,8 @@ const PrintStagePreview = ({
           if (!((state.visible ?? object.visible) !== false)) {
             return null;
           }
-          const objectLeftMeters = isParade
-            ? state.x - state.widthMeters / 2
-            : state.x;
-          const objectTopMeters = isParade
-            ? state.y - state.heightMeters / 2 - verticalRange.topMeters
-            : state.y - verticalRange.topMeters;
+          const objectLeftMeters = state.x;
+          const objectTopMeters = state.y - verticalRange.topMeters;
           return (
             <div
               className={`print-object shape-${object.shape}`}

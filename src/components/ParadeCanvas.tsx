@@ -30,6 +30,7 @@ import type {
 import { roundMeters } from "../utils/coordinates";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
 import {
+  clampParadeObjectTopY,
   formatSignedMeterLabel,
   normalizeParadeHorizontalMeasureMode,
 } from "../utils/parade";
@@ -74,6 +75,7 @@ type DragState =
       startClientX: number;
       startClientY: number;
       startPosition: Position;
+      hasMoved: boolean;
     }
   | {
       type: "object";
@@ -81,6 +83,7 @@ type DragState =
       startClientX: number;
       startClientY: number;
       startState: ObjectState;
+      hasMoved: boolean;
     };
 
 type PinchTouchPoint = {
@@ -164,7 +167,8 @@ const splitMemberLabel = (name: string): string[] => {
     return [""];
   }
   const characters = Array.from(trimmed);
-  if (characters.length <= 4) {
+  const hasWideCharacters = /[^\u0020-\u007e]/.test(trimmed);
+  if (characters.length <= 3 || (characters.length <= 4 && !hasWideCharacters)) {
     return [trimmed];
   }
   const midpoint = Math.ceil(characters.length / 2);
@@ -173,9 +177,10 @@ const splitMemberLabel = (name: string): string[] => {
 
 const getMemberLabelFontSize = (diameterPx: number, labelLines: string[]) => {
   const longestLine = Math.max(1, ...labelLines.map((line) => Array.from(line).length));
-  const base = labelLines.length > 1 ? diameterPx / 4.6 : diameterPx / 3.8;
-  const fitWidth = (diameterPx * 0.82) / Math.max(1, longestLine * 0.72);
-  return Math.max(8, Math.min(13, Math.floor(Math.min(base, fitWidth))));
+  const lineCount = Math.max(1, labelLines.length);
+  const fitWidth = (diameterPx * 0.78) / Math.max(1.8, longestLine * 0.78);
+  const fitHeight = (diameterPx * 0.74) / lineCount;
+  return Math.round(Math.max(8, Math.min(16, fitWidth, fitHeight)) * 10) / 10;
 };
 
 const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
@@ -325,6 +330,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         ),
       [assignedMemberIds, project.members, snapshot.memberVisibility],
     );
+    const isDenseProject = project.members.length >= 120;
+    const simplifyMemberLabels =
+      isDenseProject && (isPinching || Boolean(dragState?.hasMoved));
 
     const visibleObjects = useMemo(
       () => {
@@ -509,8 +517,19 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return undefined;
       }
       const handlePointerMove = (event: globalThis.PointerEvent) => {
+        const movementPx = Math.hypot(
+          event.clientX - dragState.startClientX,
+          event.clientY - dragState.startClientY,
+        );
+        if (movementPx < 3) {
+          return;
+        }
         const dx = (event.clientX - dragState.startClientX) / pxPerMeter;
         const dy = (event.clientY - dragState.startClientY) / pxPerMeter;
+        if (!dragState.hasMoved) {
+          onBeginProjectEdit("パレード配置編集");
+          setDragState({ ...dragState, hasMoved: true });
+        }
         if (dragState.type === "member") {
           const nextPosition = {
             x: clamp(
@@ -526,22 +545,29 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           };
           onMoveMember(dragState.id, nextPosition);
         } else {
+          const maxObjectX = Math.max(
+            0,
+            settings.width - dragState.startState.widthMeters,
+          );
           const nextX = clamp(
             snapMeters(dragState.startState.x + dx, settings.cellSizeMeters),
             0,
-            settings.width,
+            maxObjectX,
           );
-          const nextY = clamp(
+          const nextY = clampParadeObjectTopY(
             snapMeters(dragState.startState.y + dy, settings.cellSizeMeters),
-            0,
+            dragState.startState.heightMeters,
             settings.totalDistance,
           );
           onUpdateObjectState(dragState.id, { x: nextX, y: nextY });
         }
       };
       const handlePointerUp = () => {
+        const shouldEndEdit = dragState.hasMoved;
         setDragState(null);
-        onEndProjectEdit();
+        if (shouldEndEdit) {
+          onEndProjectEdit();
+        }
       };
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp, { once: true });
@@ -554,6 +580,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     }, [
       dragState,
       onEndProjectEdit,
+      onBeginProjectEdit,
       onMoveMember,
       onUpdateObjectState,
       pxPerMeter,
@@ -657,8 +684,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startZoom: zoomRef.current,
       };
       if (dragState) {
+        const shouldEndEdit = dragState.hasMoved;
         setDragState(null);
-        onEndProjectEdit();
+        if (shouldEndEdit) {
+          onEndProjectEdit();
+        }
       }
       setIsPinching(true);
     };
@@ -783,13 +813,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "member", id: memberId });
-      onBeginProjectEdit("パレード配置編集");
       setDragState({
         type: "member",
         id: memberId,
         startClientX: event.clientX,
         startClientY: event.clientY,
         startPosition: position,
+        hasMoved: false,
       });
     };
 
@@ -806,13 +836,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
-      onBeginProjectEdit("パレード配置編集");
       setDragState({
         type: "object",
         id: objectId,
         startClientX: event.clientX,
         startClientY: event.clientY,
         startState: state,
+        hasMoved: false,
       });
     };
 
@@ -1110,7 +1140,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                       height,
                       borderColor: object.color,
                       background: getObjectFill(object),
-                      transform: `translate(-50%, -50%) rotate(${state.rotation}deg)`,
+                      transform: `rotate(${state.rotation}deg)`,
                       zIndex: state.zIndex,
                     }}
                     onPointerDown={(event) => startObjectDrag(object.id, state, event)}
@@ -1160,20 +1190,26 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   <button
                     key={member.id}
                     type="button"
-                    className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""}`}
+                    className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""} ${
+                      simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus
+                        ? "is-label-simplified"
+                        : ""
+                    }`}
                     style={memberStyle}
                     onPointerDown={(event) => startMemberDrag(member.id, position, event)}
                   >
-                    <span className="parade-member__label" aria-hidden="true">
-                      {labelLines.map((line, index) => (
-                        <span
-                          className="parade-member__label-line"
-                          key={`${member.id}-label-${index}`}
-                        >
-                          {line}
-                        </span>
-                      ))}
-                    </span>
+                    {!(simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus) && (
+                      <span className="parade-member__label" aria-hidden="true">
+                        {labelLines.map((line, index) => (
+                          <span
+                            className="parade-member__label-line"
+                            key={`${member.id}-label-${index}`}
+                          >
+                            {line}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </button>
                 );
               })}
