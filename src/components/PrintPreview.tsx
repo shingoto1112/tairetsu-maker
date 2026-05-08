@@ -9,8 +9,14 @@ import {
 import { createDefaultObjectState, sortFrames } from "../utils/interpolation";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
 import {
+  getMemberLabelClassName,
+  getMemberLabelFontSize,
+  splitMemberLabel,
+} from "../utils/memberLabel";
+import {
   internalYToParadeDistance,
   normalizeParadeHorizontalMeasureMode,
+  paradeDistanceToInternalY,
 } from "../utils/parade";
 import type { ShareExportOptions } from "./ShareExportModal";
 
@@ -55,6 +61,7 @@ type CenterSplitLabel = {
 const PRINT_A4_SHORT_USABLE_MM = 190;
 const PRINT_A4_LONG_USABLE_MM = 277;
 const PRINT_RULER_LEFT_MM = 10;
+const PRINT_PARADE_RULER_SIDE_MM = 18;
 const PRINT_RULER_TOP_MM = 6;
 const PRINT_RULER_BOTTOM_MM = 3;
 const PRINT_SCENE_TITLE_MM = 9;
@@ -72,6 +79,16 @@ const defaultPrintOptions: ShareExportOptions = {
   includeSceneTime: false,
   layout: "auto",
   sceneGapRows: 5,
+};
+
+const getPrintSideRulerWidthMm = (
+  isParade: boolean,
+  includeMeterRulers: boolean,
+): number => {
+  if (!includeMeterRulers) {
+    return 0;
+  }
+  return isParade ? PRINT_PARADE_RULER_SIDE_MM : PRINT_RULER_LEFT_MM;
 };
 
 const getEffectiveSize = (
@@ -150,45 +167,6 @@ const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
   );
 };
 
-const splitPrintMemberLabel = (name: string): string[] => {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    return [""];
-  }
-  const characters = Array.from(trimmed);
-  const hasWideCharacters = /[^\u0020-\u007e]/.test(trimmed);
-  if (characters.length <= 3 || (characters.length <= 4 && !hasWideCharacters)) {
-    return [trimmed];
-  }
-  const midpoint = Math.ceil(characters.length / 2);
-  return [
-    characters.slice(0, midpoint).join(""),
-    characters.slice(midpoint).join(""),
-  ].filter(Boolean);
-};
-
-const getPrintMemberLabelFontSizeMm = (
-  diameterMm: number,
-  labelLines: string[],
-): number => {
-  const safeDiameter = Math.max(4, diameterMm);
-  const longestLine = Math.max(
-    1,
-    ...labelLines.map((line) => Array.from(line).length),
-  );
-  const lineCount = Math.max(1, labelLines.length);
-  if (lineCount === 1 && longestLine === 3) {
-    return Math.round(Math.max(2.8, safeDiameter * 0.62) * 100) / 100;
-  }
-  const widthBased = (safeDiameter * 0.92) / Math.max(1.3, longestLine * 0.72);
-  const heightBased = (safeDiameter * 0.82) / lineCount;
-  const maxReadable = safeDiameter * (lineCount === 1 ? 0.56 : 0.46);
-  return Math.round(Math.max(1.8, Math.min(maxReadable, widthBased, heightBased)) * 100) / 100;
-};
-
-const isThreeCharacterPrintLabel = (labelLines: string[]): boolean =>
-  labelLines.length === 1 && Array.from(labelLines[0] ?? "").length === 3;
-
 const getTickStep = (meters: number): number => {
   if (meters > 24) return 4;
   if (meters > 14) return 2;
@@ -253,6 +231,14 @@ const getPrintMetrics = (
   const isParade = project.mode === "parade";
   const orientation = getPrintOrientation(project);
   const pageSize = getPrintPageUsableSize(orientation);
+  const leftRulerWidthMm = getPrintSideRulerWidthMm(
+    isParade,
+    options.includeMeterRulers,
+  );
+  const rightRulerWidthMm =
+    isParade && options.includeMeterRulers
+      ? getPrintSideRulerWidthMm(true, true)
+      : 0;
   const commonWidthMeters = Math.max(
     1,
     ...frames.map((frame) => getEffectiveSize(project, frame).widthMeters),
@@ -260,8 +246,13 @@ const getPrintMetrics = (
       ? (project.paradeSettings?.width ?? project.stage.widthMeters)
       : project.stage.widthMeters,
   );
-  const stageWidthMm =
-    pageSize.width - PRINT_RULER_LEFT_MM - PRINT_STAGE_RIGHT_SAFETY_MM;
+  const stageWidthMm = Math.max(
+    40,
+    pageSize.width -
+      leftRulerWidthMm -
+      rightRulerWidthMm -
+      PRINT_STAGE_RIGHT_SAFETY_MM,
+  );
   return {
     commonWidthMeters,
     gapRows: Math.max(0, options.sceneGapRows ?? 5),
@@ -486,12 +477,104 @@ const PrintStagePreview = ({
   const memberDiameterMm = getPrintMemberDiameterMm(project, metrics);
   const rulerTopMm = getPrintRulerTopMm(project, metrics, options);
   const rulerBottomMm = getPrintRulerBottomMm(project, metrics, options);
+  const leftRulerMm = getPrintSideRulerWidthMm(
+    isParade,
+    options.includeMeterRulers,
+  );
+  const rightRulerMm =
+    isParade && options.includeMeterRulers
+      ? getPrintSideRulerWidthMm(true, true)
+      : 0;
+  const stageRightSafetyMm = rightRulerMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
+  const totalPreviewWidthMm =
+    leftRulerMm + metrics.stageWidthMm + rightRulerMm + stageRightSafetyMm;
+  const totalDistance =
+    project.paradeSettings?.totalDistance ?? project.stage.depthMeters;
+  const verticalRulerLabels = isParade
+    ? (() => {
+        const minDistance =
+          internalYToParadeDistance(verticalRange.bottomMeters, totalDistance) ?? 0;
+        const maxDistance =
+          internalYToParadeDistance(verticalRange.topMeters, totalDistance) ??
+          totalDistance;
+        const start = Math.ceil(minDistance / 5) * 5;
+        const end = Math.floor(maxDistance / 5) * 5;
+        const labels: Array<{ key: number; label: string; top: string }> = [];
+        for (let meter = start; meter <= end + 0.001; meter += 5) {
+          const internalY = paradeDistanceToInternalY(meter, totalDistance);
+          labels.push({
+            key: meter,
+            label: `${meter}m`,
+            top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
+          });
+        }
+        if (labels.length === 0) {
+          const fallbackMeter = Math.round((minDistance + maxDistance) / 2);
+          const internalY = paradeDistanceToInternalY(fallbackMeter, totalDistance);
+          labels.push({
+            key: fallbackMeter,
+            label: `${fallbackMeter}m`,
+            top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
+          });
+        }
+        return labels;
+      })()
+    : yTicks.map((tick) => {
+        const actualTick = Number((verticalRange.topMeters + tick).toFixed(2));
+        return {
+          key: tick,
+          label: `${actualTick}m`,
+          top: metersToPrintMm(tick, metrics),
+        };
+      });
+  const paradeGuideLines = isParade
+    ? (() => {
+        const show5m = project.paradeSettings?.emphasizeEvery5m ?? true;
+        const show10m = project.paradeSettings?.emphasizeEvery10m ?? true;
+        if (!show5m && !show10m) {
+          return [];
+        }
+
+        const minDistance =
+          internalYToParadeDistance(verticalRange.bottomMeters, totalDistance) ?? 0;
+        const maxDistance =
+          internalYToParadeDistance(verticalRange.topMeters, totalDistance) ??
+          totalDistance;
+        const start = Math.ceil(minDistance / 5) * 5;
+        const end = Math.floor(maxDistance / 5) * 5;
+        const lines: Array<{ isMajor: boolean; key: number; top: string }> = [];
+
+        for (let meter = start; meter <= end + 0.001; meter += 5) {
+          if (meter <= 0 || meter > totalDistance) {
+            continue;
+          }
+          const isMajor = Math.abs(meter % 10) < 0.001;
+          if ((isMajor && !show10m) || (!isMajor && !show5m)) {
+            continue;
+          }
+          const internalY = paradeDistanceToInternalY(meter, totalDistance);
+          lines.push({
+            isMajor,
+            key: meter,
+            top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
+          });
+        }
+
+        return lines;
+      })()
+    : [];
   const previewStyle = {
+    gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
+    gridTemplateRows: `${rulerTopMm}mm ${stageHeightMm}mm`,
+    paddingBottom: `${rulerBottomMm}mm`,
+    paddingRight: `${stageRightSafetyMm}mm`,
+    width: `${totalPreviewWidthMm}mm`,
     "--print-member-size": `${memberDiameterMm}mm`,
     "--print-ruler-bottom-mm": `${rulerBottomMm}mm`,
-    "--print-ruler-left-mm": `${options.includeMeterRulers ? PRINT_RULER_LEFT_MM : 0}mm`,
+    "--print-ruler-left-mm": `${leftRulerMm}mm`,
+    "--print-ruler-right-mm": `${rightRulerMm}mm`,
     "--print-ruler-top-mm": `${rulerTopMm}mm`,
-    "--print-stage-right-safety-mm": `${PRINT_STAGE_RIGHT_SAFETY_MM}mm`,
+    "--print-stage-right-safety-mm": `${stageRightSafetyMm}mm`,
     "--print-stage-center-x-mm": metersToPrintMm(commonWidthMeters / 2, metrics),
     "--print-stage-height-mm": `${stageHeightMm}mm`,
     "--print-stage-width-mm": `${metrics.stageWidthMm}mm`,
@@ -536,25 +619,22 @@ const PrintStagePreview = ({
                   );
                 })}
           </div>
-          <div className="print-ruler print-ruler-y">
-            {yTicks.map((tick) => {
-              const actualTick = Number((verticalRange.topMeters + tick).toFixed(2));
-              const label = isParade
-                ? internalYToParadeDistance(
-                    actualTick,
-                    project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
-                  )
-                : actualTick;
-              return (
-                <span
-                  key={`y-${tick}`}
-                  style={{ top: metersToPrintMm(tick, metrics) }}
-                >
-                  {`${label ?? actualTick}m`}
-                </span>
-              );
-            })}
+          <div className="print-ruler print-ruler-y print-ruler-y--left">
+            {verticalRulerLabels.map((item) => (
+              <span key={`y-left-${item.key}`} style={{ top: item.top }}>
+                {item.label}
+              </span>
+            ))}
           </div>
+          {isParade && (
+            <div className="print-ruler print-ruler-y print-ruler-y--right">
+              {verticalRulerLabels.map((item) => (
+                <span key={`y-right-${item.key}`} style={{ top: item.top }}>
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -571,6 +651,19 @@ const PrintStagePreview = ({
         }}
       >
         <span className="print-center-line" />
+        {paradeGuideLines.map((line) => (
+          <span
+            aria-hidden="true"
+            className={[
+              "print-parade-distance-line",
+              line.isMajor ? "print-parade-distance-line--major" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            key={`parade-distance-${line.key}`}
+            style={{ top: line.top }}
+          />
+        ))}
         {gapAfter && (
           <span
             className="print-scene-gap-start"
@@ -614,17 +707,23 @@ const PrintStagePreview = ({
             frame,
             groups: project.memberGroups ?? [],
           });
-          const labelLines = splitPrintMemberLabel(member.name);
-          const hasThreeCharacterLabel = isThreeCharacterPrintLabel(labelLines);
+          const labelLines = splitMemberLabel(member.name);
+          const memberLabelClassName = getMemberLabelClassName(
+            "print-member",
+            labelLines,
+          );
           const labelColor = getReadableMemberLabelColor(memberColor);
           return (
             <span
-              className={`print-member ${hasThreeCharacterLabel ? "print-member--three-character" : ""}`}
+              className={`print-member ${memberLabelClassName}`}
               key={member.id}
               style={{
                 backgroundColor: memberColor,
                 color: labelColor,
-                fontSize: `${getPrintMemberLabelFontSizeMm(memberDiameterMm, labelLines)}mm`,
+                fontSize: `${getMemberLabelFontSize(memberDiameterMm, labelLines, {
+                  min: 1.8,
+                  precision: 2,
+                })}mm`,
                 left: metersToPrintMm(position.x, metrics),
                 top: metersToPrintMm(position.y - verticalRange.topMeters, metrics),
               }}

@@ -1104,6 +1104,20 @@ const getEffectiveStageSize = (
   project: Project,
   frame: FormationFrame | undefined,
 ): Pick<Project["stage"], "widthMeters" | "depthMeters"> => {
+  if (project.mode === "parade") {
+    return {
+      widthMeters: positiveNumber(
+        project.paradeSettings?.width,
+        project.stage.widthMeters,
+        1,
+      ),
+      depthMeters: positiveNumber(
+        project.paradeSettings?.totalDistance,
+        project.stage.depthMeters,
+        1,
+      ),
+    };
+  }
   if (project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true) {
     return {
       widthMeters: project.stage.widthMeters,
@@ -5048,9 +5062,7 @@ function App() {
       "stage-only",
     );
     try {
-      const stageElement =
-        element.querySelector<HTMLElement>(".print-stage-preview") ?? element;
-      return await elementToPngBlob(stageElement, captureOptions);
+      return await elementToPngBlob(element, captureOptions);
     } finally {
       cleanupPrintExportElement();
     }
@@ -6557,6 +6569,7 @@ function App() {
                   focusMemberId={project.focusMemberId}
                   focusMode={focusMode}
                   onSelect={selectStageElement}
+                  onStagePointerPositionChange={handleStagePointerPositionChange}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
                   canUndo={historyCounts.undo > 0}
@@ -6575,6 +6588,8 @@ function App() {
                     }
                     void enterStageFullscreen();
                   }}
+                  onCaptureStageImage={captureStageImage}
+                  onContextMenuRequest={handleStageContextMenu}
                 />
               ) : (
                 <StageCanvas
@@ -6778,7 +6793,7 @@ function App() {
                 コピー
               </button>
               <button onClick={() => runContextMenuAction(hideContextTarget)} type="button">
-                ステージから外す
+                {project.mode === "parade" ? "隊列から外す" : "ステージから外す"}
               </button>
               <button
                 onClick={() =>
@@ -6821,7 +6836,7 @@ function App() {
           )}
           {contextMenu.target.type === "stage" && (
             <>
-              <strong>ステージ</strong>
+              <strong>{project.mode === "parade" ? "パレード" : "ステージ"}</strong>
               <button
                 onClick={() => runContextMenuAction(pasteClipboard)}
                 disabled={!clipboard}

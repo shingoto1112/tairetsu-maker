@@ -358,19 +358,50 @@
   writing-mode: horizontal-tb;
 }
 
-.parade-member--three-character {
+.parade-member--label-one,
+.parade-member--label-two,
+.parade-member--label-three,
+.parade-member--label-four {
   overflow: visible;
 }
 
-.parade-member--three-character .parade-member__label {
-  inset: auto -48% auto -48%;
-  line-height: 0.9;
+.parade-member--label-one .parade-member__label {
+  inset: auto 0 auto 0;
+  line-height: 0.88;
   min-height: auto;
   overflow: visible;
   top: 50%;
 }
 
-.parade-member--three-character .parade-member__label-line {
+.parade-member--label-two .parade-member__label {
+  inset: auto -26% auto -26%;
+  line-height: 0.88;
+  min-height: auto;
+  overflow: visible;
+  top: 50%;
+}
+
+.parade-member--label-three .parade-member__label {
+  inset: auto 2% auto 2%;
+  line-height: 0.9;
+  min-height: auto;
+  overflow: hidden;
+  top: 50%;
+}
+
+.parade-member--label-four .parade-member__label {
+  gap: 0.02em;
+  inset: auto 2% auto 2%;
+  line-height: 0.88;
+  min-height: 76%;
+  overflow: hidden;
+  top: 50%;
+}
+
+.parade-member--label-one .parade-member__label-line,
+.parade-member--label-two .parade-member__label-line,
+.parade-member--label-three .parade-member__label-line,
+.parade-member--label-four .parade-member__label-line {
   overflow: visible;
 }
 
@@ -391,6 +422,44 @@
   overflow: hidden;
   padding: 2px;
   z-index: 3;
+}
+
+.parade-object.is-selected {
+  overflow: visible;
+}
+
+.parade-object__label {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.74);
+  border-radius: 5px;
+  display: inline-flex;
+  inset: 2px;
+  justify-content: center;
+  max-width: calc(100% - 4px);
+  overflow: hidden;
+  padding: 2px 4px;
+  position: absolute;
+  text-align: center;
+}
+
+.parade-object .object-anchor-point {
+  pointer-events: none;
+}
+
+.parade-object .resize-handle {
+  cursor: nwse-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.parade-object .rotate-handle {
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.parade-object .rotate-handle:active {
+  cursor: grabbing;
 }
 
 :root {
@@ -3169,19 +3238,50 @@ h2 {
   word-break: keep-all;
 }
 
-.member-token--three-character {
+.member-token--label-one,
+.member-token--label-two,
+.member-token--label-three,
+.member-token--label-four {
   overflow: visible;
 }
 
-.member-token--three-character .member-token__label {
-  inset: auto -48% auto -48%;
-  line-height: 0.9;
+.member-token--label-one .member-token__label {
+  inset: auto 0 auto 0;
+  line-height: 0.88;
   min-height: auto;
   overflow: visible;
   top: 50%;
 }
 
-.member-token--three-character .member-token__label-line {
+.member-token--label-two .member-token__label {
+  inset: auto -26% auto -26%;
+  line-height: 0.88;
+  min-height: auto;
+  overflow: visible;
+  top: 50%;
+}
+
+.member-token--label-three .member-token__label {
+  inset: auto 2% auto 2%;
+  line-height: 0.9;
+  min-height: auto;
+  overflow: hidden;
+  top: 50%;
+}
+
+.member-token--label-four .member-token__label {
+  gap: 0.02em;
+  inset: auto 2% auto 2%;
+  line-height: 0.88;
+  min-height: 76%;
+  overflow: hidden;
+  top: 50%;
+}
+
+.member-token--label-one .member-token__label-line,
+.member-token--label-two .member-token__label-line,
+.member-token--label-three .member-token__label-line,
+.member-token--label-four .member-token__label-line {
   overflow: visible;
 }
 
@@ -4369,13 +4469,19 @@ h2 {
 
 .print-stage-preview {
   display: grid;
-  grid-template-columns: var(--print-ruler-left-mm, 10mm) var(--print-stage-width-mm);
+  grid-template-columns:
+    var(--print-ruler-left-mm, 10mm)
+    var(--print-stage-width-mm)
+    var(--print-ruler-right-mm, 0mm);
   grid-template-rows: var(--print-ruler-top-mm, 6mm) var(--print-stage-height-mm);
   min-width: 0;
   padding-bottom: var(--print-ruler-bottom-mm, 3mm);
   padding-right: var(--print-stage-right-safety-mm, 0mm);
+  position: relative;
+  overflow: visible;
   width: calc(
     var(--print-ruler-left-mm, 10mm) + var(--print-stage-width-mm) +
+      var(--print-ruler-right-mm, 0mm) +
       var(--print-stage-right-safety-mm, 0mm)
   );
 }
@@ -4426,14 +4532,52 @@ h2 {
 .print-ruler-y {
   grid-column: 1;
   grid-row: 2;
+  height: var(--print-stage-height-mm);
   width: var(--print-ruler-left-mm, 10mm);
+}
+
+.print-ruler-y--left {
+  grid-column: auto;
+  grid-row: auto;
+  height: var(--print-stage-height-mm);
+  left: 0;
+  position: absolute;
+  top: var(--print-ruler-top-mm, 6mm);
+  width: var(--print-ruler-left-mm, 10mm);
+  z-index: 3;
+}
+
+.print-ruler-y--right {
+  grid-column: auto;
+  grid-row: auto;
+  height: var(--print-stage-height-mm);
+  left: calc(
+    var(--print-ruler-left-mm, 10mm) + var(--print-stage-width-mm) + 1.5mm
+  );
+  position: absolute;
+  top: var(--print-ruler-top-mm, 6mm);
+  width: calc(
+    var(--print-ruler-right-mm, 0mm) + var(--print-stage-right-safety-mm, 0mm)
+  );
 }
 
 .print-ruler-y span {
   position: absolute;
   right: 1.5mm;
+  text-align: right;
   transform: translateY(-50%);
   white-space: nowrap;
+}
+
+.print-ruler-y--left span {
+  left: 0;
+  right: 2mm;
+}
+
+.print-ruler-y--right span {
+  left: 2mm;
+  right: auto;
+  text-align: left;
 }
 
 .print-stage {
@@ -4467,6 +4611,21 @@ h2 {
   top: 0;
   transform: translateX(-50%);
   width: 2px;
+}
+
+.print-parade-distance-line {
+  border-top: 1.5px solid rgba(13, 139, 120, 0.42);
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  transform: translateY(-0.5px);
+  z-index: 1;
+}
+
+.print-parade-distance-line--major {
+  border-top-color: rgba(13, 139, 120, 0.76);
+  border-top-width: 2.5px;
 }
 
 .print-scene-gap-start {
@@ -4518,19 +4677,50 @@ h2 {
   word-break: keep-all;
 }
 
-.print-member--three-character {
+.print-member--label-one,
+.print-member--label-two,
+.print-member--label-three,
+.print-member--label-four {
   overflow: visible;
 }
 
-.print-member--three-character .print-member__label {
-  left: -48%;
-  line-height: 0.9;
+.print-member--label-one .print-member__label {
+  left: 0;
+  line-height: 0.88;
   min-height: auto;
   overflow: visible;
-  right: -48%;
+  right: 0;
 }
 
-.print-member--three-character .print-member__label-line {
+.print-member--label-two .print-member__label {
+  left: -26%;
+  line-height: 0.88;
+  min-height: auto;
+  overflow: visible;
+  right: -26%;
+}
+
+.print-member--label-three .print-member__label {
+  left: 2%;
+  line-height: 0.9;
+  min-height: auto;
+  overflow: hidden;
+  right: 2%;
+}
+
+.print-member--label-four .print-member__label {
+  gap: 0.02em;
+  left: 2%;
+  line-height: 0.88;
+  min-height: 76%;
+  overflow: hidden;
+  right: 2%;
+}
+
+.print-member--label-one .print-member__label-line,
+.print-member--label-two .print-member__label-line,
+.print-member--label-three .print-member__label-line,
+.print-member--label-four .print-member__label-line {
   overflow: visible;
 }
 

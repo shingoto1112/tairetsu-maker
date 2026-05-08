@@ -97,6 +97,57 @@ const fromCenterSplitDistance = (
   return currentOffset < 0 ? center - distance : center + distance;
 };
 
+const getObjectDisplayXBounds = (
+  currentInternalX: number | undefined,
+  objectWidthMeters: number | undefined,
+  stageWidth: number,
+  useCenterSplit: boolean,
+) => {
+  const safeObjectWidth =
+    Number.isFinite(objectWidthMeters) && (objectWidthMeters ?? 0) > 0
+      ? (objectWidthMeters as number)
+      : 0;
+  const maxInternalX = Math.max(0, stageWidth - safeObjectWidth);
+  if (!useCenterSplit) {
+    return {
+      max: toDisplayX(maxInternalX, stageWidth) ?? stageWidth / 2,
+      min: toDisplayX(0, stageWidth) ?? -stageWidth / 2,
+    };
+  }
+
+  const center = stageWidth / 2;
+  const currentOffset =
+    currentInternalX === undefined ? 0 : currentInternalX - center;
+  return {
+    max:
+      currentOffset < -0.001
+        ? center
+        : Math.max(0, center - safeObjectWidth),
+    min: 0,
+  };
+};
+
+const getObjectDisplayYBounds = (
+  objectHeightMeters: number | undefined,
+  stageDepth: number,
+  projectMode: "stage" | "parade",
+) => {
+  const safeObjectHeight =
+    Number.isFinite(objectHeightMeters) && (objectHeightMeters ?? 0) > 0
+      ? (objectHeightMeters as number)
+      : 0;
+  if (projectMode === "parade") {
+    return {
+      max: stageDepth,
+      min: Math.min(stageDepth, safeObjectHeight),
+    };
+  }
+  return {
+    max: Math.max(0, stageDepth - safeObjectHeight),
+    min: 0,
+  };
+};
+
 const getAssignedObjectNames = (
   memberId: string,
   frame: FormationFrame | null,
@@ -212,6 +263,17 @@ export const DetailsPanel = ({
       : fromDisplayX(displayX, stageWidthMeters);
   const minDisplayX = useParadeCenterSplitX ? 0 : -stageWidthMeters / 2;
   const maxDisplayX = stageWidthMeters / 2;
+  const objectDisplayXBounds = getObjectDisplayXBounds(
+    objectState?.x,
+    objectState?.widthMeters,
+    stageWidthMeters,
+    useParadeCenterSplitX,
+  );
+  const objectDisplayYBounds = getObjectDisplayYBounds(
+    objectState?.heightMeters,
+    stageDepthMeters,
+    projectMode,
+  );
 
   const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
     if (!selectedMember || !memberPosition) {
@@ -250,9 +312,24 @@ export const DetailsPanel = ({
       [axis]:
         axis === "x"
           ? roundDetailMeters(
-              clamp(internalXValue(value, objectState.x), 0, maxObjectX),
+              clamp(
+                internalXValue(
+                  clamp(value, objectDisplayXBounds.min, objectDisplayXBounds.max),
+                  objectState.x,
+                ),
+                0,
+                maxObjectX,
+              ),
             )
-          : roundDetailMeters(clamp(internalYValue(value), 0, maxObjectY)),
+          : roundDetailMeters(
+              clamp(
+                internalYValue(
+                  clamp(value, objectDisplayYBounds.min, objectDisplayYBounds.max),
+                ),
+                0,
+                maxObjectY,
+              ),
+            ),
     });
   };
 
@@ -267,8 +344,30 @@ export const DetailsPanel = ({
     if (value === null || value <= 0) {
       return;
     }
+    const currentWidth = objectState?.widthMeters ?? 1;
+    const currentHeight = objectState?.heightMeters ?? 1;
+    const nextWidth =
+      field === "widthMeters"
+        ? roundDetailMeters(clamp(value, 0.01, stageWidthMeters))
+        : currentWidth;
+    const nextHeight =
+      field === "heightMeters"
+        ? roundDetailMeters(clamp(value, 0.01, stageDepthMeters))
+        : currentHeight;
+    const nextX = roundDetailMeters(
+      clamp(objectState?.x ?? 0, 0, Math.max(0, stageWidthMeters - nextWidth)),
+    );
+    const nextY = roundDetailMeters(
+      clamp(
+        objectState?.y ?? 0,
+        0,
+        Math.max(0, stageDepthMeters - nextHeight),
+      ),
+    );
     onUpdateObjectState(selectedObject.id, {
-      [field]: roundDetailMeters(value),
+      [field]: field === "widthMeters" ? nextWidth : nextHeight,
+      x: nextX,
+      y: nextY,
     });
   };
 
@@ -490,8 +589,8 @@ export const DetailsPanel = ({
                 <span className="detail-input-with-unit">
                   <NumericInput
                     step="0.01"
-                    min={minDisplayX}
-                    max={maxDisplayX}
+                    min={objectDisplayXBounds.min}
+                    max={objectDisplayXBounds.max}
                     value={displayXValue(objectState?.x)}
                     onValueChange={(value) =>
                       updateObjectCoordinate("x", String(value))
@@ -510,8 +609,8 @@ export const DetailsPanel = ({
                 <span className="detail-input-with-unit">
                   <NumericInput
                     step="0.01"
-                    min={0}
-                    max={stageDepthMeters}
+                    min={objectDisplayYBounds.min}
+                    max={objectDisplayYBounds.max}
                     value={displayYValue(objectState?.y)}
                     onValueChange={(value) =>
                       updateObjectCoordinate("y", String(value))

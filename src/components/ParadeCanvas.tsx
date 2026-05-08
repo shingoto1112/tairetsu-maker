@@ -1,6 +1,7 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Camera,
   Lock,
   Maximize2,
   Minimize2,
@@ -12,7 +13,9 @@ import {
 import {
   CSSProperties,
   forwardRef,
+  MouseEvent as ReactMouseEvent,
   PointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -25,10 +28,16 @@ import type {
   Project,
   SceneViewState,
   Selection,
+  StageContextMenuRequest,
   StageSnapshot,
 } from "../types";
 import { roundMeters } from "../utils/coordinates";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
+import {
+  getMemberLabelClassName,
+  getMemberLabelFontSize,
+  splitMemberLabel,
+} from "../utils/memberLabel";
 import {
   clampParadeObjectTopY,
   formatSignedMeterLabel,
@@ -54,6 +63,7 @@ type ParadeCanvasProps = {
   focusMemberId?: string;
   focusMode: boolean;
   onSelect: (selection: Selection) => void;
+  onStagePointerPositionChange: (position: Position) => void;
   onMoveMember: (id: string, position: Position) => void;
   onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
   onBeginProjectEdit: (label?: string) => void;
@@ -66,6 +76,8 @@ type ParadeCanvasProps = {
   onRedo: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  onCaptureStageImage?: () => void;
+  onContextMenuRequest: (request: StageContextMenuRequest) => void;
 };
 
 type DragState =
@@ -79,10 +91,23 @@ type DragState =
     }
   | {
       type: "object";
+      interaction: "move" | "resize";
       id: string;
       startClientX: number;
       startClientY: number;
       startState: ObjectState;
+      hasMoved: boolean;
+    }
+  | {
+      type: "object";
+      interaction: "rotate";
+      id: string;
+      startClientX: number;
+      startClientY: number;
+      startState: ObjectState;
+      startAngle: number;
+      centerClientX: number;
+      centerClientY: number;
       hasMoved: boolean;
     };
 
@@ -118,6 +143,7 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.5;
 const RULER_WIDTH = 58;
 const MEMBER_OVERLAP_KEY_SCALE = 100;
+const MIN_OBJECT_SIZE_METERS = 0.1;
 
 const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
   totalDistance: 100,
@@ -160,35 +186,6 @@ const isMeterMultiple = (value: number, intervalMeters: number) => {
   }
   return Math.abs(value / intervalMeters - Math.round(value / intervalMeters)) < 0.001;
 };
-
-const splitMemberLabel = (name: string): string[] => {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    return [""];
-  }
-  const characters = Array.from(trimmed);
-  const hasWideCharacters = /[^\u0020-\u007e]/.test(trimmed);
-  if (characters.length <= 3 || (characters.length <= 4 && !hasWideCharacters)) {
-    return [trimmed];
-  }
-  const midpoint = Math.ceil(characters.length / 2);
-  return [characters.slice(0, midpoint).join(""), characters.slice(midpoint).join("")];
-};
-
-const getMemberLabelFontSize = (diameterPx: number, labelLines: string[]) => {
-  const longestLine = Math.max(1, ...labelLines.map((line) => Array.from(line).length));
-  const lineCount = Math.max(1, labelLines.length);
-  if (lineCount === 1 && longestLine === 3) {
-    return Math.round(Math.max(18, diameterPx * 0.62) * 10) / 10;
-  }
-  const fitWidth = (diameterPx * 0.9) / Math.max(1.8, longestLine * 0.74);
-  const fitHeight = (diameterPx * 0.82) / lineCount;
-  const maxReadable = diameterPx * (lineCount === 1 ? 0.56 : 0.46);
-  return Math.round(Math.max(8, Math.min(maxReadable, fitWidth, fitHeight)) * 10) / 10;
-};
-
-const isThreeCharacterLabel = (labelLines: string[]): boolean =>
-  labelLines.length === 1 && Array.from(labelLines[0] ?? "").length === 3;
 
 const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
   const safeWidth = Math.max(0, widthMeters);
@@ -260,6 +257,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       focusMemberId,
       focusMode,
       onSelect,
+      onStagePointerPositionChange,
       onMoveMember,
       onUpdateObjectState,
       onBeginProjectEdit,
@@ -269,12 +267,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       canUndo,
       canRedo,
       onUndo,
-      onRedo,
-      isFullscreen,
-      onToggleFullscreen,
-    },
-    ref,
-  ) => {
+    onRedo,
+    isFullscreen,
+    onToggleFullscreen,
+    onCaptureStageImage,
+    onContextMenuRequest,
+  },
+  ref,
+) => {
     const currentFrame =
       project.frames.find((frame) => frame.id === selectedFrameId) ??
       project.frames[0];
@@ -297,6 +297,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const [reflectMoveMeters, setReflectMoveMeters] = useState(5);
     const [reflectMoveObjects, setReflectMoveObjects] = useState(true);
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    const stageRef = useRef<HTMLDivElement | null>(null);
     const zoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
@@ -453,6 +454,82 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       saveViewTimerRef.current = window.setTimeout(saveViewState, 300);
     };
 
+    const getStagePositionFromClientPoint = useCallback(
+      (clientX: number, clientY: number): Position => {
+        const stageElement = stageRef.current;
+        if (!stageElement) {
+          return {
+            x: settings.width / 2,
+            y: settings.totalDistance,
+          };
+        }
+        const rect = stageElement.getBoundingClientRect();
+        const rawX =
+          ((clientX - rect.left) / Math.max(1, rect.width)) * settings.width;
+        const rawY =
+          ((clientY - rect.top) / Math.max(1, rect.height)) *
+          settings.totalDistance;
+        return {
+          x: clamp(
+            snapMeters(rawX, settings.cellSizeMeters),
+            0,
+            settings.width,
+          ),
+          y: clamp(
+            snapMeters(rawY, settings.cellSizeMeters),
+            0,
+            settings.totalDistance,
+          ),
+        };
+      },
+      [settings.cellSizeMeters, settings.totalDistance, settings.width],
+    );
+
+    const trackStagePointerPosition = useCallback(
+      (clientX: number, clientY: number) => {
+        onStagePointerPositionChange(
+          getStagePositionFromClientPoint(clientX, clientY),
+        );
+      },
+      [getStagePositionFromClientPoint, onStagePointerPositionChange],
+    );
+
+    const openContextMenu = useCallback(
+      (
+        event: ReactMouseEvent<HTMLElement>,
+        target: StageContextMenuRequest["target"],
+      ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const stagePosition = getStagePositionFromClientPoint(
+          event.clientX,
+          event.clientY,
+        );
+        onStagePointerPositionChange(stagePosition);
+        onContextMenuRequest({
+          clientX: event.clientX,
+          clientY: event.clientY,
+          stagePosition,
+          target,
+        });
+      },
+      [
+        getStagePositionFromClientPoint,
+        onContextMenuRequest,
+        onStagePointerPositionChange,
+      ],
+    );
+
+    const handleStagePointerMove = useCallback(
+      (event: PointerEvent<HTMLDivElement>) => {
+        if (pinchZoomRef.current) {
+          return;
+        }
+        trackStagePointerPosition(event.clientX, event.clientY);
+      },
+      [trackStagePointerPosition],
+    );
+
     useEffect(() => {
       setZoom(currentFrame?.sceneViewState?.zoom ?? 1);
     }, [currentFrame?.id, currentFrame?.sceneViewState?.zoom]);
@@ -534,7 +611,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         const dx = (event.clientX - dragState.startClientX) / pxPerMeter;
         const dy = (event.clientY - dragState.startClientY) / pxPerMeter;
         if (!dragState.hasMoved) {
-          onBeginProjectEdit("パレード配置編集");
+          const editLabel =
+            dragState.type === "object" && dragState.interaction === "resize"
+              ? "道具サイズ変更"
+              : dragState.type === "object" && dragState.interaction === "rotate"
+                ? "道具回転"
+                : "パレード配置編集";
+          onBeginProjectEdit(editLabel);
           setDragState({ ...dragState, hasMoved: true });
         }
         if (dragState.type === "member") {
@@ -551,6 +634,49 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             ),
           };
           onMoveMember(dragState.id, nextPosition);
+        } else if (dragState.interaction === "resize") {
+          const maxWidth = Math.max(
+            MIN_OBJECT_SIZE_METERS,
+            settings.width - dragState.startState.x,
+          );
+          const maxHeight = Math.max(
+            MIN_OBJECT_SIZE_METERS,
+            settings.totalDistance - dragState.startState.y,
+          );
+          const nextWidth = clamp(
+            snapMeters(
+              dragState.startState.widthMeters + dx,
+              settings.cellSizeMeters,
+            ),
+            MIN_OBJECT_SIZE_METERS,
+            maxWidth,
+          );
+          const nextHeight = clamp(
+            snapMeters(
+              dragState.startState.heightMeters + dy,
+              settings.cellSizeMeters,
+            ),
+            MIN_OBJECT_SIZE_METERS,
+            maxHeight,
+          );
+          onUpdateObjectState(dragState.id, {
+            widthMeters: nextWidth,
+            heightMeters: nextHeight,
+          });
+        } else if (dragState.interaction === "rotate") {
+          const currentAngle =
+            (Math.atan2(
+              event.clientY - dragState.centerClientY,
+              event.clientX - dragState.centerClientX,
+            ) *
+              180) /
+            Math.PI;
+          const nextRotation =
+            Math.round((dragState.startState.rotation + currentAngle - dragState.startAngle) / 5) *
+            5;
+          onUpdateObjectState(dragState.id, {
+            rotation: roundMeters(nextRotation),
+          });
         } else {
           const maxObjectX = Math.max(
             0,
@@ -812,6 +938,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       position: Position,
       event: PointerEvent<HTMLButtonElement>,
     ) => {
+      if (event.button !== 0) {
+        return;
+      }
       if (pinchZoomRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -833,8 +962,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const startObjectDrag = (
       objectId: string,
       state: ObjectState,
-      event: PointerEvent<HTMLButtonElement>,
+      event: PointerEvent<HTMLElement>,
     ) => {
+      if (event.button !== 0) {
+        return;
+      }
       if (pinchZoomRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -845,10 +977,79 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onSelect({ type: "object", id: objectId });
       setDragState({
         type: "object",
+        interaction: "move",
         id: objectId,
         startClientX: event.clientX,
         startClientY: event.clientY,
         startState: state,
+        hasMoved: false,
+      });
+    };
+
+    const startObjectResize = (
+      objectId: string,
+      state: ObjectState,
+      event: PointerEvent<HTMLElement>,
+    ) => {
+      if (event.button !== 0) {
+        return;
+      }
+      if (pinchZoomRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onSelect({ type: "object", id: objectId });
+      setDragState({
+        type: "object",
+        interaction: "resize",
+        id: objectId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startState: state,
+        hasMoved: false,
+      });
+    };
+
+    const startObjectRotate = (
+      objectId: string,
+      state: ObjectState,
+      event: PointerEvent<HTMLElement>,
+    ) => {
+      if (event.button !== 0) {
+        return;
+      }
+      if (pinchZoomRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const objectElement = event.currentTarget.closest(".parade-object");
+      if (!(objectElement instanceof HTMLElement)) {
+        return;
+      }
+      const rect = objectElement.getBoundingClientRect();
+      const centerClientX = rect.left + rect.width / 2;
+      const centerClientY = rect.top + rect.height / 2;
+      const startAngle =
+        (Math.atan2(event.clientY - centerClientY, event.clientX - centerClientX) *
+          180) /
+        Math.PI;
+      onSelect({ type: "object", id: objectId });
+      setDragState({
+        type: "object",
+        interaction: "rotate",
+        id: objectId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startState: state,
+        startAngle,
+        centerClientX,
+        centerClientY,
         hasMoved: false,
       });
     };
@@ -971,6 +1172,17 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               <button type="button" className="icon-button" title="拡大" onClick={() => updateZoom(zoom + 0.1)}>
                 <ZoomIn size={16} />
               </button>
+              {onCaptureStageImage && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="ステージを画像保存"
+                  aria-label="ステージを画像保存"
+                  onClick={onCaptureStageImage}
+                >
+                  <Camera size={16} />
+                </button>
+              )}
               <button
                 type="button"
                 className={`icon-button stage-pinch-lock-button ${isPinchLocked ? "is-locked" : ""}`}
@@ -1087,13 +1299,19 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             )}
             <div
               className="parade-stage"
+              ref={stageRef}
               style={{
                 gridColumn: 2,
                 gridRow: 2,
                 width: canvasWidthPx,
                 height: canvasHeightPx,
               }}
-              onPointerDown={() => onSelect(null)}
+              onPointerDown={(event) => {
+                trackStagePointerPosition(event.clientX, event.clientY);
+                onSelect(null);
+              }}
+              onPointerMove={handleStagePointerMove}
+              onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
             >
               <div className="parade-grid-layer" aria-hidden="true">
                 {verticalGridTicks.map((meter) => (
@@ -1151,8 +1369,36 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                       zIndex: state.zIndex,
                     }}
                     onPointerDown={(event) => startObjectDrag(object.id, state, event)}
+                    onContextMenu={(event) =>
+                      openContextMenu(event, { type: "object", id: object.id })
+                    }
                   >
-                    <span>{object.name}</span>
+                    <span className="parade-object__label">{object.name}</span>
+                    {isSelected && !object.locked && (
+                      <>
+                        <span className="object-anchor-point" aria-hidden="true" />
+                        <span
+                          aria-label="サイズ変更"
+                          className="resize-handle parade-object__resize-handle"
+                          onPointerDown={(event) =>
+                            startObjectResize(object.id, state, event)
+                          }
+                          role="button"
+                          tabIndex={-1}
+                          title="サイズ変更"
+                        />
+                        <span
+                          aria-label="回転"
+                          className="rotate-handle parade-object__rotate-handle"
+                          onPointerDown={(event) =>
+                            startObjectRotate(object.id, state, event)
+                          }
+                          role="button"
+                          tabIndex={-1}
+                          title="回転"
+                        />
+                      </>
+                    )}
                   </button>
                 );
               })}
@@ -1174,7 +1420,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 const isMultiSelected = selectedMemberIds.includes(member.id);
                 const isFocus = focusMode && focusMemberId === member.id;
                 const labelLines = splitMemberLabel(member.name);
-                const hasThreeCharacterLabel = isThreeCharacterLabel(labelLines);
+                const memberLabelClassName = getMemberLabelClassName(
+                  "parade-member",
+                  labelLines,
+                );
                 const labelColor = getReadableMemberLabelColor(color);
                 const overlapOffset =
                   memberDisplayOffsets.get(member.id) ?? { x: 0, y: 0 };
@@ -1199,7 +1448,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     key={member.id}
                     type="button"
                     className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""} ${
-                      hasThreeCharacterLabel ? "parade-member--three-character" : ""
+                      memberLabelClassName
                     } ${
                       simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus
                         ? "is-label-simplified"
@@ -1207,6 +1456,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     }`}
                     style={memberStyle}
                     onPointerDown={(event) => startMemberDrag(member.id, position, event)}
+                    onContextMenu={(event) =>
+                      openContextMenu(event, { type: "member", id: member.id })
+                    }
                   >
                     {!(simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus) && (
                       <span className="parade-member__label" aria-hidden="true">
