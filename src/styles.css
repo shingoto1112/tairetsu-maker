@@ -203,12 +203,18 @@
 
 .parade-ruler-spacer {
   background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 12;
 }
 
 .parade-horizontal-ruler {
   background: #f8fafc;
   color: #0f172a;
-  position: relative;
+  box-shadow: 0 1px 0 rgba(148, 163, 184, 0.28);
+  position: sticky;
+  top: 0;
+  z-index: 12;
 }
 
 .parade-horizontal-ruler span {
