@@ -21,6 +21,7 @@ Codex は実装前に `AGENTS.md` とあわせて参照してください。
 - React
 - TypeScript
 - Vite
+- Tauri（Windowsダウンロード版）
 - npm
 
 主なディレクトリ:
@@ -28,6 +29,7 @@ Codex は実装前に `AGENTS.md` とあわせて参照してください。
 - `src/App.tsx`: アプリ全体の状態管理・画面構成の中心
 - `src/components/`: パネル、キャンバス、印刷、隊列表一覧などのUI
 - `src/utils/`: 保存、座標、音源、書き出し、共有ファイルなどの処理
+- `src-tauri/`: Windowsダウンロード版用のTauri設定
 - `src/types.ts`: 主要な型定義
 - `docs/`: 仕様メモ
 
@@ -36,6 +38,11 @@ Codex は実装前に `AGENTS.md` とあわせて参照してください。
 - `npm run dev`
 - `npm run build`
 - `npm run preview`
+- `npm run desktop:dev`
+- `npm run desktop:build`
+
+Windowsダウンロード版は、Web版のReact/Vite実装をTauriで包む方針です。Windows版だけの処理を追加する場合も、可能な限りWeb版のデータ構造・保存仕様・UIロジックを共通利用します。
+ローカル環境にRust/CargoやMicrosoft C++ Build Toolsがない場合は、GitHub Actionsの `Build Windows Desktop App` ワークフローでWindowsインストーラーを作成できます。
 
 ## 3. 基本モード
 

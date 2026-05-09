@@ -23,6 +23,18 @@ npm run build
 
 ビルド成果物は`dist/`に作成されます。`dist/`は生成物のためGitHubには含めません。
 
+## Windowsダウンロード版
+
+Windows向けのダウンロード版はTauriで作成します。Web版と同じReact/Vite実装を使い、`src-tauri/` の設定でデスクトップアプリとして包みます。
+
+```bash
+npm run desktop:dev
+npm run desktop:build
+```
+
+初回ビルドにはRust/Cargo、Microsoft C++ Build Tools、WebView2 Runtimeが必要です。詳しい手順は [`docs/WINDOWS_APP_RELEASE.md`](docs/WINDOWS_APP_RELEASE.md) を参照してください。
+ローカル環境を整えずにGitHub ActionsでWindowsインストーラーを作ることもできます。
+
 ## GitHubへアップロードする流れ
 
 初回だけ、Gitをインストールしてからプロジェクトフォルダで以下を実行します。

@@ -8,11 +8,14 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 - アプリ名: 隊列メーカー
 - 目的: ダンス、舞台、パレードなどで使う隊列表を作成・編集・保存・印刷・書き出しできるWebアプリ。
 - 技術構成: React + TypeScript + Vite
+- Windowsダウンロード版: Tauri
 - package manager: npm
 - 主なコマンド:
   - 開発: `npm run dev`
   - ビルド: `npm run build`
   - プレビュー: `npm run preview`
+  - Windows版開発: `npm run desktop:dev`
+  - Windows版ビルド: `npm run desktop:build`
 
 ## 重要な開発方針
 
@@ -118,6 +121,9 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 - 既存のステージモードを直す場合、パレードモードに副作用が出ないか確認する。
 - パレードモードを直す場合、ステージモードに副作用が出ないように分岐を明確にする。
 - `dist/` やビルド済みアセットを直接編集しない。
+- Windows版の設定は `src-tauri/` に置く。Web版の `src/` を共通利用し、Tauri側へロジックを複製しない。
+- Windows版ビルドにはRust/CargoとMicrosoft C++ Build Toolsが必要。未導入環境では `npm run desktop:build` が失敗しても、Web版の `npm run build` が通るかを別途確認する。
+- GitHub上でWindows版を作る場合は `.github/workflows/windows-desktop.yml` を使う。ワークフロー変更時もWeb版のVercelビルドに影響しないか確認する。
 - `node_modules/`、`.env`、個人情報、音源ファイル本体、大容量ファイルをGitに含めない。
 
 ## 大規模変更の進め方
