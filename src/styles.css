@@ -558,6 +558,29 @@ h2 {
   overflow: hidden;
 }
 
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  :root {
+    --desktop-app-zoom: 0.8;
+  }
+
+  #root {
+    height: calc(100vh / var(--desktop-app-zoom));
+    height: calc(100dvh / var(--desktop-app-zoom));
+    width: calc(100vw / var(--desktop-app-zoom));
+    zoom: var(--desktop-app-zoom);
+  }
+
+  .app-shell {
+    height: calc(100vh / var(--desktop-app-zoom));
+    height: calc(100dvh / var(--desktop-app-zoom));
+  }
+
+  .library-shell {
+    min-height: calc(100vh / var(--desktop-app-zoom));
+    min-height: calc(100dvh / var(--desktop-app-zoom));
+  }
+}
+
 .app-top-region {
   display: grid;
   gap: 8px;
