@@ -1,21 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_COLOR_PALETTE = [
-  "#0f766e",
-  "#14b8a6",
-  "#22c55e",
-  "#84cc16",
-  "#facc15",
-  "#f97316",
-  "#ef4444",
-  "#ec4899",
-  "#a855f7",
-  "#6366f1",
-  "#3b82f6",
-  "#06b6d4",
-  "#64748b",
-  "#111827",
-  "#ffffff",
+  "#fee2e2", "#fce7f3", "#f3e8ff", "#dbeafe", "#cffafe", "#ccfbf1", "#dcfce7", "#fef3c7", "#f1f5f9",
+  "#fca5a5", "#f9a8d4", "#d8b4fe", "#93c5fd", "#67e8f9", "#5eead4", "#86efac", "#fde68a", "#cbd5e1",
+  "#ef4444", "#ec4899", "#a855f7", "#3b82f6", "#06b6d4", "#14b8a6", "#22c55e", "#facc15", "#64748b",
+  "#991b1b", "#9d174d", "#581c87", "#1e40af", "#155e75", "#0f766e", "#166534", "#92400e", "#111827",
 ];
 
 const normalizeColor = (color: string) => color.trim().toLowerCase();
@@ -36,7 +25,9 @@ export function ColorPaletteInput({
   palette = DEFAULT_COLOR_PALETTE,
 }: ColorPaletteInputProps) {
   const [open, setOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState({ left: 0, top: 0 });
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const paletteId = useId();
   const currentColor = value || DEFAULT_COLOR_PALETTE[0];
   const normalizedCurrent = normalizeColor(currentColor);
@@ -75,6 +66,39 @@ export function ColorPaletteInput({
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) {
+      return;
+    }
+    const updatePosition = () => {
+      if (!rootRef.current) return;
+      const triggerRect = rootRef.current.getBoundingClientRect();
+      const popoverRect = popoverRef.current?.getBoundingClientRect();
+      const width = popoverRect?.width ?? (compact ? 236 : 276);
+      const height = popoverRect?.height ?? 176;
+      const margin = 10;
+      const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+      const maxTop = Math.max(margin, window.innerHeight - height - margin);
+      const preferredTop = triggerRect.bottom + 8;
+      const fallbackTop = triggerRect.top - height - 8;
+      setPopoverPosition({
+        left: Math.min(Math.max(margin, triggerRect.left), maxLeft),
+        top: Math.min(
+          Math.max(margin, preferredTop > maxTop ? fallbackTop : preferredTop),
+          maxTop,
+        ),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [compact, open, colors.length]);
+
   return (
     <div
       className={`color-palette-input${compact ? " is-compact" : ""}`}
@@ -92,7 +116,14 @@ export function ColorPaletteInput({
         title={`${label}を選ぶ`}
       />
       {open && (
-        <div className="color-palette-popover" id={paletteId} role="listbox" aria-label={label}>
+        <div
+          className="color-palette-popover"
+          id={paletteId}
+          ref={popoverRef}
+          role="listbox"
+          aria-label={label}
+          style={popoverPosition}
+        >
           {colors.map((color) => {
             const isSelected = normalizeColor(color) === normalizedCurrent;
             return (
