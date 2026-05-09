@@ -198,6 +198,21 @@ const createMeterGridTicksInRange = (
   return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
+const getParadeMeterRulerClassName = (meter: number) => {
+  const rounded = Math.round(meter);
+  if (Math.abs(meter - rounded) > 0.001) {
+    return "minor";
+  }
+  const absMeter = Math.abs(rounded);
+  if (absMeter % 10 === 0) {
+    return "major";
+  }
+  if (absMeter % 5 === 0) {
+    return "medium";
+  }
+  return "minor";
+};
+
 const isMeterMultiple = (value: number, intervalMeters: number) => {
   if (!Number.isFinite(intervalMeters) || intervalMeters <= 0) {
     return false;
@@ -364,8 +379,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       [assignedMemberIds, project.members, snapshot.memberVisibility],
     );
     const isDenseProject = project.members.length >= 120;
-    const simplifyMemberLabels =
-      isDenseProject && (isPinching || Boolean(dragState?.hasMoved));
+    const simplifyMemberLabels = isDenseProject && isPinching;
 
     const visibleObjects = useMemo(
       () => {
@@ -385,7 +399,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       return createMeterGridTicksInRange(
         -backwardDistanceMeters,
         settings.totalDistance,
-        5,
+        1,
       );
     }, [backwardDistanceMeters, settings.totalDistance]);
 
@@ -1321,7 +1335,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   return (
                     <span
                       key={`left-${meter}`}
-                      className={meter % 10 === 0 ? "major" : "medium"}
+                      className={getParadeMeterRulerClassName(meter)}
                       style={{ top }}
                     >
                       {meter}m
@@ -1519,7 +1533,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   return (
                     <span
                       key={`right-${meter}`}
-                      className={meter % 10 === 0 ? "major" : "medium"}
+                      className={getParadeMeterRulerClassName(meter)}
                       style={{ top }}
                     >
                       {meter}m

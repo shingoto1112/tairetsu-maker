@@ -93,6 +93,21 @@ const getPrintSideRulerWidthMm = (
   return isParade ? PRINT_PARADE_RULER_SIDE_MM : PRINT_RULER_LEFT_MM;
 };
 
+const getPrintMeterRulerClassName = (meter: number) => {
+  const rounded = Math.round(meter);
+  if (Math.abs(meter - rounded) > 0.001) {
+    return "minor";
+  }
+  const absMeter = Math.abs(rounded);
+  if (absMeter % 10 === 0) {
+    return "major";
+  }
+  if (absMeter % 5 === 0) {
+    return "medium";
+  }
+  return "minor";
+};
+
 const getEffectiveSize = (
   project: Project,
   frame: FormationFrame,
@@ -523,16 +538,22 @@ const PrintStagePreview = ({
             backwardDistanceMeters,
           ) ??
           totalDistance;
-        const start = Math.ceil(minDistance / 5) * 5;
-        const end = Math.floor(maxDistance / 5) * 5;
-        const labels: Array<{ key: number; label: string; top: string }> = [];
-        for (let meter = start; meter <= end + 0.001; meter += 5) {
+        const start = Math.ceil(minDistance - 0.001);
+        const end = Math.floor(maxDistance + 0.001);
+        const labels: Array<{
+          className?: string;
+          key: number;
+          label: string;
+          top: string;
+        }> = [];
+        for (let meter = start; meter <= end; meter += 1) {
           const internalY = paradeDistanceToInternalY(
             meter,
             totalDistance,
             backwardDistanceMeters,
           );
           labels.push({
+            className: getPrintMeterRulerClassName(meter),
             key: meter,
             label: `${meter}m`,
             top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
@@ -546,6 +567,7 @@ const PrintStagePreview = ({
             backwardDistanceMeters,
           );
           labels.push({
+            className: getPrintMeterRulerClassName(fallbackMeter),
             key: fallbackMeter,
             label: `${fallbackMeter}m`,
             top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
@@ -556,6 +578,7 @@ const PrintStagePreview = ({
     : yTicks.map((tick) => {
         const actualTick = Number((verticalRange.topMeters + tick).toFixed(2));
         return {
+          className: undefined,
           key: tick,
           label: `${actualTick}m`,
           top: metersToPrintMm(tick, metrics),
@@ -667,7 +690,11 @@ const PrintStagePreview = ({
           </div>
           <div className="print-ruler print-ruler-y print-ruler-y--left">
             {verticalRulerLabels.map((item) => (
-              <span key={`y-left-${item.key}`} style={{ top: item.top }}>
+              <span
+                className={item.className}
+                key={`y-left-${item.key}`}
+                style={{ top: item.top }}
+              >
                 {item.label}
               </span>
             ))}
@@ -675,7 +702,11 @@ const PrintStagePreview = ({
           {isParade && (
             <div className="print-ruler print-ruler-y print-ruler-y--right">
               {verticalRulerLabels.map((item) => (
-                <span key={`y-right-${item.key}`} style={{ top: item.top }}>
+                <span
+                  className={item.className}
+                  key={`y-right-${item.key}`}
+                  style={{ top: item.top }}
+                >
                   {item.label}
                 </span>
               ))}

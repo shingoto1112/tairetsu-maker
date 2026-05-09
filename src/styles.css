@@ -221,7 +221,6 @@
 }
 
 .parade-ruler span {
-  font-size: 0.72rem;
   position: absolute;
   transform: translateY(-50%);
   white-space: nowrap;
@@ -235,13 +234,21 @@
   left: 8px;
 }
 
+.parade-ruler span.minor {
+  color: #64748b;
+  font-size: 0.58rem;
+  font-weight: 600;
+}
+
 .parade-ruler span.medium {
   color: #334155;
+  font-size: 0.68rem;
   font-weight: 700;
 }
 
 .parade-ruler span.major {
   color: #0f172a;
+  font-size: 0.74rem;
   font-weight: 800;
 }
 
@@ -4729,6 +4736,24 @@ h2 {
   text-align: right;
   transform: translateY(-50%);
   white-space: nowrap;
+}
+
+.print-ruler-y span.minor {
+  color: #64748b;
+  font-size: 7pt;
+  font-weight: 600;
+}
+
+.print-ruler-y span.medium {
+  color: #334155;
+  font-size: 8pt;
+  font-weight: 700;
+}
+
+.print-ruler-y span.major {
+  color: #0f172a;
+  font-size: 9pt;
+  font-weight: 800;
 }
 
 .print-ruler-y--left span {
