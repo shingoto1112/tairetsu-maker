@@ -1,18 +1,18 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_COLOR_PALETTE = [
-  "#fca5a5", "#fda4af", "#f9a8d4", "#d8b4fe", "#a5b4fc",
-  "#93c5fd", "#7dd3fc", "#67e8f9", "#5eead4", "#86efac",
-  "#fde047", "#bef264", "#fdba74", "#f87171", "#fb7185",
-  "#f472b6", "#e879f9", "#c084fc", "#818cf8", "#60a5fa",
-  "#38bdf8", "#22d3ee", "#2dd4bf", "#4ade80", "#a3e635",
-  "#facc15", "#fbbf24", "#fb923c", "#ef4444", "#f43f5e",
-  "#ec4899", "#d946ef", "#a855f7", "#8b5cf6", "#6366f1",
-  "#3b82f6", "#0ea5e9", "#06b6d4", "#14b8a6", "#22c55e",
-  "#10b981", "#84cc16", "#f59e0b", "#f97316", "#ff6b35",
-  "#ff7f50", "#34d399", "#20c997", "#00bcd4", "#29b6f6",
-  "#b388ff", "#ff4db8", "#ff8a80", "#ffd54f", "#76ff03",
-  "#00e5c0", "#42a5f5", "#ab47bc", "#64748b", "#111827",
+  "#fca5a5", "#f87171", "#ef4444", "#ff6b35", "#fb923c",
+  "#fdba74", "#fbbf24", "#facc15", "#fde047", "#ffd54f",
+  "#fda4af", "#fb7185", "#f43f5e", "#f9a8d4", "#f472b6",
+  "#ec4899", "#ff4db8", "#e879f9", "#d946ef", "#c084fc",
+  "#d8b4fe", "#b388ff", "#a855f7", "#ab47bc", "#8b5cf6",
+  "#818cf8", "#6366f1", "#60a5fa", "#3b82f6", "#42a5f5",
+  "#93c5fd", "#7dd3fc", "#38bdf8", "#29b6f6", "#0ea5e9",
+  "#67e8f9", "#22d3ee", "#06b6d4", "#00bcd4", "#00e5c0",
+  "#5eead4", "#2dd4bf", "#20c997", "#14b8a6", "#34d399",
+  "#10b981", "#86efac", "#4ade80", "#22c55e", "#76ff03",
+  "#a3e635", "#84cc16", "#bef264", "#16a34a", "#f59e0b",
+  "#f97316", "#ff7f50", "#ff8a80", "#64748b", "#111827",
 ];
 
 const normalizeColor = (color: string) => color.trim().toLowerCase();
