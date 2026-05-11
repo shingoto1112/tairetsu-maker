@@ -5,7 +5,6 @@ import {
   Lock,
   Maximize2,
   Minimize2,
-  RotateCcw,
   Unlock,
   ZoomIn,
   ZoomOut,
@@ -62,9 +61,13 @@ type ParadeCanvasProps = {
   selectedFrameId: string | null;
   selectedFrameLabel: string;
   selectedMemberIds: string[];
+  isMemberSelectionMode: boolean;
   focusMemberId?: string;
   focusMode: boolean;
-  onSelect: (selection: Selection) => void;
+  onSelect: (
+    selection: Selection,
+    options?: { append?: boolean },
+  ) => void;
   onStagePointerPositionChange: (position: Position) => void;
   onMoveMember: (id: string, position: Position) => void;
   onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
@@ -287,6 +290,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       selectedFrameId,
       selectedFrameLabel,
       selectedMemberIds,
+      isMemberSelectionMode,
       focusMemberId,
       focusMode,
       onSelect,
@@ -959,27 +963,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       scheduleSaveViewState();
     };
 
-    const fitAll = () => {
-      if (!scrollRef.current) {
-        return;
-      }
-      const horizontalRulers =
-        (leftRulerVisible ? RULER_WIDTH : 0) + (rightRulerVisible ? RULER_WIDTH : 0);
-      const widthZoom =
-        (scrollRef.current.clientWidth - horizontalRulers - 32) /
-        (settings.width * BASE_PX_PER_METER);
-      const heightZoom =
-        (scrollRef.current.clientHeight - 32) /
-        (canvasDistanceMeters * BASE_PX_PER_METER);
-      updateZoom(clamp(Math.min(widthZoom, heightZoom), MIN_ZOOM, 1));
-      window.setTimeout(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = 0;
-          scrollRef.current.scrollLeft = 0;
-        }
-      }, 0);
-    };
-
     const startMemberDrag = (
       memberId: string,
       position: Position,
@@ -995,7 +978,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       event.preventDefault();
       event.stopPropagation();
-      onSelect({ type: "member", id: memberId });
+      const appendSelection =
+        isMemberSelectionMode || event.ctrlKey || event.metaKey;
+      onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      if (appendSelection) {
+        return;
+      }
       setDragState({
         type: "member",
         id: memberId,
@@ -1249,12 +1237,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               </button>
             </div>
             <div className="parade-control-row">
-              <button type="button" className="mini-button" title="全体表示" onClick={fitAll}>
-                全体表示
-              </button>
-              <button type="button" className="mini-button" title="表示を戻す" onClick={jumpToStart}>
-                <RotateCcw size={14} />
-                戻す
+              <button type="button" className="mini-button" title="スタート地点を表示" onClick={jumpToStart}>
+                スタートへ
               </button>
             </div>
             <button

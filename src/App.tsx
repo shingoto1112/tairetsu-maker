@@ -168,7 +168,12 @@ type SceneContextMenu = {
 
 type PanelScrollTarget =
   | { type: "member"; id: string; token: number }
-  | { type: "object"; id: string; token: number };
+  | { type: "object"; id: string; token: number }
+  | { type: "member-tools"; token: number };
+
+type StageSelectOptions = {
+  append?: boolean;
+};
 
 type HistoryEntry = {
   project: Project;
@@ -1228,6 +1233,7 @@ function App() {
   const [isSceneThumbnailRailCollapsed, setIsSceneThumbnailRailCollapsed] =
     useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [isMemberSelectionMode, setIsMemberSelectionMode] = useState(false);
   const [memberVisibilityTab, setMemberVisibilityTab] =
     useState<PanelVisibilityTab>("visible");
   const [objectVisibilityTab, setObjectVisibilityTab] =
@@ -1376,7 +1382,11 @@ function App() {
   }, []);
 
   const updateProject = useCallback(
-    (recipe: (previous: Project) => Project, label?: string) => {
+    (
+      recipe: (previous: Project) => Project,
+      label?: string,
+      options: { coalesceHistory?: boolean } = {},
+    ) => {
       const previous = projectRef.current;
       const nextProject = recipe(previous);
       if (nextProject === previous) {
@@ -1385,6 +1395,7 @@ function App() {
       if (!historyBatchRef.current) {
         const lastHistoryPush = lastHistoryPushRef.current;
         const shouldCoalesce =
+          options.coalesceHistory !== false &&
           Boolean(label) &&
           undoStackRef.current.length > 0 &&
           lastHistoryPush !== null &&
@@ -2082,6 +2093,26 @@ function App() {
           settings.totalDistance,
           settings.backwardDistanceMeters,
         );
+        const copyAssignments = (assignments?: FormationFrame["objectAssignments"]) =>
+          assignments
+            ? Object.fromEntries(
+                Object.entries(assignments).map(([objectId, memberIds]) => [
+                  objectId,
+                  [...memberIds],
+                ]),
+              )
+            : undefined;
+        const copyAppearanceOverrides = (
+          overrides?: FormationFrame["memberAppearanceOverrides"],
+        ) =>
+          overrides
+            ? Object.fromEntries(
+                Object.entries(overrides).map(([memberId, override]) => [
+                  memberId,
+                  { ...override },
+                ]),
+              )
+            : undefined;
         const groupMemberIds =
           options.target === "group" && options.groupId
             ? new Set(
@@ -2107,13 +2138,30 @@ function App() {
               return { ...position, y: roundMeters(position.y - moveMeters) };
           }
         };
+        const isMoveOperation = moveMeters > 0;
+        const positionEntries = new Map<string, Position>(
+          Object.entries(sourceFrame.positions),
+        );
+        if (isMoveOperation) {
+          Object.entries(targetFrame.positions).forEach(([memberId, position]) => {
+            positionEntries.set(memberId, position);
+          });
+        }
+        const objectStateEntries = new Map<string, ObjectState>(
+          Object.entries(sourceFrame.objectStates),
+        );
+        if (isMoveOperation) {
+          Object.entries(targetFrame.objectStates).forEach(([objectId, state]) => {
+            objectStateEntries.set(objectId, state);
+          });
+        }
         let outOfRangeCount = 0;
         const shouldMoveMember = (memberId: string) =>
           options.target === "all" || Boolean(groupMemberIds?.has(memberId));
         const nextPositions = Object.fromEntries(
-          Object.entries(sourceFrame.positions).map(([memberId, position]) => {
+          Array.from(positionEntries.entries()).map(([memberId, position]) => {
             const moved =
-              shouldMoveMember(memberId) && moveMeters > 0
+              shouldMoveMember(memberId) && isMoveOperation
                 ? movePosition(position)
                 : position;
             if (
@@ -2128,9 +2176,9 @@ function App() {
           }),
         );
         const nextObjectStates = Object.fromEntries(
-          Object.entries(sourceFrame.objectStates).map(([objectId, state]) => {
+          Array.from(objectStateEntries.entries()).map(([objectId, state]) => {
             const moved =
-              options.moveObjects && moveMeters > 0
+              options.moveObjects && isMoveOperation
                 ? { ...state, ...movePosition({ x: state.x, y: state.y }) }
                 : state;
             if (
@@ -2144,12 +2192,34 @@ function App() {
             return [objectId, moved];
           }),
         );
+        const nextMemberVisibility = isMoveOperation
+          ? targetFrame.memberVisibility !== undefined
+            ? { ...targetFrame.memberVisibility }
+            : sourceFrame.memberVisibility
+              ? { ...sourceFrame.memberVisibility }
+              : undefined
+          : sourceFrame.memberVisibility
+            ? { ...sourceFrame.memberVisibility }
+            : undefined;
+        const nextObjectAssignments =
+          isMoveOperation && targetFrame.objectAssignments !== undefined
+            ? copyAssignments(targetFrame.objectAssignments)
+            : copyAssignments(sourceFrame.objectAssignments);
+        const nextMemberAppearanceOverrides = isMoveOperation
+          ? targetFrame.memberAppearanceOverrides !== undefined
+            ? copyAppearanceOverrides(targetFrame.memberAppearanceOverrides)
+            : copyAppearanceOverrides(sourceFrame.memberAppearanceOverrides)
+          : copyAppearanceOverrides(sourceFrame.memberAppearanceOverrides);
         if (outOfRangeCount > 0) {
           setNotice(
             `${outOfRangeCount}件がパレード範囲外に移動しました。位置データは保持しています。`,
           );
         } else {
-          setNotice("前シーンの隊列を反映しました。");
+          setNotice(
+            isMoveOperation
+              ? "現在シーンを基準に隊列を移動しました。"
+              : "前シーンの隊列を反映しました。",
+          );
         }
         return {
           ...previous,
@@ -2159,24 +2229,14 @@ function App() {
                   ...frame,
                   positions: nextPositions,
                   objectStates: nextObjectStates,
-                  memberVisibility: sourceFrame.memberVisibility
-                    ? { ...sourceFrame.memberVisibility }
-                    : undefined,
-                  objectAssignments: sourceFrame.objectAssignments
-                    ? Object.fromEntries(
-                        Object.entries(sourceFrame.objectAssignments).map(
-                          ([objectId, memberIds]) => [objectId, [...memberIds]],
-                        ),
-                      )
-                    : undefined,
-                  memberAppearanceOverrides: sourceFrame.memberAppearanceOverrides
-                    ? { ...sourceFrame.memberAppearanceOverrides }
-                    : undefined,
+                  memberVisibility: nextMemberVisibility,
+                  objectAssignments: nextObjectAssignments,
+                  memberAppearanceOverrides: nextMemberAppearanceOverrides,
                 }
               : frame,
           ),
         };
-      }, "パレード前シーン反映");
+      }, "パレード前シーン反映", { coalesceHistory: false });
     },
     [selectedFrame, selectedPreviousFrame, setNotice, updateProject],
   );
@@ -2189,14 +2249,77 @@ function App() {
     }));
   };
 
-  const selectStageElement = (selection: Selection) => {
-    setSelected(selection);
+  const requestMemberToolsScroll = () => {
+    setPanelScrollTarget((previous) => ({
+      type: "member-tools",
+      token: (previous?.token ?? 0) + 1,
+    }));
+  };
+
+  const toggleMemberSelectionMode = () => {
+    setIsMemberSelectionMode((previous) => {
+      const next = !previous;
+      if (next) {
+        setActivePanelTab("members");
+        setMode("members");
+        requestMemberToolsScroll();
+      }
+      return next;
+    });
+  };
+
+  const clearMemberSelection = () => {
+    setSelectedMemberIds([]);
+    if (selected?.type === "member") {
+      setSelected(null);
+    }
+  };
+
+  useEffect(() => {
+    if (panelScrollTarget?.type !== "member-tools") {
+      return undefined;
+    }
+
+    let firstFrame = 0;
+    let secondFrame = 0;
+    let clearTimer = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const element = document.querySelector<HTMLElement>(
+          "[data-member-tools-panel='true']",
+        );
+        if (!element) {
+          return;
+        }
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        element.classList.add("is-scroll-target");
+        clearTimer = window.setTimeout(() => {
+          element.classList.remove("is-scroll-target");
+        }, 950);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+      if (clearTimer) {
+        window.clearTimeout(clearTimer);
+      }
+    };
+  }, [panelScrollTarget]);
+
+  const selectStageElement = (
+    selection: Selection,
+    options: StageSelectOptions = {},
+  ) => {
     if (!selection) {
+      setSelected(selection);
       setSelectedMemberIds([]);
       return;
     }
 
     if (activePanelTab === "animation") {
+      setSelected(selection);
       setIsPanelOpen(true);
       setSelectedMemberIds([]);
       setMode("preview");
@@ -2211,12 +2334,34 @@ function App() {
         (snapshot.memberVisibility[selection.id] ?? true);
       setActivePanelTab("members");
       setMode("members");
-      setSelectedMemberIds([]);
       setMemberVisibilityTab(visible ? "visible" : "hidden");
+
+      if (options.append) {
+        const previouslySelected =
+          selected?.type === "member" ? selected.id : undefined;
+        setSelected(null);
+        setSelectedMemberIds((previous) => {
+          const base =
+            previous.length > 0
+              ? previous
+              : previouslySelected
+                ? [previouslySelected]
+                : [];
+          return base.includes(selection.id)
+            ? base.filter((id) => id !== selection.id)
+            : [...base, selection.id];
+        });
+        requestMemberToolsScroll();
+        return;
+      }
+
+      setSelected(selection);
+      setSelectedMemberIds([]);
       requestPanelScroll("member", selection.id);
       return;
     }
 
+    setSelected(selection);
     const object = project.stageObjects.find((item) => item.id === selection.id);
     const visible =
       snapshot.objectStates[selection.id]?.visible ?? object?.visible ?? true;
@@ -6283,17 +6428,22 @@ function App() {
             onToggleFocusMode={() => setFocusMode((previous) => !previous)}
             onSelectFrame={(id) => setSelectedFrameId(id)}
           />
-          <GroupToolsPanel
-            members={project.members}
-            selectedMemberIds={selectedMemberIds}
-            spacingMeters={templateSpacing}
-            onSpacingChange={setTemplateSpacing}
-            onCreateGroupFromSelection={createGroupFromSelection}
-            onNudgeSelection={nudgeSelection}
-            onMirrorSelection={mirrorSelection}
-            onApplyTemplate={applyFormationTemplate}
-            onAlignSelection={alignSelectedMembers}
-          />
+          <div data-member-tools-panel="true">
+            <GroupToolsPanel
+              members={project.members}
+              selectedMemberIds={selectedMemberIds}
+              isSelectionMode={isMemberSelectionMode}
+              spacingMeters={templateSpacing}
+              onSpacingChange={setTemplateSpacing}
+              onToggleSelectionMode={toggleMemberSelectionMode}
+              onClearSelection={clearMemberSelection}
+              onCreateGroupFromSelection={createGroupFromSelection}
+              onNudgeSelection={nudgeSelection}
+              onMirrorSelection={mirrorSelection}
+              onApplyTemplate={applyFormationTemplate}
+              onAlignSelection={alignSelectedMembers}
+            />
+          </div>
         </>
       );
     }
@@ -6638,6 +6788,7 @@ function App() {
                   selectedFrameId={displayFrame?.id ?? null}
                   selectedFrameLabel={getFrameLabel(displayFrame)}
                   selectedMemberIds={selectedMemberIds}
+                  isMemberSelectionMode={isMemberSelectionMode}
                   focusMemberId={project.focusMemberId}
                   focusMode={focusMode}
                   onSelect={selectStageElement}
@@ -6683,6 +6834,7 @@ function App() {
                   showMeterRulers={showMeterRulers}
                   movementPathMode={movementPathMode}
                   selectedMemberIds={selectedMemberIds}
+                  isMemberSelectionMode={isMemberSelectionMode}
                   focusMemberId={project.focusMemberId}
                   focusMode={focusMode}
                   onSelect={selectStageElement}

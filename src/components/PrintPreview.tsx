@@ -767,7 +767,7 @@ const PrintStagePreview = ({
                 top: metersToPrintMm(objectTopMeters, metrics),
                 transform: `rotate(${state.rotation}deg)`,
                 width: metersToPrintMm(state.widthMeters, metrics),
-                zIndex: state.zIndex,
+                zIndex: 2 + state.zIndex,
               }}
             >
               {object.name}
@@ -803,6 +803,7 @@ const PrintStagePreview = ({
                 })}mm`,
                 left: metersToPrintMm(position.x, metrics),
                 top: metersToPrintMm(position.y - verticalRange.topMeters, metrics),
+                zIndex: 20,
               }}
             >
               <span className="print-member__label" aria-hidden="true">

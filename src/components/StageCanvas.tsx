@@ -77,12 +77,16 @@ type StageCanvasProps = {
   showMeterRulers: boolean;
   movementPathMode: MovementPathMode;
   selectedMemberIds: string[];
+  isMemberSelectionMode: boolean;
   focusMemberId?: string;
   focusMode: boolean;
   currentTime: number;
   audioDuration: number;
   audioName: string | null;
-  onSelect: (selection: Selection) => void;
+  onSelect: (
+    selection: Selection,
+    options?: { append?: boolean },
+  ) => void;
   onStagePointerPositionChange: (position: Position) => void;
   onMoveMember: (id: string, position: Position) => void;
   onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
@@ -314,6 +318,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       showMeterRulers,
       movementPathMode,
       selectedMemberIds,
+      isMemberSelectionMode,
       focusMemberId,
       focusMode,
       currentTime,
@@ -1030,7 +1035,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (event.button !== 0) {
         return;
       }
-      onSelect({ type: "member", id: memberId });
+      const appendSelection =
+        isMemberSelectionMode || event.ctrlKey || event.metaKey;
+      onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      if (appendSelection) {
+        event.preventDefault();
+        return;
+      }
       if (!memberEditing || !stageRef.current) {
         return;
       }

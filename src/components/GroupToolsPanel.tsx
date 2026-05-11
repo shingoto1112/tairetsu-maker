@@ -1,4 +1,13 @@
-import { FlipHorizontal2, Shapes, Users } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  FlipHorizontal2,
+  MousePointer2,
+  Shapes,
+  Users,
+} from "lucide-react";
 import { AlignmentAction, FormationTemplate, Member } from "../types";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
@@ -6,8 +15,11 @@ import { PanelStickyHeader } from "./PanelStickyHeader";
 type GroupToolsPanelProps = {
   members: Member[];
   selectedMemberIds: string[];
+  isSelectionMode: boolean;
   spacingMeters: number;
   onSpacingChange: (spacing: number) => void;
+  onToggleSelectionMode: () => void;
+  onClearSelection: () => void;
   onCreateGroupFromSelection: () => void;
   onNudgeSelection: (dx: number, dy: number) => void;
   onMirrorSelection: () => void;
@@ -25,8 +37,11 @@ const templateLabels: Array<{ id: FormationTemplate; label: string }> = [
 export const GroupToolsPanel = ({
   members,
   selectedMemberIds,
+  isSelectionMode,
   spacingMeters,
   onSpacingChange,
+  onToggleSelectionMode,
+  onClearSelection,
   onCreateGroupFromSelection,
   onNudgeSelection,
   onMirrorSelection,
@@ -37,16 +52,52 @@ export const GroupToolsPanel = ({
     .map((id) => members.find((member) => member.id === id)?.name)
     .filter(Boolean)
     .join("、");
+  const selectedCount = selectedMemberIds.length;
+  const hasSelection = selectedCount > 0;
+  const canLineUp = selectedCount >= 2;
+  const canDistribute = selectedCount >= 3;
 
   return (
-    <section className="panel-section formation-tools">
+    <section
+      className={
+        isSelectionMode
+          ? "panel-section formation-tools is-selection-mode"
+          : "panel-section formation-tools"
+      }
+    >
       <PanelStickyHeader
         title="隊列操作"
-        meta={`${selectedMemberIds.length}人選択`}
+        meta={`${selectedCount}人選択`}
       />
-      <p className="muted-text">
-        {selectedNames || "メンバー行のチェックで複数選択できます。"}
+
+      <div className="formation-tools__selection-row">
+        <button
+          className={isSelectionMode ? "mini-button primary" : "mini-button"}
+          onClick={onToggleSelectionMode}
+          type="button"
+          aria-pressed={isSelectionMode}
+        >
+          <MousePointer2 size={15} />
+          {isSelectionMode ? "選択モード中" : "選択モード"}
+        </button>
+        <button
+          className="mini-button"
+          onClick={onClearSelection}
+          disabled={!hasSelection}
+          type="button"
+        >
+          選択解除
+        </button>
+      </div>
+
+      <p className="muted-text formation-tools__hint">
+        {isSelectionMode
+          ? "メンバーをタップして複数選択できます。"
+          : "PCはCtrl/Cmd+クリック、iPadは選択モードで複数選択できます。"}
       </p>
+      {selectedNames && (
+        <p className="formation-tools__selected-names">{selectedNames}</p>
+      )}
 
       <div className="settings-grid group-spacing">
         <label>
@@ -60,136 +111,194 @@ export const GroupToolsPanel = ({
         </label>
       </div>
 
-      <div className="template-grid">
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("left")}
-          disabled={selectedMemberIds.length < 2}
-          type="button"
-        >
-          左揃え
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("centerX")}
-          disabled={selectedMemberIds.length < 2}
-          type="button"
-        >
-          横中央
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("right")}
-          disabled={selectedMemberIds.length < 2}
-          type="button"
-        >
-          右揃え
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("top")}
-          disabled={selectedMemberIds.length < 2}
-          type="button"
-        >
-          上揃え
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("centerY")}
-          disabled={selectedMemberIds.length < 2}
-          type="button"
-        >
-          縦中央
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("bottom")}
-          disabled={selectedMemberIds.length < 2}
-          type="button"
-        >
-          下揃え
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("distributeX")}
-          disabled={selectedMemberIds.length < 3}
-          type="button"
-        >
-          横均等
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("distributeY")}
-          disabled={selectedMemberIds.length < 3}
-          type="button"
-        >
-          縦均等
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("stageCenterX")}
-          disabled={selectedMemberIds.length === 0}
-          type="button"
-        >
-          センター線
-        </button>
-        <button
-          className="mini-button"
-          onClick={() => onAlignSelection("stageCenter")}
-          disabled={selectedMemberIds.length === 0}
-          type="button"
-        >
-          選択中心を中央へ
-        </button>
-        {templateLabels.map((template) => (
+      <div className="formation-tools__section">
+        <h3 className="formation-tools__section-title">整列</h3>
+        <div className="formation-tools__primary-grid">
           <button
-            key={template.id}
-            className="mini-button"
-            onClick={() => onApplyTemplate(template.id)}
-            disabled={selectedMemberIds.length < 2}
+            className="formation-tools__large-button"
+            onClick={() => onApplyTemplate("horizontal")}
+            disabled={!canLineUp}
             type="button"
           >
-            <Shapes size={15} />
-            {template.label}
+            <span aria-hidden="true">•••</span>
+            横1列
           </button>
-        ))}
+          <button
+            className="formation-tools__large-button"
+            onClick={() => onApplyTemplate("vertical")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            <span aria-hidden="true">︙</span>
+            縦1列
+          </button>
+        </div>
       </div>
 
-      <div className="nudge-grid">
-        <button className="mini-button" onClick={() => onNudgeSelection(0, -0.5)} type="button">
-          奥へ
-        </button>
-        <button className="mini-button" onClick={() => onNudgeSelection(-0.5, 0)} type="button">
-          左へ
-        </button>
-        <button className="mini-button" onClick={() => onNudgeSelection(0.5, 0)} type="button">
-          右へ
-        </button>
-        <button className="mini-button" onClick={() => onNudgeSelection(0, 0.5)} type="button">
-          客席へ
-        </button>
+      <div className="formation-tools__section">
+        <h3 className="formation-tools__section-title">移動</h3>
+        <div className="formation-tools__direction-pad">
+          <button
+            className="formation-tools__arrow-button formation-tools__arrow-button--up"
+            onClick={() => onNudgeSelection(0, -0.5)}
+            disabled={!hasSelection}
+            type="button"
+            aria-label="奥へ移動"
+            title="奥へ"
+          >
+            <ArrowUp size={28} />
+          </button>
+          <button
+            className="formation-tools__arrow-button formation-tools__arrow-button--left"
+            onClick={() => onNudgeSelection(-0.5, 0)}
+            disabled={!hasSelection}
+            type="button"
+            aria-label="左へ移動"
+            title="左へ"
+          >
+            <ArrowLeft size={28} />
+          </button>
+          <button
+            className="formation-tools__arrow-button formation-tools__arrow-button--right"
+            onClick={() => onNudgeSelection(0.5, 0)}
+            disabled={!hasSelection}
+            type="button"
+            aria-label="右へ移動"
+            title="右へ"
+          >
+            <ArrowRight size={28} />
+          </button>
+          <button
+            className="formation-tools__arrow-button formation-tools__arrow-button--down"
+            onClick={() => onNudgeSelection(0, 0.5)}
+            disabled={!hasSelection}
+            type="button"
+            aria-label="客席へ移動"
+            title="客席へ"
+          >
+            <ArrowDown size={28} />
+          </button>
+        </div>
       </div>
 
-      <div className="card-actions wrap">
-        <button
-          className="mini-button"
-          onClick={onMirrorSelection}
-          disabled={selectedMemberIds.length === 0}
-          type="button"
-        >
-          <FlipHorizontal2 size={15} />
-          センター左右反転
-        </button>
-        <button
-          className="mini-button"
-          onClick={onCreateGroupFromSelection}
-          disabled={selectedMemberIds.length === 0}
-          type="button"
-        >
-          <Users size={15} />
-          選択メンバーからグループ作成
-        </button>
-      </div>
+      <details className="formation-tools__advanced">
+        <summary>その他の整列</summary>
+        <div className="template-grid">
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("left")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            左揃え
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("centerX")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            横中央
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("right")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            右揃え
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("top")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            上揃え
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("centerY")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            縦中央
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("bottom")}
+            disabled={!canLineUp}
+            type="button"
+          >
+            下揃え
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("distributeX")}
+            disabled={!canDistribute}
+            type="button"
+          >
+            横均等
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("distributeY")}
+            disabled={!canDistribute}
+            type="button"
+          >
+            縦均等
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("stageCenterX")}
+            disabled={!hasSelection}
+            type="button"
+          >
+            センター線
+          </button>
+          <button
+            className="mini-button"
+            onClick={() => onAlignSelection("stageCenter")}
+            disabled={!hasSelection}
+            type="button"
+          >
+            選択中心を中央へ
+          </button>
+          {templateLabels.map((template) => (
+            <button
+              key={template.id}
+              className="mini-button"
+              onClick={() => onApplyTemplate(template.id)}
+              disabled={!canLineUp}
+              type="button"
+            >
+              <Shapes size={15} />
+              {template.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="card-actions wrap">
+          <button
+            className="mini-button"
+            onClick={onMirrorSelection}
+            disabled={!hasSelection}
+            type="button"
+          >
+            <FlipHorizontal2 size={15} />
+            センター左右反転
+          </button>
+          <button
+            className="mini-button"
+            onClick={onCreateGroupFromSelection}
+            disabled={!hasSelection}
+            type="button"
+          >
+            <Users size={15} />
+            選択メンバーからグループ作成
+          </button>
+        </div>
+      </details>
     </section>
   );
 };
