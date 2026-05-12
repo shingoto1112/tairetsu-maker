@@ -271,10 +271,8 @@ const getAssignmentMemberSizeMm = (
   );
 };
 
-const shouldPrintAssignmentSide = (
-  project: Project,
-  options: ShareExportOptions,
-): boolean => project.mode !== "parade" && options.includeAssignments;
+const shouldPrintAssignmentSide = (options: ShareExportOptions): boolean =>
+  options.includeAssignments;
 
 const getAssignmentPanelContentWidthMm = (metrics: PrintMetrics): number =>
   Math.max(
@@ -480,7 +478,7 @@ const getPrintMetrics = (
     leftRulerWidthMm -
     rightRulerWidthMm -
     PRINT_STAGE_RIGHT_SAFETY_MM;
-  const canUseAssignmentSide = shouldPrintAssignmentSide(project, options);
+  const canUseAssignmentSide = shouldPrintAssignmentSide(options);
   const requestedAssignmentWidthMm = canUseAssignmentSide
     ? Math.min(
         PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM,
@@ -652,7 +650,7 @@ const getSceneBaseHeightMm = (
     getPrintRulerTopMm(project, metrics, options) +
     verticalRange.depthMeters * metrics.mmPerMeter +
     getPrintRulerBottomMm(project, metrics, options);
-  const assignmentHeightMm = shouldPrintAssignmentSide(project, options)
+  const assignmentHeightMm = shouldPrintAssignmentSide(options)
     ? getAssignmentPanelHeightMm(project, frame, metrics)
     : 0;
   return PRINT_SCENE_TITLE_MM + Math.max(stageHeightMm, assignmentHeightMm);
@@ -1191,7 +1189,7 @@ const PrintStagePreview = ({
     </div>
   );
 
-  if (shouldPrintAssignmentSide(project, options)) {
+  if (shouldPrintAssignmentSide(options)) {
     return (
       <div
         className="print-stage-with-assignments"
