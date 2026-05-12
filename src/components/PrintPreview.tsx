@@ -45,6 +45,8 @@ type SceneVerticalRange = {
 export type PrintOrientation = "landscape" | "portrait";
 
 type PrintMetrics = {
+  assignmentSideGapMm: number;
+  assignmentSideWidthMm: number;
   commonWidthMeters: number;
   gapRows: number;
   gridSizeMeters: number;
@@ -60,6 +62,12 @@ type CenterSplitLabel = {
   positionMeters: number;
 };
 
+type AssignmentPrintEntry = {
+  assignedMembers: Member[];
+  object: StageObject;
+  state: ObjectState;
+};
+
 const PRINT_A4_SHORT_USABLE_MM = 190;
 const PRINT_A4_LONG_USABLE_MM = 277;
 const PRINT_RULER_LEFT_MM = 10;
@@ -69,6 +77,18 @@ const PRINT_RULER_BOTTOM_MM = 3;
 const PRINT_SCENE_TITLE_MM = 9;
 const PRINT_STAGE_RIGHT_SAFETY_MM = 8;
 const PRINT_STAGE_MEMBER_CLEARANCE_MM = 1.5;
+const PRINT_ASSIGNMENT_SHEET_MIN_HEIGHT_MM = 60;
+const PRINT_ASSIGNMENT_CARD_GAP_MM = 4;
+const PRINT_ASSIGNMENT_CARD_PADDING_MM = 4;
+const PRINT_ASSIGNMENT_MEMBER_GAP_MM = 2.5;
+const PRINT_ASSIGNMENT_MEMBER_SIZE_MIN_MM = 8;
+const PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM = 13;
+const PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM = 8;
+const PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM = 24;
+const PRINT_ASSIGNMENT_SIDE_GAP_MM = 7;
+const PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM = 82;
+const PRINT_ASSIGNMENT_SIDE_MIN_WIDTH_MM = 54;
+const PRINT_ASSIGNMENT_SIDE_STAGE_MIN_WIDTH_MM = 105;
 
 const defaultPrintOptions: ShareExportOptions = {
   includeAssignments: false,
@@ -211,6 +231,198 @@ const getObjectState = (
   object: StageObject,
 ): ObjectState => frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
 
+const getAssignmentPrintEntries = (
+  project: Project,
+  frame: FormationFrame,
+): AssignmentPrintEntry[] => {
+  const memberById = new Map(project.members.map((member) => [member.id, member]));
+  return project.stageObjects
+    .map((object) => {
+      const state = getObjectState(frame, object);
+      const isVisible = (state.visible ?? object.visible) !== false;
+      const assignedMembers = (frame.objectAssignments?.[object.id] ?? [])
+        .map((memberId) => memberById.get(memberId))
+        .filter((member): member is Member => Boolean(member));
+      return { assignedMembers, isVisible, object, state };
+    })
+    .filter(
+      (
+        entry,
+      ): entry is AssignmentPrintEntry & { isVisible: true } =>
+        entry.isVisible && entry.assignedMembers.length > 0,
+    )
+    .sort((a, b) => {
+      const yDiff = a.state.y - b.state.y;
+      if (Math.abs(yDiff) > 0.001) return yDiff;
+      const xDiff = a.state.x - b.state.x;
+      if (Math.abs(xDiff) > 0.001) return xDiff;
+      return a.object.name.localeCompare(b.object.name, "ja");
+    });
+};
+
+const getAssignmentMemberSizeMm = (
+  project: Project,
+  metrics: PrintMetrics,
+): number => {
+  const memberSize = getPrintMemberDiameterMm(project, metrics);
+  return Math.min(
+    PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM,
+    Math.max(PRINT_ASSIGNMENT_MEMBER_SIZE_MIN_MM, memberSize),
+  );
+};
+
+const shouldPrintAssignmentSide = (
+  project: Project,
+  options: ShareExportOptions,
+): boolean => project.mode !== "parade" && options.includeAssignments;
+
+const getAssignmentPanelContentWidthMm = (metrics: PrintMetrics): number =>
+  Math.max(
+    PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM,
+    metrics.assignmentSideWidthMm - PRINT_ASSIGNMENT_CARD_PADDING_MM * 2,
+  );
+
+const getAssignmentPanelColumnWidthMm = (metrics: PrintMetrics): number =>
+  Math.max(
+    PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM,
+    (getAssignmentPanelContentWidthMm(metrics) - PRINT_ASSIGNMENT_CARD_GAP_MM) /
+      2,
+  );
+
+const getAssignmentObjectPrintSize = (
+  state: ObjectState,
+  metrics: PrintMetrics,
+  maxWidthMm = metrics.stageWidthMm * 0.9,
+): { heightMm: number; widthMm: number } => {
+  return {
+    heightMm: Math.max(
+      PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM,
+      state.heightMeters * metrics.mmPerMeter,
+    ),
+    widthMm: Math.min(
+      maxWidthMm,
+      Math.max(PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM, state.widthMeters * metrics.mmPerMeter),
+    ),
+  };
+};
+
+const isCompactAssignmentEntry = (
+  entry: AssignmentPrintEntry,
+  metrics: PrintMetrics,
+): boolean => {
+  const naturalWidthMm = Math.max(
+    PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM,
+    entry.state.widthMeters * metrics.mmPerMeter,
+  );
+  return naturalWidthMm <= getAssignmentPanelColumnWidthMm(metrics) + 0.001;
+};
+
+const getAssignmentEntryHeightMm = (
+  entry: AssignmentPrintEntry,
+  metrics: PrintMetrics,
+  memberSizeMm: number,
+  objectMaxWidthMm = metrics.stageWidthMm * 0.9,
+): number => {
+  const objectSize = getAssignmentObjectPrintSize(
+    entry.state,
+    metrics,
+    objectMaxWidthMm,
+  );
+  const columns = Math.max(
+    1,
+    Math.floor(
+      (objectSize.widthMm + PRINT_ASSIGNMENT_MEMBER_GAP_MM) /
+        (memberSizeMm + PRINT_ASSIGNMENT_MEMBER_GAP_MM),
+    ),
+  );
+  const rows = Math.max(1, Math.ceil(entry.assignedMembers.length / columns));
+  return (
+    PRINT_ASSIGNMENT_CARD_PADDING_MM * 2 +
+    objectSize.heightMm +
+    PRINT_ASSIGNMENT_MEMBER_GAP_MM +
+    rows * memberSizeMm +
+    Math.max(0, rows - 1) * PRINT_ASSIGNMENT_MEMBER_GAP_MM
+  );
+};
+
+const getAssignmentEntryPrintLayout = (
+  entry: AssignmentPrintEntry,
+  metrics: PrintMetrics,
+  memberSizeMm: number,
+): {
+  compact: boolean;
+  heightMm: number;
+  objectMaxWidthMm: number;
+} => {
+  const compact = isCompactAssignmentEntry(entry, metrics);
+  const objectMaxWidthMm = compact
+    ? getAssignmentPanelColumnWidthMm(metrics)
+    : getAssignmentPanelContentWidthMm(metrics);
+  return {
+    compact,
+    heightMm: getAssignmentEntryHeightMm(
+      entry,
+      metrics,
+      memberSizeMm,
+      objectMaxWidthMm,
+    ),
+    objectMaxWidthMm,
+  };
+};
+
+const getAssignmentLayoutRows = (
+  entries: AssignmentPrintEntry[],
+  metrics: PrintMetrics,
+  memberSizeMm: number,
+): number[] => {
+  const rows: number[] = [];
+  let compactRow: number[] = [];
+
+  entries.forEach((entry) => {
+    const layout = getAssignmentEntryPrintLayout(entry, metrics, memberSizeMm);
+    if (!layout.compact) {
+      if (compactRow.length > 0) {
+        rows.push(Math.max(...compactRow));
+        compactRow = [];
+      }
+      rows.push(layout.heightMm);
+      return;
+    }
+
+    compactRow.push(layout.heightMm);
+    if (compactRow.length >= 2) {
+      rows.push(Math.max(...compactRow));
+      compactRow = [];
+    }
+  });
+
+  if (compactRow.length > 0) {
+    rows.push(Math.max(...compactRow));
+  }
+
+  return rows;
+};
+
+const getAssignmentPanelHeightMm = (
+  project: Project,
+  frame: FormationFrame,
+  metrics: PrintMetrics,
+): number => {
+  const entries = getAssignmentPrintEntries(project, frame);
+  if (entries.length === 0) {
+    return PRINT_ASSIGNMENT_SHEET_MIN_HEIGHT_MM;
+  }
+
+  const memberSizeMm = getAssignmentMemberSizeMm(project, metrics);
+  const rows = getAssignmentLayoutRows(entries, metrics, memberSizeMm);
+  const contentHeightMm =
+    PRINT_ASSIGNMENT_CARD_PADDING_MM * 2 +
+    rows.reduce((total, heightMm) => total + heightMm, 0) +
+    Math.max(0, rows.length - 1) * PRINT_ASSIGNMENT_CARD_GAP_MM;
+
+  return Math.max(PRINT_ASSIGNMENT_SHEET_MIN_HEIGHT_MM, contentHeightMm);
+};
+
 const isMemberAssigned = (
   frame: FormationFrame,
   memberId: string,
@@ -263,14 +475,38 @@ const getPrintMetrics = (
       ? (project.paradeSettings?.width ?? project.stage.widthMeters)
       : project.stage.widthMeters,
   );
+  const availableWidthMm =
+    pageSize.width -
+    leftRulerWidthMm -
+    rightRulerWidthMm -
+    PRINT_STAGE_RIGHT_SAFETY_MM;
+  const canUseAssignmentSide = shouldPrintAssignmentSide(project, options);
+  const requestedAssignmentWidthMm = canUseAssignmentSide
+    ? Math.min(
+        PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM,
+        Math.max(PRINT_ASSIGNMENT_SIDE_MIN_WIDTH_MM, availableWidthMm * 0.28),
+      )
+    : 0;
+  const assignmentSideWidthMm = canUseAssignmentSide
+    ? Math.max(
+        0,
+        Math.min(
+          requestedAssignmentWidthMm,
+          availableWidthMm -
+            PRINT_ASSIGNMENT_SIDE_GAP_MM -
+            PRINT_ASSIGNMENT_SIDE_STAGE_MIN_WIDTH_MM,
+        ),
+      )
+    : 0;
+  const assignmentSideGapMm =
+    assignmentSideWidthMm > 0 ? PRINT_ASSIGNMENT_SIDE_GAP_MM : 0;
   const stageWidthMm = Math.max(
     40,
-    pageSize.width -
-      leftRulerWidthMm -
-      rightRulerWidthMm -
-      PRINT_STAGE_RIGHT_SAFETY_MM,
+    availableWidthMm - assignmentSideGapMm - assignmentSideWidthMm,
   );
   return {
+    assignmentSideGapMm,
+    assignmentSideWidthMm,
     commonWidthMeters,
     gapRows: Math.max(0, options.sceneGapRows ?? 5),
     gridSizeMeters: Math.max(
@@ -317,7 +553,8 @@ const getFramePrintVerticalRange = (
     totalDistance,
     backwardDistanceMeters,
   );
-  const memberRadiusMeters = Math.max(project.stage.memberDiameterMeters ?? 0.5, 0.01) / 2;
+  const memberDiameterMeters = Math.max(project.stage.memberDiameterMeters ?? 0.5, 0.01);
+  const memberRadiusMeters = memberDiameterMeters / 2;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
 
@@ -405,13 +642,20 @@ const getSceneBaseHeightMm = (
   options: ShareExportOptions,
 ): number => {
   const stageSize = getEffectiveSize(project, frame);
-  const verticalRange = getFramePrintVerticalRange(project, frame, stageSize, metrics);
-  return (
-    PRINT_SCENE_TITLE_MM +
+  const verticalRange = getFramePrintVerticalRange(
+    project,
+    frame,
+    stageSize,
+    metrics,
+  );
+  const stageHeightMm =
     getPrintRulerTopMm(project, metrics, options) +
     verticalRange.depthMeters * metrics.mmPerMeter +
-    getPrintRulerBottomMm(project, metrics, options)
-  );
+    getPrintRulerBottomMm(project, metrics, options);
+  const assignmentHeightMm = shouldPrintAssignmentSide(project, options)
+    ? getAssignmentPanelHeightMm(project, frame, metrics)
+    : 0;
+  return PRINT_SCENE_TITLE_MM + Math.max(stageHeightMm, assignmentHeightMm);
 };
 
 const chunkFramesByCount = (
@@ -505,6 +749,7 @@ const PrintStagePreview = ({
   const totalDepthMeters = verticalRange.depthMeters + gapMeters;
   const stageHeightMm = totalDepthMeters * metrics.mmPerMeter;
   const memberDiameterMm = getPrintMemberDiameterMm(project, metrics);
+  const assignmentMemberSizeMm = getAssignmentMemberSizeMm(project, metrics);
   const rulerTopMm = getPrintRulerTopMm(project, metrics, options);
   const rulerBottomMm = getPrintRulerBottomMm(project, metrics, options);
   const leftRulerMm = getPrintSideRulerWidthMm(
@@ -649,7 +894,167 @@ const PrintStagePreview = ({
     "--print-stage-width-mm": `${metrics.stageWidthMm}mm`,
   } as CSSProperties;
 
-  return (
+  const renderMemberIcon = (
+    member: Member,
+    key: string,
+    centerXMeters: number,
+    centerYMeters: number,
+    extraClassName = "",
+    zIndex = 20,
+  ) => {
+    const memberColor = getMemberDisplayColor(member, {
+      frame,
+      groups: project.memberGroups ?? [],
+    });
+    const labelLines = splitMemberLabel(member.name);
+    const memberLabelClassName = getMemberLabelClassName(
+      "print-member",
+      labelLines,
+    );
+    const labelColor = getReadableMemberLabelColor(memberColor);
+    return (
+      <span
+        className={`print-member ${memberLabelClassName} ${extraClassName}`.trim()}
+        key={key}
+        style={{
+          backgroundColor: memberColor,
+          color: labelColor,
+          fontSize: `${getMemberLabelFontSize(memberDiameterMm, labelLines, {
+            min: 1.8,
+            precision: 2,
+          })}mm`,
+          left: metersToPrintMm(centerXMeters, metrics),
+          top: metersToPrintMm(centerYMeters - verticalRange.topMeters, metrics),
+          zIndex,
+        }}
+      >
+        <span className="print-member__label" aria-hidden="true">
+          {labelLines.map((line, index) => (
+            <span className="print-member__label-line" key={`${key}-print-label-${index}`}>
+              {line}
+            </span>
+          ))}
+        </span>
+      </span>
+    );
+  };
+
+  const renderAssignmentMemberIcon = (member: Member, key: string) => {
+    const memberColor = getMemberDisplayColor(member, {
+      frame,
+      groups: project.memberGroups ?? [],
+    });
+    const labelLines = splitMemberLabel(member.name);
+    const memberLabelClassName = getMemberLabelClassName(
+      "print-member",
+      labelLines,
+    );
+    const labelColor = getReadableMemberLabelColor(memberColor);
+    return (
+      <span
+        className={`print-assignment-sheet__member ${memberLabelClassName}`}
+        key={key}
+        style={{
+          backgroundColor: memberColor,
+          color: labelColor,
+          fontSize: `${getMemberLabelFontSize(assignmentMemberSizeMm, labelLines, {
+            min: 1.8,
+            precision: 2,
+          })}mm`,
+        }}
+      >
+        <span className="print-member__label" aria-hidden="true">
+          {labelLines.map((line, index) => (
+            <span
+              className="print-member__label-line"
+              key={`${key}-assignment-label-${index}`}
+            >
+              {line}
+            </span>
+          ))}
+        </span>
+      </span>
+    );
+  };
+
+  const renderAssignmentPanel = () => {
+    const assignmentEntries = getAssignmentPrintEntries(project, frame);
+
+    return (
+      <div
+        className="print-assignment-sheet"
+        style={
+          {
+            minHeight: `${stageHeightMm + rulerTopMm + rulerBottomMm}mm`,
+            width: `${metrics.assignmentSideWidthMm}mm`,
+            "--print-assignment-grid-size": `${metersToPrintMm(
+              metrics.gridSizeMeters,
+              metrics,
+            )}`,
+            "--print-assignment-member-size": `${assignmentMemberSizeMm}mm`,
+          } as CSSProperties
+        }
+      >
+        {assignmentEntries.length === 0 ? (
+          <p className="print-assignment-sheet__empty">
+            このシーンの道具割当はありません
+          </p>
+        ) : (
+          <div className="print-assignment-sheet__items">
+            {assignmentEntries.map((entry) => {
+              const layout = getAssignmentEntryPrintLayout(
+                entry,
+                metrics,
+                assignmentMemberSizeMm,
+              );
+              const objectSize = getAssignmentObjectPrintSize(
+                entry.state,
+                metrics,
+                layout.objectMaxWidthMm,
+              );
+              return (
+                <article
+                  className={[
+                    "print-assignment-sheet__card",
+                    layout.compact
+                      ? "print-assignment-sheet__card--compact"
+                      : "print-assignment-sheet__card--wide",
+                  ].join(" ")}
+                  key={entry.object.id}
+                >
+                  <div
+                    className={`print-assignment-sheet__object shape-${entry.object.shape}`}
+                    style={{
+                      backgroundColor: `${entry.object.color}24`,
+                      borderColor: entry.object.color,
+                      height: `${objectSize.heightMm}mm`,
+                      transform: `rotate(${entry.state.rotation}deg)`,
+                      width: `${objectSize.widthMm}mm`,
+                    }}
+                  >
+                    {entry.object.name}
+                  </div>
+                  <div
+                    className="print-assignment-sheet__members"
+                    style={{ width: `${objectSize.widthMm}mm` }}
+                  >
+                    {entry.assignedMembers.map((member) =>
+                      renderAssignmentMemberIcon(
+                        member,
+                        `assignment-sheet-${entry.object.id}-${member.id}`,
+                      ),
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const stagePreview = (
     <div
       className={[
         "print-stage-preview",
@@ -780,45 +1185,34 @@ const PrintStagePreview = ({
           if (!position || !isMemberVisible(frame, member)) {
             return null;
           }
-          const memberColor = getMemberDisplayColor(member, {
-            frame,
-            groups: project.memberGroups ?? [],
-          });
-          const labelLines = splitMemberLabel(member.name);
-          const memberLabelClassName = getMemberLabelClassName(
-            "print-member",
-            labelLines,
-          );
-          const labelColor = getReadableMemberLabelColor(memberColor);
-          return (
-            <span
-              className={`print-member ${memberLabelClassName}`}
-              key={member.id}
-              style={{
-                backgroundColor: memberColor,
-                color: labelColor,
-                fontSize: `${getMemberLabelFontSize(memberDiameterMm, labelLines, {
-                  min: 1.8,
-                  precision: 2,
-                })}mm`,
-                left: metersToPrintMm(position.x, metrics),
-                top: metersToPrintMm(position.y - verticalRange.topMeters, metrics),
-                zIndex: 20,
-              }}
-            >
-              <span className="print-member__label" aria-hidden="true">
-                {labelLines.map((line, index) => (
-                  <span className="print-member__label-line" key={`${member.id}-print-label-${index}`}>
-                    {line}
-                  </span>
-                ))}
-              </span>
-            </span>
-          );
+          return renderMemberIcon(member, member.id, position.x, position.y);
         })}
       </div>
     </div>
   );
+
+  if (shouldPrintAssignmentSide(project, options)) {
+    return (
+      <div
+        className="print-stage-with-assignments"
+        style={
+          {
+            gap: `${metrics.assignmentSideGapMm}mm`,
+            width: `${
+              totalPreviewWidthMm +
+              metrics.assignmentSideGapMm +
+              metrics.assignmentSideWidthMm
+            }mm`,
+          } as CSSProperties
+        }
+      >
+        {stagePreview}
+        {renderAssignmentPanel()}
+      </div>
+    );
+  }
+
+  return stagePreview;
 };
 
 export const PrintPreview = ({

@@ -1,4 +1,4 @@
-import { Download, FileText, Image, Printer, X } from "lucide-react";
+import { Download, FileText, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export type ShareExportScope = "current" | "all";
@@ -48,21 +48,6 @@ const fixedExportOptions: ShareExportOptions = {
   sceneGapRows: 5,
 };
 
-const formatLabels: Record<ShareExportFormat, string> = {
-  pdf: "PDF",
-  image: "画像",
-};
-
-const formatDescriptions: Record<ShareExportFormat, string> = {
-  pdf: "印刷用レイアウトで保存",
-  image: "PNG画像として保存",
-};
-
-const formatIcons: Record<ShareExportFormat, typeof FileText> = {
-  pdf: FileText,
-  image: Image,
-};
-
 const makeDefaultFileName = (
   scope: ShareExportScope,
   projectTitle: string,
@@ -76,9 +61,9 @@ const makeDefaultFileName = (
     String(now.getDate()).padStart(2, "0"),
   ].join("-");
   if (scope === "current") {
-    return `${title}_${currentSceneLabel || "現在シーン"}_印刷用_${date}`;
+    return `${title}_${currentSceneLabel || "現在シーン"}_${date}`;
   }
-  return `${title}_印刷用_${date}`;
+  return `${title}_${date}`;
 };
 
 export const ShareExportModal = ({
@@ -91,8 +76,8 @@ export const ShareExportModal = ({
   onExportZip,
 }: ShareExportModalProps) => {
   const [scope, setScope] = useState<ShareExportScope | null>(null);
-  const [format, setFormat] = useState<ShareExportFormat>("pdf");
   const [fileName, setFileName] = useState("");
+  const [includeAssignments, setIncludeAssignments] = useState(false);
   const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
 
   useEffect(() => {
@@ -117,8 +102,8 @@ export const ShareExportModal = ({
   useEffect(() => {
     if (!isOpen) {
       setScope(null);
-      setFormat("pdf");
       setFileName("");
+      setIncludeAssignments(false);
       setIncludeAudioInZip(false);
     }
   }, [isOpen]);
@@ -135,7 +120,6 @@ export const ShareExportModal = ({
 
   const startExport = (nextScope: ShareExportScope) => {
     setScope(nextScope);
-    setFormat("pdf");
   };
 
   const submitExport = async () => {
@@ -144,22 +128,9 @@ export const ShareExportModal = ({
     }
     await onExport({
       scope,
-      format,
+      format: "pdf",
       fileName: fileName.trim() || makeDefaultFileName(scope, projectTitle, currentSceneLabel),
-      options: fixedExportOptions,
-    });
-    onClose();
-  };
-
-  const runQuickExport = async (
-    nextScope: ShareExportScope,
-    nextFormat: ShareExportFormat,
-  ) => {
-    await onExport({
-      scope: nextScope,
-      format: nextFormat,
-      fileName: makeDefaultFileName(nextScope, projectTitle, currentSceneLabel),
-      options: fixedExportOptions,
+      options: { ...fixedExportOptions, includeAssignments },
     });
     onClose();
   };
@@ -171,30 +142,6 @@ export const ShareExportModal = ({
     await onExportZip(hasAudio ? includeAudioInZip : false);
     onClose();
   };
-
-  const renderFormatCards = () => (
-    <div className="share-format-grid" role="radiogroup" aria-label="書き出し形式">
-      {(["pdf", "image"] as ShareExportFormat[]).map((item) => {
-        const Icon = formatIcons[item];
-        return (
-          <button
-            className={
-              format === item ? "share-format-card is-selected" : "share-format-card"
-            }
-            key={item}
-            onClick={() => setFormat(item)}
-            role="radio"
-            aria-checked={format === item}
-            type="button"
-          >
-            <strong>{formatLabels[item]}</strong>
-            <span>{formatDescriptions[item]}</span>
-            <Icon size={25} />
-          </button>
-        );
-      })}
-    </div>
-  );
 
   return (
     <div
@@ -244,39 +191,13 @@ export const ShareExportModal = ({
               <h3>印刷・PDF</h3>
               <button
                 className="share-export-row"
-                onClick={() => void runQuickExport("all", "pdf")}
-                type="button"
-              >
-                <Printer size={26} />
-                <span>
-                  <strong>全シーンを印刷 / PDF保存</strong>
-                  <small>隊列表だけを縦長の印刷用レイアウトにします</small>
-                </span>
-              </button>
-              <button
-                className="share-export-row"
                 onClick={() => startExport("current")}
                 type="button"
               >
                 <FileText size={26} />
                 <span>
                   <strong>このシーンを書き出す</strong>
-                  <small>現在のシーンをPDFまたは画像で保存します</small>
-                </span>
-              </button>
-            </section>
-
-            <section className="share-export-section">
-              <h3>画像</h3>
-              <button
-                className="share-export-row"
-                onClick={() => void runQuickExport("current", "image")}
-                type="button"
-              >
-                <Image size={26} />
-                <span>
-                  <strong>現在シーンを画像保存</strong>
-                  <small>PNGとして保存します</small>
+                  <small>現在のシーンをPDFで保存します</small>
                 </span>
               </button>
               <button
@@ -286,10 +207,23 @@ export const ShareExportModal = ({
               >
                 <Download size={26} />
                 <span>
-                  <strong>すべてのシーンを書き出す</strong>
-                  <small>PDFまたは縦長PNGとして保存します</small>
+                  <strong>すべてのシーンを書き出す / PDF保存</strong>
+                  <small>ファイル名を指定してPDFで保存します</small>
                 </span>
               </button>
+              <label className="share-export-check">
+                <input
+                  checked={includeAssignments}
+                  onChange={(event) => setIncludeAssignments(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  道具割当も右側に表示する
+                  <small>
+                    ステージ隊列の右側に、配置中の道具と担当メンバーを入れます。
+                  </small>
+                </span>
+              </label>
             </section>
 
             {onExportZip && (
@@ -333,8 +267,6 @@ export const ShareExportModal = ({
           </div>
         ) : (
           <div className="share-export-detail">
-            {renderFormatCards()}
-
             <label className="share-export-field">
               ファイル名
               <input
@@ -344,8 +276,22 @@ export const ShareExportModal = ({
               />
             </label>
 
+            <label className="share-export-check">
+              <input
+                checked={includeAssignments}
+                onChange={(event) => setIncludeAssignments(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                道具割当も右側に表示する
+                <small>
+                  ステージ隊列の右側に、配置中の道具と担当メンバーをまとめて入れます。
+                </small>
+              </span>
+            </label>
+
             <p className="notice muted">
-              シーン名とステージ画像だけを並べた、印刷しやすい固定レイアウトで書き出します。
+              シーン名とステージ画像を並べた、印刷しやすい固定レイアウトで書き出します。
             </p>
 
             <button
@@ -353,7 +299,7 @@ export const ShareExportModal = ({
               onClick={() => void submitExport()}
               type="button"
             >
-              {format === "pdf" ? "PDFとして保存" : "画像として保存"}
+              PDFとして保存
             </button>
           </div>
         )}

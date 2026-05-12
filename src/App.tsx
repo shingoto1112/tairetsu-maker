@@ -16,6 +16,7 @@ import { MemberPanel } from "./components/MemberPanel";
 import { ObjectPanel } from "./components/ObjectPanel";
 import { PanelTabId, PanelTabs } from "./components/PanelTabs";
 import { getPrintOrientation, PrintPreview } from "./components/PrintPreview";
+import { RosterManagementModal } from "./components/RosterManagementModal";
 import { SceneNotesPanel } from "./components/SceneNotesPanel";
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
 import {
@@ -1222,6 +1223,7 @@ function App() {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
   const [isShareExportOpen, setIsShareExportOpen] = useState(false);
+  const [isRosterManagerOpen, setIsRosterManagerOpen] = useState(false);
   const [printScope, setPrintScope] = useState<"all" | "current">("all");
   const [printOptions, setPrintOptions] = useState<ShareExportOptions | null>(
     null,
@@ -6045,6 +6047,127 @@ function App() {
     setNotice("道具グループを削除しました。道具本体は残ります。");
   };
 
+  const isMemberAssignedInFrame = (
+    frame: FormationFrame,
+    memberId: string,
+  ) =>
+    Object.values(frame.objectAssignments ?? {}).some((memberIds) =>
+      memberIds.includes(memberId),
+    );
+
+  const isMemberDisplayedInFrame = (
+    memberId: string,
+    frame: FormationFrame,
+  ) => {
+    const member = project.members.find((item) => item.id === memberId);
+    if (!member || member.visible === false) {
+      return false;
+    }
+    if (!frame.positions[memberId]) {
+      return false;
+    }
+    if (frame.memberVisibility?.[memberId] === false) {
+      return false;
+    }
+    return !isMemberAssignedInFrame(frame, memberId);
+  };
+
+  const isObjectDisplayedInFrame = (
+    objectId: string,
+    frame: FormationFrame,
+  ) => {
+    const object = project.stageObjects.find((item) => item.id === objectId);
+    if (!object || object.visible === false) {
+      return false;
+    }
+    const state = frame.objectStates[objectId];
+    return Boolean(state) && state.visible !== false;
+  };
+
+  const isMemberDisplayedInAnyFrame = (memberId: string) =>
+    project.frames.some((frame) => isMemberDisplayedInFrame(memberId, frame));
+
+  const isObjectDisplayedInAnyFrame = (objectId: string) =>
+    project.frames.some((frame) => isObjectDisplayedInFrame(objectId, frame));
+
+  const deleteRosterMember = (memberId: string) => {
+    const member = project.members.find((item) => item.id === memberId);
+    if (!member) {
+      return;
+    }
+    if (
+      isMemberDisplayedInAnyFrame(memberId) &&
+      !window.confirm(
+        `「${member.name}」は隊列内に表示中です。削除しますか？`,
+      )
+    ) {
+      return;
+    }
+    deleteMember(memberId);
+    setNotice(`${member.name} を削除しました。`);
+  };
+
+  const deleteRosterObject = (objectId: string) => {
+    const object = project.stageObjects.find((item) => item.id === objectId);
+    if (!object) {
+      return;
+    }
+    if (
+      isObjectDisplayedInAnyFrame(objectId) &&
+      !window.confirm(
+        `「${object.name}」は隊列内に表示中です。削除しますか？`,
+      )
+    ) {
+      return;
+    }
+    deleteObject(objectId);
+    setNotice(`${object.name} を削除しました。`);
+  };
+
+  const deleteRosterMemberGroup = (groupId: string) => {
+    const group = (project.memberGroups ?? []).find(
+      (item) => item.id === groupId,
+    );
+    if (!group) {
+      return;
+    }
+    const hasDisplayedMember = group.memberIds.some((memberId) =>
+      isMemberDisplayedInAnyFrame(memberId),
+    );
+    if (
+      hasDisplayedMember &&
+      !window.confirm(
+        `「${group.name}」の所属メンバーが隊列内に表示中です。グループを削除しますか？メンバー本体は削除されず未所属になります。`,
+      )
+    ) {
+      return;
+    }
+    deleteGroup(groupId);
+    setNotice(`${group.name} を削除しました。メンバー本体は残ります。`);
+  };
+
+  const deleteRosterObjectGroup = (groupId: string) => {
+    const group = (project.objectGroups ?? []).find(
+      (item) => item.id === groupId,
+    );
+    if (!group) {
+      return;
+    }
+    const hasDisplayedObject = group.objectIds.some((objectId) =>
+      isObjectDisplayedInAnyFrame(objectId),
+    );
+    if (
+      hasDisplayedObject &&
+      !window.confirm(
+        `「${group.name}」の所属道具が隊列内に表示中です。グループを削除しますか？道具本体は削除されず未所属になります。`,
+      )
+    ) {
+      return;
+    }
+    deleteObjectGroup(groupId);
+    setNotice(`${group.name} を削除しました。道具本体は残ります。`);
+  };
+
   const addObjectToGroup = (
     group: ObjectGroup,
     visibleInCurrentFrame = true,
@@ -6062,6 +6185,186 @@ function App() {
       group.id,
       false,
     );
+  };
+
+  const addRosterMember = (groupId: string | null, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+    const id = createId("m");
+    updateProject((previous) => {
+      const group = (previous.memberGroups ?? []).find(
+        (item) => item.id === groupId,
+      );
+      const member: Member = {
+        id,
+        name: trimmedName,
+        color:
+          group?.color ??
+          ["#ef476f", "#118ab2", "#06d6a0", "#f59e0b", "#7c3aed"][
+            previous.members.length % 5
+          ],
+        visible: true,
+        zIndex: 20 + previous.members.length,
+      };
+      return {
+        ...previous,
+        members: [...previous.members, member],
+        memberGroups: (previous.memberGroups ?? []).map((item) =>
+          item.id === group?.id
+            ? {
+                ...item,
+                memberIds: [...new Set([...item.memberIds, id])],
+              }
+            : item,
+        ),
+        frames: previous.frames.map((frame) => {
+          const frameStage = {
+            ...previous.stage,
+            ...getEffectiveStageSize(previous, frame),
+          };
+          return {
+            ...frame,
+            positions: {
+              ...frame.positions,
+              [id]: {
+                x: frameStage.widthMeters / 2,
+                y: frameStage.depthMeters / 2,
+              },
+            },
+            memberVisibility: {
+              ...(frame.memberVisibility ?? {}),
+              [id]: false,
+            },
+          };
+        }),
+      };
+    }, "名簿メンバー追加");
+    setNotice(`${trimmedName} を名簿に追加しました。`);
+  };
+
+  const addRosterObject = (groupId: string | null, name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return;
+    }
+    const id = createId("o");
+    updateProject((previous) => {
+      const group = (previous.objectGroups ?? []).find(
+        (item) => item.id === groupId,
+      );
+      const draft: StageObjectDraft = {
+        ...defaultStageObjectDraft,
+        name: trimmedName,
+        color: group?.color ?? defaultStageObjectDraft.color,
+        type: group?.defaultType ?? defaultStageObjectDraft.type,
+        shape: group?.defaultShape ?? defaultStageObjectDraft.shape,
+      };
+      const baseStage = {
+        ...previous.stage,
+        ...getEffectiveStageSize(previous, previous.frames[0]),
+      };
+      const topLeft = constrainObjectPosition(
+        {
+          x: baseStage.widthMeters / 2 - draft.widthMeters / 2,
+          y: baseStage.depthMeters / 2 - draft.heightMeters / 2,
+        },
+        draft.widthMeters,
+        draft.heightMeters,
+        baseStage,
+      );
+      const object: StageObject = {
+        id,
+        ...draft,
+        defaultX: topLeft.x,
+        defaultY: topLeft.y,
+        defaultRotation: 0,
+        visible: true,
+        locked: false,
+        zIndex: 10 + previous.stageObjects.length,
+      };
+      return {
+        ...previous,
+        stageObjects: [...previous.stageObjects, object],
+        objectGroups: (previous.objectGroups ?? []).map((item) =>
+          item.id === group?.id
+            ? {
+                ...item,
+                objectIds: [...new Set([...item.objectIds, id])],
+              }
+            : item,
+        ),
+        frames: previous.frames.map((frame) => {
+          const frameStage = {
+            ...previous.stage,
+            ...getEffectiveStageSize(previous, frame),
+          };
+          const frameTopLeft = constrainObjectPosition(
+            {
+              x: frameStage.widthMeters / 2 - draft.widthMeters / 2,
+              y: frameStage.depthMeters / 2 - draft.heightMeters / 2,
+            },
+            draft.widthMeters,
+            draft.heightMeters,
+            frameStage,
+          );
+          return {
+            ...frame,
+            objectStates: {
+              ...frame.objectStates,
+              [id]: {
+                objectId: id,
+                x: frameTopLeft.x,
+                y: frameTopLeft.y,
+                widthMeters: draft.widthMeters,
+                heightMeters: draft.heightMeters,
+                rotation: 0,
+                visible: false,
+                zIndex: object.zIndex,
+              },
+            },
+          };
+        }),
+      };
+    }, "名簿道具追加");
+    setNotice(`${trimmedName} を名簿に追加しました。`);
+  };
+
+  const createRosterMemberGroup = () => {
+    const group: MemberGroup = {
+      id: createId("g"),
+      name: nextGroupName(),
+      memberIds: [],
+      color:
+        groupColorPalette[
+          (project.memberGroups?.length ?? 0) % groupColorPalette.length
+        ],
+    };
+    updateProject((previous) => ({
+      ...previous,
+      memberGroups: [...(previous.memberGroups ?? []), group],
+    }), "名簿グループ作成");
+    setNotice(`${group.name} を作成しました。`);
+  };
+
+  const createRosterObjectGroup = () => {
+    const group: ObjectGroup = {
+      id: createId("og"),
+      name: nextObjectGroupName(),
+      color:
+        groupColorPalette[
+          (project.objectGroups?.length ?? 0) % groupColorPalette.length
+        ],
+      defaultType: "prop",
+      defaultShape: "rectangle",
+      objectIds: [],
+    };
+    updateProject((previous) => ({
+      ...previous,
+      objectGroups: [...(previous.objectGroups ?? []), group],
+    }), "名簿道具グループ作成");
+    setNotice(`${group.name} を作成しました。`);
   };
 
   const updateObjectGroupMembership = (
@@ -6708,6 +7011,7 @@ function App() {
           setActivePanelTab("members");
           setIsPanelOpen(true);
         }}
+        onOpenRosterManager={() => setIsRosterManagerOpen(true)}
       />
       {isSharedProject && (
         <div className="shared-project-banner">
@@ -7236,6 +7540,34 @@ function App() {
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
       onExportZip={handleShareExportZip}
+    />
+    <RosterManagementModal
+      isOpen={isRosterManagerOpen}
+      members={project.members}
+      memberGroups={project.memberGroups ?? []}
+      objects={project.stageObjects}
+      objectGroups={project.objectGroups ?? []}
+      onClose={() => setIsRosterManagerOpen(false)}
+      onRenameMember={(memberId, name) => updateMember(memberId, { name })}
+      onRenameObject={(objectId, name) => updateObject(objectId, { name })}
+      onAddMember={addRosterMember}
+      onAddObject={addRosterObject}
+      onCreateMemberGroup={createRosterMemberGroup}
+      onCreateObjectGroup={createRosterObjectGroup}
+      onRenameMemberGroup={(groupId, name) => updateGroup(groupId, { name })}
+      onRenameObjectGroup={(groupId, name) =>
+        updateObjectGroup(groupId, { name })
+      }
+      onDeleteMember={deleteRosterMember}
+      onDeleteObject={deleteRosterObject}
+      onDeleteMemberGroup={deleteRosterMemberGroup}
+      onDeleteObjectGroup={deleteRosterObjectGroup}
+      onUpdateMemberGroupColor={(groupId, color) =>
+        updateGroup(groupId, { color })
+      }
+      onUpdateObjectGroupColor={(groupId, color) =>
+        updateObjectGroup(groupId, { color })
+      }
     />
     {isPrintPreviewMounted && (
       <PrintPreview

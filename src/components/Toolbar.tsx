@@ -5,6 +5,7 @@ import {
   PanelsTopLeft,
   Save,
   Share2,
+  Table2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -34,6 +35,7 @@ type ToolbarProps = {
   onCreateGroup: () => void;
   onMirrorSelection: () => void;
   onOpenMemberTools: () => void;
+  onOpenRosterManager: () => void;
 };
 
 export const Toolbar = ({
@@ -62,6 +64,7 @@ export const Toolbar = ({
   onCreateGroup,
   onMirrorSelection,
   onOpenMemberTools,
+  onOpenRosterManager,
 }: ToolbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +113,17 @@ export const Toolbar = ({
           </button>
           {menuOpen && (
             <div className="app-menu-popover" role="menu">
+              <section className="menu-section">
+                <h3>管理</h3>
+                <button
+                  onClick={() => runMenuAction(onOpenRosterManager)}
+                  type="button"
+                >
+                  <Table2 size={16} />
+                  メンバー/道具の管理
+                </button>
+              </section>
+
               <section className="menu-section">
                 <h3>ファイル</h3>
                 <button onClick={() => runMenuAction(onSaveProject)} type="button">
