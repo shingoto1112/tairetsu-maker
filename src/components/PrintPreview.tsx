@@ -85,7 +85,7 @@ const PRINT_ASSIGNMENT_MEMBER_SIZE_MIN_MM = 8;
 const PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM = 13;
 const PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM = 8;
 const PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM = 24;
-const PRINT_PARADE_EXPORT_PADDING_METERS = 3;
+const PRINT_PARADE_EXPORT_PADDING_METERS = 2;
 const PRINT_ASSIGNMENT_SIDE_GAP_MM = 7;
 const PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM = 4;
 const PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM = 82;
@@ -309,7 +309,7 @@ const shouldPrintRightRuler = (
   isParade: boolean,
   options: ShareExportOptions,
 ): boolean =>
-  isParade && options.includeMeterRulers && !shouldPrintAssignmentSide(options);
+  isParade && options.includeMeterRulers;
 
 const getAssignmentSideGapMm = (
   isParade: boolean,
