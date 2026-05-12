@@ -20,6 +20,7 @@ import {
   PointerEvent,
   WheelEvent as ReactWheelEvent,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -107,6 +108,17 @@ type StageCanvasProps = {
   onToggleFullscreen: () => void;
   onSeekAudio: (timeSec: number) => void;
   onContextMenuRequest: (request: StageContextMenuRequest) => void;
+};
+
+export type StageCanvasHandle = HTMLDivElement & {
+  scrollTargetIntoView: (bounds: StageScrollBounds) => void;
+};
+
+export type StageScrollBounds = {
+  heightMeters: number;
+  widthMeters: number;
+  x: number;
+  y: number;
 };
 
 type MemberDrag = {
@@ -352,6 +364,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
   ) => {
     const stageRef = useRef<HTMLDivElement | null>(null);
     const fitAreaRef = useRef<HTMLDivElement | null>(null);
+    const exportElementRef = useRef<HTMLDivElement | null>(null);
     const memberDragRef = useRef<MemberDrag | null>(null);
     const memberAutoScrollerRef = useRef<EdgeAutoScroller | null>(null);
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
@@ -408,6 +421,56 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       () => createMajorTicks(stage.depthMeters),
       [stage.depthMeters],
     );
+
+    useImperativeHandle(exportRef, () => {
+      const exportElement = exportElementRef.current;
+      if (!exportElement) {
+        return null as unknown as StageCanvasHandle;
+      }
+      return Object.assign(exportElement, {
+        scrollTargetIntoView: (bounds: StageScrollBounds) => {
+          const container = fitAreaRef.current;
+          const stageElement = stageRef.current;
+          if (!container || !stageElement) {
+            return;
+          }
+          const containerRect = container.getBoundingClientRect();
+          const stageRect = stageElement.getBoundingClientRect();
+          const marginPx = 72;
+          const left =
+            stageRect.left + (bounds.x / stage.widthMeters) * stageRect.width;
+          const right =
+            stageRect.left +
+            ((bounds.x + bounds.widthMeters) / stage.widthMeters) *
+              stageRect.width;
+          const top =
+            stageRect.top + (bounds.y / stage.depthMeters) * stageRect.height;
+          const bottom =
+            stageRect.top +
+            ((bounds.y + bounds.heightMeters) / stage.depthMeters) *
+              stageRect.height;
+          let nextLeft = container.scrollLeft;
+          let nextTop = container.scrollTop;
+
+          if (left < containerRect.left + marginPx) {
+            nextLeft -= containerRect.left + marginPx - left;
+          } else if (right > containerRect.right - marginPx) {
+            nextLeft += right - (containerRect.right - marginPx);
+          }
+
+          if (top < containerRect.top + marginPx) {
+            nextTop -= containerRect.top + marginPx - top;
+          } else if (bottom > containerRect.bottom - marginPx) {
+            nextTop += bottom - (containerRect.bottom - marginPx);
+          }
+
+          container.scrollTo({
+            left: Math.max(0, nextLeft),
+            top: Math.max(0, nextTop),
+          });
+        },
+      }) as StageCanvasHandle;
+    }, [exportRef, stage.depthMeters, stage.widthMeters]);
 
     useEffect(() => {
       const element = fitAreaRef.current;
@@ -1501,7 +1564,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             onPointerCancelCapture={handleStagePointerEndCapture}
           >
             <div
-              ref={exportRef}
+              ref={exportElementRef}
               className={
                 showMeterRulers
                   ? "stage-canvas-with-rulers"

@@ -96,6 +96,8 @@ export type SceneViewState = {
   scrollTop: number;
   scrollLeft: number;
   zoom: number;
+  viewportHeight?: number;
+  viewportWidth?: number;
 };
 
 export type StageConfig = {

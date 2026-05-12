@@ -16,6 +16,7 @@ import {
   PointerEvent,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -84,6 +85,17 @@ type ParadeCanvasProps = {
   onToggleFullscreen: () => void;
   onCaptureStageImage?: () => void;
   onContextMenuRequest: (request: StageContextMenuRequest) => void;
+};
+
+export type ParadeCanvasHandle = HTMLDivElement & {
+  scrollTargetIntoView: (bounds: ParadeScrollBounds) => void;
+};
+
+export type ParadeScrollBounds = {
+  heightMeters: number;
+  widthMeters: number;
+  x: number;
+  y: number;
 };
 
 type DragState =
@@ -349,6 +361,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const [reflectMoveObjects, setReflectMoveObjects] = useState(true);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
+    const exportElementRef = useRef<HTMLDivElement | null>(null);
     const zoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
@@ -506,6 +519,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         scrollTop: scrollRef.current.scrollTop,
         scrollLeft: scrollRef.current.scrollLeft,
         zoom,
+        viewportHeight: scrollRef.current.clientHeight,
+        viewportWidth: scrollRef.current.clientWidth,
       });
     };
 
@@ -515,6 +530,57 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       saveViewTimerRef.current = window.setTimeout(saveViewState, 300);
     };
+
+    useImperativeHandle(ref, () => {
+      const exportElement = exportElementRef.current;
+      if (!exportElement) {
+        return null as unknown as ParadeCanvasHandle;
+      }
+      return Object.assign(exportElement, {
+        scrollTargetIntoView: (bounds: ParadeScrollBounds) => {
+          const container = scrollRef.current;
+          const stageElement = stageRef.current;
+          if (!container || !stageElement) {
+            return;
+          }
+          const containerRect = container.getBoundingClientRect();
+          const stageRect = stageElement.getBoundingClientRect();
+          const marginPx = 80;
+          const left = stageRect.left + (bounds.x / settings.width) * stageRect.width;
+          const right =
+            stageRect.left +
+            ((bounds.x + bounds.widthMeters) / settings.width) *
+              stageRect.width;
+          const top =
+            stageRect.top +
+            (bounds.y / canvasDistanceMeters) * stageRect.height;
+          const bottom =
+            stageRect.top +
+            ((bounds.y + bounds.heightMeters) / canvasDistanceMeters) *
+              stageRect.height;
+          let nextLeft = container.scrollLeft;
+          let nextTop = container.scrollTop;
+
+          if (left < containerRect.left + marginPx) {
+            nextLeft -= containerRect.left + marginPx - left;
+          } else if (right > containerRect.right - marginPx) {
+            nextLeft += right - (containerRect.right - marginPx);
+          }
+
+          if (top < containerRect.top + marginPx) {
+            nextTop -= containerRect.top + marginPx - top;
+          } else if (bottom > containerRect.bottom - marginPx) {
+            nextTop += bottom - (containerRect.bottom - marginPx);
+          }
+
+          container.scrollTo({
+            left: Math.max(0, nextLeft),
+            top: Math.max(0, nextTop),
+          });
+          scheduleSaveViewState();
+        },
+      }) as ParadeCanvasHandle;
+    }, [canvasDistanceMeters, ref, scheduleSaveViewState, settings.width]);
 
     const getStagePositionFromClientPoint = useCallback(
       (clientX: number, clientY: number): Position => {
@@ -1350,7 +1416,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               gridTemplateColumns: `${leftRulerVisible ? RULER_WIDTH : 0}px ${canvasWidthPx}px ${rightRulerVisible ? RULER_WIDTH : 0}px`,
               gridTemplateRows: `${horizontalRulerHeight}px ${canvasHeightPx}px`,
             }}
-            ref={ref}
+            ref={exportElementRef}
           >
             <div className="parade-ruler-spacer" />
             <div

@@ -99,6 +99,7 @@ import {
 } from "./utils/interpolation";
 import { getMemberDisplayColor } from "./utils/memberAppearance";
 import {
+  getSafeParadeBackwardDistance,
   getSafeParadeCanvasDistance,
   normalizeParadeHorizontalMeasureMode,
 } from "./utils/parade";
@@ -406,6 +407,11 @@ const markDraft: StageObjectDraft = {
 const KEYBOARD_NUDGE_SMALL = 0.01;
 const KEYBOARD_NUDGE_DEFAULT = 0.25;
 const KEYBOARD_NUDGE_LARGE_FALLBACK = 0.5;
+const PARADE_BASE_PX_PER_METER = 32;
+const PARADE_RULER_WIDTH_PX = 58;
+const PARADE_HORIZONTAL_RULER_HEIGHT_PX = 28;
+const PARADE_VIEWPORT_PADDING_LEFT_PX = 14;
+const PARADE_VIEWPORT_PADDING_TOP_PX = 10;
 
 const isTextEditingTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
@@ -563,6 +569,9 @@ const positiveNumber = (
     ? Math.max(min, value)
     : Math.max(min, fallback);
 
+const clampNumber = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
 const createDefaultParadeSettings = (
   settings: Partial<ParadeSettings> = {},
 ): ParadeSettings => ({
@@ -587,6 +596,76 @@ const createDefaultParadeSettings = (
   emphasizeEvery5m: settings.emphasizeEvery5m ?? true,
   emphasizeEvery10m: settings.emphasizeEvery10m ?? true,
 });
+
+const getParadeVisibleCenterPosition = (
+  project: Project,
+  frame?: FormationFrame | null,
+): Position | null => {
+  if (project.mode !== "parade" || !frame?.sceneViewState) {
+    return null;
+  }
+  const viewState = frame.sceneViewState;
+  if (!viewState.viewportWidth || !viewState.viewportHeight) {
+    return null;
+  }
+
+  const settings = createDefaultParadeSettings({
+    width: project.paradeSettings?.width ?? project.stage.widthMeters,
+    totalDistance:
+      project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
+    cellSizeMeters:
+      project.paradeSettings?.cellSizeMeters ?? project.stage.gridSizeMeters,
+    backwardDistanceMeters: project.paradeSettings?.backwardDistanceMeters,
+    rulerPosition: project.paradeSettings?.rulerPosition,
+    horizontalMeasureMode: project.paradeSettings?.horizontalMeasureMode,
+    emphasizeEvery5m: project.paradeSettings?.emphasizeEvery5m,
+    emphasizeEvery10m: project.paradeSettings?.emphasizeEvery10m,
+  });
+  const backwardDistanceMeters = getSafeParadeBackwardDistance(
+    settings.backwardDistanceMeters,
+  );
+  const canvasDistanceMeters = getSafeParadeCanvasDistance(
+    settings.totalDistance,
+    backwardDistanceMeters,
+  );
+  const zoom = positiveNumber(viewState.zoom, 1, 0.1);
+  const pxPerMeter = PARADE_BASE_PX_PER_METER * zoom;
+  const leftRulerWidth =
+    settings.rulerPosition === "both" || settings.rulerPosition === "left"
+      ? PARADE_RULER_WIDTH_PX
+      : 0;
+  const rightRulerWidth =
+    settings.rulerPosition === "both" || settings.rulerPosition === "right"
+      ? PARADE_RULER_WIDTH_PX
+      : 0;
+  const contentWidth =
+    leftRulerWidth + settings.width * pxPerMeter + rightRulerWidth;
+  const centeredContentOffset = Math.max(
+    0,
+    (viewState.viewportWidth -
+      PARADE_VIEWPORT_PADDING_LEFT_PX * 2 -
+      contentWidth) /
+      2,
+  );
+  const stageXInPx =
+    viewState.scrollLeft +
+    viewState.viewportWidth / 2 -
+    PARADE_VIEWPORT_PADDING_LEFT_PX -
+    centeredContentOffset -
+    leftRulerWidth;
+  const stageYInPx =
+    viewState.scrollTop +
+    viewState.viewportHeight / 2 -
+    PARADE_VIEWPORT_PADDING_TOP_PX -
+    PARADE_HORIZONTAL_RULER_HEIGHT_PX;
+
+  return {
+    x: roundMeters(clampNumber(stageXInPx / pxPerMeter, 0, settings.width)),
+    y: roundMeters(
+      clampNumber(stageYInPx / pxPerMeter, 0, canvasDistanceMeters),
+    ),
+  };
+};
 
 const normalizeProject = (project: Project): Project => {
   const sample = createSampleProject();
@@ -1206,6 +1285,39 @@ const getEffectiveStageSize = (
   };
 };
 
+type CanvasScrollBounds = {
+  heightMeters: number;
+  widthMeters: number;
+  x: number;
+  y: number;
+};
+
+type StageExportElement = HTMLDivElement & {
+  scrollTargetIntoView?: (bounds: CanvasScrollBounds) => void;
+};
+
+const unionCanvasBounds = (
+  boundsList: CanvasScrollBounds[],
+): CanvasScrollBounds | null => {
+  if (boundsList.length === 0) {
+    return null;
+  }
+  const minX = Math.min(...boundsList.map((bounds) => bounds.x));
+  const minY = Math.min(...boundsList.map((bounds) => bounds.y));
+  const maxX = Math.max(
+    ...boundsList.map((bounds) => bounds.x + bounds.widthMeters),
+  );
+  const maxY = Math.max(
+    ...boundsList.map((bounds) => bounds.y + bounds.heightMeters),
+  );
+  return {
+    heightMeters: maxY - minY,
+    widthMeters: maxX - minX,
+    x: minX,
+    y: minY,
+  };
+};
+
 function App() {
   const initial = useMemo(readInitialProject, []);
   const [project, setProject] = useState<Project>(initial.project);
@@ -1296,7 +1408,7 @@ function App() {
   const projectRef = useRef(project);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const restoredAudioKeyRef = useRef<string | null>(null);
-  const stageExportRef = useRef<HTMLDivElement | null>(null);
+  const stageExportRef = useRef<StageExportElement | null>(null);
   const printExportRef = useRef<HTMLDivElement | null>(null);
   const stageFullscreenRef = useRef<HTMLDivElement | null>(null);
   const animationPreviewRef = useRef<number | null>(null);
@@ -2660,49 +2772,58 @@ function App() {
       zIndex: 20 + project.members.length,
     };
 
-    updateProject((previous) => ({
-      ...previous,
-      members: [...previous.members, member],
-      memberGroups: (previous.memberGroups ?? []).map((item) =>
-        item.id === group?.id
-          ? {
-              ...item,
-              memberIds: [...new Set([...item.memberIds, id])],
-            }
-          : item,
-      ),
-      frames: previous.frames.map((frame) => {
-        const frameStage = {
-          ...previous.stage,
-          ...getEffectiveStageSize(previous, frame),
-        };
-        const basePosition = requestedPosition
-          ? constrainMemberPosition(requestedPosition, frameStage)
-          : {
-              x: frameStage.widthMeters / 2,
-              y: frameStage.depthMeters / 2,
-            };
-        const isActiveFrame = frame.id === activeFrameId;
-        return {
-          ...frame,
-          positions: {
-            ...frame.positions,
-            [id]: basePosition,
-          },
-          memberVisibility: {
-            ...(frame.memberVisibility ?? {}),
-            [id]: isActiveFrame ? visibleInCurrentFrame : false,
-          },
-          groupVisibility:
-            group && isActiveFrame
-              ? {
-                  ...(frame.groupVisibility ?? {}),
-                  [group.id]: visibleInCurrentFrame,
-                }
-              : frame.groupVisibility,
-        };
-      }),
-    }));
+    updateProject((previous) => {
+      const activeFrame = previous.frames.find((frame) => frame.id === activeFrameId);
+      const paradeDefaultPosition = getParadeVisibleCenterPosition(
+        previous,
+        activeFrame,
+      );
+      return {
+        ...previous,
+        members: [...previous.members, member],
+        memberGroups: (previous.memberGroups ?? []).map((item) =>
+          item.id === group?.id
+            ? {
+                ...item,
+                memberIds: [...new Set([...item.memberIds, id])],
+              }
+            : item,
+        ),
+        frames: previous.frames.map((frame) => {
+          const frameStage = {
+            ...previous.stage,
+            ...getEffectiveStageSize(previous, frame),
+          };
+          const basePosition = requestedPosition
+            ? constrainMemberPosition(requestedPosition, frameStage)
+            : paradeDefaultPosition
+              ? constrainMemberPosition(paradeDefaultPosition, frameStage)
+              : {
+                  x: frameStage.widthMeters / 2,
+                  y: frameStage.depthMeters / 2,
+                };
+          const isActiveFrame = frame.id === activeFrameId;
+          return {
+            ...frame,
+            positions: {
+              ...frame.positions,
+              [id]: basePosition,
+            },
+            memberVisibility: {
+              ...(frame.memberVisibility ?? {}),
+              [id]: isActiveFrame ? visibleInCurrentFrame : false,
+            },
+            groupVisibility:
+              group && isActiveFrame
+                ? {
+                    ...(frame.groupVisibility ?? {}),
+                    [group.id]: visibleInCurrentFrame,
+                  }
+                : frame.groupVisibility,
+          };
+        }),
+      };
+    });
     setSelected({ type: "member", id });
     setMode("members");
     setActivePanelTab("members");
@@ -2750,11 +2871,16 @@ function App() {
         }
       : draft;
     const activeFrameId = selectedFrame?.id ?? project.frames[0]?.id;
+    const paradeDefaultPosition = getParadeVisibleCenterPosition(
+      project,
+      selectedFrame ?? project.frames[0],
+    );
     const center = constrainMemberPosition(
-      position ?? {
-        x: effectiveStage.widthMeters / 2,
-        y: effectiveStage.depthMeters / 2,
-      },
+      position ??
+        paradeDefaultPosition ?? {
+          x: effectiveStage.widthMeters / 2,
+          y: effectiveStage.depthMeters / 2,
+        },
       effectiveStage,
     );
     const topLeft = constrainObjectPosition(
@@ -3572,6 +3698,70 @@ function App() {
     updateObjectState(id, nextPatch);
   };
 
+  const scrollKeyboardTargetIntoView = (bounds: CanvasScrollBounds | null) => {
+    if (!bounds) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      stageExportRef.current?.scrollTargetIntoView?.(bounds);
+    });
+  };
+
+  const getKeyboardMoveBounds = (
+    memberIds: string[],
+    objectId: string | null,
+    delta: Position,
+  ): CanvasScrollBounds | null => {
+    const boundsList: CanvasScrollBounds[] = [];
+    const memberDiameter = project.stage.memberDiameterMeters ?? 0.5;
+
+    memberIds.forEach((memberId) => {
+      const current = snapshot.positions[memberId];
+      if (!current) {
+        return;
+      }
+      const position = constrainMemberPosition(
+        {
+          x: roundMeters(current.x + delta.x),
+          y: roundMeters(current.y + delta.y),
+        },
+        effectiveStage,
+      );
+      boundsList.push({
+        heightMeters: memberDiameter,
+        widthMeters: memberDiameter,
+        x: position.x - memberDiameter / 2,
+        y: position.y - memberDiameter / 2,
+      });
+    });
+
+    if (objectId) {
+      const object = project.stageObjects.find((item) => item.id === objectId);
+      const current =
+        snapshot.objectStates[objectId] ??
+        (object ? createDefaultObjectState(object) : null);
+      if (current) {
+        const position = constrainObjectPosition(
+          {
+            x: roundMeters(current.x + delta.x),
+            y: roundMeters(current.y + delta.y),
+          },
+          current.widthMeters,
+          current.heightMeters,
+          effectiveStage,
+        );
+        boundsList.push({
+          heightMeters: current.heightMeters,
+          widthMeters: current.widthMeters,
+          x: position.x,
+          y: position.y,
+        });
+      }
+    }
+
+    return unionCanvasBounds(boundsList);
+  };
+
   function nudgeSelectionByKeyboard(event: KeyboardEvent): boolean {
     const delta = getKeyboardNudgeDelta(
       event,
@@ -3612,6 +3802,7 @@ function App() {
       return true;
     }
 
+    const scrollBounds = getKeyboardMoveBounds(memberIds, objectId, delta);
     const activeFrameId = selectedFrame.id;
     updateProject((previous) => {
       const targetFrame = previous.frames.find(
@@ -3689,6 +3880,7 @@ function App() {
         }),
       };
     });
+    scrollKeyboardTargetIntoView(scrollBounds);
 
     return true;
   }
@@ -6197,6 +6389,13 @@ function App() {
       const group = (previous.memberGroups ?? []).find(
         (item) => item.id === groupId,
       );
+      const activeFrame =
+        previous.frames.find((frame) => frame.id === selectedFrame?.id) ??
+        previous.frames[0];
+      const rosterPosition = getParadeVisibleCenterPosition(
+        previous,
+        activeFrame,
+      );
       const member: Member = {
         id,
         name: trimmedName,
@@ -6224,14 +6423,17 @@ function App() {
             ...previous.stage,
             ...getEffectiveStageSize(previous, frame),
           };
+          const basePosition = rosterPosition
+            ? constrainMemberPosition(rosterPosition, frameStage)
+            : {
+                x: frameStage.widthMeters / 2,
+                y: frameStage.depthMeters / 2,
+              };
           return {
             ...frame,
             positions: {
               ...frame.positions,
-              [id]: {
-                x: frameStage.widthMeters / 2,
-                y: frameStage.depthMeters / 2,
-              },
+              [id]: basePosition,
             },
             memberVisibility: {
               ...(frame.memberVisibility ?? {}),
@@ -6261,14 +6463,24 @@ function App() {
         type: group?.defaultType ?? defaultStageObjectDraft.type,
         shape: group?.defaultShape ?? defaultStageObjectDraft.shape,
       };
+      const activeFrame =
+        previous.frames.find((frame) => frame.id === selectedFrame?.id) ??
+        previous.frames[0];
+      const rosterCenter = getParadeVisibleCenterPosition(previous, activeFrame);
       const baseStage = {
         ...previous.stage,
-        ...getEffectiveStageSize(previous, previous.frames[0]),
+        ...getEffectiveStageSize(previous, activeFrame ?? previous.frames[0]),
       };
+      const baseCenter = rosterCenter
+        ? constrainMemberPosition(rosterCenter, baseStage)
+        : {
+            x: baseStage.widthMeters / 2,
+            y: baseStage.depthMeters / 2,
+          };
       const topLeft = constrainObjectPosition(
         {
-          x: baseStage.widthMeters / 2 - draft.widthMeters / 2,
-          y: baseStage.depthMeters / 2 - draft.heightMeters / 2,
+          x: baseCenter.x - draft.widthMeters / 2,
+          y: baseCenter.y - draft.heightMeters / 2,
         },
         draft.widthMeters,
         draft.heightMeters,
@@ -6300,10 +6512,16 @@ function App() {
             ...previous.stage,
             ...getEffectiveStageSize(previous, frame),
           };
+          const frameCenter = rosterCenter
+            ? constrainMemberPosition(rosterCenter, frameStage)
+            : {
+                x: frameStage.widthMeters / 2,
+                y: frameStage.depthMeters / 2,
+              };
           const frameTopLeft = constrainObjectPosition(
             {
-              x: frameStage.widthMeters / 2 - draft.widthMeters / 2,
-              y: frameStage.depthMeters / 2 - draft.heightMeters / 2,
+              x: frameCenter.x - draft.widthMeters / 2,
+              y: frameCenter.y - draft.heightMeters / 2,
             },
             draft.widthMeters,
             draft.heightMeters,
