@@ -5051,12 +5051,21 @@ h2 {
 }
 
 .print-member--label-three .print-member__label {
+  bottom: 0;
+  height: 100%;
   left: 2%;
-  line-height: 0.9;
-  min-height: auto;
-  overflow: hidden;
+  line-height: 1.12;
+  min-height: 100%;
+  overflow: visible;
   right: 2%;
-  top: 49%;
+  top: 0;
+  transform: none;
+}
+
+.print-member--label-three .print-member__label-line {
+  overflow: visible;
+  padding-block: 0.06em;
+  transform: translateY(-0.04em);
 }
 
 .print-member--label-four .print-member__label {
@@ -5209,6 +5218,14 @@ h2 {
   right: 8%;
   top: 50%;
   transform: translateY(-50%);
+}
+
+.print-assignment-sheet__member.print-member--label-three .print-member__label {
+  bottom: 0;
+  height: 100%;
+  min-height: 100%;
+  top: 0;
+  transform: none;
 }
 
 .print-assignment-sheet__empty {
