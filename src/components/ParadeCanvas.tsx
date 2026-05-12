@@ -162,6 +162,7 @@ const MAX_ZOOM = 2.5;
 const RULER_WIDTH = 58;
 const MEMBER_OVERLAP_KEY_SCALE = 100;
 const MIN_OBJECT_SIZE_METERS = 0.1;
+const OBJECT_DRAG_SNAP_METERS = 0.25;
 
 const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
   totalDistance: 100,
@@ -767,12 +768,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             settings.width - dragState.startState.widthMeters,
           );
           const nextX = clamp(
-            snapMeters(dragState.startState.x + dx, settings.cellSizeMeters),
+            snapMeters(dragState.startState.x + dx, OBJECT_DRAG_SNAP_METERS),
             0,
             maxObjectX,
           );
           const nextY = clampParadeObjectTopY(
-            snapMeters(dragState.startState.y + dy, settings.cellSizeMeters),
+            snapMeters(dragState.startState.y + dy, OBJECT_DRAG_SNAP_METERS),
             dragState.startState.heightMeters,
             settings.totalDistance,
             backwardDistanceMeters,
