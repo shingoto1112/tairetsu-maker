@@ -1,4 +1,9 @@
-import { MouseEvent as ReactMouseEvent, PointerEvent, useRef } from "react";
+import {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent,
+  useEffect,
+  useRef,
+} from "react";
 import {
   ObjectState,
   StageConfig,
@@ -14,6 +19,10 @@ import {
   stagePointToDisplayPoint,
   snapToGrid,
 } from "../utils/coordinates";
+import {
+  createEdgeAutoScroller,
+  type EdgeAutoScroller,
+} from "../utils/edgeAutoScroll";
 
 type InteractionKind = "move" | "resize" | "rotate";
 
@@ -22,7 +31,10 @@ type DragState = {
   pointerId: number;
   startClientX: number;
   startClientY: number;
+  currentClientX: number;
+  currentClientY: number;
   startPointer: { x: number; y: number };
+  stageElement: HTMLElement;
   startState: ObjectState;
   startAngle: number;
   hasMoved: boolean;
@@ -85,63 +97,23 @@ export const ResizableRotatableObject = ({
   onContextMenu,
 }: ResizableRotatableObjectProps) => {
   const dragRef = useRef<DragState | null>(null);
+  const autoScrollerRef = useRef<EdgeAutoScroller | null>(null);
   const editable = !disabled && !object.locked;
 
-  const startInteraction = (
-    event: PointerEvent<HTMLElement>,
-    kind: InteractionKind,
-  ) => {
-    event.stopPropagation();
-    if (event.button !== 0) {
-      return;
-    }
-    onSelect();
-    if (!editable) {
-      return;
-    }
-    const stageElement = getStageElement(event.currentTarget);
-    if (!stageElement) {
-      return;
-    }
-    const pointer = clientPointToMeters(
-      event.clientX,
-      event.clientY,
-      stageElement,
-      stage,
-      viewerPerspective,
-    );
-    dragRef.current = {
-      kind,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startPointer: pointer,
-      startState: state,
-      startAngle:
-        kind === "rotate"
-          ? getAngle(
-              event.clientX,
-              event.clientY,
-              state,
-              stageElement,
-              stage,
-              viewerPerspective,
-            )
-          : 0,
-      hasMoved: false,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
+  useEffect(
+    () => () => {
+      autoScrollerRef.current?.stop();
+    },
+    [],
+  );
 
-  const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
+  const applyDrag = (clientX: number, clientY: number) => {
     const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) {
+    if (!drag) {
       return;
     }
-    const stageElement = getStageElement(event.currentTarget);
-    if (!stageElement) {
-      return;
-    }
+    drag.currentClientX = clientX;
+    drag.currentClientY = clientY;
     if (!drag.hasMoved) {
       onInteractionStart?.(drag.kind);
       drag.hasMoved = true;
@@ -149,10 +121,10 @@ export const ResizableRotatableObject = ({
 
     if (drag.kind === "rotate") {
       const angle = getAngle(
-        event.clientX,
-        event.clientY,
+        clientX,
+        clientY,
         drag.startState,
-        stageElement,
+        drag.stageElement,
         stage,
         viewerPerspective,
       );
@@ -161,9 +133,9 @@ export const ResizableRotatableObject = ({
     }
 
     const pointer = clientPointToMeters(
-      event.clientX,
-      event.clientY,
-      stageElement,
+      clientX,
+      clientY,
+      drag.stageElement,
       stage,
       viewerPerspective,
     );
@@ -228,10 +200,82 @@ export const ResizableRotatableObject = ({
     onMove(next);
   };
 
+  const startInteraction = (
+    event: PointerEvent<HTMLElement>,
+    kind: InteractionKind,
+  ) => {
+    event.stopPropagation();
+    if (event.button !== 0) {
+      return;
+    }
+    onSelect();
+    if (!editable) {
+      return;
+    }
+    const stageElement = getStageElement(event.currentTarget);
+    if (!stageElement) {
+      return;
+    }
+    const pointer = clientPointToMeters(
+      event.clientX,
+      event.clientY,
+      stageElement,
+      stage,
+      viewerPerspective,
+    );
+    dragRef.current = {
+      kind,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      currentClientX: event.clientX,
+      currentClientY: event.clientY,
+      startPointer: pointer,
+      stageElement,
+      startState: state,
+      startAngle:
+        kind === "rotate"
+          ? getAngle(
+              event.clientX,
+              event.clientY,
+              state,
+              stageElement,
+              stage,
+              viewerPerspective,
+            )
+          : 0,
+      hasMoved: false,
+    };
+    const scrollContainer = stageElement.closest(".stage-fit-area");
+    if (scrollContainer instanceof HTMLElement && kind !== "rotate") {
+      autoScrollerRef.current?.stop();
+      autoScrollerRef.current = createEdgeAutoScroller(scrollContainer, {
+        onScroll: () => {
+          const drag = dragRef.current;
+          if (drag) {
+            applyDrag(drag.currentClientX, drag.currentClientY);
+          }
+        },
+      });
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    applyDrag(event.clientX, event.clientY);
+    autoScrollerRef.current?.update(event.clientX, event.clientY);
+  };
+
   const stopInteraction = (event: PointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (drag?.pointerId === event.pointerId) {
       dragRef.current = null;
+      autoScrollerRef.current?.stop();
+      autoScrollerRef.current = null;
       if (drag.hasMoved) {
         onInteractionEnd?.();
       }

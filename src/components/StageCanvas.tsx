@@ -46,6 +46,10 @@ import {
   snapToGrid,
 } from "../utils/coordinates";
 import {
+  createEdgeAutoScroller,
+  type EdgeAutoScroller,
+} from "../utils/edgeAutoScroll";
+import {
   getMovementPathType,
   getSnapshotForFrame,
   isAnimationEnabledForTarget,
@@ -110,6 +114,8 @@ type MemberDrag = {
   memberId: string;
   startClientX: number;
   startClientY: number;
+  currentClientX: number;
+  currentClientY: number;
   startPointer: Position;
   startPosition: Position;
   hasMoved: boolean;
@@ -347,6 +353,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const stageRef = useRef<HTMLDivElement | null>(null);
     const fitAreaRef = useRef<HTMLDivElement | null>(null);
     const memberDragRef = useRef<MemberDrag | null>(null);
+    const memberAutoScrollerRef = useRef<EdgeAutoScroller | null>(null);
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
     const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
     const stagePanRef = useRef<StagePanState | null>(null);
@@ -489,6 +496,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     useEffect(
       () => () => {
         cancelPendingStageZoom();
+        memberAutoScrollerRef.current?.stop();
       },
       [],
     );
@@ -762,6 +770,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const activeMemberDrag = memberDragRef.current;
       clearStagePan();
       memberDragRef.current = null;
+      memberAutoScrollerRef.current?.stop();
+      memberAutoScrollerRef.current = null;
       setIsMemberDragging(false);
       if (activeMemberDrag?.hasMoved) {
         onEndProjectEdit();
@@ -1022,6 +1032,43 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       });
     };
 
+    const moveDraggedMember = (clientX: number, clientY: number) => {
+      const drag = memberDragRef.current;
+      if (!drag || !stageRef.current) {
+        return;
+      }
+      drag.currentClientX = clientX;
+      drag.currentClientY = clientY;
+      const pointer = clientPointToMeters(
+        clientX,
+        clientY,
+        stageRef.current,
+        stage,
+        viewerPerspective,
+      );
+      const next = constrainMemberPosition(
+        {
+          x: snapToGrid(
+            drag.startPosition.x + pointer.x - drag.startPointer.x,
+            stage.gridSizeMeters,
+            stage.showGrid,
+          ),
+          y: snapToGrid(
+            drag.startPosition.y + pointer.y - drag.startPointer.y,
+            stage.gridSizeMeters,
+            stage.showGrid,
+          ),
+        },
+        stage,
+      );
+      const guided = applySnapGuides(next, {
+        type: "member",
+        id: drag.memberId,
+      });
+      setActiveSnapGuides(guided.guides);
+      onMoveMember(drag.memberId, constrainMemberPosition(guided.position, stage));
+    };
+
     const handleMemberPointerDown = (
       event: PointerEvent<HTMLDivElement>,
       memberId: string,
@@ -1057,10 +1104,23 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         memberId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
         startPointer,
         startPosition: snapshot.positions[memberId] ?? { x: 0, y: 0 },
         hasMoved: false,
       };
+      if (fitAreaRef.current) {
+        memberAutoScrollerRef.current?.stop();
+        memberAutoScrollerRef.current = createEdgeAutoScroller(fitAreaRef.current, {
+          onScroll: () => {
+            const drag = memberDragRef.current;
+            if (drag?.hasMoved) {
+              moveDraggedMember(drag.currentClientX, drag.currentClientY);
+            }
+          },
+        });
+      }
       event.currentTarget.setPointerCapture(event.pointerId);
     };
 
@@ -1086,40 +1146,16 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         drag.hasMoved = true;
         setIsMemberDragging(true);
       }
-      const pointer = clientPointToMeters(
-        event.clientX,
-        event.clientY,
-        stageRef.current,
-        stage,
-        viewerPerspective,
-      );
-      const next = constrainMemberPosition(
-        {
-          x: snapToGrid(
-            drag.startPosition.x + pointer.x - drag.startPointer.x,
-            stage.gridSizeMeters,
-            stage.showGrid,
-          ),
-          y: snapToGrid(
-            drag.startPosition.y + pointer.y - drag.startPointer.y,
-            stage.gridSizeMeters,
-            stage.showGrid,
-          ),
-        },
-        stage,
-      );
-      const guided = applySnapGuides(next, {
-        type: "member",
-        id: drag.memberId,
-      });
-      setActiveSnapGuides(guided.guides);
-      onMoveMember(drag.memberId, constrainMemberPosition(guided.position, stage));
+      moveDraggedMember(event.clientX, event.clientY);
+      memberAutoScrollerRef.current?.update(event.clientX, event.clientY);
     };
 
     const stopMemberDrag = (event: PointerEvent<HTMLDivElement>) => {
       const drag = memberDragRef.current;
       if (drag?.pointerId === event.pointerId) {
         memberDragRef.current = null;
+        memberAutoScrollerRef.current?.stop();
+        memberAutoScrollerRef.current = null;
         setActiveSnapGuides([]);
         if (drag.hasMoved) {
           onEndProjectEdit();

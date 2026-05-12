@@ -31,6 +31,7 @@ import type {
   StageSnapshot,
 } from "../types";
 import { roundMeters } from "../utils/coordinates";
+import { createEdgeAutoScroller } from "../utils/edgeAutoScroll";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
 import {
   getMemberLabelClassName,
@@ -91,6 +92,10 @@ type DragState =
       id: string;
       startClientX: number;
       startClientY: number;
+      currentClientX: number;
+      currentClientY: number;
+      startScrollLeft: number;
+      startScrollTop: number;
       startPosition: Position;
       hasMoved: boolean;
     }
@@ -100,6 +105,10 @@ type DragState =
       id: string;
       startClientX: number;
       startClientY: number;
+      currentClientX: number;
+      currentClientY: number;
+      startScrollLeft: number;
+      startScrollTop: number;
       startState: ObjectState;
       hasMoved: boolean;
     }
@@ -109,6 +118,10 @@ type DragState =
       id: string;
       startClientX: number;
       startClientY: number;
+      currentClientX: number;
+      currentClientY: number;
+      startScrollLeft: number;
+      startScrollTop: number;
       startState: ObjectState;
       startAngle: number;
       centerClientX: number;
@@ -648,17 +661,34 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (!dragState) {
         return undefined;
       }
-      const handlePointerMove = (event: globalThis.PointerEvent) => {
+      let currentClientX = dragState.currentClientX;
+      let currentClientY = dragState.currentClientY;
+      let didMove = dragState.hasMoved;
+      const applyDrag = (clientX: number, clientY: number) => {
+        currentClientX = clientX;
+        currentClientY = clientY;
         const movementPx = Math.hypot(
-          event.clientX - dragState.startClientX,
-          event.clientY - dragState.startClientY,
+          clientX - dragState.startClientX,
+          clientY - dragState.startClientY,
         );
         if (movementPx < 3) {
           return;
         }
-        const dx = (event.clientX - dragState.startClientX) / pxPerMeter;
-        const dy = (event.clientY - dragState.startClientY) / pxPerMeter;
-        if (!dragState.hasMoved) {
+        const scrollLeft = scrollRef.current?.scrollLeft ?? dragState.startScrollLeft;
+        const scrollTop = scrollRef.current?.scrollTop ?? dragState.startScrollTop;
+        const dx =
+          (clientX -
+            dragState.startClientX +
+            scrollLeft -
+            dragState.startScrollLeft) /
+          pxPerMeter;
+        const dy =
+          (clientY -
+            dragState.startClientY +
+            scrollTop -
+            dragState.startScrollTop) /
+          pxPerMeter;
+        if (!didMove) {
           const editLabel =
             dragState.type === "object" && dragState.interaction === "resize"
               ? "道具サイズ変更"
@@ -666,7 +696,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 ? "道具回転"
                 : "パレード配置編集";
           onBeginProjectEdit(editLabel);
-          setDragState({ ...dragState, hasMoved: true });
+          didMove = true;
+          setDragState({
+            ...dragState,
+            currentClientX: clientX,
+            currentClientY: clientY,
+            hasMoved: true,
+          });
         }
         if (dragState.type === "member") {
           const nextPosition = {
@@ -714,8 +750,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         } else if (dragState.interaction === "rotate") {
           const currentAngle =
             (Math.atan2(
-              event.clientY - dragState.centerClientY,
-              event.clientX - dragState.centerClientX,
+              clientY - dragState.centerClientY,
+              clientX - dragState.centerClientX,
             ) *
               180) /
             Math.PI;
@@ -744,8 +780,21 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           onUpdateObjectState(dragState.id, { x: nextX, y: nextY });
         }
       };
+      const autoScroller =
+        dragState.type === "object" && dragState.interaction === "rotate"
+          ? null
+          : scrollRef.current
+            ? createEdgeAutoScroller(scrollRef.current, {
+                onScroll: () => applyDrag(currentClientX, currentClientY),
+              })
+            : null;
+      const handlePointerMove = (event: globalThis.PointerEvent) => {
+        applyDrag(event.clientX, event.clientY);
+        autoScroller?.update(event.clientX, event.clientY);
+      };
       const handlePointerUp = () => {
-        const shouldEndEdit = dragState.hasMoved;
+        const shouldEndEdit = didMove;
+        autoScroller?.stop();
         setDragState(null);
         if (shouldEndEdit) {
           onEndProjectEdit();
@@ -758,6 +807,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         window.removeEventListener("pointercancel", handlePointerUp);
+        autoScroller?.stop();
       };
     }, [
       dragState,
@@ -989,6 +1039,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         id: memberId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
+        startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
+        startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startPosition: position,
         hasMoved: false,
       });
@@ -1016,6 +1070,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         id: objectId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
+        startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
+        startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
         hasMoved: false,
       });
@@ -1043,6 +1101,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         id: objectId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
+        startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
+        startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
         hasMoved: false,
       });
@@ -1081,6 +1143,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         id: objectId,
         startClientX: event.clientX,
         startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
+        startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
+        startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
         startAngle,
         centerClientX,
