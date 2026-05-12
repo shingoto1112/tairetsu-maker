@@ -85,6 +85,7 @@ const PRINT_ASSIGNMENT_MEMBER_SIZE_MIN_MM = 8;
 const PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM = 13;
 const PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM = 8;
 const PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM = 24;
+const PRINT_MEMBER_LABEL_FONT_BOOST_MM = 0.2;
 const PRINT_PARADE_EXPORT_PADDING_METERS = 2;
 const PRINT_ASSIGNMENT_SIDE_GAP_MM = 7;
 const PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM = 4;
@@ -232,6 +233,15 @@ const getObjectState = (
   frame: FormationFrame,
   object: StageObject,
 ): ObjectState => frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
+
+const getPrintMemberLabelFontSizeMm = (
+  diameterMm: number,
+  labelLines: string[],
+): number =>
+  getMemberLabelFontSize(diameterMm, labelLines, {
+    min: 1.8,
+    precision: 2,
+  }) + PRINT_MEMBER_LABEL_FONT_BOOST_MM;
 
 const getAssignmentObjectOrder = (project: Project): Map<string, number> => {
   const orderById = new Map<string, number>();
@@ -979,10 +989,7 @@ const PrintStagePreview = ({
         style={{
           backgroundColor: memberColor,
           color: labelColor,
-          fontSize: `${getMemberLabelFontSize(memberDiameterMm, labelLines, {
-            min: 1.8,
-            precision: 2,
-          })}mm`,
+          fontSize: `${getPrintMemberLabelFontSizeMm(memberDiameterMm, labelLines)}mm`,
           left: metersToPrintMm(centerXMeters, metrics),
           top: metersToPrintMm(centerYMeters - verticalRange.topMeters, metrics),
           zIndex,
@@ -1017,10 +1024,10 @@ const PrintStagePreview = ({
         style={{
           backgroundColor: memberColor,
           color: labelColor,
-          fontSize: `${getMemberLabelFontSize(assignmentMemberSizeMm, labelLines, {
-            min: 1.8,
-            precision: 2,
-          })}mm`,
+          fontSize: `${getPrintMemberLabelFontSizeMm(
+            assignmentMemberSizeMm,
+            labelLines,
+          )}mm`,
         }}
       >
         <span className="print-member__label" aria-hidden="true">
