@@ -85,7 +85,9 @@ const PRINT_ASSIGNMENT_MEMBER_SIZE_MIN_MM = 8;
 const PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM = 13;
 const PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM = 8;
 const PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM = 24;
+const PRINT_PARADE_EXPORT_PADDING_METERS = 3;
 const PRINT_ASSIGNMENT_SIDE_GAP_MM = 7;
+const PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM = 4;
 const PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM = 82;
 const PRINT_ASSIGNMENT_SIDE_MIN_WIDTH_MM = 54;
 const PRINT_ASSIGNMENT_SIDE_STAGE_MIN_WIDTH_MM = 105;
@@ -231,11 +233,35 @@ const getObjectState = (
   object: StageObject,
 ): ObjectState => frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
 
+const getAssignmentObjectOrder = (project: Project): Map<string, number> => {
+  const orderById = new Map<string, number>();
+  let ungroupedOrder = (project.objectGroups?.length ?? 0) * 10000;
+
+  (project.objectGroups ?? []).forEach((group, groupIndex) => {
+    group.objectIds.forEach((objectId, objectIndex) => {
+      if (!orderById.has(objectId)) {
+        orderById.set(objectId, groupIndex * 10000 + objectIndex);
+      }
+    });
+  });
+
+  project.stageObjects
+    .filter((object) => !orderById.has(object.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true }))
+    .forEach((object) => {
+      orderById.set(object.id, ungroupedOrder);
+      ungroupedOrder += 1;
+    });
+
+  return orderById;
+};
+
 const getAssignmentPrintEntries = (
   project: Project,
   frame: FormationFrame,
 ): AssignmentPrintEntry[] => {
   const memberById = new Map(project.members.map((member) => [member.id, member]));
+  const objectOrderById = getAssignmentObjectOrder(project);
   return project.stageObjects
     .map((object) => {
       const state = getObjectState(frame, object);
@@ -252,11 +278,16 @@ const getAssignmentPrintEntries = (
         entry.isVisible && entry.assignedMembers.length > 0,
     )
     .sort((a, b) => {
+      const orderA = objectOrderById.get(a.object.id) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = objectOrderById.get(b.object.id) ?? Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
       const yDiff = a.state.y - b.state.y;
       if (Math.abs(yDiff) > 0.001) return yDiff;
       const xDiff = a.state.x - b.state.x;
       if (Math.abs(xDiff) > 0.001) return xDiff;
-      return a.object.name.localeCompare(b.object.name, "ja");
+      return a.object.name.localeCompare(b.object.name, "ja", { numeric: true });
     });
 };
 
@@ -273,6 +304,22 @@ const getAssignmentMemberSizeMm = (
 
 const shouldPrintAssignmentSide = (options: ShareExportOptions): boolean =>
   options.includeAssignments;
+
+const shouldPrintRightRuler = (
+  isParade: boolean,
+  options: ShareExportOptions,
+): boolean =>
+  isParade && options.includeMeterRulers && !shouldPrintAssignmentSide(options);
+
+const getAssignmentSideGapMm = (
+  isParade: boolean,
+  assignmentSideWidthMm: number,
+): number => {
+  if (assignmentSideWidthMm <= 0) {
+    return 0;
+  }
+  return isParade ? PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM : PRINT_ASSIGNMENT_SIDE_GAP_MM;
+};
 
 const getAssignmentPanelContentWidthMm = (metrics: PrintMetrics): number =>
   Math.max(
@@ -462,10 +509,10 @@ const getPrintMetrics = (
     isParade,
     options.includeMeterRulers,
   );
-  const rightRulerWidthMm =
-    isParade && options.includeMeterRulers
-      ? getPrintSideRulerWidthMm(true, true)
-      : 0;
+  const rightRulerWidthMm = shouldPrintRightRuler(isParade, options)
+    ? getPrintSideRulerWidthMm(true, true)
+    : 0;
+  const stageRightSafetyMm = rightRulerWidthMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
   const commonWidthMeters = Math.max(
     1,
     ...frames.map((frame) => getEffectiveSize(project, frame).widthMeters),
@@ -477,8 +524,13 @@ const getPrintMetrics = (
     pageSize.width -
     leftRulerWidthMm -
     rightRulerWidthMm -
-    PRINT_STAGE_RIGHT_SAFETY_MM;
+    stageRightSafetyMm;
   const canUseAssignmentSide = shouldPrintAssignmentSide(options);
+  const requestedAssignmentGapMm = canUseAssignmentSide
+    ? isParade
+      ? PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM
+      : PRINT_ASSIGNMENT_SIDE_GAP_MM
+    : 0;
   const requestedAssignmentWidthMm = canUseAssignmentSide
     ? Math.min(
         PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM,
@@ -491,13 +543,15 @@ const getPrintMetrics = (
         Math.min(
           requestedAssignmentWidthMm,
           availableWidthMm -
-            PRINT_ASSIGNMENT_SIDE_GAP_MM -
+            requestedAssignmentGapMm -
             PRINT_ASSIGNMENT_SIDE_STAGE_MIN_WIDTH_MM,
         ),
       )
     : 0;
-  const assignmentSideGapMm =
-    assignmentSideWidthMm > 0 ? PRINT_ASSIGNMENT_SIDE_GAP_MM : 0;
+  const assignmentSideGapMm = getAssignmentSideGapMm(
+    isParade,
+    assignmentSideWidthMm,
+  );
   const stageWidthMm = Math.max(
     40,
     availableWidthMm - assignmentSideGapMm - assignmentSideWidthMm,
@@ -587,12 +641,21 @@ const getFramePrintVerticalRange = (
   }
 
   const step = Math.max(metrics.gridSizeMeters, 0.01);
-  const topMeters = Math.max(0, snapDown(minY - 3, step));
-  const bottomMeters = Math.min(canvasDistanceMeters, snapUp(maxY + 3, step));
+  const topMeters = Math.max(
+    0,
+    snapDown(minY - PRINT_PARADE_EXPORT_PADDING_METERS, step),
+  );
+  const bottomMeters = Math.min(
+    canvasDistanceMeters,
+    snapUp(maxY + PRINT_PARADE_EXPORT_PADDING_METERS, step),
+  );
   const safeBottomMeters =
     bottomMeters > topMeters
       ? bottomMeters
-      : Math.min(canvasDistanceMeters, topMeters + Math.min(canvasDistanceMeters, 6));
+      : Math.min(
+          canvasDistanceMeters,
+          topMeters + Math.min(canvasDistanceMeters, PRINT_PARADE_EXPORT_PADDING_METERS * 2),
+        );
 
   return {
     bottomMeters: safeBottomMeters,
@@ -754,10 +817,9 @@ const PrintStagePreview = ({
     isParade,
     options.includeMeterRulers,
   );
-  const rightRulerMm =
-    isParade && options.includeMeterRulers
-      ? getPrintSideRulerWidthMm(true, true)
-      : 0;
+  const rightRulerMm = shouldPrintRightRuler(isParade, options)
+    ? getPrintSideRulerWidthMm(true, true)
+    : 0;
   const stageRightSafetyMm = rightRulerMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
   const totalPreviewWidthMm =
     leftRulerMm + metrics.stageWidthMm + rightRulerMm + stageRightSafetyMm;
@@ -1102,7 +1164,7 @@ const PrintStagePreview = ({
               </span>
             ))}
           </div>
-          {isParade && (
+          {rightRulerMm > 0 && (
             <div className="print-ruler print-ruler-y print-ruler-y--right">
               {verticalRulerLabels.map((item) => (
                 <span
