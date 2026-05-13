@@ -46,6 +46,10 @@ import {
   getSafeParadeCanvasDistance,
   normalizeParadeHorizontalMeasureMode,
 } from "../utils/parade";
+import {
+  TOUCH_LONG_PRESS_DELAY_MS,
+  hasTouchLongPressMoved,
+} from "../utils/touchLongPress";
 import { NumericInput } from "./NumericInput";
 
 export type ParadeReflectOptions = {
@@ -150,6 +154,16 @@ type PinchZoomState = {
   pointerIds: [number, number];
   startDistance: number;
   startZoom: number;
+};
+
+type TouchContextMenuState = {
+  clientX: number;
+  clientY: number;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  target: StageContextMenuRequest["target"];
+  timerId: number;
 };
 
 type CenterSplitLabel = {
@@ -365,6 +379,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const zoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
+    const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
     const pendingZoomRef = useRef<{
       zoom: number;
       anchor?: { clientX: number; clientY: number };
@@ -511,14 +526,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       return offsets;
     }, [project.stage.memberDiameterMeters, pxPerMeter, snapshot.positions, visibleMembers]);
 
-    const saveViewState = () => {
+    const saveViewState = (nextZoom = zoomRef.current) => {
       if (!currentFrame?.id || !scrollRef.current) {
         return;
       }
       onFrameViewStateChange(currentFrame.id, {
         scrollTop: scrollRef.current.scrollTop,
         scrollLeft: scrollRef.current.scrollLeft,
-        zoom,
+        zoom: nextZoom,
         viewportHeight: scrollRef.current.clientHeight,
         viewportWidth: scrollRef.current.clientWidth,
       });
@@ -622,21 +637,20 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       [getStagePositionFromClientPoint, onStagePointerPositionChange],
     );
 
-    const openContextMenu = useCallback(
+    const openContextMenuAt = useCallback(
       (
-        event: ReactMouseEvent<HTMLElement>,
+        clientX: number,
+        clientY: number,
         target: StageContextMenuRequest["target"],
       ) => {
-        event.preventDefault();
-        event.stopPropagation();
         const stagePosition = getStagePositionFromClientPoint(
-          event.clientX,
-          event.clientY,
+          clientX,
+          clientY,
         );
         onStagePointerPositionChange(stagePosition);
         onContextMenuRequest({
-          clientX: event.clientX,
-          clientY: event.clientY,
+          clientX,
+          clientY,
           stagePosition,
           target,
         });
@@ -646,6 +660,18 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         onContextMenuRequest,
         onStagePointerPositionChange,
       ],
+    );
+
+    const openContextMenu = useCallback(
+      (
+        event: ReactMouseEvent<HTMLElement>,
+        target: StageContextMenuRequest["target"],
+      ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenuAt(event.clientX, event.clientY, target);
+      },
+      [openContextMenuAt],
     );
 
     const handleStagePointerMove = useCallback(
@@ -675,9 +701,78 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     };
 
     const clearPinch = () => {
+      cancelTouchContextMenu();
       pinchTouchPointsRef.current.clear();
       pinchZoomRef.current = null;
       setIsPinching(false);
+    };
+
+    function cancelTouchContextMenu() {
+      const pending = touchContextMenuRef.current;
+      if (pending) {
+        window.clearTimeout(pending.timerId);
+        touchContextMenuRef.current = null;
+      }
+    }
+
+    const startTouchContextMenu = (
+      event: PointerEvent<HTMLElement>,
+      target: StageContextMenuRequest["target"],
+    ) => {
+      if (
+        event.pointerType !== "touch" ||
+        event.button !== 0 ||
+        pinchZoomRef.current ||
+        pinchTouchPointsRef.current.size > 1
+      ) {
+        return;
+      }
+      cancelTouchContextMenu();
+      const pointerId = event.pointerId;
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      const timerId = window.setTimeout(() => {
+        const pending = touchContextMenuRef.current;
+        if (!pending || pending.pointerId !== pointerId) {
+          return;
+        }
+        touchContextMenuRef.current = null;
+        openContextMenuAt(pending.clientX, pending.clientY, pending.target);
+      }, TOUCH_LONG_PRESS_DELAY_MS);
+      touchContextMenuRef.current = {
+        clientX: startClientX,
+        clientY: startClientY,
+        pointerId,
+        startClientX,
+        startClientY,
+        target,
+        timerId,
+      };
+    };
+
+    const trackTouchContextMenuMove = (event: PointerEvent<HTMLElement>) => {
+      const pending = touchContextMenuRef.current;
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return;
+      }
+      pending.clientX = event.clientX;
+      pending.clientY = event.clientY;
+      if (
+        hasTouchLongPressMoved(
+          pending.startClientX,
+          pending.startClientY,
+          event.clientX,
+          event.clientY,
+        )
+      ) {
+        cancelTouchContextMenu();
+      }
+    };
+
+    const stopTouchContextMenu = (event: PointerEvent<HTMLElement>) => {
+      if (touchContextMenuRef.current?.pointerId === event.pointerId) {
+        cancelTouchContextMenu();
+      }
     };
 
     useEffect(() => {
@@ -712,13 +807,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         }
       });
       return () => window.cancelAnimationFrame(raf);
-    }, [currentFrame?.id, currentFrame?.sceneViewState, onFrameViewStateChange, zoom]);
+    }, [currentFrame?.id, onFrameViewStateChange]);
 
     useEffect(
       () => () => {
         if (saveViewTimerRef.current !== null) {
           window.clearTimeout(saveViewTimerRef.current);
         }
+        cancelTouchContextMenu();
         cancelPendingZoom();
       },
       [],
@@ -741,6 +837,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (movementPx < 3) {
           return;
         }
+        cancelTouchContextMenu();
         const scrollLeft = scrollRef.current?.scrollLeft ?? dragState.startScrollLeft;
         const scrollTop = scrollRef.current?.scrollTop ?? dragState.startScrollTop;
         const dx =
@@ -906,6 +1003,26 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const rect = container.getBoundingClientRect();
       const anchorX = anchor.clientX - rect.left;
       const anchorY = anchor.clientY - rect.top;
+      const stageRect = stageRef.current?.getBoundingClientRect();
+      const anchorStageRatio =
+        stageRect && anchor
+          ? {
+              x: Math.min(
+                1,
+                Math.max(
+                  0,
+                  (anchor.clientX - stageRect.left) / Math.max(1, stageRect.width),
+                ),
+              ),
+              y: Math.min(
+                1,
+                Math.max(
+                  0,
+                  (anchor.clientY - stageRect.top) / Math.max(1, stageRect.height),
+                ),
+              ),
+            }
+          : null;
       const ratioX = (container.scrollLeft + anchorX) / Math.max(1, container.scrollWidth);
       const ratioY =
         (container.scrollTop + anchorY) / Math.max(1, container.scrollHeight);
@@ -913,6 +1030,28 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       window.requestAnimationFrame(() => {
         const nextContainer = scrollRef.current;
         if (!nextContainer) {
+          return;
+        }
+        if (anchorStageRatio && stageRef.current) {
+          const nextContainerRect = nextContainer.getBoundingClientRect();
+          const nextStageRect = stageRef.current.getBoundingClientRect();
+          const nextAnchorX =
+            nextStageRect.left -
+            nextContainerRect.left +
+            nextStageRect.width * anchorStageRatio.x;
+          const nextAnchorY =
+            nextStageRect.top -
+            nextContainerRect.top +
+            nextStageRect.height * anchorStageRatio.y;
+          nextContainer.scrollLeft = Math.max(
+            0,
+            nextContainer.scrollLeft + nextAnchorX - anchorX,
+          );
+          nextContainer.scrollTop = Math.max(
+            0,
+            nextContainer.scrollTop + nextAnchorY - anchorY,
+          );
+          saveViewState(clampedZoom);
           return;
         }
         nextContainer.scrollLeft = Math.max(
@@ -923,7 +1062,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           0,
           ratioY * nextContainer.scrollHeight - anchorY,
         );
-        saveViewState();
+        saveViewState(clampedZoom);
       });
     };
 
@@ -971,6 +1110,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (isPinchLockedRef.current) {
         return;
       }
+      cancelTouchContextMenu();
       const touchEntries = Array.from(pinchTouchPointsRef.current.entries());
       if (touchEntries.length < 2) {
         return;
@@ -1016,6 +1156,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const handleViewportPointerMoveCapture = (
       event: PointerEvent<HTMLDivElement>,
     ) => {
+      trackTouchContextMenuMove(event);
       if (
         event.pointerType !== "touch" ||
         isPinchLockedRef.current ||
@@ -1051,6 +1192,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (event.pointerType !== "touch") {
         return;
       }
+      stopTouchContextMenu(event);
       pinchTouchPointsRef.current.delete(event.pointerId);
       if (pinchTouchPointsRef.current.size < 2) {
         pinchZoomRef.current = null;
@@ -1098,6 +1240,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
       onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      startTouchContextMenu(event, { type: "member", id: memberId });
       if (appendSelection) {
         return;
       }
@@ -1131,6 +1274,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
+      startTouchContextMenu(event, { type: "object", id: objectId });
       setDragState({
         type: "object",
         interaction: "move",
@@ -1473,8 +1617,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               onPointerDown={(event) => {
                 trackStagePointerPosition(event.clientX, event.clientY);
                 onSelect(null);
+                startTouchContextMenu(event, { type: "stage" });
               }}
-              onPointerMove={handleStagePointerMove}
+              onPointerMove={(event) => {
+                handleStagePointerMove(event);
+                trackTouchContextMenuMove(event);
+              }}
+              onPointerUp={stopTouchContextMenu}
+              onPointerCancel={stopTouchContextMenu}
               onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
             >
               <div className="parade-grid-layer" aria-hidden="true">

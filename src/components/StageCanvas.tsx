@@ -64,6 +64,10 @@ import {
   splitMemberLabel,
 } from "../utils/memberLabel";
 import { formatTime } from "../utils/time";
+import {
+  TOUCH_LONG_PRESS_DELAY_MS,
+  hasTouchLongPressMoved,
+} from "../utils/touchLongPress";
 import { ResizableRotatableObject } from "./ResizableRotatableObject";
 import { StageTimeBar } from "./StageTimeBar";
 
@@ -151,6 +155,16 @@ type StagePanState = {
   startScrollLeft: number;
   startScrollTop: number;
   hasMoved: boolean;
+};
+
+type TouchContextMenuState = {
+  clientX: number;
+  clientY: number;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  target: StageContextMenuRequest["target"];
+  timerId: number;
 };
 
 type SnapGuide = {
@@ -370,6 +384,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
     const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
     const stagePanRef = useRef<StagePanState | null>(null);
+    const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
     const pendingStageZoomRef = useRef<{
       zoom: number;
       anchor?: { clientX: number; clientY: number };
@@ -548,6 +563,14 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       setIsStagePanning(false);
     };
 
+    const cancelTouchContextMenu = () => {
+      const pending = touchContextMenuRef.current;
+      if (pending) {
+        window.clearTimeout(pending.timerId);
+        touchContextMenuRef.current = null;
+      }
+    };
+
     useEffect(() => {
       isStagePinchLockedRef.current = isStagePinchLocked;
       if (isStagePinchLocked) {
@@ -559,6 +582,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     useEffect(
       () => () => {
         cancelPendingStageZoom();
+        cancelTouchContextMenu();
         memberAutoScrollerRef.current?.stop();
       },
       [],
@@ -569,6 +593,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         return undefined;
       }
       const releaseFitLock = () => {
+        cancelTouchContextMenu();
         clearStagePinch();
         clearStagePan();
         setIsStageInteracting(false);
@@ -816,6 +841,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (isStagePinchLockedRef.current) {
         return;
       }
+      cancelTouchContextMenu();
       const touchEntries = Array.from(stageTouchPointsRef.current.entries());
       if (touchEntries.length < 2) {
         return;
@@ -899,6 +925,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const handleStagePointerMoveCapture = (
       event: PointerEvent<HTMLDivElement>,
     ) => {
+      trackTouchContextMenuMove(event);
       const pan = stagePanRef.current;
       if (
         event.pointerType === "touch" &&
@@ -909,6 +936,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         const dx = event.clientX - pan.startClientX;
         const dy = event.clientY - pan.startClientY;
         if (pan.hasMoved || Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          cancelTouchContextMenu();
           pan.hasMoved = true;
           setIsStagePanning(true);
           fitAreaRef.current.scrollLeft = Math.max(0, pan.startScrollLeft - dx);
@@ -954,6 +982,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (event.pointerType !== "touch") {
         return;
       }
+      stopTouchContextMenu(event);
       if (stagePanRef.current?.pointerId === event.pointerId) {
         clearStagePan();
       }
@@ -1069,18 +1098,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       };
     };
 
-    const openContextMenu = (
-      event: ReactMouseEvent<HTMLElement>,
+    function openContextMenuAt(
+      clientX: number,
+      clientY: number,
       target: StageContextMenuRequest["target"],
-    ) => {
+    ) {
       if (!stageRef.current) {
         return;
       }
-      event.preventDefault();
-      event.stopPropagation();
       const pointer = clientPointToMeters(
-        event.clientX,
-        event.clientY,
+        clientX,
+        clientY,
         stageRef.current,
         stage,
         viewerPerspective,
@@ -1088,12 +1116,81 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const constrained = constrainMemberPosition(pointer, stage);
       onStagePointerPositionChange(constrained);
       onContextMenuRequest({
-        clientX: event.clientX,
-        clientY: event.clientY,
+        clientX,
+        clientY,
         stagePosition: constrained,
         target,
       });
-    };
+    }
+
+    function startTouchContextMenu(
+      event: PointerEvent<HTMLElement>,
+      target: StageContextMenuRequest["target"],
+    ) {
+      if (
+        event.pointerType !== "touch" ||
+        event.button !== 0 ||
+        stagePinchZoomRef.current ||
+        stageTouchPointsRef.current.size > 1
+      ) {
+        return;
+      }
+      cancelTouchContextMenu();
+      const pointerId = event.pointerId;
+      const startClientX = event.clientX;
+      const startClientY = event.clientY;
+      const timerId = window.setTimeout(() => {
+        const pending = touchContextMenuRef.current;
+        if (!pending || pending.pointerId !== pointerId) {
+          return;
+        }
+        touchContextMenuRef.current = null;
+        openContextMenuAt(pending.clientX, pending.clientY, pending.target);
+      }, TOUCH_LONG_PRESS_DELAY_MS);
+      touchContextMenuRef.current = {
+        clientX: startClientX,
+        clientY: startClientY,
+        pointerId,
+        startClientX,
+        startClientY,
+        target,
+        timerId,
+      };
+    }
+
+    function trackTouchContextMenuMove(event: PointerEvent<HTMLElement>) {
+      const pending = touchContextMenuRef.current;
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return;
+      }
+      pending.clientX = event.clientX;
+      pending.clientY = event.clientY;
+      if (
+        hasTouchLongPressMoved(
+          pending.startClientX,
+          pending.startClientY,
+          event.clientX,
+          event.clientY,
+        )
+      ) {
+        cancelTouchContextMenu();
+      }
+    }
+
+    function stopTouchContextMenu(event: PointerEvent<HTMLElement>) {
+      if (touchContextMenuRef.current?.pointerId === event.pointerId) {
+        cancelTouchContextMenu();
+      }
+    }
+
+    function openContextMenu(
+      event: ReactMouseEvent<HTMLElement>,
+      target: StageContextMenuRequest["target"],
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      openContextMenuAt(event.clientX, event.clientY, target);
+    }
 
     const moveDraggedMember = (clientX: number, clientY: number) => {
       const drag = memberDragRef.current;
@@ -1148,6 +1245,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
       onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      startTouchContextMenu(event, { type: "member", id: memberId });
       if (appendSelection) {
         event.preventDefault();
         return;
@@ -1188,6 +1286,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
 
     const handleMemberPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+      trackTouchContextMenuMove(event);
       if (stagePinchZoomRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -1205,6 +1304,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         if (movementPx < 3) {
           return;
         }
+        cancelTouchContextMenu();
         onBeginProjectEdit("メンバー移動");
         drag.hasMoved = true;
         setIsMemberDragging(true);
@@ -1214,6 +1314,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
 
     const stopMemberDrag = (event: PointerEvent<HTMLDivElement>) => {
+      stopTouchContextMenu(event);
       const drag = memberDragRef.current;
       if (drag?.pointerId === event.pointerId) {
         memberDragRef.current = null;
@@ -1652,9 +1753,15 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onPointerDown={(event) => {
                   updateStagePointerPosition(event);
                   onSelect(null);
+                  startTouchContextMenu(event, { type: "stage" });
                 }}
                 onPointerEnter={updateStagePointerPosition}
-                onPointerMove={updateStagePointerPosition}
+                onPointerMove={(event) => {
+                  updateStagePointerPosition(event);
+                  trackTouchContextMenuMove(event);
+                }}
+                onPointerUp={stopTouchContextMenu}
+                onPointerCancel={stopTouchContextMenu}
                 onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
               >
               {stage.showGrid && (
@@ -2012,6 +2119,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "object", id: object.id })
                     }
+                    onTouchLongPressStart={(event) =>
+                      startTouchContextMenu(event, { type: "object", id: object.id })
+                    }
+                    onTouchLongPressMove={trackTouchContextMenuMove}
+                    onTouchLongPressEnd={stopTouchContextMenu}
                     onMove={(patch) => {
                       if (patch.x === undefined && patch.y === undefined) {
                         onUpdateObjectState(object.id, patch);

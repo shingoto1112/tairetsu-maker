@@ -23,6 +23,9 @@ import {
   createEdgeAutoScroller,
   type EdgeAutoScroller,
 } from "../utils/edgeAutoScroll";
+import {
+  TOUCH_LONG_PRESS_CANCEL_DISTANCE_PX,
+} from "../utils/touchLongPress";
 
 type InteractionKind = "move" | "resize" | "rotate";
 
@@ -52,6 +55,9 @@ type ResizableRotatableObjectProps = {
   onInteractionStart?: (kind: InteractionKind) => void;
   onInteractionEnd?: () => void;
   onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onTouchLongPressEnd?: (event: PointerEvent<HTMLElement>) => void;
+  onTouchLongPressMove?: (event: PointerEvent<HTMLElement>) => void;
+  onTouchLongPressStart?: (event: PointerEvent<HTMLElement>) => void;
 };
 
 const OBJECT_DRAG_SNAP_METERS = 0.25;
@@ -95,6 +101,9 @@ export const ResizableRotatableObject = ({
   onInteractionStart,
   onInteractionEnd,
   onContextMenu,
+  onTouchLongPressEnd,
+  onTouchLongPressMove,
+  onTouchLongPressStart,
 }: ResizableRotatableObjectProps) => {
   const dragRef = useRef<DragState | null>(null);
   const autoScrollerRef = useRef<EdgeAutoScroller | null>(null);
@@ -209,6 +218,7 @@ export const ResizableRotatableObject = ({
       return;
     }
     onSelect();
+    onTouchLongPressStart?.(event);
     if (!editable) {
       return;
     }
@@ -266,11 +276,23 @@ export const ResizableRotatableObject = ({
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
+    if (event.pointerType === "touch" && !drag.hasMoved) {
+      onTouchLongPressMove?.(event);
+      const movementPx = Math.hypot(
+        event.clientX - drag.startClientX,
+        event.clientY - drag.startClientY,
+      );
+      if (movementPx < TOUCH_LONG_PRESS_CANCEL_DISTANCE_PX) {
+        return;
+      }
+    }
+    onTouchLongPressEnd?.(event);
     applyDrag(event.clientX, event.clientY);
     autoScrollerRef.current?.update(event.clientX, event.clientY);
   };
 
   const stopInteraction = (event: PointerEvent<HTMLElement>) => {
+    onTouchLongPressEnd?.(event);
     const drag = dragRef.current;
     if (drag?.pointerId === event.pointerId) {
       dragRef.current = null;
