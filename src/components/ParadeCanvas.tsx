@@ -205,6 +205,9 @@ const DEFAULT_PARADE_SETTINGS: ParadeSettings = {
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+const clampZoom = (value: number) =>
+  Math.round(clamp(value, MIN_ZOOM, MAX_ZOOM) * 100) / 100;
+
 const snapMeters = (value: number, gridSize: number) => {
   if (!Number.isFinite(gridSize) || gridSize <= 0) {
     return roundMeters(value);
@@ -383,6 +386,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const pendingZoomRef = useRef<{
       zoom: number;
       anchor?: { clientX: number; clientY: number };
+      persist: boolean;
     } | null>(null);
     const zoomFrameRef = useRef<number | null>(null);
     const isPinchLockedRef = useRef(false);
@@ -533,13 +537,16 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onFrameViewStateChange(currentFrame.id, {
         scrollTop: scrollRef.current.scrollTop,
         scrollLeft: scrollRef.current.scrollLeft,
-        zoom: nextZoom,
+        zoom: clampZoom(nextZoom),
         viewportHeight: scrollRef.current.clientHeight,
         viewportWidth: scrollRef.current.clientWidth,
       });
     };
 
     const scheduleSaveViewState = () => {
+      if (pinchZoomRef.current) {
+        return;
+      }
       if (saveViewTimerRef.current !== null) {
         window.clearTimeout(saveViewTimerRef.current);
       }
@@ -685,7 +692,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     );
 
     useEffect(() => {
-      setZoom(currentFrame?.sceneViewState?.zoom ?? 1);
+      setZoom(clampZoom(currentFrame?.sceneViewState?.zoom ?? 1));
     }, [currentFrame?.id, currentFrame?.sceneViewState?.zoom]);
 
     useEffect(() => {
@@ -990,13 +997,17 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const applyZoom = (
       nextZoom: number,
       anchor?: { clientX: number; clientY: number },
+      options?: { persist?: boolean },
     ) => {
-      const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+      const clampedZoom = clampZoom(nextZoom);
+      const shouldPersist = options?.persist ?? true;
       zoomRef.current = clampedZoom;
       const container = scrollRef.current;
       if (!container || !anchor) {
         setZoom(clampedZoom);
-        window.setTimeout(saveViewState, 0);
+        if (shouldPersist) {
+          window.setTimeout(() => saveViewState(clampedZoom), 0);
+        }
         return;
       }
 
@@ -1051,7 +1062,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             0,
             nextContainer.scrollTop + nextAnchorY - anchorY,
           );
-          saveViewState(clampedZoom);
+          if (shouldPersist) {
+            saveViewState(clampedZoom);
+          }
           return;
         }
         nextContainer.scrollLeft = Math.max(
@@ -1062,17 +1075,24 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           0,
           ratioY * nextContainer.scrollHeight - anchorY,
         );
-        saveViewState(clampedZoom);
+        if (shouldPersist) {
+          saveViewState(clampedZoom);
+        }
       });
     };
 
     const scheduleZoom = (
       nextZoom: number,
       anchor?: { clientX: number; clientY: number },
+      options?: { persist?: boolean },
     ) => {
-      const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+      const clampedZoom = clampZoom(nextZoom);
       zoomRef.current = clampedZoom;
-      pendingZoomRef.current = { zoom: clampedZoom, anchor };
+      pendingZoomRef.current = {
+        zoom: clampedZoom,
+        anchor,
+        persist: options?.persist ?? true,
+      };
       if (zoomFrameRef.current !== null) {
         return;
       }
@@ -1083,7 +1103,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (!pending) {
           return;
         }
-        applyZoom(pending.zoom, pending.anchor);
+        applyZoom(pending.zoom, pending.anchor, {
+          persist: pending.persist,
+        });
       });
     };
 
@@ -1111,6 +1133,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       cancelTouchContextMenu();
+      if (saveViewTimerRef.current !== null) {
+        window.clearTimeout(saveViewTimerRef.current);
+        saveViewTimerRef.current = null;
+      }
       const touchEntries = Array.from(pinchTouchPointsRef.current.entries());
       if (touchEntries.length < 2) {
         return;
@@ -1181,6 +1207,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       scheduleZoom(
         pinch.startZoom * (distance / pinch.startDistance),
         getPinchMidpoint(first, second),
+        { persist: false },
       );
       event.preventDefault();
       event.stopPropagation();
@@ -1197,10 +1224,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (pinchTouchPointsRef.current.size < 2) {
         pinchZoomRef.current = null;
         setIsPinching(false);
+        window.requestAnimationFrame(() => saveViewState(zoomRef.current));
         return;
       }
       beginPinchIfReady();
-      window.setTimeout(saveViewState, 0);
     };
 
     const jumpToStart = () => {
