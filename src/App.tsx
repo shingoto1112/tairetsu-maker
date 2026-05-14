@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { CircleHelp } from "lucide-react";
 import { AssignmentPanel } from "./components/AssignmentPanel";
 import { AudioPanel } from "./components/AudioPanel";
+import { CloudCollaborationHelpModal } from "./components/CloudCollaborationHelpModal";
 import { CloudShareModal } from "./components/CloudShareModal";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { ExportImportPanel } from "./components/ExportImportPanel";
@@ -1669,6 +1671,7 @@ function App() {
   const [cloudInviteToken, setCloudInviteToken] = useState<string | null>(
     () => readCloudInviteTokenFromLocation(),
   );
+  const [isCloudHelpOpen, setIsCloudHelpOpen] = useState(false);
   const [isCloudShareOpen, setIsCloudShareOpen] = useState(false);
   const [isSharedProject, setIsSharedProject] = useState(initial.shared);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(
@@ -9504,6 +9507,14 @@ function App() {
             )}
           </div>
           <div className="shared-project-banner__actions">
+            <button
+              className="mini-button"
+              onClick={() => setIsCloudHelpOpen(true)}
+              type="button"
+            >
+              <CircleHelp size={14} />
+              共同作業の使い方
+            </button>
             {cloudPendingUpdates.length > 0 && (
               <button
                 className="mini-button primary"
@@ -10154,6 +10165,9 @@ function App() {
         onUpdateRole={updateCloudProjectMemberRole}
         projectTitle={project.title}
       />
+    )}
+    {isCloudHelpOpen && (
+      <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
     )}
     <RosterManagementModal
       isOpen={

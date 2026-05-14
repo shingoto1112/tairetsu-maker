@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import {
+  CircleHelp,
   Cloud,
   CloudUpload,
   Copy,
@@ -34,6 +35,7 @@ import type {
   ParadeSettings,
   Project,
 } from "../types";
+import { CloudCollaborationHelpModal } from "./CloudCollaborationHelpModal";
 import { NumericInput } from "./NumericInput";
 
 export type NewFormationInput = {
@@ -124,6 +126,8 @@ const formatCloudProjectRole = (role: CloudProjectSummary["role"]): string => {
   return "閲覧のみ";
 };
 
+const CLOUD_PASSWORD_MIN_LENGTH = 6;
+
 export const FormationLibrary = ({
   projects,
   notice,
@@ -171,6 +175,7 @@ export const FormationLibrary = ({
   const [cloudPassword, setCloudPassword] = useState("");
   const [cloudFormError, setCloudFormError] = useState<string | null>(null);
   const [cloudInviteToken, setCloudInviteToken] = useState("");
+  const [isCloudHelpOpen, setIsCloudHelpOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -402,6 +407,12 @@ export const FormationLibrary = ({
       setCloudFormError("メールアドレスとパスワードを入力してください。");
       return;
     }
+    if (mode === "signUp" && cloudPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
+      setCloudFormError(
+        `新規登録のパスワードは${CLOUD_PASSWORD_MIN_LENGTH}文字以上で入力してください。`,
+      );
+      return;
+    }
     setCloudFormError(null);
     if (mode === "signIn") {
       await cloud.onSignIn(email, cloudPassword);
@@ -447,22 +458,36 @@ export const FormationLibrary = ({
                 <Cloud size={18} />
                 クラウド
               </h2>
-              <p>ローカル隊列表をクラウドへアップロードし、共同編集の準備をします。</p>
+              <p>
+                {cloud.userEmail
+                  ? "クラウド隊列表を開いて、共有管理からメンバーを招待できます。"
+                  : "ログインすると、隊列表をクラウド保存してほかの人と共同作業できます。"}
+              </p>
             </div>
-            {cloud.userEmail && (
-              <div className="library-cloud-account">
-                <span>{cloud.userEmail}</span>
-                <button
-                  type="button"
-                  className="mini-button"
-                  onClick={() => void cloud.onSignOut()}
-                  disabled={cloud.isBusy}
-                >
-                  <LogOut size={14} />
-                  ログアウト
-                </button>
-              </div>
-            )}
+            <div className="library-cloud-header-actions">
+              <button
+                className="mini-button"
+                onClick={() => setIsCloudHelpOpen(true)}
+                type="button"
+              >
+                <CircleHelp size={14} />
+                共同作業の使い方
+              </button>
+              {cloud.userEmail && (
+                <div className="library-cloud-account">
+                  <span>{cloud.userEmail}</span>
+                  <button
+                    type="button"
+                    className="mini-button"
+                    onClick={() => void cloud.onSignOut()}
+                    disabled={cloud.isBusy}
+                  >
+                    <LogOut size={14} />
+                    ログアウト
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {!cloud.configured ? (
@@ -563,7 +588,11 @@ export const FormationLibrary = ({
                   value={cloudPassword}
                   onChange={(event) => setCloudPassword(event.target.value)}
                   autoComplete="current-password"
+                  aria-describedby="cloud-password-hint"
                 />
+                <span className="library-cloud-password-hint" id="cloud-password-hint">
+                  新規登録は{CLOUD_PASSWORD_MIN_LENGTH}文字以上
+                </span>
               </label>
               {(cloudFormError || cloud.error) && (
                 <p className="dialog-error">{cloudFormError ?? cloud.error}</p>
@@ -589,6 +618,10 @@ export const FormationLibrary = ({
             </form>
           )}
         </section>
+      )}
+
+      {isCloudHelpOpen && (
+        <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
       )}
 
       <section className="library-grid" aria-label="隊列表一覧">
