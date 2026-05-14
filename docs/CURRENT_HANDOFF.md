@@ -284,8 +284,11 @@ Supabase実環境:
 
 残タスク:
 
-- Git commit / push / Vercel Production 反映。
-- 反映後に production URL で最低限のログインUIとクラウド導線を確認。
+- Git commit `b355b87` (`Extend cloud owner project operations`) を `main` にpush済み。
+- Vercel Production へ反映済み。
+  - deployment: `dpl_2ccD1j4ytfxtZHr6mdTLffcc6UMj`
+  - production URL: `https://tairetsu-maker.vercel.app`
+- production URL でクラウドログインUI、ownerのクラウドプロジェクト一覧、project系ボタン一式、console error/warning 0件を確認済み。
 
 ## 新しいチャットでの具体的な手順
 
