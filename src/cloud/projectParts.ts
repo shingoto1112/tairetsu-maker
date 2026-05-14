@@ -3,6 +3,7 @@ import {
   CLOUD_SCHEMA_VERSION,
   type CloudAudioResourceData,
   type CloudLockTarget,
+  type CloudProjectLockKey,
   type CloudMembersResourceData,
   type CloudObjectsResourceData,
   type CloudProjectDraft,
@@ -46,7 +47,7 @@ export const createSceneLockTarget = (sceneId: string): CloudLockTarget => ({
 });
 
 export const createProjectLockTarget = (
-  targetId: Extract<CloudLockTarget, { targetType: "project" }>["targetId"],
+  targetId: CloudProjectLockKey,
 ): CloudLockTarget => ({
   targetId,
   targetType: "project",

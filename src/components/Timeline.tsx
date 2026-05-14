@@ -171,8 +171,8 @@ export const Timeline = ({
                 min={1}
                 step="0.5"
                 value={frame.stageWidthMeters ?? defaultStageWidth}
-                disabled={projectDisabled}
-                title={projectDisabled ? projectReadOnlyMessage : undefined}
+                disabled={sceneDisabled}
+                title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                 onValueChange={(stageWidthMeters) =>
                   onUpdateFrame(frame.id, {
                     stageWidthMeters,
@@ -186,8 +186,8 @@ export const Timeline = ({
                 min={1}
                 step="0.5"
                 value={frame.stageDepthMeters ?? defaultStageDepth}
-                disabled={projectDisabled}
-                title={projectDisabled ? projectReadOnlyMessage : undefined}
+                disabled={sceneDisabled}
+                title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                 onValueChange={(stageDepthMeters) =>
                   onUpdateFrame(frame.id, {
                     stageDepthMeters,

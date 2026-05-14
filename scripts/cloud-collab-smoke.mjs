@@ -354,6 +354,28 @@ const main = async () => {
     "scene_lock_active",
   );
 
+  expectFailure(
+    "owner project lock blocked while scene lock active",
+    await rpc(owner, "acquire_edit_lock", {
+      p_lock_token: randomToken(),
+      p_project_id: projectId,
+      p_target_id: "members",
+      p_target_type: "project",
+    }),
+    "project_lock_wait_for_active_scene",
+  );
+
+  expectFailure(
+    "editor blocked from project lock",
+    await rpc(editor, "acquire_edit_lock", {
+      p_lock_token: randomToken(),
+      p_project_id: projectId,
+      p_target_id: "members",
+      p_target_type: "project",
+    }),
+    "owner_required",
+  );
+
   if (viewer) {
     expectFailure(
       "viewer blocked from scene edit",
@@ -428,6 +450,202 @@ const main = async () => {
       p_project_id: projectId,
       p_target_id: "scene-smoke-2",
       p_target_type: "scene",
+    }),
+  );
+
+  const acquireProjectLock = async (targetId) => {
+    const lockToken = randomToken();
+    expectSuccess(
+      `owner acquire project:${targetId}`,
+      await rpc(owner, "acquire_edit_lock", {
+        p_lock_token: lockToken,
+        p_project_id: projectId,
+        p_target_id: targetId,
+        p_target_type: "project",
+      }),
+    );
+    return lockToken;
+  };
+
+  const releaseProjectLock = async (targetId, lockToken) => {
+    expectSuccess(
+      `owner release project:${targetId}`,
+      await rpc(owner, "release_edit_lock", {
+        p_lock_token: lockToken,
+        p_project_id: projectId,
+        p_target_id: targetId,
+        p_target_type: "project",
+      }),
+    );
+  };
+
+  let projectLockToken = await acquireProjectLock("members");
+  expectFailure(
+    "editor scene lock blocked while project lock active",
+    await rpc(editor, "acquire_edit_lock", {
+      p_lock_token: randomToken(),
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1",
+      p_target_type: "scene",
+    }),
+    "project_lock_active",
+  );
+  expectSuccess(
+    "owner save members resource",
+    await rpc(owner, "save_project_resource_with_lock", {
+      p_base_version: 1,
+      p_data: {
+        memberGroups: [],
+        members: [
+          ...draft.resources.find((item) => item.resourceKey === "members").data
+            .members,
+          {
+            color: "#06d6a0",
+            id: "m-owner-added",
+            name: "owner-added",
+            visible: true,
+            zIndex: 21,
+          },
+        ],
+      },
+      p_lock_token: projectLockToken,
+      p_project_id: projectId,
+      p_resource_key: "members",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke members save",
+    }),
+  );
+  await releaseProjectLock("members", projectLockToken);
+
+  projectLockToken = await acquireProjectLock("objects");
+  expectSuccess(
+    "owner save objects resource",
+    await rpc(owner, "save_project_resource_with_lock", {
+      p_base_version: 1,
+      p_data: {
+        objectGroups: [],
+        stageObjects: [
+          {
+            color: "#fbbf24",
+            defaultRotation: 0,
+            defaultX: 1,
+            defaultY: 1,
+            heightMeters: 1,
+            id: "o-owner-added",
+            locked: false,
+            name: "owner-object",
+            shape: "rectangle",
+            type: "prop",
+            visible: true,
+            widthMeters: 1,
+            zIndex: 10,
+          },
+        ],
+      },
+      p_lock_token: projectLockToken,
+      p_project_id: projectId,
+      p_resource_key: "objects",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke objects save",
+    }),
+  );
+  await releaseProjectLock("objects", projectLockToken);
+
+  projectLockToken = await acquireProjectLock("audio");
+  expectSuccess(
+    "owner save audio resource",
+    await rpc(owner, "save_project_resource_with_lock", {
+      p_base_version: 1,
+      p_data: {
+        audio: {
+          duration: 12.3,
+          id: "audio-smoke",
+          name: "smoke.mp3",
+          size: 12345,
+          type: "audio/mpeg",
+        },
+      },
+      p_lock_token: projectLockToken,
+      p_project_id: projectId,
+      p_resource_key: "audio",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke audio save",
+    }),
+  );
+  await releaseProjectLock("audio", projectLockToken);
+
+  const sceneOrderResource = draft.resources.find(
+    (item) => item.resourceKey === "sceneOrder",
+  );
+  const addedScene = {
+    data: {
+      groupVisibility: {},
+      memberAppearanceOverrides: {},
+      memberVisibility: {},
+      notes: "created by sceneOrder smoke",
+      objectAssignments: {},
+      objectStates: {},
+      positions: { "m-smoke": { x: 6, y: 6 } },
+      sceneViewState: undefined,
+      stageDepthMeters: undefined,
+      stageWidthMeters: undefined,
+    },
+    sceneId: "scene-smoke-3",
+    schemaVersion,
+    version: 1,
+  };
+  projectLockToken = await acquireProjectLock("sceneOrder");
+  expectSuccess(
+    "owner save sceneOrder add scene",
+    await rpc(owner, "save_scene_order_with_lock", {
+      p_base_version: 1,
+      p_data: {
+        ...sceneOrderResource.data,
+        frames: [
+          ...sceneOrderResource.data.frames,
+          { id: addedScene.sceneId, label: "Smoke 3", timeSec: 20 },
+        ],
+      },
+      p_deleted_scene_ids: [],
+      p_lock_token: projectLockToken,
+      p_new_scenes: [addedScene],
+      p_project_id: projectId,
+      p_schema_version: schemaVersion,
+      p_summary: "smoke sceneOrder add",
+    }),
+  );
+  await releaseProjectLock("sceneOrder", projectLockToken);
+
+  projectLockToken = await acquireProjectLock("sceneOrder");
+  expectSuccess(
+    "owner save sceneOrder delete scene",
+    await rpc(owner, "save_scene_order_with_lock", {
+      p_base_version: 2,
+      p_data: sceneOrderResource.data,
+      p_deleted_scene_ids: [addedScene.sceneId],
+      p_lock_token: projectLockToken,
+      p_new_scenes: [],
+      p_project_id: projectId,
+      p_schema_version: schemaVersion,
+      p_summary: "smoke sceneOrder delete",
+    }),
+  );
+  await releaseProjectLock("sceneOrder", projectLockToken);
+
+  projectLockToken = await acquireProjectLock("import");
+  const importDraft = createSmokeDraft();
+  importDraft.project.title = `${draft.project.title} imported`;
+  expectSuccess(
+    "owner import cloud project",
+    await rpc(owner, "import_cloud_project_with_lock", {
+      p_lock_token: projectLockToken,
+      p_mode: importDraft.project.mode,
+      p_project_id: projectId,
+      p_resources: importDraft.resources,
+      p_scenes: importDraft.scenes,
+      p_schema_version: importDraft.project.schemaVersion,
+      p_summary: "smoke import",
+      p_title: importDraft.project.title,
     }),
   );
 

@@ -226,6 +226,67 @@ Supabase Free 想定で、完全リアルタイムではなく「シーン単位
 - 本番UIで `https://tairetsu-maker.vercel.app` の表示、クラウドログインUI、console error 0件を確認済み。
 - 本番UIで owner/editor/viewer のロール表示、同一シーンロック拒否、別シーン同時編集、保存通知表示まで確認済み。
 
+## 2026-05-14 追記: owner向け project 系操作拡張
+
+今回の追加目標:
+
+- owner のみが、クラウド上でメンバー名簿、道具マスター、音源メタ情報、シーン追加/削除/並び替え/名称変更、JSON / `.tairetsu` / ZIP import によるクラウド上書きを実行できるようにする。
+- editor は引き続き `scene:{sceneId}` の scenes.data のみ編集可能。
+- viewer は閲覧のみ。
+- project 系ロックは scene lock と排他にし、Realtime はロック状態と保存通知メタ情報のみ同期する。
+
+実装済み:
+
+- `supabase/migrations/20260514002000_cloud_project_owner_operations.sql` を追加。
+  - `save_scene_order_with_lock`
+  - `import_cloud_project_with_lock`
+- `npm run --silent cloud:sql` は3本の migration を順番に出力する。
+- `npm run cloud:check` は新RPC2本も確認する。
+- `npm run cloud:smoke` は owner/editor/viewer に加え、以下を確認するよう拡張。
+  - scene lock 中の project lock 拒否
+  - project lock 中の scene lock 拒否
+  - editor の project lock 拒否
+  - owner による `project:members` / `project:objects` / `project:audio` 保存
+  - owner による `project:sceneOrder` のシーン追加/削除
+  - owner による `project:import` のクラウド上書き
+- フロントに owner 専用の導線を追加。
+  - 全体設定
+  - メンバー名簿
+  - 道具マスター
+  - 音源設定
+  - シーン構成
+  - クラウド上書き
+- メンバー名簿/道具マスターの project lock 中は、マスターのみ保存対象にし、各シーン内の配置/表示状態は同時変更しないよう境界を整理。
+- 音源はクラウドにファイル本体を保存せず、メタ情報のみ保存対象にした。
+- シーン構成の保存は `sceneOrder` resource と `scenes` table をRPC内で整合更新する。
+- シーン削除と import は snapshots に操作前バックアップを残す。
+- editor/viewer には project 系編集ボタンを表示しない。
+- 他ユーザーの project lock 中は「メンバー名簿の編集中です。シーンは閲覧のみです。」のように、シーン編集不可の理由を表示する。
+
+検証済み:
+
+- `npm run typecheck` 成功。
+- `npm run build` 成功。
+- `npm run cloud:check` 成功。
+- `npm run cloud:smoke` 成功。
+  - 最新RPC smoke project ID: `d0872735-1ae2-4650-bf2e-b29f183d1aff`
+- ローカルUI `http://127.0.0.1:5173/?qa=project-ops` で確認。
+  - owner で project 系ボタンが表示される。
+  - owner が `メンバー名簿` ロックを取得すると管理モーダルが開き、道具管理タブは無効化される。
+  - owner が `シーン構成` ロックを取得し、シーン名変更を `クラウド保存` できる。
+  - editor では project 系ボタンが表示されない。
+  - owner が `メンバー名簿` ロック中、editor の「このシーンを編集」は拒否され、閲覧のみ表示になる。
+
+Supabase実環境:
+
+- ユーザーが SQL Editor で3本目の migration を含むSQLを実行済み。
+- `save_scene_order_with_lock` / `import_cloud_project_with_lock` は `cloud:check` で到達確認済み。
+
+残タスク:
+
+- Git commit / push / Vercel Production 反映。
+- 反映後に production URL で最低限のログインUIとクラウド導線を確認。
+
 ## 新しいチャットでの具体的な手順
 
 1. Codexで新しいチャットを開く。

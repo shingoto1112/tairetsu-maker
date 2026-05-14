@@ -57,6 +57,8 @@ import {
   type CloudCollaborationItem,
   type CloudPermissionRole,
   type CloudProjectParts,
+  type CloudProjectLockKey,
+  type CloudProjectResourceData,
   type CloudProjectSummary,
   type CloudResourceKey,
 } from "./cloud";
@@ -1358,7 +1360,7 @@ type CloudActiveSceneLock = {
 type CloudActiveProjectLock = {
   baseVersion: number;
   expiresAt: string | null;
-  lockKey: CloudResourceKey;
+  lockKey: CloudProjectLockKey;
   lockToken: string;
 };
 
@@ -1373,15 +1375,22 @@ type CloudActiveProjectState = {
   updatedAt?: string;
 };
 
-const CLOUD_RESOURCE_LABELS: Record<CloudResourceKey, string> = {
+const CLOUD_RESOURCE_LABELS: Record<CloudProjectLockKey, string> = {
   audio: "音源設定",
+  import: "クラウド上書き",
   members: "メンバー名簿",
   objects: "道具マスター",
   sceneOrder: "シーン構成",
   settings: "全体設定",
 };
 
-const CLOUD_INITIAL_OWNER_RESOURCE_KEYS: CloudResourceKey[] = ["settings"];
+const CLOUD_OWNER_RESOURCE_KEYS: CloudResourceKey[] = [
+  "settings",
+  "members",
+  "objects",
+  "audio",
+  "sceneOrder",
+];
 
 type CloudPendingUpdate = CloudSaveNotification & {
   label: string;
@@ -1511,18 +1520,113 @@ const stripCloudSettingsResourceGuard = (project: Project): unknown => {
   return rest;
 };
 
+const stripCloudMembersResourceGuard = (project: Project): unknown => {
+  const { lastOpenedAt, memberGroups, members, updatedAt, ...rest } = project;
+  void lastOpenedAt;
+  void memberGroups;
+  void members;
+  void updatedAt;
+  return rest;
+};
+
+const stripCloudObjectsResourceGuard = (project: Project): unknown => {
+  const { lastOpenedAt, objectGroups, stageObjects, updatedAt, ...rest } =
+    project;
+  void lastOpenedAt;
+  void objectGroups;
+  void stageObjects;
+  void updatedAt;
+  return rest;
+};
+
+const stripCloudAudioResourceGuard = (project: Project): unknown => {
+  const { audio, lastOpenedAt, updatedAt, ...rest } = project;
+  void audio;
+  void lastOpenedAt;
+  void updatedAt;
+  return rest;
+};
+
+const getComparableCommonSceneData = (
+  previous: Project,
+  nextProject: Project,
+): unknown => {
+  const previousFramesById = new Map(
+    previous.frames.map((frame) => [frame.id, frame]),
+  );
+  return nextProject.frames
+    .filter((frame) => previousFramesById.has(frame.id))
+    .map((frame) => ({
+      data: extractCloudSceneData(frame),
+      id: frame.id,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+};
+
+const stripCloudSceneOrderResourceGuard = (
+  previous: Project,
+  nextProject: Project,
+): { previous: unknown; next: unknown } => {
+  const strip = (project: Project) => {
+    const {
+      frames,
+      lastOpenedAt,
+      movementPaths,
+      movementPlans,
+      updatedAt,
+      ...rest
+    } = project;
+    void frames;
+    void lastOpenedAt;
+    void movementPaths;
+    void movementPlans;
+    void updatedAt;
+    return rest;
+  };
+
+  return {
+    next: {
+      project: strip(nextProject),
+      sceneData: getComparableCommonSceneData(previous, nextProject),
+    },
+    previous: {
+      project: strip(previous),
+      sceneData: getComparableCommonSceneData(previous, previous),
+    },
+  };
+};
+
 const isCloudProjectResourceOnlyChange = (
   previous: Project,
   nextProject: Project,
   resourceKey: CloudResourceKey,
 ): boolean => {
-  if (resourceKey !== "settings") {
-    return false;
+  if (resourceKey === "settings") {
+    return (
+      JSON.stringify(stripCloudSettingsResourceGuard(previous)) ===
+      JSON.stringify(stripCloudSettingsResourceGuard(nextProject))
+    );
   }
-  return (
-    JSON.stringify(stripCloudSettingsResourceGuard(previous)) ===
-    JSON.stringify(stripCloudSettingsResourceGuard(nextProject))
-  );
+  if (resourceKey === "members") {
+    return (
+      JSON.stringify(stripCloudMembersResourceGuard(previous)) ===
+      JSON.stringify(stripCloudMembersResourceGuard(nextProject))
+    );
+  }
+  if (resourceKey === "objects") {
+    return (
+      JSON.stringify(stripCloudObjectsResourceGuard(previous)) ===
+      JSON.stringify(stripCloudObjectsResourceGuard(nextProject))
+    );
+  }
+  if (resourceKey === "audio") {
+    return (
+      JSON.stringify(stripCloudAudioResourceGuard(previous)) ===
+      JSON.stringify(stripCloudAudioResourceGuard(nextProject))
+    );
+  }
+  const guarded = stripCloudSceneOrderResourceGuard(previous, nextProject);
+  return JSON.stringify(guarded.previous) === JSON.stringify(guarded.next);
 };
 
 const createCloudVersionMaps = (
@@ -1651,6 +1755,7 @@ function App() {
   const restoredAudioKeyRef = useRef<string | null>(null);
   const stageExportRef = useRef<StageExportElement | null>(null);
   const printExportRef = useRef<HTMLDivElement | null>(null);
+  const cloudImportInputRef = useRef<HTMLInputElement | null>(null);
   const stageFullscreenRef = useRef<HTMLDivElement | null>(null);
   const animationPreviewRef = useRef<number | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1767,6 +1872,7 @@ function App() {
       const activeProjectLock = cloudState.activeProjectLock;
       if (activeProjectLock) {
         if (
+          activeProjectLock.lockKey !== "import" &&
           isCloudProjectResourceOnlyChange(
             previous,
             nextProject,
@@ -1808,6 +1914,7 @@ function App() {
       const activeProjectLock = cloudState.activeProjectLock;
       if (activeProjectLock) {
         if (
+          activeProjectLock.lockKey !== "import" &&
           isCloudProjectResourceOnlyChange(
             previous,
             nextProject,
@@ -3113,6 +3220,8 @@ function App() {
 
   const addMember = (input: MemberCreateInput = {}) => {
     const id = createId("m");
+    const membersOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "members";
     const group = (project.memberGroups ?? []).find(
       (item) => item.id === input.groupId,
     );
@@ -3151,39 +3260,41 @@ function App() {
               }
             : item,
         ),
-        frames: previous.frames.map((frame) => {
-          const frameStage = {
-            ...previous.stage,
-            ...getEffectiveStageSize(previous, frame),
-          };
-          const basePosition = requestedPosition
-            ? constrainMemberPosition(requestedPosition, frameStage)
-            : paradeDefaultPosition
-              ? constrainMemberPosition(paradeDefaultPosition, frameStage)
-              : {
-                  x: frameStage.widthMeters / 2,
-                  y: frameStage.depthMeters / 2,
-                };
-          const isActiveFrame = frame.id === activeFrameId;
-          return {
-            ...frame,
-            positions: {
-              ...frame.positions,
-              [id]: basePosition,
-            },
-            memberVisibility: {
-              ...(frame.memberVisibility ?? {}),
-              [id]: isActiveFrame ? visibleInCurrentFrame : false,
-            },
-            groupVisibility:
-              group && isActiveFrame
-                ? {
-                    ...(frame.groupVisibility ?? {}),
-                    [group.id]: visibleInCurrentFrame,
-                  }
-                : frame.groupVisibility,
-          };
-        }),
+        frames: membersOnlyLock
+          ? previous.frames
+          : previous.frames.map((frame) => {
+              const frameStage = {
+                ...previous.stage,
+                ...getEffectiveStageSize(previous, frame),
+              };
+              const basePosition = requestedPosition
+                ? constrainMemberPosition(requestedPosition, frameStage)
+                : paradeDefaultPosition
+                  ? constrainMemberPosition(paradeDefaultPosition, frameStage)
+                  : {
+                      x: frameStage.widthMeters / 2,
+                      y: frameStage.depthMeters / 2,
+                    };
+              const isActiveFrame = frame.id === activeFrameId;
+              return {
+                ...frame,
+                positions: {
+                  ...frame.positions,
+                  [id]: basePosition,
+                },
+                memberVisibility: {
+                  ...(frame.memberVisibility ?? {}),
+                  [id]: isActiveFrame ? visibleInCurrentFrame : false,
+                },
+                groupVisibility:
+                  group && isActiveFrame
+                    ? {
+                        ...(frame.groupVisibility ?? {}),
+                        [group.id]: visibleInCurrentFrame,
+                      }
+                    : frame.groupVisibility,
+              };
+            }),
       };
     });
     setSelected({ type: "member", id });
@@ -3220,6 +3331,8 @@ function App() {
     shouldScrollToNewObject = true,
   ) => {
     const id = createId("o");
+    const objectsOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "objects";
     const group = (project.objectGroups ?? []).find(
       (item) => item.id === objectGroupId,
     );
@@ -3277,16 +3390,18 @@ function App() {
             }
           : item,
       ),
-      frames: previous.frames.map((frame) => ({
-        ...frame,
-        objectStates: {
-          ...frame.objectStates,
-          [id]: {
-            ...objectState,
-            visible: frame.id === activeFrameId ? visibleInCurrentFrame : false,
-          },
-        },
-      })),
+      frames: objectsOnlyLock
+        ? previous.frames
+        : previous.frames.map((frame) => ({
+            ...frame,
+            objectStates: {
+              ...frame.objectStates,
+              [id]: {
+                ...objectState,
+                visible: frame.id === activeFrameId ? visibleInCurrentFrame : false,
+              },
+            },
+          })),
     }));
     setSelected({ type: "object", id });
     setMode("objects");
@@ -3662,6 +3777,8 @@ function App() {
   };
 
   const deleteMember = (id: string) => {
+    const membersOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "members";
     updateProject((previous) => ({
       ...previous,
       members: previous.members.filter((member) => member.id !== id),
@@ -3671,31 +3788,33 @@ function App() {
       })),
       focusMemberId:
         previous.focusMemberId === id ? undefined : previous.focusMemberId,
-      frames: previous.frames.map((frame) => {
-        const { [id]: removed, ...positions } = frame.positions;
-        const { [id]: removedVisibility, ...memberVisibility } =
-          frame.memberVisibility ?? {};
-        const {
-          [id]: removedAppearance,
-          ...memberAppearanceOverrides
-        } = frame.memberAppearanceOverrides ?? {};
-        void removed;
-        void removedVisibility;
-        void removedAppearance;
-        return {
-          ...frame,
-          memberVisibility,
-          memberAppearanceOverrides:
-            Object.keys(memberAppearanceOverrides).length > 0
-              ? memberAppearanceOverrides
-              : undefined,
-          objectAssignments: removeMemberFromAssignments(
-            frame.objectAssignments,
-            id,
-          ),
-          positions,
-        };
-      }),
+      frames: membersOnlyLock
+        ? previous.frames
+        : previous.frames.map((frame) => {
+            const { [id]: removed, ...positions } = frame.positions;
+            const { [id]: removedVisibility, ...memberVisibility } =
+              frame.memberVisibility ?? {};
+            const {
+              [id]: removedAppearance,
+              ...memberAppearanceOverrides
+            } = frame.memberAppearanceOverrides ?? {};
+            void removed;
+            void removedVisibility;
+            void removedAppearance;
+            return {
+              ...frame,
+              memberVisibility,
+              memberAppearanceOverrides:
+                Object.keys(memberAppearanceOverrides).length > 0
+                  ? memberAppearanceOverrides
+                  : undefined,
+              objectAssignments: removeMemberFromAssignments(
+                frame.objectAssignments,
+                id,
+              ),
+              positions,
+            };
+          }),
     }));
     if (selected?.type === "member" && selected.id === id) {
       setSelected(null);
@@ -3754,6 +3873,8 @@ function App() {
   };
 
   const deleteObject = (id: string) => {
+    const objectsOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "objects";
     updateProject((previous) => ({
       ...previous,
       stageObjects: previous.stageObjects.filter((object) => object.id !== id),
@@ -3761,14 +3882,16 @@ function App() {
         ...group,
         objectIds: group.objectIds.filter((objectId) => objectId !== id),
       })),
-      frames: previous.frames.map((frame) => {
-        const { [id]: removed, ...objectStates } = frame.objectStates;
-        const { [id]: removedAssignments, ...objectAssignments } =
-          frame.objectAssignments ?? {};
-        void removed;
-        void removedAssignments;
-        return { ...frame, objectStates, objectAssignments };
-      }),
+      frames: objectsOnlyLock
+        ? previous.frames
+        : previous.frames.map((frame) => {
+            const { [id]: removed, ...objectStates } = frame.objectStates;
+            const { [id]: removedAssignments, ...objectAssignments } =
+              frame.objectAssignments ?? {};
+            void removed;
+            void removedAssignments;
+            return { ...frame, objectStates, objectAssignments };
+          }),
     }));
     if (selected?.type === "object" && selected.id === id) {
       setSelected(null);
@@ -4296,6 +4419,10 @@ function App() {
     }
     const cloudState = activeCloudProjectRef.current;
     if (cloudState?.activeProjectLock) {
+      if (cloudState.activeProjectLock.lockKey === "import") {
+        setNotice("クラウド上書き中です。完了まで待ってください。");
+        return false;
+      }
       return saveCloudProjectResource(
         projectRef.current,
         cloudState.activeProjectLock.lockKey,
@@ -5361,10 +5488,9 @@ function App() {
     const nextUrl = URL.createObjectURL(file);
     setAudioSource(nextUrl, file.name);
     setSharedAudioNotice(false);
-    if (activeCloudProjectRef.current) {
-      setNotice(
-        "音源をこの端末で読み込みました。初期クラウド編集では音源情報はクラウド保存しません。",
-      );
+    const cloudState = activeCloudProjectRef.current;
+    if (cloudState && cloudState.activeProjectLock?.lockKey !== "audio") {
+      setNotice("音源をこの端末で読み込みました。クラウドへ保存するにはownerが音源設定の編集ロックを取得してください。");
       return;
     }
     try {
@@ -5377,7 +5503,11 @@ function App() {
         "音源読み込み",
       );
       restoredAudioKeyRef.current = `${projectRef.current.id ?? "project"}:${audio.id}`;
-      setNotice("音源を読み込みました。次回から再選択なしで再生できます。");
+      setNotice(
+        cloudState
+          ? "音源を読み込みました。クラウド保存すると音源メタ情報だけ共有されます。"
+          : "音源を読み込みました。次回から再選択なしで再生できます。",
+      );
     } catch {
       setNotice("音源を読み込みました。音源本体の保存には失敗したため、次回は読み込み直してください。");
     }
@@ -5658,6 +5788,147 @@ function App() {
     }
   };
 
+  const importCloudProjectFile = async (file: File) => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner") {
+      setNotice("クラウド上書きはownerのみ利用できます。");
+      return;
+    }
+    if (cloudState.activeSceneLock || cloudState.activeProjectLock || isDirtyRef.current) {
+      setNotice("クラウド上書きは、保存または編集終了してから実行してください。");
+      return;
+    }
+    if (!cloudConfig) {
+      setNotice("Supabase接続が未設定です。");
+      return;
+    }
+    if (
+      !window.confirm(
+        "現在のクラウド隊列表を、選択したファイルの内容で上書きします。実行前の状態はクラウド履歴に退避します。続けますか？",
+      )
+    ) {
+      setNotice("クラウド上書きをキャンセルしました。");
+      return;
+    }
+    setIsCloudBusy(true);
+    let importLockToken: string | null = null;
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        setNotice("クラウドにログインしてください。");
+        return;
+      }
+      const imported = await readTairetsuArchive(file);
+      const importedProject = normalizeProject({
+        ...cloneProject(imported.project),
+        audio: imported.project.audio ?? null,
+        id: projectRef.current.id,
+        title: imported.project.title || projectRef.current.title,
+        updatedAt: new Date().toISOString(),
+      });
+      const target = createProjectLockTarget("import");
+      const lockToken = createCloudLockToken();
+      importLockToken = lockToken;
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const lockResult = await api.acquireEditLock(
+        cloudState.projectId,
+        target,
+        lockToken,
+      );
+      if (!lockResult.success) {
+        setNotice(
+          lockResult.reason === "project_lock_wait_for_active_scene"
+            ? "クラウド上書きは、現在のシーン編集が終わるまで待ってください。"
+            : "クラウド上書きロックを取得できませんでした。",
+        );
+        return;
+      }
+      saveCloudLockTokenToSession(cloudState.projectId, target, lockToken);
+      setActiveCloudProject((previous) =>
+        previous
+          ? {
+              ...previous,
+              activeProjectLock: {
+                baseVersion: 0,
+                expiresAt: lockResult.expires_at,
+                lockKey: "import",
+                lockToken,
+              },
+            }
+          : previous,
+      );
+      const draft = createCloudProjectDraft(importedProject, {
+        resourceVersion: 1,
+        sceneVersion: 1,
+      });
+      const result = await api.importCloudProjectWithLock(
+        cloudState.projectId,
+        draft,
+        lockToken,
+        "cloud import",
+      );
+      clearCloudLockTokenFromSession(cloudState.projectId, target);
+      if (!result.success) {
+        setActiveCloudProject((previous) =>
+          previous ? { ...previous, activeProjectLock: null } : previous,
+        );
+        setNotice(`クラウド上書きに失敗しました: ${result.reason}`);
+        return;
+      }
+      const parts = await api.loadCloudProjectParts(cloudState.projectId);
+      const nextProject = normalizeProject({
+        ...buildProjectFromCloudParts(parts),
+        lastOpenedAt: new Date().toISOString(),
+        updatedAt: parts.updatedAt ?? result.updated_at ?? new Date().toISOString(),
+      });
+      const { resourceVersions, sceneVersions } = createCloudVersionMaps(parts);
+      projectRef.current = nextProject;
+      setProject(nextProject);
+      setSelectedFrameId(nextProject.frames[0]?.id ?? null);
+      setSelected(null);
+      setSelectedMemberIds([]);
+      setActiveCloudProject((previous) =>
+        previous
+          ? {
+              ...previous,
+              activeProjectLock: null,
+              resourceVersions,
+              sceneVersions,
+              title: nextProject.title,
+              updatedAt: parts.updatedAt ?? result.updated_at ?? previous.updatedAt,
+            }
+          : previous,
+      );
+      setCloudPendingUpdates([]);
+      setIsDirty(false);
+      setNotice("クラウド隊列表を上書きしました。");
+      void refreshCloudActiveLocks(activeSession);
+    } catch (error) {
+      const latestCloudState = activeCloudProjectRef.current;
+      if (latestCloudState?.activeProjectLock?.lockKey === "import") {
+        clearCloudLockTokenFromSession(
+          latestCloudState.projectId,
+          createProjectLockTarget("import"),
+        );
+        setActiveCloudProject((previous) =>
+          previous ? { ...previous, activeProjectLock: null } : previous,
+        );
+      } else if (cloudState && importLockToken) {
+        clearCloudLockTokenFromSession(
+          cloudState.projectId,
+          createProjectLockTarget("import"),
+        );
+      }
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "クラウド上書きに失敗しました。",
+      );
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
   const addSharedProjectToLibrary = async () => {
     const now = new Date().toISOString();
     const nextProject = normalizeProject({
@@ -5759,8 +6030,7 @@ function App() {
       return { activeProjectLock: null, activeSceneLock: null };
     }
     const api = createCloudApiClient(cloudConfig, () => session.accessToken);
-    const resourceKeys = Object.keys(CLOUD_RESOURCE_LABELS) as CloudResourceKey[];
-    for (const resourceKey of resourceKeys) {
+    for (const resourceKey of CLOUD_OWNER_RESOURCE_KEYS) {
       const target = createProjectLockTarget(resourceKey);
       const lockToken = readCloudLockTokenFromSession(projectId, target);
       if (!lockToken) {
@@ -5988,15 +6258,42 @@ function App() {
         return false;
       }
       const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
-      const result = await api.saveProjectResourceWithLock(
-        cloudState.projectId,
-        resourceKey,
-        activeLock.baseVersion,
-        extractCloudProjectResourceData(sourceProject, resourceKey),
-        activeLock.lockToken,
-        CLOUD_SCHEMA_VERSION,
-        `${resourceKey} save`,
-      );
+      const resourceData = extractCloudProjectResourceData(sourceProject, resourceKey);
+      const existingSceneIds = new Set(Object.keys(cloudState.sceneVersions));
+      const currentSceneIds = new Set(sourceProject.frames.map((frame) => frame.id));
+      const result =
+        resourceKey === "sceneOrder"
+          ? await api.saveSceneOrderWithLock(
+              cloudState.projectId,
+              activeLock.baseVersion,
+              resourceData as CloudProjectResourceData["sceneOrder"],
+              sourceProject.frames
+                .filter((frame) => !existingSceneIds.has(frame.id))
+                .map((frame) => ({
+                  data: extractCloudSceneData(frame),
+                  sceneId: frame.id,
+                  schemaVersion: CLOUD_SCHEMA_VERSION,
+                  version: 1,
+                })),
+              Object.keys(cloudState.sceneVersions).filter(
+                (sceneId) => !currentSceneIds.has(sceneId),
+              ),
+              activeLock.lockToken,
+              CLOUD_SCHEMA_VERSION,
+              `${resourceKey} save`,
+            )
+          : await api.saveProjectResourceWithLock(
+              cloudState.projectId,
+              resourceKey,
+              activeLock.baseVersion,
+              resourceData as CloudProjectResourceData[Exclude<
+                CloudResourceKey,
+                "sceneOrder"
+              >],
+              activeLock.lockToken,
+              CLOUD_SCHEMA_VERSION,
+              `${resourceKey} save`,
+            );
       if (!result.success || result.version === null) {
         if (result.reason === "version_conflict") {
           downloadCloudBackupJson(sourceProject, {
@@ -6035,6 +6332,15 @@ function App() {
                 [resourceKey]:
                   result.version ?? previous.resourceVersions[resourceKey] ?? 1,
               },
+              sceneVersions:
+                resourceKey === "sceneOrder"
+                  ? Object.fromEntries(
+                      sourceProject.frames.map((frame) => [
+                        frame.id,
+                        previous.sceneVersions[frame.id] ?? 1,
+                      ]),
+                    )
+                  : previous.sceneVersions,
               updatedAt,
             }
           : previous,
@@ -6059,13 +6365,10 @@ function App() {
       return;
     }
     if (cloudState.role !== "owner") {
-      setNotice("全体設定の編集はownerのみ可能です。");
+      setNotice("全体データの編集はownerのみ可能です。");
       return;
     }
-    if (!CLOUD_INITIAL_OWNER_RESOURCE_KEYS.includes(resourceKey)) {
-      setNotice("初期クラウド編集では、全体設定から順に対応しています。");
-      return;
-    }
+    void CLOUD_OWNER_RESOURCE_KEYS;
     if (cloudState.activeSceneLock) {
       setNotice("全体設定を編集するには、現在のシーン編集が終わるまで待ってください。");
       return;
@@ -6119,7 +6422,17 @@ function App() {
             }
           : previous,
       );
-      setActivePanelTab(resourceKey === "settings" ? "stage" : activePanelTab);
+      const panelByResource: Record<CloudResourceKey, PanelTabId> = {
+        audio: "audio",
+        members: "members",
+        objects: "objects",
+        sceneOrder: "timeline",
+        settings: "stage",
+      };
+      setActivePanelTab(panelByResource[resourceKey]);
+      if (resourceKey === "members" || resourceKey === "objects") {
+        setIsRosterManagerOpen(true);
+      }
       setNotice(`${CLOUD_RESOURCE_LABELS[resourceKey]}を編集モードにしました。`);
       void refreshCloudActiveLocks(activeSession);
     } catch (error) {
@@ -6174,6 +6487,11 @@ function App() {
         lockToken,
       );
       if (!result.success) {
+        if (result.reason === "project_lock_active") {
+          await refreshCloudActiveLocks(activeSession);
+          setNotice("全体データの編集中です。シーンは閲覧のみです。");
+          return;
+        }
         const lockedBy = result.locked_by
           ? cloudMemberNameById.get(result.locked_by) ?? "他の参加者"
           : null;
@@ -6245,6 +6563,9 @@ function App() {
             }
           : previous,
       );
+      if (activeLock.lockKey === "members" || activeLock.lockKey === "objects") {
+        setIsRosterManagerOpen(false);
+      }
       cloudProjectLockActivityRef.current = false;
       if (!options.silent) {
         setNotice("全体編集を終了しました。");
@@ -6414,7 +6735,7 @@ function App() {
         );
         cloudProjectLockActivityRef.current = false;
         if (!result.success) {
-          if (isDirtyRef.current) {
+          if (isDirtyRef.current && lock.lockKey !== "import") {
             downloadCloudBackupJson(projectRef.current, {
               resourceKey: lock.lockKey,
               type: "project",
@@ -6500,7 +6821,7 @@ function App() {
                     (frame) => frame.id === notification.targetId,
                   )?.label ?? "シーン"
                 : CLOUD_RESOURCE_LABELS[
-                    notification.targetId as CloudResourceKey
+                    notification.targetId as CloudProjectLockKey
                   ] ?? "全体データ";
             setCloudPendingUpdates((previous) => {
               const nextUpdate = { ...notification, label };
@@ -7904,15 +8225,19 @@ function App() {
   };
 
   const deleteGroup = (id: string) => {
+    const membersOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "members";
     updateProject((previous) => ({
       ...previous,
       memberGroups: (previous.memberGroups ?? []).filter((group) => group.id !== id),
-      frames: previous.frames.map((frame) => {
-        const { [id]: removedVisibility, ...groupVisibility } =
-          frame.groupVisibility ?? {};
-        void removedVisibility;
-        return { ...frame, groupVisibility };
-      }),
+      frames: membersOnlyLock
+        ? previous.frames
+        : previous.frames.map((frame) => {
+            const { [id]: removedVisibility, ...groupVisibility } =
+              frame.groupVisibility ?? {};
+            void removedVisibility;
+            return { ...frame, groupVisibility };
+          }),
     }));
   };
 
@@ -8108,6 +8433,8 @@ function App() {
       return;
     }
     const id = createId("m");
+    const membersOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "members";
     updateProject((previous) => {
       const group = (previous.memberGroups ?? []).find(
         (item) => item.id === groupId,
@@ -8141,29 +8468,31 @@ function App() {
               }
             : item,
         ),
-        frames: previous.frames.map((frame) => {
-          const frameStage = {
-            ...previous.stage,
-            ...getEffectiveStageSize(previous, frame),
-          };
-          const basePosition = rosterPosition
-            ? constrainMemberPosition(rosterPosition, frameStage)
-            : {
-                x: frameStage.widthMeters / 2,
-                y: frameStage.depthMeters / 2,
+        frames: membersOnlyLock
+          ? previous.frames
+          : previous.frames.map((frame) => {
+              const frameStage = {
+                ...previous.stage,
+                ...getEffectiveStageSize(previous, frame),
               };
-          return {
-            ...frame,
-            positions: {
-              ...frame.positions,
-              [id]: basePosition,
-            },
-            memberVisibility: {
-              ...(frame.memberVisibility ?? {}),
-              [id]: false,
-            },
-          };
-        }),
+              const basePosition = rosterPosition
+                ? constrainMemberPosition(rosterPosition, frameStage)
+                : {
+                    x: frameStage.widthMeters / 2,
+                    y: frameStage.depthMeters / 2,
+                  };
+              return {
+                ...frame,
+                positions: {
+                  ...frame.positions,
+                  [id]: basePosition,
+                },
+                memberVisibility: {
+                  ...(frame.memberVisibility ?? {}),
+                  [id]: false,
+                },
+              };
+            }),
       };
     }, "名簿メンバー追加");
     setNotice(`${trimmedName} を名簿に追加しました。`);
@@ -8175,6 +8504,8 @@ function App() {
       return;
     }
     const id = createId("o");
+    const objectsOnlyLock =
+      activeCloudProjectRef.current?.activeProjectLock?.lockKey === "objects";
     updateProject((previous) => {
       const group = (previous.objectGroups ?? []).find(
         (item) => item.id === groupId,
@@ -8230,43 +8561,45 @@ function App() {
               }
             : item,
         ),
-        frames: previous.frames.map((frame) => {
-          const frameStage = {
-            ...previous.stage,
-            ...getEffectiveStageSize(previous, frame),
-          };
-          const frameCenter = rosterCenter
-            ? constrainMemberPosition(rosterCenter, frameStage)
-            : {
-                x: frameStage.widthMeters / 2,
-                y: frameStage.depthMeters / 2,
+        frames: objectsOnlyLock
+          ? previous.frames
+          : previous.frames.map((frame) => {
+              const frameStage = {
+                ...previous.stage,
+                ...getEffectiveStageSize(previous, frame),
               };
-          const frameTopLeft = constrainObjectPosition(
-            {
-              x: frameCenter.x - draft.widthMeters / 2,
-              y: frameCenter.y - draft.heightMeters / 2,
-            },
-            draft.widthMeters,
-            draft.heightMeters,
-            frameStage,
-          );
-          return {
-            ...frame,
-            objectStates: {
-              ...frame.objectStates,
-              [id]: {
-                objectId: id,
-                x: frameTopLeft.x,
-                y: frameTopLeft.y,
-                widthMeters: draft.widthMeters,
-                heightMeters: draft.heightMeters,
-                rotation: 0,
-                visible: false,
-                zIndex: object.zIndex,
-              },
-            },
-          };
-        }),
+              const frameCenter = rosterCenter
+                ? constrainMemberPosition(rosterCenter, frameStage)
+                : {
+                    x: frameStage.widthMeters / 2,
+                    y: frameStage.depthMeters / 2,
+                  };
+              const frameTopLeft = constrainObjectPosition(
+                {
+                  x: frameCenter.x - draft.widthMeters / 2,
+                  y: frameCenter.y - draft.heightMeters / 2,
+                },
+                draft.widthMeters,
+                draft.heightMeters,
+                frameStage,
+              );
+              return {
+                ...frame,
+                objectStates: {
+                  ...frame.objectStates,
+                  [id]: {
+                    objectId: id,
+                    x: frameTopLeft.x,
+                    y: frameTopLeft.y,
+                    widthMeters: draft.widthMeters,
+                    heightMeters: draft.heightMeters,
+                    rotation: 0,
+                    visible: false,
+                    zIndex: object.zIndex,
+                  },
+                },
+              };
+            }),
       };
     }, "名簿道具追加");
     setNotice(`${trimmedName} を名簿に追加しました。`);
@@ -8647,6 +8980,13 @@ function App() {
   const canvasRemoteLockOwner = canvasRemoteLock
     ? cloudMemberNameById.get(canvasRemoteLock.lockedBy) ?? "他の参加者"
     : null;
+  const canvasRemoteProjectLock = activeCloudProject
+    ? cloudActiveLocks.find((lock) => lock.targetType === "project") ?? null
+    : null;
+  const canvasRemoteProjectLockLabel = canvasRemoteProjectLock
+    ? CLOUD_RESOURCE_LABELS[canvasRemoteProjectLock.targetId as CloudProjectLockKey] ??
+      "全体データ"
+    : null;
   const isCloudSceneReadOnly = Boolean(
     activeCloudProject &&
       activeCloudProject.activeSceneLock?.sceneId !== canvasFrameId,
@@ -8654,14 +8994,21 @@ function App() {
   const canEditCurrentScene = !activeCloudProject || !isCloudSceneReadOnly;
   const activeCloudProjectLockKey =
     activeCloudProject?.activeProjectLock?.lockKey ?? null;
-  const canEditCloudSettings =
-    !activeCloudProject || activeCloudProjectLockKey === "settings";
+  const canEditCloudResource = (resourceKey: CloudResourceKey) =>
+    !activeCloudProject || activeCloudProjectLockKey === resourceKey;
+  const canEditCloudSettings = canEditCloudResource("settings");
+  const canEditCloudMembers = canEditCloudResource("members");
+  const canEditCloudObjects = canEditCloudResource("objects");
+  const canEditCloudAudio = canEditCloudResource("audio");
+  const canEditCloudSceneOrder = canEditCloudResource("sceneOrder");
   const canEditProjectChrome = !activeCloudProject;
   const cloudReadOnlyMessage = activeCloudProject
     ? activeCloudProject.activeProjectLock
       ? "全体設定の編集中です。シーンは閲覧のみです。"
       : activeCloudProject.role === "viewer"
       ? "閲覧のみの権限です。"
+      : canvasRemoteProjectLockLabel
+        ? `${canvasRemoteProjectLockLabel}の編集中です。シーンは閲覧のみです。`
       : canvasRemoteLockOwner
         ? `このシーンは${canvasRemoteLockOwner}が編集中です。`
       : "このシーンは閲覧中です。編集するには「このシーンを編集」を押してください。"
@@ -8669,9 +9016,11 @@ function App() {
   const cloudProjectReadOnlyMessage = activeCloudProject
     ? activeCloudProject.activeProjectLock
       ? `${CLOUD_RESOURCE_LABELS[activeCloudProject.activeProjectLock.lockKey]}を編集中です。別の全体データは編集できません。`
+      : canvasRemoteProjectLockLabel
+        ? `${canvasRemoteProjectLockLabel}を他の参加者が編集中です。全体データとシーンは閲覧のみです。`
       : activeCloudProject.role === "owner"
-        ? "全体設定を編集するには、上部の「全体設定を編集」を押してください。"
-        : "初期クラウド編集では、全体設定や名簿はownerのみ編集できます。"
+        ? "全体データを編集するには、上部の対象ボタンを押してください。"
+        : "全体データはownerのみ編集できます。"
     : undefined;
   const cloudSettingsReadOnlyMessage = activeCloudProject
     ? activeCloudProject.role === "owner"
@@ -8698,7 +9047,7 @@ function App() {
             scrollTarget={
               panelScrollTarget?.type === "member" ? panelScrollTarget : null
             }
-            canEditProject={canEditProjectChrome}
+            canEditProject={canEditCloudMembers}
             canEditScene={canEditCurrentScene}
             projectReadOnlyMessage={cloudProjectReadOnlyMessage}
             sceneReadOnlyMessage={cloudReadOnlyMessage}
@@ -8724,7 +9073,7 @@ function App() {
             onClearMemberObjectAssignments={clearMemberObjectAssignments}
             onCopySelected={() => copyMemberToClipboard()}
             onPasteMember={pasteMemberFromClipboard}
-            canPasteMember={clipboard?.type === "member"}
+            canPasteMember={clipboard?.type === "member" && canEditCurrentScene}
             onSetFocusMember={setFocusMember}
             onToggleFocusMode={() => setFocusMode((previous) => !previous)}
             onSelectFrame={(id) => setSelectedFrameId(id)}
@@ -8735,7 +9084,7 @@ function App() {
               selectedMemberIds={selectedMemberIds}
               isSelectionMode={isMemberSelectionMode}
               spacingMeters={templateSpacing}
-              canEditProject={canEditProjectChrome}
+              canEditProject={canEditCloudMembers}
               canEditScene={canEditCurrentScene}
               projectReadOnlyMessage={cloudProjectReadOnlyMessage}
               sceneReadOnlyMessage={cloudReadOnlyMessage}
@@ -8766,7 +9115,7 @@ function App() {
           scrollTarget={
             panelScrollTarget?.type === "object" ? panelScrollTarget : null
           }
-          canEditProject={canEditProjectChrome}
+          canEditProject={canEditCloudObjects}
           canEditScene={canEditCurrentScene}
           projectReadOnlyMessage={cloudProjectReadOnlyMessage}
           sceneReadOnlyMessage={cloudReadOnlyMessage}
@@ -8796,7 +9145,7 @@ function App() {
           onSetAllObjectsFrameVisibility={setAllObjectsFrameVisibility}
           onCopySelected={() => copyObjectToClipboard()}
           onPasteObject={pasteObjectFromClipboard}
-          canPasteObject={clipboard?.type === "object"}
+          canPasteObject={clipboard?.type === "object" && canEditCurrentScene}
           onAssignMember={assignMemberToObject}
           onRemoveAssignment={removeObjectAssignment}
           onPlaceSelectedObject={placeSelectedObject}
@@ -8864,7 +9213,13 @@ function App() {
           stage={effectiveStage}
           projectMode={project.mode ?? "stage"}
           paradeSettings={project.paradeSettings}
-          canEditProject={canEditProjectChrome}
+          canEditProject={
+            selected?.type === "member"
+              ? canEditCloudMembers
+              : selected?.type === "object"
+                ? canEditCloudObjects
+                : canEditProjectChrome
+          }
           canEditScene={canEditCurrentScene}
           projectReadOnlyMessage={cloudProjectReadOnlyMessage}
           sceneReadOnlyMessage={cloudReadOnlyMessage}
@@ -8890,6 +9245,12 @@ function App() {
           loopEnd={loopEnd}
           sharedAudioNotice={sharedAudioNotice}
           cloudAudioNotice={Boolean(activeCloudProject)}
+          canEditAudio={canEditCloudAudio}
+          audioReadOnlyMessage={
+            activeCloudProject?.role === "owner"
+              ? "音源設定を編集するには、上部の「音源設定」を押してください。"
+              : "音源設定の編集はownerのみ可能です。"
+          }
           onLoadAudio={loadAudio}
           onTogglePlayback={togglePlayback}
           onSeek={seek}
@@ -8912,7 +9273,7 @@ function App() {
           defaultStageDepth={project.stage.depthMeters}
           previousFrame={selectedPreviousFrame}
           selectedTargetName={selectedPreviousReflectTargetName}
-          canEditProject={canEditProjectChrome}
+          canEditProject={canEditCloudSceneOrder}
           canEditScene={canEditCurrentScene}
           projectReadOnlyMessage={cloudProjectReadOnlyMessage}
           sceneReadOnlyMessage={cloudReadOnlyMessage}
@@ -9065,7 +9426,21 @@ function App() {
           setActivePanelTab("members");
           setIsPanelOpen(true);
         }}
-        onOpenRosterManager={() => setIsRosterManagerOpen(true)}
+        onOpenRosterManager={() => {
+          if (
+            activeCloudProject &&
+            activeCloudProject.activeProjectLock?.lockKey !== "members" &&
+            activeCloudProject.activeProjectLock?.lockKey !== "objects"
+          ) {
+            setNotice(
+              activeCloudProject.role === "owner"
+                ? "名簿を編集するには、上部の「メンバー名簿」または「道具マスター」を押してください。"
+                : "名簿の編集はownerのみ可能です。",
+            );
+            return;
+          }
+          setIsRosterManagerOpen(true);
+        }}
       />
       {isSharedProject && (
         <div className="shared-project-banner">
@@ -9153,7 +9528,8 @@ function App() {
               </button>
             )}
             {activeCloudProject.role !== "viewer" &&
-              (activeCloudProject.activeProjectLock ? (
+              (activeCloudProject.activeProjectLock &&
+              activeCloudProject.activeProjectLock.lockKey !== "import" ? (
                 <>
                   <button
                     className="mini-button primary"
@@ -9161,7 +9537,8 @@ function App() {
                     onClick={() =>
                       void saveCloudProjectResource(
                         projectRef.current,
-                        activeCloudProject.activeProjectLock?.lockKey ?? "settings",
+                        (activeCloudProject.activeProjectLock?.lockKey ??
+                          "settings") as CloudResourceKey,
                       )
                     }
                     type="button"
@@ -9212,14 +9589,29 @@ function App() {
                     このシーンを編集
                   </button>
                   {activeCloudProject.role === "owner" && (
-                    <button
-                      className="mini-button"
-                      disabled={isCloudBusy}
-                      onClick={() => void beginCloudProjectResourceEdit("settings")}
-                      type="button"
-                    >
-                      全体設定を編集
-                    </button>
+                    <>
+                      {CLOUD_OWNER_RESOURCE_KEYS.map((resourceKey) => (
+                        <button
+                          className="mini-button"
+                          disabled={isCloudBusy}
+                          key={resourceKey}
+                          onClick={() =>
+                            void beginCloudProjectResourceEdit(resourceKey)
+                          }
+                          type="button"
+                        >
+                          {CLOUD_RESOURCE_LABELS[resourceKey]}
+                        </button>
+                      ))}
+                      <button
+                        className="mini-button danger"
+                        disabled={isCloudBusy}
+                        onClick={() => cloudImportInputRef.current?.click()}
+                        type="button"
+                      >
+                        クラウド上書き
+                      </button>
+                    </>
                   )}
                 </>
               ))}
@@ -9227,6 +9619,19 @@ function App() {
         </div>
       )}
       <audio ref={audioRef} className="persistent-audio" />
+      <input
+        ref={cloudImportInputRef}
+        accept=".zip,.tairetsu,application/zip,application/octet-stream"
+        className="sr-only"
+        type="file"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) {
+            void importCloudProjectFile(file);
+          }
+        }}
+      />
       </div>
 
       <div className="workspace">
@@ -9751,7 +10156,21 @@ function App() {
       />
     )}
     <RosterManagementModal
-      isOpen={isRosterManagerOpen}
+      isOpen={
+        isRosterManagerOpen &&
+        (!activeCloudProject ||
+          activeCloudProject.activeProjectLock?.lockKey === "members" ||
+          activeCloudProject.activeProjectLock?.lockKey === "objects")
+      }
+      allowedModes={
+        activeCloudProject
+          ? activeCloudProject.activeProjectLock?.lockKey === "members"
+            ? ["members"]
+            : activeCloudProject.activeProjectLock?.lockKey === "objects"
+              ? ["objects"]
+              : []
+          : undefined
+      }
       members={project.members}
       memberGroups={project.memberGroups ?? []}
       objects={project.stageObjects}

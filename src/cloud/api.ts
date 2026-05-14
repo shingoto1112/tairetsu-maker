@@ -5,9 +5,9 @@ import type {
   CloudProjectParts,
   CloudProjectResourceData,
   CloudProjectResourceDraft,
+  CloudSceneDraft,
   CloudResourceKey,
   CloudSceneData,
-  CloudSceneDraft,
 } from "./types";
 
 type RpcPayload = Record<string, unknown>;
@@ -42,6 +42,12 @@ export type CloudSaveResult = {
   success: boolean;
   updated_at: string | null;
   version: number | null;
+};
+
+export type CloudImportResult = {
+  reason: string;
+  success: boolean;
+  updated_at: string | null;
 };
 
 export type CloudActionResult = {
@@ -527,6 +533,44 @@ export const createCloudApiClient = (
         p_lock_token: lockToken,
         p_project_id: projectId,
         p_resource_key: resourceKey,
+        p_schema_version: schemaVersion,
+        p_summary: summary ?? null,
+      }),
+
+    importCloudProjectWithLock: (
+      projectId: string,
+      draft: CloudProjectDraft,
+      lockToken: string,
+      summary?: string,
+    ) =>
+      rpcOne<CloudImportResult>("import_cloud_project_with_lock", {
+        p_lock_token: lockToken,
+        p_mode: draft.project.mode,
+        p_project_id: projectId,
+        p_resources: draft.resources,
+        p_scenes: draft.scenes,
+        p_schema_version: draft.project.schemaVersion,
+        p_summary: summary ?? null,
+        p_title: draft.project.title,
+      }),
+
+    saveSceneOrderWithLock: (
+      projectId: string,
+      baseVersion: number,
+      data: CloudProjectResourceData["sceneOrder"],
+      newScenes: CloudSceneDraft[],
+      deletedSceneIds: string[],
+      lockToken: string,
+      schemaVersion: number,
+      summary?: string,
+    ) =>
+      rpcOne<CloudSaveResult>("save_scene_order_with_lock", {
+        p_base_version: baseVersion,
+        p_data: data,
+        p_deleted_scene_ids: deletedSceneIds,
+        p_lock_token: lockToken,
+        p_new_scenes: newScenes,
+        p_project_id: projectId,
         p_schema_version: schemaVersion,
         p_summary: summary ?? null,
       }),

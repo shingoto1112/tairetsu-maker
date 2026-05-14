@@ -14,7 +14,9 @@ type AudioPanelProps = {
   loopStart: number;
   loopEnd: number;
   sharedAudioNotice: boolean;
+  canEditAudio?: boolean;
   cloudAudioNotice?: boolean;
+  audioReadOnlyMessage?: string;
   onLoadAudio: (file: File) => void;
   onTogglePlayback: () => void;
   onSeek: (time: number) => void;
@@ -36,7 +38,9 @@ export const AudioPanel = ({
   loopStart,
   loopEnd,
   sharedAudioNotice,
+  canEditAudio = true,
   cloudAudioNotice = false,
+  audioReadOnlyMessage = "音源設定を編集するには、ownerが音源設定の編集ロックを取得してください。",
   onLoadAudio,
   onTogglePlayback,
   onSeek,
@@ -59,7 +63,12 @@ export const AudioPanel = ({
         actions={
           <>
             <label className="mini-button file-picker-inline">
-              <input type="file" accept="audio/*,.mp3,.wav,.m4a" onChange={handleFile} />
+              <input
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a"
+                disabled={!canEditAudio}
+                onChange={handleFile}
+              />
               <Music size={15} />
               読み込み
             </label>
@@ -77,9 +86,10 @@ export const AudioPanel = ({
       )}
       {cloudAudioNotice && (
         <p className="notice muted">
-          初期クラウド編集では音源ファイル本体はクラウド保存しません。読み込んだ音源はこの端末での再生用です。
+          音源ファイル本体はクラウド保存しません。読み込んだ音源はこの端末での再生用です。
         </p>
       )}
+      {!canEditAudio && <p className="notice warning">{audioReadOnlyMessage}</p>}
       <input
         className="seek"
         type="range"

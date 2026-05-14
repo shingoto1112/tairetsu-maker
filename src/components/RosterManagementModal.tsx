@@ -7,6 +7,7 @@ type RosterMode = "members" | "objects";
 
 type RosterManagementModalProps = {
   isOpen: boolean;
+  allowedModes?: RosterMode[];
   members: Member[];
   memberGroups: MemberGroup[];
   objects: StageObject[];
@@ -90,6 +91,7 @@ export const RosterManagementModal = ({
   objects,
   objectGroups,
   onClose,
+  allowedModes,
   onRenameMember,
   onRenameObject,
   onAddMember,
@@ -123,6 +125,13 @@ export const RosterManagementModal = ({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen || !allowedModes || allowedModes.includes(mode)) {
+      return;
+    }
+    setMode(allowedModes[0] ?? "members");
+  }, [allowedModes, isOpen, mode]);
 
   useEffect(() => {
     setMemberGroupDrafts((previous) => {
@@ -351,6 +360,7 @@ export const RosterManagementModal = ({
             <button
               className={mode === "members" ? "is-active" : ""}
               onClick={() => setMode("members")}
+              disabled={Boolean(allowedModes && !allowedModes.includes("members"))}
               type="button"
             >
               メンバー管理
@@ -358,6 +368,7 @@ export const RosterManagementModal = ({
             <button
               className={mode === "objects" ? "is-active" : ""}
               onClick={() => setMode("objects")}
+              disabled={Boolean(allowedModes && !allowedModes.includes("objects"))}
               type="button"
             >
               道具管理

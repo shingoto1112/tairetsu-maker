@@ -85,3 +85,63 @@ Supabase Free 前提のロック式共同編集を、Web版で実際に複数ユ
 - Clean up smoke-test projects from Supabase if they are no longer needed.
 - Broaden owner-only project resource editing beyond `settings` only when the UI/save boundaries are intentionally redesigned.
 - Add longer manual QA for TTL expiry by waiting beyond the configured timeout, if needed.
+
+## Owner Project Operations Extension Audit
+
+### Objective
+
+クラウド共同編集における owner 向け project 系操作を拡張し、メンバー名簿、道具マスター、音源メタ情報、シーン追加/削除/並び替え/名称変更、JSON / `.tairetsu` / ZIP import によるクラウド上書きを、ロック式共同編集の安全設計を守ったままWeb版で使える状態にする。
+
+### Success criteria
+
+- owner のみが project 系ロックを取得できる。
+- editor は scene data のみ編集可能なまま。
+- viewer は閲覧のみのまま。
+- project 系ロックは scene lock と排他。
+- `project:members`, `project:objects`, `project:audio`, `project:sceneOrder`, `project:import` を実動作させる。
+- シーン追加/削除/並び替え/名称変更は `sceneOrder` resource と `scenes` table の整合性を保つ。
+- シーン削除と import は snapshots に操作前バックアップを残す。
+- import はRPC/transactionで中途半端な状態を避ける。
+- Realtimeはロック状態と保存通知メタ情報のみ。
+- service_role key は使わない。
+
+### Prompt-to-artifact checklist
+
+| Requirement | Evidence | Status |
+| --- | --- | --- |
+| 必須ファイル読了 | `AGENTS.md`, `docs/SPEC.md`, `docs/CURRENT_HANDOFF.md`, `docs/CLOUD_COLLAB_SPEC.md`, `docs/CLOUD_COLLAB_SETUP.md`, `docs/CLOUD_COLLAB_COMPLETION_AUDIT.md` を確認済み | Done |
+| 作業前 status/diff | `git status --short`, `git diff --stat` 実行済み | Done |
+| SQL/RPC追加 | `supabase/migrations/20260514002000_cloud_project_owner_operations.sql` | Done |
+| sceneOrder保存RPC | `save_scene_order_with_lock` handles version check, new scenes, deleted scenes, snapshots, audit log | Done |
+| import RPC | `import_cloud_project_with_lock` handles owner check, import lock, validation, snapshots, replace resources/scenes in transaction | Done |
+| SQL bundle更新 | `scripts/cloud-collab-sql.mjs` includes 3 migrations | Done |
+| cloud check更新 | `scripts/cloud-collab-check.mjs` checks new RPCs | Done |
+| smoke拡張 | `scripts/cloud-collab-smoke.mjs` covers project locks/resources/sceneOrder/import | Done |
+| フロントAPI | `src/cloud/api.ts` adds `saveSceneOrderWithLock` / `importCloudProjectWithLock` | Done |
+| project lock target | `src/cloud/projectParts.ts` supports `project:import` lock target | Done |
+| owner UI導線 | `src/App.tsx` cloud banner buttons for members, objects, audio, sceneOrder, import | Done |
+| members boundary | `src/App.tsx` guards project:members so scene placement/visibility is not saved together | Done |
+| objects boundary | `src/App.tsx` guards project:objects so scene placement/visibility is not saved together | Done |
+| audio metadata only | `AudioPanel` / `App.loadAudio` keep audio file local and save metadata only when `project:audio` lock is active | Done |
+| sceneOrder UI | `Timeline` allows scene list edits under `project:sceneOrder` while scene memo/data stays disabled | Done |
+| editor/viewer UI | project operation buttons are owner-only; editor/viewer project edits remain disabled | Done |
+| remote project lock UI | project lock reason is shown as read-only message for other users | Done |
+| Supabase実適用 | User ran SQL; `npm run cloud:check` verifies `save_scene_order_with_lock` and `import_cloud_project_with_lock` | Done |
+| Backend smoke | `npm run cloud:smoke` succeeded with owner/editor/viewer and project ops | Done |
+| Build gate | `npm run build` succeeded | Done |
+| Local UI smoke | Playwright CLI verified owner buttons, members lock/modal, sceneOrder save, editor project buttons absent, project lock blocks editor scene edit | Done |
+
+### Final verification summary
+
+- Supabase project: `https://jhpvdrdunyicrzptgtom.supabase.co`
+- Latest owner project-ops backend smoke project: `d0872735-1ae2-4650-bf2e-b29f183d1aff`
+- `npm run cloud:check`: passed.
+- `npm run cloud:smoke`: passed with owner/editor/viewer.
+- `npm run build`: passed. Vite large chunk warning remains unchanged.
+- Local UI target: `http://127.0.0.1:5173/?qa=project-ops`
+
+### Remaining follow-ups for this extension
+
+- Deploy the committed changes to Vercel Production and verify the production URL after deploy.
+- Clean up smoke-test projects from Supabase if desired.
+- Add a longer TTL expiry/manual disconnect QA pass if lock timeout behavior needs real waiting-time evidence.

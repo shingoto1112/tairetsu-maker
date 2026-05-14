@@ -152,6 +152,26 @@ const main = async () => {
     await rpc("accept_project_invite", {
       p_invite_token: "cloud-check",
     }),
+    await rpc("save_scene_order_with_lock", {
+      p_base_version: 1,
+      p_data: {},
+      p_deleted_scene_ids: [],
+      p_lock_token: "cloud-check",
+      p_new_scenes: [],
+      p_project_id: dummyProjectId,
+      p_schema_version: 1,
+      p_summary: "cloud check",
+    }),
+    await rpc("import_cloud_project_with_lock", {
+      p_lock_token: "cloud-check",
+      p_mode: "stage",
+      p_project_id: dummyProjectId,
+      p_resources: [],
+      p_scenes: [],
+      p_schema_version: 1,
+      p_summary: "cloud check",
+      p_title: "cloud check",
+    }),
   ];
 
   for (const result of checks) {

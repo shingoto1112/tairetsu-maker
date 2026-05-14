@@ -24,17 +24,19 @@ Supabase の SQL Editor で、以下の順に migration SQL を実行します�
 
 1. `supabase/migrations/20260514000000_cloud_collaboration_foundation.sql`
 2. `supabase/migrations/20260514001000_cloud_collaboration_sharing_realtime.sql`
+3. `supabase/migrations/20260514002000_cloud_project_owner_operations.sql`
 
 2つ目の migration では、招待テーブル/RPC と Realtime 用 publication 追加を行います。
 Hosted Supabase では `supabase_realtime` publication が存在するため、`edit_locks` と `audit_logs` の変更通知が使えるようになります。
+3つ目の migration では、owner専用のシーン構成保存とクラウド上書きimport用RPCを追加します。
 
-初心者向けに、2つのSQLをまとめてコピーするコマンドも用意しています。
+初心者向けに、必要なSQLをまとめてコピーするコマンドも用意しています。
 
 ```powershell
 npm run --silent cloud:sql | clip.exe
 ```
 
-このあと Supabase の SQL Editor に貼り付けて `Run` すれば、上の2 migration を順番通りに適用できます。
+このあと Supabase の SQL Editor に貼り付けて `Run` すれば、上の migration を順番通りに適用できます。
 
 ## 3. Auth 設定
 
@@ -138,6 +140,7 @@ npm run cloud:smoke
 `.env` の `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` は自動で読み込みます。
 
 このテストは、検証用クラウドプロジェクトを1件作成し、owner/editor 招待、同一シーンロック拒否、別シーン同時ロック、scene保存、ロック解除を確認します。
+現在は owner 専用の project 系操作も確認し、`project:members` / `project:objects` / `project:audio` の保存、`project:sceneOrder` によるシーン追加/削除、`project:import` によるクラウド上書き、project lock と scene lock の排他も検証します。
 
 viewer も自動確認する場合は、追加で以下を設定します。
 

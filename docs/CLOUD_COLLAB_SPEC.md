@@ -85,6 +85,27 @@ owner のみ許可する操作:
 
 viewer は閲覧のみです。
 
+## owner向けproject系操作の拡張
+
+ownerは、対象ごとのproject lock取得に成功した場合のみ、以下の全体データを編集できます。
+
+- `project:members`: メンバー名簿とメンバーグループ。
+- `project:objects`: 道具マスターと道具グループ。
+- `project:audio`: 音源メタ情報。音源ファイル本体は保存しない。
+- `project:sceneOrder`: シーン追加、シーン削除、シーン名変更、シーン時刻変更、シーン並び替え。
+- `project:import`: ローカルJSON/`.tairetsu`/ZIPからクラウドプロジェクトを上書き。
+
+`project:members` と `project:objects` の初期拡張では、保存対象は各project resourceのマスター情報のみです。
+project lock中にメンバー/道具を追加・削除しても、既存シーンの配置・表示状態は同時保存しません。
+シーン内での配置・表示/非表示変更は、引き続き `scene:{sceneId}` lock で保存します。
+
+`project:sceneOrder` は `project_resources.sceneOrder` と `scenes` tableを同一RPCで更新します。
+シーン追加時は新しい `scenes` row を作成し、シーン削除時は削除前snapshotを残してから `scenes` row を削除します。
+
+`project:import` は専用RPCでtransaction内にまとめます。
+上書き前に既存の `project_resources` と `scenes` をsnapshotへ退避し、import後に `projects` / `project_resources` / `scenes` の整合性を保ちます。
+import用lockは保存成功時にRPC内で解除します。
+
 ## ロック管理
 
 ロック管理には `edit_locks` テーブルを使います。

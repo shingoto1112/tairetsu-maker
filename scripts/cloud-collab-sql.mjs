@@ -6,6 +6,7 @@ import path from "node:path";
 const migrationFiles = [
   "20260514000000_cloud_collaboration_foundation.sql",
   "20260514001000_cloud_collaboration_sharing_realtime.sql",
+  "20260514002000_cloud_project_owner_operations.sql",
 ];
 
 const now = new Date().toISOString();
