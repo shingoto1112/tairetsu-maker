@@ -5554,6 +5554,10 @@ function App() {
     clearPendingAutoSave();
     refreshHistoryCounts();
     projectRef.current = nextProject;
+    activeCloudProjectRef.current = options.cloudProject ?? null;
+    selectedFrameIdRef.current = nextProject.frames[0]?.id ?? null;
+    ownerAutoSceneLockKeyRef.current = null;
+    ownerSceneSwitchKeyRef.current = null;
     setProject(nextProject);
     setSelectedFrameId(nextProject.frames[0]?.id ?? null);
     setSelected(null);
@@ -6658,41 +6662,41 @@ function App() {
 
   const beginCloudSceneEdit = async (
     options: { silent?: boolean } = {},
-  ) => {
+  ): Promise<boolean> => {
     const cloudState = activeCloudProjectRef.current;
     if (!cloudState) {
-      return;
+      return false;
     }
     if (cloudState.role === "viewer") {
       setNotice("閲覧のみの権限では編集できません。");
-      return;
+      return false;
     }
     if (!selectedFrame) {
       setNotice("編集するシーンを選択してください。");
-      return;
+      return false;
     }
     if (cloudState.activeSceneLock?.sceneId === selectedFrame.id) {
       setNotice("このシーンは編集中です。");
-      return;
+      return true;
     }
     if (cloudState.activeSceneLock) {
       setNotice("別のシーンを編集中です。保存または編集終了してから切り替えてください。");
-      return;
+      return false;
     }
     if (cloudState.activeProjectLock) {
       setNotice("全体設定の編集中です。保存または編集終了してからシーン編集を開始してください。");
-      return;
+      return false;
     }
     if (!cloudConfig) {
       setNotice("Supabase接続が未設定です。");
-      return;
+      return false;
     }
     setIsCloudBusy(true);
     try {
       const activeSession = await getActiveCloudSession();
       if (!activeSession) {
         setNotice("クラウドにログインしてください。");
-        return;
+        return false;
       }
       const target = createSceneLockTarget(selectedFrame.id);
       const lockToken = createCloudLockToken();
@@ -6710,7 +6714,7 @@ function App() {
           if (!options.silent) {
             setNotice("全体データの編集中です。シーンは閲覧のみです。");
           }
-          return;
+          return false;
         }
         const lockedBy = result.locked_by
           ? cloudMemberNameById.get(result.locked_by) ?? "他の参加者"
@@ -6722,7 +6726,7 @@ function App() {
               : "このシーンの編集ロックを取得できませんでした。",
           );
         }
-        return;
+        return false;
       }
       saveCloudLockTokenToSession(cloudState.projectId, target, lockToken);
       setActiveCloudProject((previous) =>
@@ -6742,8 +6746,10 @@ function App() {
         setNotice(`「${selectedFrame.label}」を編集モードにしました。`);
       }
       void refreshCloudActiveLocks(activeSession);
+      return true;
     } catch (error) {
       setNotice(getCloudErrorMessage(error));
+      return false;
     } finally {
       setIsCloudBusy(false);
     }
@@ -6799,7 +6805,10 @@ function App() {
         return;
       }
       ownerAutoSceneLockKeyRef.current = null;
-      await beginCloudSceneEdit({ silent: true });
+      const started = await beginCloudSceneEdit({ silent: true });
+      if (started) {
+        ownerAutoSceneLockKeyRef.current = `${cloudState.projectId}:${nextSceneId}`;
+      }
     } finally {
       ownerSceneSwitchKeyRef.current = null;
     }
@@ -6843,8 +6852,11 @@ function App() {
     if (ownerAutoSceneLockKeyRef.current === lockKey) {
       return;
     }
-    ownerAutoSceneLockKeyRef.current = lockKey;
-    void beginCloudSceneEdit({ silent: true });
+    void beginCloudSceneEdit({ silent: true }).then((started) => {
+      if (started) {
+        ownerAutoSceneLockKeyRef.current = lockKey;
+      }
+    });
   }, [
     activeCloudProject?.activeProjectLock?.lockKey,
     activeCloudProject?.activeSceneLock?.sceneId,
@@ -7589,11 +7601,15 @@ function App() {
         parts,
         activeSession,
       );
-      await openProjectInEditor(
-        cloudOpenedProject,
+      const openMessage =
         restoredLock.activeSceneLock || restoredLock.activeProjectLock
           ? "クラウド隊列表を開き、前回の編集ロックを復帰しました。"
-          : "クラウド隊列表を閲覧モードで開きました。編集するシーンで「このシーンを編集」を押してください。",
+          : cloudProject.role === "owner"
+            ? "クラウド隊列表を開きました。"
+            : "クラウド隊列表を閲覧モードで開きました。編集するシーンで「このシーンを編集」を押してください。";
+      await openProjectInEditor(
+        cloudOpenedProject,
+        openMessage,
         {
           cloudProject: {
             activeProjectLock: restoredLock.activeProjectLock,
