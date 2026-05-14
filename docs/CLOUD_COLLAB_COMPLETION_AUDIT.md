@@ -116,7 +116,7 @@ Supabase Free 前提のロック式共同編集を、Web版で実際に複数ユ
 | import RPC | `import_cloud_project_with_lock` handles owner check, import lock, validation, snapshots, replace resources/scenes in transaction | Done |
 | SQL bundle更新 | `scripts/cloud-collab-sql.mjs` includes 3 migrations | Done |
 | cloud check更新 | `scripts/cloud-collab-check.mjs` checks new RPCs | Done |
-| smoke拡張 | `scripts/cloud-collab-smoke.mjs` covers project locks/resources/sceneOrder/import | Done |
+| smoke拡張 | `scripts/cloud-collab-smoke.mjs` covers project locks/resources/sceneOrder add/reorder/delete/import | Done |
 | フロントAPI | `src/cloud/api.ts` adds `saveSceneOrderWithLock` / `importCloudProjectWithLock` | Done |
 | project lock target | `src/cloud/projectParts.ts` supports `project:import` lock target | Done |
 | owner UI導線 | `src/App.tsx` cloud banner buttons for members, objects, audio, sceneOrder, import | Done |
@@ -137,7 +137,7 @@ Supabase Free 前提のロック式共同編集を、Web版で実際に複数ユ
 ### Final verification summary
 
 - Supabase project: `https://jhpvdrdunyicrzptgtom.supabase.co`
-- Latest owner project-ops backend smoke project: `d0872735-1ae2-4650-bf2e-b29f183d1aff`
+- Latest owner project-ops backend smoke project: `de64691c-dc73-4063-88aa-f725f85e85d9`
 - Production deployment: `dpl_8TEZHPkNs5gJLxugqxSVruJMTqPe`
 - Production URL: `https://tairetsu-maker.vercel.app`
 - `npm run cloud:check`: passed.

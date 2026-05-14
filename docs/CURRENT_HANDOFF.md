@@ -269,7 +269,8 @@ Supabase Free 想定で、完全リアルタイムではなく「シーン単位
 - `npm run build` 成功。
 - `npm run cloud:check` 成功。
 - `npm run cloud:smoke` 成功。
-  - 最新RPC smoke project ID: `d0872735-1ae2-4650-bf2e-b29f183d1aff`
+  - 最新RPC smoke project ID: `de64691c-dc73-4063-88aa-f725f85e85d9`
+  - `project:sceneOrder` はシーン追加/並び替え/削除を確認済み。
 - ローカルUI `http://127.0.0.1:5173/?qa=project-ops` で確認。
   - owner で project 系ボタンが表示される。
   - owner が `メンバー名簿` ロックを取得すると管理モーダルが開き、道具管理タブは無効化される。

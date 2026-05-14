@@ -594,18 +594,19 @@ const main = async () => {
     schemaVersion,
     version: 1,
   };
+  const sceneOrderAfterAdd = {
+    ...sceneOrderResource.data,
+    frames: [
+      ...sceneOrderResource.data.frames,
+      { id: addedScene.sceneId, label: "Smoke 3", timeSec: 20 },
+    ],
+  };
   projectLockToken = await acquireProjectLock("sceneOrder");
   expectSuccess(
     "owner save sceneOrder add scene",
     await rpc(owner, "save_scene_order_with_lock", {
       p_base_version: 1,
-      p_data: {
-        ...sceneOrderResource.data,
-        frames: [
-          ...sceneOrderResource.data.frames,
-          { id: addedScene.sceneId, label: "Smoke 3", timeSec: 20 },
-        ],
-      },
+      p_data: sceneOrderAfterAdd,
       p_deleted_scene_ids: [],
       p_lock_token: projectLockToken,
       p_new_scenes: [addedScene],
@@ -618,9 +619,32 @@ const main = async () => {
 
   projectLockToken = await acquireProjectLock("sceneOrder");
   expectSuccess(
-    "owner save sceneOrder delete scene",
+    "owner save sceneOrder reorder scenes",
     await rpc(owner, "save_scene_order_with_lock", {
       p_base_version: 2,
+      p_data: {
+        ...sceneOrderAfterAdd,
+        frames: [
+          sceneOrderAfterAdd.frames[1],
+          sceneOrderAfterAdd.frames[0],
+          ...sceneOrderAfterAdd.frames.slice(2),
+        ],
+      },
+      p_deleted_scene_ids: [],
+      p_lock_token: projectLockToken,
+      p_new_scenes: [],
+      p_project_id: projectId,
+      p_schema_version: schemaVersion,
+      p_summary: "smoke sceneOrder reorder",
+    }),
+  );
+  await releaseProjectLock("sceneOrder", projectLockToken);
+
+  projectLockToken = await acquireProjectLock("sceneOrder");
+  expectSuccess(
+    "owner save sceneOrder delete scene",
+    await rpc(owner, "save_scene_order_with_lock", {
+      p_base_version: 3,
       p_data: sceneOrderResource.data,
       p_deleted_scene_ids: [addedScene.sceneId],
       p_lock_token: projectLockToken,
