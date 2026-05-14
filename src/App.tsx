@@ -1783,6 +1783,7 @@ function App() {
   const cloudLockActivityRef = useRef(false);
   const cloudProjectLockActivityRef = useRef(false);
   const ownerAutoSceneLockKeyRef = useRef<string | null>(null);
+  const ownerSceneSwitchKeyRef = useRef<string | null>(null);
   const cloudSessionRef = useRef<CloudAuthSession | null>(cloudSession);
   const isDirtyRef = useRef(isDirty);
   const selectedFrameIdRef = useRef<string | null>(selectedFrameId);
@@ -6748,9 +6749,76 @@ function App() {
     }
   };
 
+  const switchOwnerCloudSceneEdit = async (nextSceneId: string) => {
+    const cloudState = activeCloudProjectRef.current;
+    const activeSceneLock = cloudState?.activeSceneLock ?? null;
+    if (
+      !cloudState ||
+      cloudState.role !== "owner" ||
+      !activeSceneLock ||
+      activeSceneLock.sceneId === nextSceneId ||
+      cloudState.activeProjectLock
+    ) {
+      return;
+    }
+    const switchKey = `${cloudState.projectId}:${activeSceneLock.sceneId}->${nextSceneId}`;
+    if (ownerSceneSwitchKeyRef.current === switchKey) {
+      return;
+    }
+    ownerSceneSwitchKeyRef.current = switchKey;
+    try {
+      const saved = isDirtyRef.current
+        ? await saveCloudCurrentScene(projectRef.current, activeSceneLock.sceneId, {
+            showNotice: false,
+          })
+        : true;
+      if (!saved) {
+        setNotice("前のシーンを保存できませんでした。保存内容を確認してから次のシーンを編集してください。");
+        return;
+      }
+      const released = await releaseActiveCloudSceneLock({ silent: true });
+      if (!released) {
+        return;
+      }
+      const latestCloudState = activeCloudProjectRef.current;
+      if (latestCloudState) {
+        activeCloudProjectRef.current = {
+          ...latestCloudState,
+          activeSceneLock: null,
+        };
+      }
+      const currentUserId = cloudSessionRef.current?.user.id;
+      const hasBlockingRemoteLock = cloudActiveLocks.some(
+        (lock) =>
+          lock.lockedBy !== currentUserId &&
+          (lock.targetType === "project" ||
+            (lock.targetType === "scene" && lock.targetId === nextSceneId)),
+      );
+      if (hasBlockingRemoteLock) {
+        setNotice("このシーンは他の参加者が編集中です。閲覧のみで開きます。");
+        return;
+      }
+      ownerAutoSceneLockKeyRef.current = null;
+      await beginCloudSceneEdit({ silent: true });
+    } finally {
+      ownerSceneSwitchKeyRef.current = null;
+    }
+  };
+
   useEffect(() => {
     const cloudState = activeCloudProjectRef.current;
     const currentFrameId = selectedFrame?.id ?? null;
+    if (
+      cloudState?.role === "owner" &&
+      currentFrameId &&
+      cloudState.activeSceneLock &&
+      cloudState.activeSceneLock.sceneId !== currentFrameId &&
+      !cloudState.activeProjectLock &&
+      !isCloudBusy
+    ) {
+      void switchOwnerCloudSceneEdit(currentFrameId);
+      return;
+    }
     if (
       !cloudState ||
       cloudState.role !== "owner" ||

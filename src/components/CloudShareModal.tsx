@@ -96,7 +96,7 @@ export const CloudShareModal = ({
   };
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop cloud-share-backdrop" role="presentation">
       <section
         aria-modal="true"
         className="cloud-share-modal"

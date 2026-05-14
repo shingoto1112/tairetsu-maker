@@ -1138,6 +1138,10 @@ h2 {
   z-index: 80;
 }
 
+.cloud-share-backdrop {
+  z-index: 1200;
+}
+
 .modal-header {
   align-items: start;
   display: flex;

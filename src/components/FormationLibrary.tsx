@@ -561,7 +561,7 @@ export const FormationLibrary = ({
               <div className="library-cloud-list">
                 {cloud.projects.length === 0 ? (
                   <p className="library-cloud-message">
-                    クラウドプロジェクトはまだありません。
+                    クラウドプロジェクトはまだありません。過去のクラウド隊列表が表示されない場合は、更新を押してください。
                   </p>
                 ) : (
                   cloud.projects.map((cloudProject) => (
