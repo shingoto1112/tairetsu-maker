@@ -126,6 +126,26 @@ const findProjectFilePair = (
   return null;
 };
 
+const readProjectFromJsonBuffer = (buffer: ArrayBuffer): Project => {
+  const text = new TextDecoder().decode(buffer);
+  const parsed = safeJsonParse<unknown>(
+    text,
+    "JSONファイルとして読み込めませんでした。",
+  );
+  if (isProjectLike(parsed)) {
+    return parsed;
+  }
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    "project" in parsed &&
+    isProjectLike((parsed as { project?: unknown }).project)
+  ) {
+    return (parsed as { project: Project }).project;
+  }
+  throw new Error("隊列表のJSONデータが見つかりませんでした。");
+};
+
 const readPayloadFromZip = async (
   zip: JSZip,
   sourceName: string,
@@ -245,6 +265,18 @@ export const readTairetsuArchive = async (
   const signature = String.fromCharCode(
     ...new Uint8Array(buffer.slice(0, 2)),
   );
+  const lowerName = file.name.toLowerCase();
+  if (
+    lowerName.endsWith(".json") ||
+    file.type.toLowerCase().includes("json")
+  ) {
+    return {
+      audioBlob: null,
+      audioFileName: null,
+      project: readProjectFromJsonBuffer(buffer),
+    };
+  }
+
   if (signature !== ZIP_SIGNATURE) {
     console.warn("[tairetsu import] file does not start with PK; trying JSZip anyway", {
       signature,

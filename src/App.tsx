@@ -9621,7 +9621,7 @@ function App() {
       <audio ref={audioRef} className="persistent-audio" />
       <input
         ref={cloudImportInputRef}
-        accept=".zip,.tairetsu,application/zip,application/octet-stream"
+        accept=".json,.zip,.tairetsu,application/json,application/zip,application/octet-stream"
         className="sr-only"
         type="file"
         onChange={(event) => {
