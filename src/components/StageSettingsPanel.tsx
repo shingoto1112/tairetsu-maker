@@ -19,6 +19,8 @@ type StageSettingsPanelProps = {
   stage: StageConfig;
   paradeSettings?: ParadeSettings;
   useGlobalStageSize: boolean;
+  disabled?: boolean;
+  disabledMessage?: string;
   onChange: (patch: Partial<StageConfig>) => void;
   onParadeSettingsChange?: (patch: Partial<ParadeSettings>) => void;
   onUseGlobalStageSizeChange: (enabled: boolean) => void;
@@ -29,6 +31,8 @@ export const StageSettingsPanel = ({
   stage,
   paradeSettings,
   useGlobalStageSize,
+  disabled = false,
+  disabledMessage,
   onChange,
   onParadeSettingsChange,
   onUseGlobalStageSizeChange,
@@ -48,6 +52,9 @@ export const StageSettingsPanel = ({
     emphasizeEvery5m: paradeSettings?.emphasizeEvery5m ?? true,
     emphasizeEvery10m: paradeSettings?.emphasizeEvery10m ?? true,
   };
+  const readOnlyNotice =
+    disabledMessage ??
+    "クラウドプロジェクトの全体設定は初期実装では編集できません。ローカルへ複製すると編集できます。";
 
   if (mode === "parade") {
     return (
@@ -62,6 +69,7 @@ export const StageSettingsPanel = ({
             <NumericInput
               min={1}
               step="1"
+              disabled={disabled}
               value={effectiveParadeSettings.totalDistance}
               onValueChange={(totalDistance) =>
                 onParadeSettingsChange?.({
@@ -75,6 +83,7 @@ export const StageSettingsPanel = ({
             <NumericInput
               min={0}
               step="1"
+              disabled={disabled}
               value={effectiveParadeSettings.backwardDistanceMeters ?? 0}
               onValueChange={(backwardDistanceMeters) =>
                 onParadeSettingsChange?.({
@@ -88,6 +97,7 @@ export const StageSettingsPanel = ({
             <NumericInput
               min={1}
               step="0.5"
+              disabled={disabled}
               value={effectiveParadeSettings.width}
               onValueChange={(width) =>
                 onParadeSettingsChange?.({
@@ -101,6 +111,7 @@ export const StageSettingsPanel = ({
             <NumericInput
               min={0.1}
               step="0.1"
+              disabled={disabled}
               value={effectiveParadeSettings.cellSizeMeters}
               onValueChange={(cellSizeMeters) =>
                 onParadeSettingsChange?.({
@@ -113,6 +124,7 @@ export const StageSettingsPanel = ({
             横方向表示方式
             <select
               value={effectiveParadeSettings.horizontalMeasureMode ?? "centerSplit"}
+              disabled={disabled}
               onChange={(event) =>
                 onParadeSettingsChange?.({
                   horizontalMeasureMode: event.target
@@ -128,6 +140,7 @@ export const StageSettingsPanel = ({
             距離目盛り
             <select
               value={effectiveParadeSettings.rulerPosition}
+              disabled={disabled}
               onChange={(event) =>
                 onParadeSettingsChange?.({
                   rulerPosition: event.target.value as ParadeSettings["rulerPosition"],
@@ -146,6 +159,7 @@ export const StageSettingsPanel = ({
             <input
               type="checkbox"
               checked={effectiveParadeSettings.emphasizeEvery5m}
+              disabled={disabled}
               onChange={(event) =>
                 onParadeSettingsChange?.({
                   emphasizeEvery5m: event.target.checked,
@@ -158,6 +172,7 @@ export const StageSettingsPanel = ({
             <input
               type="checkbox"
               checked={effectiveParadeSettings.emphasizeEvery10m}
+              disabled={disabled}
               onChange={(event) =>
                 onParadeSettingsChange?.({
                   emphasizeEvery10m: event.target.checked,
@@ -167,6 +182,7 @@ export const StageSettingsPanel = ({
             10mごとのライン強調
           </label>
         </div>
+        {disabled && <p className="notice warning">{readOnlyNotice}</p>}
         <p className="notice muted">
           0mライン後方を増やすと、スタート後ろに -1m、-2m... の範囲を追加できます。横方向表示方式は表示だけを切り替えます。
         </p>
@@ -186,6 +202,7 @@ export const StageSettingsPanel = ({
             固定
             <select
               value={String(useGlobalStageSize)}
+              disabled={disabled}
               onChange={(event) =>
                 onUseGlobalStageSizeChange(event.target.value === "true")
               }
@@ -202,6 +219,7 @@ export const StageSettingsPanel = ({
         <NumericInput
           min={1}
           step="0.5"
+          disabled={disabled}
           value={stage.widthMeters}
           onValueChange={(widthMeters) => onChange({ widthMeters })}
         />
@@ -211,6 +229,7 @@ export const StageSettingsPanel = ({
         <NumericInput
           min={1}
           step="0.5"
+          disabled={disabled}
           value={stage.depthMeters}
           onValueChange={(depthMeters) => onChange({ depthMeters })}
         />
@@ -220,6 +239,7 @@ export const StageSettingsPanel = ({
         <NumericInput
           min={0.1}
           step="0.1"
+          disabled={disabled}
           value={stage.gridSizeMeters}
           onValueChange={(gridSizeMeters) => onChange({ gridSizeMeters })}
         />
@@ -228,6 +248,7 @@ export const StageSettingsPanel = ({
         横方向の表示
         <select
           value={stage.horizontalGuideMode ?? "meters"}
+          disabled={disabled}
           onChange={(event) =>
             onChange({
               horizontalGuideMode: event.target.value as HorizontalGuideMode,
@@ -244,6 +265,7 @@ export const StageSettingsPanel = ({
           min={0.2}
           max={1}
           step="0.05"
+          disabled={disabled}
           value={stage.memberDiameterMeters ?? 0.5}
           onValueChange={(memberDiameterMeters) =>
             onChange({ memberDiameterMeters })
@@ -266,6 +288,7 @@ export const StageSettingsPanel = ({
           正面方向
           <select
             value={stage.frontDirection ?? stage.audienceSide ?? "bottom"}
+            disabled={disabled}
             onChange={(event) => {
               const frontDirection = event.target.value as FrontDirection;
               onChange({
@@ -287,6 +310,7 @@ export const StageSettingsPanel = ({
           0m基準位置
           <select
             value={stage.originMode ?? "center"}
+            disabled={disabled}
             onChange={(event) =>
               onChange({ originMode: event.target.value as OriginMode })
             }
@@ -302,6 +326,7 @@ export const StageSettingsPanel = ({
           <input
             type="checkbox"
             checked={stage.showGrid}
+            disabled={disabled}
             onChange={(event) => onChange({ showGrid: event.target.checked })}
           />
           グリッド表示
@@ -310,6 +335,7 @@ export const StageSettingsPanel = ({
           <input
             type="checkbox"
             checked={stage.showCenterLine ?? true}
+            disabled={disabled}
             onChange={(event) =>
               onChange({ showCenterLine: event.target.checked })
             }
@@ -320,6 +346,7 @@ export const StageSettingsPanel = ({
           <input
             type="checkbox"
             checked={stage.showCenterMarker ?? true}
+            disabled={disabled}
             onChange={(event) =>
               onChange({ showCenterMarker: event.target.checked })
             }
@@ -330,6 +357,7 @@ export const StageSettingsPanel = ({
           <input
             type="checkbox"
             checked={stage.showStageLabels}
+            disabled={disabled}
             onChange={(event) =>
               onChange({ showStageLabels: event.target.checked })
             }
@@ -338,6 +366,7 @@ export const StageSettingsPanel = ({
         </label>
       </div>
     </details>
+    {disabled && <p className="notice warning">{readOnlyNotice}</p>}
     </section>
   );
 };

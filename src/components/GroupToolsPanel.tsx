@@ -17,6 +17,10 @@ type GroupToolsPanelProps = {
   selectedMemberIds: string[];
   isSelectionMode: boolean;
   spacingMeters: number;
+  canEditProject?: boolean;
+  canEditScene?: boolean;
+  projectReadOnlyMessage?: string;
+  sceneReadOnlyMessage?: string;
   onSpacingChange: (spacing: number) => void;
   onToggleSelectionMode: () => void;
   onClearSelection: () => void;
@@ -39,6 +43,10 @@ export const GroupToolsPanel = ({
   selectedMemberIds,
   isSelectionMode,
   spacingMeters,
+  canEditProject = true,
+  canEditScene = true,
+  projectReadOnlyMessage = "初期クラウド編集では、メンバーグループは編集できません。",
+  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onSpacingChange,
   onToggleSelectionMode,
   onClearSelection,
@@ -56,6 +64,8 @@ export const GroupToolsPanel = ({
   const hasSelection = selectedCount > 0;
   const canLineUp = selectedCount >= 2;
   const canDistribute = selectedCount >= 3;
+  const sceneDisabled = !canEditScene;
+  const projectDisabled = !canEditProject;
 
   return (
     <section
@@ -106,6 +116,8 @@ export const GroupToolsPanel = ({
             min={0.2}
             step="0.1"
             value={spacingMeters}
+            disabled={sceneDisabled}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onValueChange={onSpacingChange}
           />
         </label>
@@ -117,7 +129,8 @@ export const GroupToolsPanel = ({
           <button
             className="formation-tools__large-button"
             onClick={() => onApplyTemplate("horizontal")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             <span aria-hidden="true">•••</span>
@@ -126,7 +139,8 @@ export const GroupToolsPanel = ({
           <button
             className="formation-tools__large-button"
             onClick={() => onApplyTemplate("vertical")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             <span aria-hidden="true">︙</span>
@@ -141,7 +155,7 @@ export const GroupToolsPanel = ({
           <button
             className="formation-tools__arrow-button formation-tools__arrow-button--up"
             onClick={() => onNudgeSelection(0, -0.5)}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
             type="button"
             aria-label="奥へ移動"
             title="奥へ"
@@ -151,7 +165,7 @@ export const GroupToolsPanel = ({
           <button
             className="formation-tools__arrow-button formation-tools__arrow-button--left"
             onClick={() => onNudgeSelection(-0.5, 0)}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
             type="button"
             aria-label="左へ移動"
             title="左へ"
@@ -161,7 +175,7 @@ export const GroupToolsPanel = ({
           <button
             className="formation-tools__arrow-button formation-tools__arrow-button--right"
             onClick={() => onNudgeSelection(0.5, 0)}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
             type="button"
             aria-label="右へ移動"
             title="右へ"
@@ -171,7 +185,7 @@ export const GroupToolsPanel = ({
           <button
             className="formation-tools__arrow-button formation-tools__arrow-button--down"
             onClick={() => onNudgeSelection(0, 0.5)}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
             type="button"
             aria-label="客席へ移動"
             title="客席へ"
@@ -187,7 +201,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("left")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             左揃え
@@ -195,7 +210,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("centerX")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             横中央
@@ -203,7 +219,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("right")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             右揃え
@@ -211,7 +228,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("top")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             上揃え
@@ -219,7 +237,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("centerY")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             縦中央
@@ -227,7 +246,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("bottom")}
-            disabled={!canLineUp}
+            disabled={sceneDisabled || !canLineUp}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             下揃え
@@ -235,7 +255,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("distributeX")}
-            disabled={!canDistribute}
+            disabled={sceneDisabled || !canDistribute}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             横均等
@@ -243,7 +264,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("distributeY")}
-            disabled={!canDistribute}
+            disabled={sceneDisabled || !canDistribute}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             縦均等
@@ -251,7 +273,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("stageCenterX")}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             センター線
@@ -259,7 +282,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={() => onAlignSelection("stageCenter")}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             選択中心を中央へ
@@ -269,7 +293,8 @@ export const GroupToolsPanel = ({
               key={template.id}
               className="mini-button"
               onClick={() => onApplyTemplate(template.id)}
-              disabled={!canLineUp}
+              disabled={sceneDisabled || !canLineUp}
+              title={sceneDisabled ? sceneReadOnlyMessage : undefined}
               type="button"
             >
               <Shapes size={15} />
@@ -282,7 +307,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={onMirrorSelection}
-            disabled={!hasSelection}
+            disabled={sceneDisabled || !hasSelection}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             <FlipHorizontal2 size={15} />
@@ -291,7 +317,8 @@ export const GroupToolsPanel = ({
           <button
             className="mini-button"
             onClick={onCreateGroupFromSelection}
-            disabled={!hasSelection}
+            disabled={projectDisabled || !hasSelection}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             type="button"
           >
             <Users size={15} />

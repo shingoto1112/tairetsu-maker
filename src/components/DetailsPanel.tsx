@@ -36,6 +36,10 @@ type DetailsPanelProps = {
   stage: StageConfig;
   projectMode?: "stage" | "parade";
   paradeSettings?: ParadeSettings;
+  canEditProject?: boolean;
+  canEditScene?: boolean;
+  projectReadOnlyMessage?: string;
+  sceneReadOnlyMessage?: string;
   onUpdateMember: (id: string, patch: Partial<Member>) => void;
   onUpdateMemberGroup: (memberId: string, groupId: string | null) => void;
   onMoveMember: (id: string, position: Position) => void;
@@ -178,12 +182,18 @@ export const DetailsPanel = ({
   stage,
   projectMode = "stage",
   paradeSettings,
+  canEditProject = true,
+  canEditScene = true,
+  projectReadOnlyMessage = "初期クラウド編集では、メンバー名簿や道具マスターは編集できません。",
+  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onUpdateMember,
   onUpdateMemberGroup,
   onMoveMember,
   onUpdateObject,
   onUpdateObjectState,
 }: DetailsPanelProps) => {
+  const projectDisabled = !canEditProject;
+  const sceneDisabled = !canEditScene;
   const selectedMember =
     selected?.type === "member"
       ? members.find((member) => member.id === selected.id) ?? null
@@ -297,7 +307,7 @@ export const DetailsPanel = ({
   );
 
   const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
-    if (!selectedMember || !memberPosition) {
+    if (sceneDisabled || !selectedMember || !memberPosition) {
       return;
     }
     const value = parseNumberInput(rawValue);
@@ -314,7 +324,7 @@ export const DetailsPanel = ({
   };
 
   const updateObjectCoordinate = (axis: "x" | "y", rawValue: string) => {
-    if (!selectedObject || !objectState) {
+    if (sceneDisabled || !selectedObject || !objectState) {
       return;
     }
     const value = parseNumberInput(rawValue);
@@ -358,7 +368,7 @@ export const DetailsPanel = ({
     field: "widthMeters" | "heightMeters",
     rawValue: string,
   ) => {
-    if (!selectedObject) {
+    if (sceneDisabled || !selectedObject) {
       return;
     }
     const value = parseNumberInput(rawValue);
@@ -393,7 +403,7 @@ export const DetailsPanel = ({
   };
 
   const updateObjectRotation = (rawValue: string) => {
-    if (!selectedObject) {
+    if (sceneDisabled || !selectedObject) {
       return;
     }
     const value = parseNumberInput(rawValue);
@@ -415,6 +425,10 @@ export const DetailsPanel = ({
             : "シーンがありません"
         }
       />
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
       <section className="panel-section">
         <div className="panel-section__header">
@@ -463,6 +477,8 @@ export const DetailsPanel = ({
                 <span>メンバー名</span>
                 <input
                   value={selectedMember.name}
+                  disabled={projectDisabled}
+                  title={projectDisabled ? projectReadOnlyMessage : undefined}
                   onChange={(event) =>
                     onUpdateMember(selectedMember.id, {
                       name: event.target.value,
@@ -474,6 +490,8 @@ export const DetailsPanel = ({
                 <span>所属グループ</span>
                 <select
                   value={selectedMemberGroup?.id ?? ""}
+                  disabled={projectDisabled}
+                  title={projectDisabled ? projectReadOnlyMessage : undefined}
                   onChange={(event) =>
                     onUpdateMemberGroup(
                       selectedMember.id,
@@ -493,6 +511,7 @@ export const DetailsPanel = ({
                 <span>表示色</span>
                 <ColorPaletteInput
                   value={selectedMember.color}
+                  disabled={projectDisabled}
                   onChange={(color) =>
                     onUpdateMember(selectedMember.id, {
                       color,
@@ -509,6 +528,8 @@ export const DetailsPanel = ({
                     min={minDisplayX}
                     max={maxDisplayX}
                     value={displayXValue(memberPosition?.x)}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>
                       updateMemberCoordinate("x", String(value))
                     }
@@ -533,6 +554,8 @@ export const DetailsPanel = ({
                     }
                     max={stageDepthMeters}
                     value={displayYValue(memberPosition?.y)}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>
                       updateMemberCoordinate("y", String(value))
                     }
@@ -572,6 +595,8 @@ export const DetailsPanel = ({
                 <span>道具名</span>
                 <input
                   value={selectedObject.name}
+                  disabled={projectDisabled}
+                  title={projectDisabled ? projectReadOnlyMessage : undefined}
                   onChange={(event) =>
                     onUpdateObject(selectedObject.id, {
                       name: event.target.value,
@@ -599,6 +624,7 @@ export const DetailsPanel = ({
                 <span>色</span>
                 <ColorPaletteInput
                   value={selectedObject.color}
+                  disabled={projectDisabled}
                   onChange={(color) =>
                     onUpdateObject(selectedObject.id, {
                       color,
@@ -615,6 +641,8 @@ export const DetailsPanel = ({
                     min={objectDisplayXBounds.min}
                     max={objectDisplayXBounds.max}
                     value={displayXValue(objectState?.x)}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>
                       updateObjectCoordinate("x", String(value))
                     }
@@ -635,6 +663,8 @@ export const DetailsPanel = ({
                     min={objectDisplayYBounds.min}
                     max={objectDisplayYBounds.max}
                     value={displayYValue(objectState?.y)}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>
                       updateObjectCoordinate("y", String(value))
                     }
@@ -649,6 +679,8 @@ export const DetailsPanel = ({
                     step="0.01"
                     min={0.01}
                     value={objectState?.widthMeters}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>
                       updateObjectPositiveNumber(
                         "widthMeters",
@@ -666,6 +698,8 @@ export const DetailsPanel = ({
                     step="0.01"
                     min={0.01}
                     value={objectState?.heightMeters}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>
                       updateObjectPositiveNumber(
                         "heightMeters",
@@ -682,6 +716,8 @@ export const DetailsPanel = ({
                   <NumericInput
                     step="1"
                     value={objectState?.rotation}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) => updateObjectRotation(String(value))}
                   />
                   <b>°</b>

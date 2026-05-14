@@ -18,8 +18,14 @@ type ToolbarProps = {
   focusMode: boolean;
   showSnapGuides: boolean;
   snapToGuides: boolean;
+  canEditProject?: boolean;
+  canEditScene?: boolean;
+  canSaveProject?: boolean;
   isDirty?: boolean;
   isSaving?: boolean;
+  projectReadOnlyMessage?: string;
+  readOnlyMessage?: string;
+  sceneReadOnlyMessage?: string;
   onTitleChange: (title: string) => void;
   onBackToLibrary: () => void;
   onSaveProject: () => void;
@@ -47,8 +53,14 @@ export const Toolbar = ({
   focusMode,
   showSnapGuides,
   snapToGuides,
+  canEditProject = true,
+  canEditScene = true,
+  canSaveProject = true,
   isDirty = false,
   isSaving = false,
+  projectReadOnlyMessage,
+  readOnlyMessage,
+  sceneReadOnlyMessage,
   onTitleChange,
   onBackToLibrary,
   onSaveProject,
@@ -68,6 +80,20 @@ export const Toolbar = ({
 }: ToolbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const projectEditMessage =
+    projectReadOnlyMessage ??
+    readOnlyMessage ??
+    "クラウドプロジェクトの全体設定は初期実装では編集できません。";
+  const sceneEditMessage =
+    sceneReadOnlyMessage ??
+    readOnlyMessage ??
+    "編集するには、このシーンの編集ロックを取得してください。";
+  const saveDisabled = isSaving || !canSaveProject;
+  const saveTitle = canSaveProject
+    ? isDirty
+      ? "変更を保存"
+      : "隊列表を保存"
+    : sceneEditMessage;
 
   useEffect(() => {
     if (!menuOpen) {
@@ -117,6 +143,8 @@ export const Toolbar = ({
                 <h3>管理</h3>
                 <button
                   onClick={() => runMenuAction(onOpenRosterManager)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
                   type="button"
                 >
                   <Table2 size={16} />
@@ -126,7 +154,12 @@ export const Toolbar = ({
 
               <section className="menu-section">
                 <h3>ファイル</h3>
-                <button onClick={() => runMenuAction(onSaveProject)} type="button">
+                <button
+                  onClick={() => runMenuAction(onSaveProject)}
+                  disabled={saveDisabled}
+                  title={saveTitle}
+                  type="button"
+                >
                   <Save size={16} />
                   隊列表を保存
                 </button>
@@ -145,12 +178,19 @@ export const Toolbar = ({
 
               <section className="menu-section">
                 <h3>表示設定</h3>
-                <button onClick={() => runMenuAction(onToggleGrid)} type="button">
+                <button
+                  onClick={() => runMenuAction(onToggleGrid)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
+                  type="button"
+                >
                   <Grid3X3 size={16} />
                   グリッド{showGrid ? "OFF" : "ON"}
                 </button>
                 <button
                   onClick={() => runMenuAction(onToggleCenterLine)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
                   type="button"
                 >
                   <Eye size={16} />
@@ -158,6 +198,8 @@ export const Toolbar = ({
                 </button>
                 <button
                   onClick={() => runMenuAction(onToggleCenterMarker)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
                   type="button"
                 >
                   センターマーカー{showCenterMarker ? "OFF" : "ON"}
@@ -176,12 +218,16 @@ export const Toolbar = ({
                 </button>
                 <button
                   onClick={() => runMenuAction(onToggleSnapGuides)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
                   type="button"
                 >
                   ガイド線{showSnapGuides ? "OFF" : "ON"}
                 </button>
                 <button
                   onClick={() => runMenuAction(onToggleSnapToGuides)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
                   type="button"
                 >
                   ガイド吸着{snapToGuides ? "OFF" : "ON"}
@@ -193,14 +239,26 @@ export const Toolbar = ({
                 <button onClick={() => runMenuAction(onClearSelection)} type="button">
                   選択解除
                 </button>
-                <button onClick={() => runMenuAction(onMirrorSelection)} type="button">
+                <button
+                  onClick={() => runMenuAction(onMirrorSelection)}
+                  disabled={!canEditScene}
+                  title={!canEditScene ? sceneEditMessage : undefined}
+                  type="button"
+                >
                   左右反転
                 </button>
-                <button onClick={() => runMenuAction(onCreateGroup)} type="button">
+                <button
+                  onClick={() => runMenuAction(onCreateGroup)}
+                  disabled={!canEditProject}
+                  title={!canEditProject ? projectEditMessage : undefined}
+                  type="button"
+                >
                   グループ作成
                 </button>
                 <button
                   onClick={() => runMenuAction(onOpenMemberTools)}
+                  disabled={!canEditScene}
+                  title={!canEditScene ? sceneEditMessage : undefined}
                   type="button"
                 >
                   隊列テンプレート
@@ -223,8 +281,8 @@ export const Toolbar = ({
           className={`mini-button toolbar-save-button${isDirty ? " is-dirty" : ""}`}
           onClick={onSaveProject}
           type="button"
-          disabled={isSaving}
-          title={isDirty ? "変更を保存" : "隊列表を保存"}
+          disabled={saveDisabled}
+          title={saveTitle}
         >
           <Save size={15} />
           {isSaving ? "保存中" : "保存"}
@@ -234,6 +292,8 @@ export const Toolbar = ({
           className="toolbar__title"
           value={title}
           onChange={(event) => onTitleChange(event.target.value)}
+          disabled={!canEditProject}
+          title={!canEditProject ? projectEditMessage : undefined}
           aria-label="隊列表名"
         />
       </div>

@@ -25,6 +25,8 @@ type AssignmentPanelProps = {
   previousFrame: FormationFrame | null;
   objectStates: Record<string, ObjectState>;
   previousObjectStates: Record<string, ObjectState>;
+  canEditScene?: boolean;
+  sceneReadOnlyMessage?: string;
   onAssignMember: (objectId: string, memberId: string) => void;
   onApplyPreviousAssignments: () => void;
   onRemoveAssignment: (
@@ -44,6 +46,8 @@ export const AssignmentPanel = ({
   previousFrame,
   objectStates,
   previousObjectStates,
+  canEditScene = true,
+  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onAssignMember,
   onApplyPreviousAssignments,
   onRemoveAssignment,
@@ -54,6 +58,7 @@ export const AssignmentPanel = ({
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, string>>(
     {},
   );
+  const sceneDisabled = !canEditScene;
 
   const membersById = useMemo(
     () => new Map(members.map((member) => [member.id, member])),
@@ -212,7 +217,12 @@ export const AssignmentPanel = ({
           <button
             className="mini-button"
             type="button"
-            disabled={!previousFrame || transferablePreviousAssignmentCount === 0}
+            disabled={
+              sceneDisabled ||
+              !previousFrame ||
+              transferablePreviousAssignmentCount === 0
+            }
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={onApplyPreviousAssignments}
           >
             前シーンの割当を反映
@@ -262,6 +272,8 @@ export const AssignmentPanel = ({
                           {member.name}
                           <button
                             type="button"
+                            disabled={sceneDisabled}
+                            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                             onClick={() =>
                               onRemoveAssignment(object.id, memberId, false)
                             }
@@ -277,7 +289,8 @@ export const AssignmentPanel = ({
                 <div className="assignment-picker">
                   <select
                     value={draftMemberId}
-                    disabled={assignableMembers.length === 0}
+                    disabled={sceneDisabled || assignableMembers.length === 0}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onChange={(event) =>
                       setAssignmentDrafts((previous) => ({
                         ...previous,
@@ -299,7 +312,8 @@ export const AssignmentPanel = ({
                   <button
                     className="mini-button"
                     type="button"
-                    disabled={!draftMemberId}
+                    disabled={sceneDisabled || !draftMemberId}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onClick={() => {
                       if (!draftMemberId) return;
                       onAssignMember(object.id, draftMemberId);
@@ -417,6 +431,7 @@ export const AssignmentPanel = ({
           </div>
         }
       />
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
       {view === "objects" ? renderObjectView() : renderMemberView()}
     </div>
   );

@@ -70,6 +70,8 @@ type ParadeCanvasProps = {
   isMemberSelectionMode: boolean;
   focusMemberId?: string;
   focusMode: boolean;
+  isReadOnly?: boolean;
+  readOnlyMessage?: string;
   onSelect: (
     selection: Selection,
     options?: { append?: boolean },
@@ -89,6 +91,7 @@ type ParadeCanvasProps = {
   onToggleFullscreen: () => void;
   onCaptureStageImage?: () => void;
   onContextMenuRequest: (request: StageContextMenuRequest) => void;
+  onReadOnlyEditAttempt?: () => void;
 };
 
 export type ParadeCanvasHandle = HTMLDivElement & {
@@ -336,6 +339,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       isMemberSelectionMode,
       focusMemberId,
       focusMode,
+      isReadOnly = false,
+      readOnlyMessage,
       onSelect,
       onStagePointerPositionChange,
       onMoveMember,
@@ -352,6 +357,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     onToggleFullscreen,
     onCaptureStageImage,
     onContextMenuRequest,
+    onReadOnlyEditAttempt,
   },
   ref,
 ) => {
@@ -1267,6 +1273,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
       onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      if (isReadOnly) {
+        onReadOnlyEditAttempt?.();
+        return;
+      }
       startTouchContextMenu(event, { type: "member", id: memberId });
       if (appendSelection) {
         return;
@@ -1301,6 +1311,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
+      if (isReadOnly) {
+        onReadOnlyEditAttempt?.();
+        return;
+      }
       startTouchContextMenu(event, { type: "object", id: objectId });
       setDragState({
         type: "object",
@@ -1333,6 +1347,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
+      if (isReadOnly) {
+        onReadOnlyEditAttempt?.();
+        return;
+      }
       setDragState({
         type: "object",
         interaction: "resize",
@@ -1375,6 +1393,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           180) /
         Math.PI;
       onSelect({ type: "object", id: objectId });
+      if (isReadOnly) {
+        onReadOnlyEditAttempt?.();
+        return;
+      }
       setDragState({
         type: "object",
         interaction: "rotate",
@@ -1394,17 +1416,23 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     };
 
     return (
-      <div className="parade-canvas-shell">
+      <div className={isReadOnly ? "parade-canvas-shell is-read-only" : "parade-canvas-shell"}>
         <aside className="parade-control-panel" aria-label="パレード操作">
           <div className="parade-control-panel__header">
             <strong>パレード操作</strong>
             <span>{selectedFrameLabel}</span>
           </div>
+          {isReadOnly && (
+            <p className="stage-readonly-pill parade-readonly-pill" title={readOnlyMessage}>
+              閲覧中
+            </p>
+          )}
           <section className="parade-control-section">
             <h3>前シーン反映</h3>
             <button
               className="mini-button"
               type="button"
+              disabled={isReadOnly}
               onClick={() =>
                 onReflectPreviousFrame({
                   target: "all",
@@ -1480,6 +1508,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             <button
               className="mini-button primary"
               type="button"
+              disabled={isReadOnly}
               onClick={() =>
                 onReflectPreviousFrame({
                   target: reflectTarget,
@@ -1558,10 +1587,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           <section className="parade-control-section">
             <h3>編集</h3>
             <div className="parade-control-row">
-              <button type="button" className="mini-button" onClick={onUndo} disabled={!canUndo}>
+              <button type="button" className="mini-button" onClick={onUndo} disabled={!canUndo || isReadOnly}>
                 元に戻す
               </button>
-              <button type="button" className="mini-button" onClick={onRedo} disabled={!canRedo}>
+              <button type="button" className="mini-button" onClick={onRedo} disabled={!canRedo || isReadOnly}>
                 やり直し
               </button>
             </div>
@@ -1715,7 +1744,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     }
                   >
                     <span className="parade-object__label">{object.name}</span>
-                    {isSelected && !object.locked && (
+                    {isSelected && !object.locked && !isReadOnly && (
                       <>
                         <span className="object-anchor-point" aria-hidden="true" />
                         <span

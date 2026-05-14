@@ -35,6 +35,10 @@ type MemberPanelProps = {
   objectAssignmentLabelsByMemberId: Record<string, string[]>;
   visibilityTab: VisibilityTab;
   scrollTarget: { id: string; token: number } | null;
+  canEditProject?: boolean;
+  canEditScene?: boolean;
+  projectReadOnlyMessage?: string;
+  sceneReadOnlyMessage?: string;
   onVisibilityTabChange: (tab: VisibilityTab) => void;
   onSelect: (id: string) => void;
   onToggleMemberSelection: (id: string) => void;
@@ -95,6 +99,10 @@ export const MemberPanel = ({
   objectAssignmentLabelsByMemberId,
   visibilityTab,
   scrollTarget,
+  canEditProject = true,
+  canEditScene = true,
+  projectReadOnlyMessage = "初期クラウド編集では、メンバー名簿やグループは編集できません。",
+  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onVisibilityTabChange,
   onSelect,
   onToggleMemberSelection,
@@ -124,6 +132,8 @@ export const MemberPanel = ({
   const [draftGroupColor, setDraftGroupColor] = useState(groupDraftColors[0]);
   const [expandedGroupIds, setExpandedGroupIds] = useState<string[]>([]);
   const isVisibleTab = visibilityTab === "visible";
+  const projectDisabled = !canEditProject;
+  const sceneDisabled = !canEditScene;
 
   const memberGroupById = useMemo(() => {
     const map = new Map<string, string>();
@@ -211,6 +221,9 @@ export const MemberPanel = ({
   );
 
   const handleCreateGroup = () => {
+    if (projectDisabled) {
+      return;
+    }
     onCreateGroup({
       name: draftGroupName.trim() || undefined,
       color: draftGroupColor,
@@ -270,6 +283,9 @@ export const MemberPanel = ({
   }, [memberGroupById, scrollTarget]);
 
   const showMemberOnStage = (member: Member) => {
+    if (sceneDisabled || (member.visible === false && projectDisabled)) {
+      return;
+    }
     onClearMemberObjectAssignments(member.id, true);
     if (member.visible === false) {
       onUpdate(member.id, { visible: true });
@@ -278,6 +294,9 @@ export const MemberPanel = ({
   };
 
   const hideMemberFromStage = (member: Member) => {
+    if (sceneDisabled) {
+      return;
+    }
     onSetMemberFrameVisibility([member.id], false);
   };
 
@@ -295,6 +314,8 @@ export const MemberPanel = ({
     const hasSceneColorOverride = Boolean(
       currentFrame?.memberAppearanceOverrides?.[member.id]?.color,
     );
+    const canShowMemberOnStage =
+      canEditScene && (member.visible !== false || canEditProject);
 
     return (
       <div
@@ -327,6 +348,8 @@ export const MemberPanel = ({
           />
           <input
             value={member.name}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             onChange={(event) =>
               onUpdate(member.id, { name: event.target.value })
             }
@@ -341,6 +364,7 @@ export const MemberPanel = ({
               <ColorPaletteInput
                 compact
                 value={member.color}
+                disabled={projectDisabled}
                 onChange={(color) => onUpdate(member.id, { color })}
                 label={`${member.name} の色`}
               />
@@ -349,6 +373,8 @@ export const MemberPanel = ({
               所属
               <select
                 value={memberGroupById.get(member.id) ?? ""}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
                 onChange={(event) =>
                   onChangeMemberGroup(member.id, event.target.value || null)
                 }
@@ -385,6 +411,8 @@ export const MemberPanel = ({
               event.stopPropagation();
               onSetFocusMember(member.id);
             }}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             type="button"
           >
             <Star size={15} />
@@ -397,6 +425,8 @@ export const MemberPanel = ({
                 event.stopPropagation();
                 hideMemberFromStage(member);
               }}
+              disabled={sceneDisabled}
+              title={sceneDisabled ? sceneReadOnlyMessage : undefined}
               type="button"
             >
               <EyeOff size={15} />
@@ -409,6 +439,14 @@ export const MemberPanel = ({
                 event.stopPropagation();
                 showMemberOnStage(member);
               }}
+              disabled={!canShowMemberOnStage}
+              title={
+                sceneDisabled
+                  ? sceneReadOnlyMessage
+                  : member.visible === false && projectDisabled
+                    ? projectReadOnlyMessage
+                    : undefined
+              }
               type="button"
             >
               <Eye size={15} />
@@ -422,6 +460,8 @@ export const MemberPanel = ({
                 event.stopPropagation();
                 onClearMemberObjectAssignments(member.id, false);
               }}
+              disabled={sceneDisabled}
+              title={sceneDisabled ? sceneReadOnlyMessage : undefined}
               type="button"
             >
               割当解除
@@ -434,6 +474,8 @@ export const MemberPanel = ({
                 event.stopPropagation();
                 onUpdate(member.id, { visible: !(member.visible ?? true) });
               }}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               {(member.visible ?? true) ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -446,6 +488,8 @@ export const MemberPanel = ({
               event.stopPropagation();
               onDelete(member.id);
             }}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             type="button"
           >
             <Trash2 size={15} />
@@ -463,7 +507,13 @@ export const MemberPanel = ({
         meta={`表示 ${visibleMembers.length}人 / 非表示 ${hiddenMembers.length}人 / 選択中 ${selectedMemberIds.length}人`}
         actions={
           <>
-            <button className="mini-button primary" onClick={handleCreateGroup} type="button">
+            <button
+              className="mini-button primary"
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              onClick={handleCreateGroup}
+              type="button"
+            >
               <Plus size={15} />
               グループ
             </button>
@@ -472,6 +522,8 @@ export const MemberPanel = ({
               onClick={() =>
                 onAddMember({ visibleInCurrentFrame: isVisibleTab })
               }
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               <Plus size={15} />
@@ -483,7 +535,8 @@ export const MemberPanel = ({
             <button
               className="mini-button"
               onClick={() => onPasteMember(isVisibleTab)}
-              disabled={!canPasteMember}
+              disabled={projectDisabled || !canPasteMember}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               貼り付け
@@ -499,6 +552,10 @@ export const MemberPanel = ({
           </>
         }
       />
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
       <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
         <button
@@ -532,6 +589,8 @@ export const MemberPanel = ({
           <button
             className="mini-button"
             onClick={() => onSetAllMembersFrameVisibility(true)}
+            disabled={sceneDisabled}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             すべて表示
@@ -539,6 +598,8 @@ export const MemberPanel = ({
           <button
             className="mini-button"
             onClick={() => onSetAllMembersFrameVisibility(false)}
+            disabled={sceneDisabled}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             すべて非表示
@@ -573,6 +634,17 @@ export const MemberPanel = ({
                 >
                   <input
                     checked={isVisible}
+                    disabled={
+                      sceneDisabled ||
+                      (!isVisible && member.visible === false && projectDisabled)
+                    }
+                    title={
+                      sceneDisabled
+                        ? sceneReadOnlyMessage
+                        : !isVisible && member.visible === false && projectDisabled
+                          ? projectReadOnlyMessage
+                          : undefined
+                    }
                     onChange={(event) => {
                       if (event.target.checked) {
                         showMemberOnStage(member);
@@ -623,6 +695,8 @@ export const MemberPanel = ({
           確認するメンバー
           <select
             value={focusMemberId ?? ""}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             onChange={(event) => {
               onSetFocusMember(event.target.value || undefined);
             }}
@@ -683,7 +757,13 @@ export const MemberPanel = ({
       <div className="member-management-block">
         <div className="panel-section__header">
           <h3>グループ作成</h3>
-          <button className="mini-button primary" onClick={handleCreateGroup} type="button">
+          <button
+            className="mini-button primary"
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
+            onClick={handleCreateGroup}
+            type="button"
+          >
             <Plus size={15} />
             グループ作成
           </button>
@@ -693,6 +773,8 @@ export const MemberPanel = ({
             グループ名
             <input
               value={draftGroupName}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               onChange={(event) => setDraftGroupName(event.target.value)}
               placeholder="未入力なら グループ1"
             />
@@ -701,6 +783,7 @@ export const MemberPanel = ({
             <span>グループカラー</span>
             <ColorPaletteInput
               value={draftGroupColor}
+              disabled={projectDisabled}
               onChange={setDraftGroupColor}
               label="グループカラー"
             />
@@ -782,6 +865,8 @@ export const MemberPanel = ({
                   />
                   <input
                     value={group.name}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
                     onChange={(event) =>
                       onUpdateGroup(group.id, { name: event.target.value })
                     }
@@ -802,6 +887,7 @@ export const MemberPanel = ({
                     <ColorPaletteInput
                       compact
                       value={color}
+                      disabled={projectDisabled}
                       onChange={(nextColor) =>
                         onUpdateGroup(group.id, { color: nextColor })
                       }
@@ -811,6 +897,8 @@ export const MemberPanel = ({
                   <button
                     className="mini-button primary"
                     onClick={() => onAddMemberToGroup(group, isVisibleTab)}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
                     type="button"
                   >
                     <Plus size={15} />
@@ -818,6 +906,14 @@ export const MemberPanel = ({
                   </button>
                   <button
                     className={isVisibleTab ? "mini-button" : "mini-button is-active"}
+                    disabled={sceneDisabled || (!isVisibleTab && projectDisabled)}
+                    title={
+                      sceneDisabled
+                        ? sceneReadOnlyMessage
+                        : !isVisibleTab && projectDisabled
+                          ? projectReadOnlyMessage
+                          : undefined
+                    }
                     onClick={() => {
                       const targetIds = tabMembers.map((member) => member.id);
                       if (isVisibleTab) {
@@ -854,6 +950,8 @@ export const MemberPanel = ({
                   <button
                     className="mini-button danger"
                     onClick={() => onDeleteGroup(group.id)}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
                     type="button"
                   >
                     <Trash2 size={15} />
@@ -888,6 +986,8 @@ export const MemberPanel = ({
             onClick={() =>
               onAddMember({ visibleInCurrentFrame: isVisibleTab })
             }
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             type="button"
           >
             <Plus size={15} />

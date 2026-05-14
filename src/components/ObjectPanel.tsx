@@ -36,6 +36,10 @@ type ObjectPanelProps = {
   selected: Selection;
   visibilityTab: VisibilityTab;
   scrollTarget: { id: string; token: number } | null;
+  canEditProject?: boolean;
+  canEditScene?: boolean;
+  projectReadOnlyMessage?: string;
+  sceneReadOnlyMessage?: string;
   onVisibilityTabChange: (tab: VisibilityTab) => void;
   onSelect: (id: string) => void;
   onUpdateObject: (id: string, patch: Partial<StageObject>) => void;
@@ -117,6 +121,10 @@ export const ObjectPanel = ({
   selected,
   visibilityTab,
   scrollTarget,
+  canEditProject = true,
+  canEditScene = true,
+  projectReadOnlyMessage = "初期クラウド編集では、道具マスターや道具グループは編集できません。",
+  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onVisibilityTabChange,
   onSelect,
   onUpdateObject,
@@ -153,6 +161,8 @@ export const ObjectPanel = ({
     string[]
   >([]);
   const isVisibleTab = visibilityTab === "visible";
+  const projectDisabled = !canEditProject;
+  const sceneDisabled = !canEditScene;
   const isObjectVisible = (object: StageObject): boolean =>
     objectStates[object.id]?.visible ?? object.visible ?? true;
   const visibleObjects = objects.filter(isObjectVisible);
@@ -236,6 +246,9 @@ export const ObjectPanel = ({
   };
 
   const handleCreateObjectGroup = () => {
+    if (projectDisabled) {
+      return;
+    }
     onCreateObjectGroup({
       name: groupDraftName.trim() || undefined,
       color: groupDraftColor,
@@ -300,6 +313,8 @@ export const ObjectPanel = ({
             <button
               className="mini-button primary"
               onClick={() => onAddObject(isVisibleTab)}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               <Plus size={15} />
@@ -308,6 +323,8 @@ export const ObjectPanel = ({
             <button
               className="mini-button"
               onClick={() => onAddCurtain(isVisibleTab)}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               <Plus size={15} />
@@ -316,6 +333,8 @@ export const ObjectPanel = ({
             <button
               className="mini-button"
               onClick={() => onAddMark(isVisibleTab)}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               <Plus size={15} />
@@ -327,7 +346,8 @@ export const ObjectPanel = ({
             <button
               className="mini-button"
               onClick={() => onPasteObject(isVisibleTab)}
-              disabled={!canPasteObject}
+              disabled={projectDisabled || !canPasteObject}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               貼り付け
@@ -335,6 +355,10 @@ export const ObjectPanel = ({
           </>
         }
       />
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
       <div className="member-visibility-tabs" role="tablist" aria-label="道具の表示状態">
         <button
@@ -368,6 +392,8 @@ export const ObjectPanel = ({
           <button
             className="mini-button"
             onClick={() => onSetAllObjectsFrameVisibility(true)}
+            disabled={sceneDisabled}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             すべて表示
@@ -375,6 +401,8 @@ export const ObjectPanel = ({
           <button
             className="mini-button"
             onClick={() => onSetAllObjectsFrameVisibility(false)}
+            disabled={sceneDisabled}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             すべて非表示
@@ -400,6 +428,8 @@ export const ObjectPanel = ({
                 >
                   <input
                     checked={isVisible}
+                    disabled={sceneDisabled}
+                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onChange={(event) =>
                       onUpdateObjectState(object.id, {
                         visible: event.target.checked,
@@ -432,6 +462,8 @@ export const ObjectPanel = ({
             グループ名
             <input
               value={groupDraftName}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               onChange={(event) => setGroupDraftName(event.target.value)}
               placeholder="例：中旗"
             />
@@ -440,6 +472,7 @@ export const ObjectPanel = ({
             <span>色</span>
             <ColorPaletteInput
               value={groupDraftColor}
+              disabled={projectDisabled}
               onChange={setGroupDraftColor}
               label="道具グループの色"
             />
@@ -448,6 +481,8 @@ export const ObjectPanel = ({
             種類
             <select
               value={groupDraftType}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               onChange={(event) =>
                 setGroupDraftType(event.target.value as StageObjectType)
               }
@@ -463,6 +498,8 @@ export const ObjectPanel = ({
             形
             <select
               value={groupDraftShape}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               onChange={(event) =>
                 setGroupDraftShape(event.target.value as StageObjectShape)
               }
@@ -478,6 +515,8 @@ export const ObjectPanel = ({
         <button
           className="mini-button primary"
           onClick={handleCreateObjectGroup}
+          disabled={projectDisabled}
+          title={projectDisabled ? projectReadOnlyMessage : undefined}
           type="button"
         >
           <Plus size={15} />
@@ -521,6 +560,8 @@ export const ObjectPanel = ({
                       />
                       <input
                         value={group.name}
+                        disabled={projectDisabled}
+                        title={projectDisabled ? projectReadOnlyMessage : undefined}
                         onChange={(event) =>
                           onUpdateObjectGroup(group.id, {
                             name: event.target.value,
@@ -539,6 +580,7 @@ export const ObjectPanel = ({
                       <ColorPaletteInput
                         compact
                         value={group.color ?? "#0d8b78"}
+                        disabled={projectDisabled}
                         onChange={(color) =>
                           onUpdateObjectGroup(group.id, {
                             color,
@@ -549,6 +591,8 @@ export const ObjectPanel = ({
                       <select
                         className="compact-select"
                         value={group.defaultType ?? "prop"}
+                        disabled={projectDisabled}
+                        title={projectDisabled ? projectReadOnlyMessage : undefined}
                         onChange={(event) =>
                           onUpdateObjectGroup(group.id, {
                             defaultType: event.target.value as StageObjectType,
@@ -565,6 +609,8 @@ export const ObjectPanel = ({
                       <button
                         className="mini-button"
                         onClick={() => onAddObjectToGroup(group, isVisibleTab)}
+                        disabled={projectDisabled}
+                        title={projectDisabled ? projectReadOnlyMessage : undefined}
                         type="button"
                       >
                         <Plus size={15} />
@@ -573,6 +619,8 @@ export const ObjectPanel = ({
                       <button
                         className="mini-button danger"
                         onClick={() => onDeleteObjectGroup(group.id)}
+                        disabled={projectDisabled}
+                        title={projectDisabled ? projectReadOnlyMessage : undefined}
                         type="button"
                       >
                         グループ削除
@@ -610,6 +658,12 @@ export const ObjectPanel = ({
                                 />
                                 <input
                                   value={object.name}
+                                  disabled={projectDisabled}
+                                  title={
+                                    projectDisabled
+                                      ? projectReadOnlyMessage
+                                      : undefined
+                                  }
                                   onChange={(event) =>
                                     onUpdateObject(object.id, {
                                       name: event.target.value,
@@ -619,6 +673,12 @@ export const ObjectPanel = ({
                                 />
                                 <select
                                   value={group.id}
+                                  disabled={projectDisabled}
+                                  title={
+                                    projectDisabled
+                                      ? projectReadOnlyMessage
+                                      : undefined
+                                  }
                                   onChange={(event) =>
                                     onChangeObjectGroup(
                                       object.id,
@@ -645,6 +705,12 @@ export const ObjectPanel = ({
                                       visible: !isVisible,
                                     });
                                   }}
+                                  disabled={sceneDisabled}
+                                  title={
+                                    sceneDisabled
+                                      ? sceneReadOnlyMessage
+                                      : undefined
+                                  }
                                   type="button"
                                 >
                                   {isVisible ? "非表示" : "表示"}
@@ -671,7 +737,8 @@ export const ObjectPanel = ({
         <div className="template-grid">
           <button
             className="mini-button"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectLeft")}
             type="button"
           >
@@ -679,7 +746,8 @@ export const ObjectPanel = ({
           </button>
           <button
             className="mini-button"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectCenterX")}
             type="button"
           >
@@ -687,7 +755,8 @@ export const ObjectPanel = ({
           </button>
           <button
             className="mini-button"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectRight")}
             type="button"
           >
@@ -695,7 +764,8 @@ export const ObjectPanel = ({
           </button>
           <button
             className="mini-button"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectTop")}
             type="button"
           >
@@ -703,7 +773,8 @@ export const ObjectPanel = ({
           </button>
           <button
             className="mini-button"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectCenterY")}
             type="button"
           >
@@ -711,7 +782,8 @@ export const ObjectPanel = ({
           </button>
           <button
             className="mini-button"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectBottom")}
             type="button"
           >
@@ -719,7 +791,8 @@ export const ObjectPanel = ({
           </button>
           <button
             className="mini-button primary"
-            disabled={selected?.type !== "object"}
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onClick={() => onPlaceSelectedObject("objectStageCenter")}
             type="button"
           >
@@ -781,6 +854,8 @@ export const ObjectPanel = ({
               />
               <input
                 value={object.name}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
                 onChange={(event) =>
                   onUpdateObject(object.id, { name: event.target.value })
                 }
@@ -792,6 +867,8 @@ export const ObjectPanel = ({
                 種類
                 <select
                   value={object.type}
+                  disabled={projectDisabled}
+                  title={projectDisabled ? projectReadOnlyMessage : undefined}
                   onChange={(event) =>
                     onUpdateObject(object.id, {
                       type: event.target.value as StageObjectType,
@@ -809,6 +886,8 @@ export const ObjectPanel = ({
                 形
                 <select
                   value={object.shape}
+                  disabled={projectDisabled}
+                  title={projectDisabled ? projectReadOnlyMessage : undefined}
                   onChange={(event) =>
                     onUpdateObject(object.id, {
                       shape: event.target.value as StageObjectShape,
@@ -827,6 +906,7 @@ export const ObjectPanel = ({
                 <ColorPaletteInput
                   compact
                   value={object.color}
+                  disabled={projectDisabled}
                   onChange={(color) =>
                     onUpdateObject(object.id, { color })
                   }
@@ -837,6 +917,8 @@ export const ObjectPanel = ({
                 zIndex
                 <NumericInput
                   value={state?.zIndex ?? object.zIndex}
+                  disabled={sceneDisabled}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                   onValueChange={(zIndex) =>
                     onUpdateObjectState(object.id, {
                       zIndex: Math.round(zIndex),
@@ -850,6 +932,8 @@ export const ObjectPanel = ({
                   min={0.1}
                   step="0.1"
                   value={state?.widthMeters ?? object.widthMeters}
+                  disabled={sceneDisabled}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                   onValueChange={(widthMeters) =>
                     onUpdateObjectState(object.id, {
                       widthMeters,
@@ -863,6 +947,8 @@ export const ObjectPanel = ({
                   min={0.1}
                   step="0.1"
                   value={state?.heightMeters ?? object.heightMeters}
+                  disabled={sceneDisabled}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                   onValueChange={(heightMeters) =>
                     onUpdateObjectState(object.id, {
                       heightMeters,
@@ -875,6 +961,8 @@ export const ObjectPanel = ({
                 <NumericInput
                   step="1"
                   value={state?.rotation ?? object.defaultRotation}
+                  disabled={sceneDisabled}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                   onValueChange={(rotation) =>
                     onUpdateObjectState(object.id, {
                       rotation,
@@ -886,6 +974,8 @@ export const ObjectPanel = ({
                 表示
                 <select
                   value={String(isVisible)}
+                  disabled={sceneDisabled}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                   onChange={(event) =>
                     onUpdateObjectState(object.id, {
                       visible: event.target.value === "true",
@@ -916,6 +1006,8 @@ export const ObjectPanel = ({
                         {member.name}
                         <button
                           type="button"
+                          disabled={sceneDisabled}
+                          title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                           onClick={(event) => {
                             event.stopPropagation();
                             onRemoveAssignment(object.id, memberId, false);
@@ -939,7 +1031,8 @@ export const ObjectPanel = ({
                     }))
                   }
                   onClick={(event) => event.stopPropagation()}
-                  disabled={assignableMembers.length === 0}
+                  disabled={sceneDisabled || assignableMembers.length === 0}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                 >
                   <option value="">
                     {assignableMembers.length === 0
@@ -958,7 +1051,8 @@ export const ObjectPanel = ({
                 </select>
                 <button
                   className="mini-button"
-                  disabled={!draftMemberId}
+                  disabled={sceneDisabled || !draftMemberId}
+                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                   onClick={(event) => {
                     event.stopPropagation();
                     if (draftMemberId) {
@@ -985,6 +1079,8 @@ export const ObjectPanel = ({
                     visible: !isVisible,
                   });
                 }}
+                disabled={sceneDisabled}
+                title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                 type="button"
               >
                 {isVisible ? (
@@ -1000,6 +1096,8 @@ export const ObjectPanel = ({
                   event.stopPropagation();
                   onUpdateObject(object.id, { locked: !object.locked });
                 }}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
                 type="button"
               >
                 {object.locked ? <Lock size={15} /> : <Unlock size={15} />}
@@ -1011,6 +1109,8 @@ export const ObjectPanel = ({
                   event.stopPropagation();
                   onNudgeZ(object.id, 1);
                 }}
+                disabled={sceneDisabled}
+                title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                 type="button"
               >
                 <Layers size={15} />
@@ -1022,6 +1122,8 @@ export const ObjectPanel = ({
                   event.stopPropagation();
                   onNudgeZ(object.id, -1);
                 }}
+                disabled={sceneDisabled}
+                title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                 type="button"
               >
                 <SendToBack size={15} />
@@ -1033,6 +1135,8 @@ export const ObjectPanel = ({
                   event.stopPropagation();
                   onDelete(object.id);
                 }}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
                 type="button"
               >
                 <Trash2 size={15} />

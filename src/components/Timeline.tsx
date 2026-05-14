@@ -24,6 +24,10 @@ type TimelineProps = {
   defaultStageDepth: number;
   previousFrame: FormationFrame | null;
   selectedTargetName?: string | null;
+  canEditProject?: boolean;
+  canEditScene?: boolean;
+  projectReadOnlyMessage?: string;
+  sceneReadOnlyMessage?: string;
   onSelectFrame: (id: string) => void;
   onAddFrame: () => void;
   onAddFrameAtCurrentTime: () => void;
@@ -51,6 +55,10 @@ export const Timeline = ({
   defaultStageDepth,
   previousFrame,
   selectedTargetName,
+  canEditProject = true,
+  canEditScene = true,
+  projectReadOnlyMessage = "初期クラウド編集では、シーン追加・削除・並び替え・名称変更は編集できません。",
+  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onSelectFrame,
   onAddFrame,
   onAddFrameAtCurrentTime,
@@ -75,6 +83,8 @@ export const Timeline = ({
   const selectedIndex = selectedFrame
     ? frames.findIndex((frame) => frame.id === selectedFrame.id)
     : -1;
+  const projectDisabled = !canEditProject;
+  const sceneDisabled = !canEditScene;
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
@@ -112,6 +122,8 @@ export const Timeline = ({
           ラベル
           <input
             value={frame.label}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             onChange={(event) =>
               onUpdateFrame(frame.id, { label: event.target.value })
             }
@@ -121,6 +133,8 @@ export const Timeline = ({
           セクション
           <input
             value={frame.section ?? ""}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             onChange={(event) =>
               onUpdateFrame(frame.id, { section: event.target.value })
             }
@@ -133,6 +147,8 @@ export const Timeline = ({
             min={0}
             step="0.1"
             value={frame.timeSec}
+            disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
             onValueChange={(timeSec) =>
               onUpdateFrame(frame.id, {
                 timeSec,
@@ -155,6 +171,8 @@ export const Timeline = ({
                 min={1}
                 step="0.5"
                 value={frame.stageWidthMeters ?? defaultStageWidth}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
                 onValueChange={(stageWidthMeters) =>
                   onUpdateFrame(frame.id, {
                     stageWidthMeters,
@@ -168,6 +186,8 @@ export const Timeline = ({
                 min={1}
                 step="0.5"
                 value={frame.stageDepthMeters ?? defaultStageDepth}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
                 onValueChange={(stageDepthMeters) =>
                   onUpdateFrame(frame.id, {
                     stageDepthMeters,
@@ -192,6 +212,8 @@ export const Timeline = ({
         <textarea
           className="scene-notes-textarea compact"
           value={frame.notes ?? ""}
+          disabled={sceneDisabled}
+          title={sceneDisabled ? sceneReadOnlyMessage : undefined}
           onChange={(event) =>
             onUpdateFrame(frame.id, { notes: event.target.value })
           }
@@ -218,6 +240,8 @@ export const Timeline = ({
           <input
             type="checkbox"
             checked={includePreviousObjectVisibility}
+            disabled={sceneDisabled}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             onChange={(event) =>
               setIncludePreviousObjectVisibility(event.target.checked)
             }
@@ -230,7 +254,8 @@ export const Timeline = ({
             onClick={() =>
               onApplyPreviousSceneState(includePreviousObjectVisibility)
             }
-            disabled={!previousFrame}
+            disabled={sceneDisabled || !previousFrame}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             <RotateCcw size={14} />
@@ -241,7 +266,8 @@ export const Timeline = ({
             onClick={() =>
               onApplyPreviousSceneState(includePreviousObjectVisibility, true)
             }
-            disabled={!previousFrame || !selectedTargetName}
+            disabled={sceneDisabled || !previousFrame || !selectedTargetName}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
             type="button"
           >
             選択中だけ反映
@@ -260,7 +286,8 @@ export const Timeline = ({
         <button
           className="mini-button danger"
           onClick={() => onDeleteFrame(frame.id)}
-          disabled={frames.length <= 1}
+          disabled={projectDisabled || frames.length <= 1}
+          title={projectDisabled ? projectReadOnlyMessage : undefined}
           type="button"
         >
           <Trash2 size={14} />
@@ -291,11 +318,23 @@ export const Timeline = ({
               <ArrowRight size={15} />
               次へ
             </button>
-            <button className="mini-button primary" onClick={onAddFrame} type="button">
+            <button
+              className="mini-button primary"
+              onClick={onAddFrame}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              type="button"
+            >
               <Plus size={15} />
               シーン
             </button>
-            <button className="mini-button" onClick={onAddFrameAtCurrentTime} type="button">
+            <button
+              className="mini-button"
+              onClick={onAddFrameAtCurrentTime}
+              disabled={projectDisabled}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              type="button"
+            >
               <Plus size={15} />
               現在時刻で追加
             </button>
@@ -305,7 +344,8 @@ export const Timeline = ({
             <button
               className="mini-button"
               onClick={onPasteFrame}
-              disabled={!canPasteFrame}
+              disabled={projectDisabled || !canPasteFrame}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               貼り付け
@@ -313,6 +353,10 @@ export const Timeline = ({
           </div>
         }
       />
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
       <div className="timeline__rail">
         {frames.length === 0 && (
@@ -331,19 +375,29 @@ export const Timeline = ({
                     ? "is-drop-target"
                     : "",
                 ].join(" ")}
-                draggable
+                draggable={!projectDisabled}
                 onClick={() => onSelectFrame(frame.id)}
                 onDragStart={(event) => {
+                  if (projectDisabled) {
+                    event.preventDefault();
+                    return;
+                  }
                   setDraggingFrameId(frame.id);
                   event.dataTransfer.effectAllowed = "move";
                   event.dataTransfer.setData("text/plain", frame.id);
                 }}
                 onDragOver={(event) => {
+                  if (projectDisabled) {
+                    return;
+                  }
                   event.preventDefault();
                   setDragOverFrameId(frame.id);
                 }}
                 onDragLeave={() => setDragOverFrameId(null)}
                 onDrop={(event) => {
+                  if (projectDisabled) {
+                    return;
+                  }
                   event.preventDefault();
                   const draggedId =
                     draggingFrameId || event.dataTransfer.getData("text/plain");

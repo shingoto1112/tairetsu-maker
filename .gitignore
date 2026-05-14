@@ -13,6 +13,7 @@ dist
 .vite
 vite.config.js
 vite.config.d.ts
+.playwright-cli/
 
 # Local logs
 *.log
@@ -21,6 +22,7 @@ vite-dev.log
 
 # Hosting/provider local state
 .vercel
+supabase/.temp/
 
 # Local handoff/export bundles for external review
 handoff/

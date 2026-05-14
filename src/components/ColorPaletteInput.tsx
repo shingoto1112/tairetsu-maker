@@ -22,6 +22,7 @@ type ColorPaletteInputProps = {
   onChange: (color: string) => void;
   label: string;
   compact?: boolean;
+  disabled?: boolean;
   palette?: string[];
 };
 
@@ -30,6 +31,7 @@ export function ColorPaletteInput({
   onChange,
   label,
   compact = false,
+  disabled = false,
   palette = DEFAULT_COLOR_PALETTE,
 }: ColorPaletteInputProps) {
   const [open, setOpen] = useState(false);
@@ -51,6 +53,10 @@ export function ColorPaletteInput({
   }, [currentColor, normalizedCurrent, palette]);
 
   useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+      return;
+    }
     if (!open) {
       return;
     }
@@ -72,7 +78,7 @@ export function ColorPaletteInput({
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [disabled, open]);
 
   useLayoutEffect(() => {
     if (!open || !rootRef.current) {
@@ -116,6 +122,7 @@ export function ColorPaletteInput({
       <button
         type="button"
         className="color-palette-trigger"
+        disabled={disabled}
         style={{ backgroundColor: currentColor }}
         onClick={() => setOpen((current) => !current)}
         aria-label={`${label}を選ぶ`}

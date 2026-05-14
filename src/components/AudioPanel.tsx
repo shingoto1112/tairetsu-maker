@@ -14,6 +14,7 @@ type AudioPanelProps = {
   loopStart: number;
   loopEnd: number;
   sharedAudioNotice: boolean;
+  cloudAudioNotice?: boolean;
   onLoadAudio: (file: File) => void;
   onTogglePlayback: () => void;
   onSeek: (time: number) => void;
@@ -35,6 +36,7 @@ export const AudioPanel = ({
   loopStart,
   loopEnd,
   sharedAudioNotice,
+  cloudAudioNotice = false,
   onLoadAudio,
   onTogglePlayback,
   onSeek,
@@ -71,6 +73,11 @@ export const AudioPanel = ({
       {sharedAudioNotice && (
         <p className="notice muted">
           音源ファイルは共有されていません。同じ曲ファイルを読み込んでください。
+        </p>
+      )}
+      {cloudAudioNotice && (
+        <p className="notice muted">
+          初期クラウド編集では音源ファイル本体はクラウド保存しません。読み込んだ音源はこの端末での再生用です。
         </p>
       )}
       <input

@@ -89,6 +89,8 @@ type StageCanvasProps = {
   isMemberSelectionMode: boolean;
   focusMemberId?: string;
   focusMode: boolean;
+  isReadOnly?: boolean;
+  readOnlyMessage?: string;
   currentTime: number;
   audioDuration: number;
   audioName: string | null;
@@ -112,6 +114,7 @@ type StageCanvasProps = {
   onToggleFullscreen: () => void;
   onSeekAudio: (timeSec: number) => void;
   onContextMenuRequest: (request: StageContextMenuRequest) => void;
+  onReadOnlyEditAttempt?: () => void;
 };
 
 export type StageCanvasHandle = HTMLDivElement & {
@@ -353,6 +356,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       isMemberSelectionMode,
       focusMemberId,
       focusMode,
+      isReadOnly = false,
+      readOnlyMessage,
       currentTime,
       audioDuration,
       audioName,
@@ -373,6 +378,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       onToggleFullscreen,
       onSeekAudio,
       onContextMenuRequest,
+      onReadOnlyEditAttempt,
     },
     exportRef,
   ) => {
@@ -1245,6 +1251,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
       onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      if (isReadOnly) {
+        event.preventDefault();
+        onReadOnlyEditAttempt?.();
+        return;
+      }
       startTouchContextMenu(event, { type: "member", id: memberId });
       if (appendSelection) {
         event.preventDefault();
@@ -1477,13 +1488,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
     return (
       <main className="stage-area">
-        <div className="stage-frame">
+        <div className={isReadOnly ? "stage-frame is-read-only" : "stage-frame"}>
           <div className="stage-export-header">
             <div className="stage-primary-controls">
               <button
                 className="mini-button icon-only undo-redo-button"
                 onClick={onUndo}
-                disabled={!canUndo}
+                disabled={!canUndo || isReadOnly}
                 type="button"
                 title="元に戻す（Ctrl+Z）"
               >
@@ -1493,7 +1504,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               <button
                 className="mini-button icon-only undo-redo-button"
                 onClick={onRedo}
-                disabled={!canRedo}
+                disabled={!canRedo || isReadOnly}
                 type="button"
                 title="やり直し（Ctrl+Y / Ctrl+Shift+Z）"
               >
@@ -1535,11 +1546,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   推し移動 {focusDistanceMeters.toFixed(1)}m
                 </span>
               )}
+              {isReadOnly && (
+                <span className="stage-readonly-pill" title={readOnlyMessage}>
+                  閲覧中
+                </span>
+              )}
               <button
                 className="mini-button"
                 onClick={onSaveFrame}
                 type="button"
-                title="現在のシーンを保存"
+                disabled={isReadOnly}
+                title={isReadOnly ? readOnlyMessage ?? "閲覧中です" : "現在のシーンを保存"}
               >
                 <Save size={15} />
                 保存
@@ -2114,7 +2131,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     stage={stage}
                     viewerPerspective={viewerPerspective}
                     selected={selected?.type === "object" && selected.id === object.id}
-                    disabled={!objectEditing}
+                    disabled={!objectEditing || isReadOnly}
                     onSelect={() => onSelect({ type: "object", id: object.id })}
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "object", id: object.id })
@@ -2125,6 +2142,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     onTouchLongPressMove={trackTouchContextMenuMove}
                     onTouchLongPressEnd={stopTouchContextMenu}
                     onMove={(patch) => {
+                      if (isReadOnly) {
+                        onReadOnlyEditAttempt?.();
+                        return;
+                      }
                       if (patch.x === undefined && patch.y === undefined) {
                         onUpdateObjectState(object.id, patch);
                         return;
@@ -2156,13 +2177,15 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       });
                     }}
                     onInteractionStart={(kind) =>
-                      onBeginProjectEdit(
-                        kind === "resize"
-                          ? "道具サイズ変更"
-                          : kind === "rotate"
-                            ? "道具回転"
-                            : "道具移動",
-                      )
+                      isReadOnly
+                        ? onReadOnlyEditAttempt?.()
+                        : onBeginProjectEdit(
+                            kind === "resize"
+                              ? "道具サイズ変更"
+                              : kind === "rotate"
+                                ? "道具回転"
+                                : "道具移動",
+                          )
                     }
                     onInteractionEnd={() => {
                       setActiveSnapGuides([]);

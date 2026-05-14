@@ -8,11 +8,16 @@
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "cloud:check": "node scripts/cloud-collab-check.mjs",
+    "cloud:smoke": "node scripts/cloud-collab-smoke.mjs",
+    "cloud:sql": "node scripts/cloud-collab-sql.mjs",
+    "cloud:vercel-env": "node scripts/cloud-collab-vercel-env.mjs",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "html-to-image": "^1.11.11",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
