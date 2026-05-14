@@ -11,6 +11,7 @@ const migrationFiles = [
   "20260514006000_cloud_project_delete_hide.sql",
   "20260514007000_cloud_owner_takeover_requests.sql",
   "20260514008000_cloud_display_name_repair.sql",
+  "20260515000000_cloud_contacts.sql",
 ];
 
 const now = new Date().toISOString();
@@ -23,6 +24,11 @@ const chunks = [
   "-- Re-running older migrations can change table-returning function shapes.",
   "-- Drop them first so CREATE OR REPLACE does not fail on return type changes.",
   "drop function if exists public.list_project_collaboration(uuid);",
+  "drop function if exists public.list_user_contacts();",
+  "drop function if exists public.add_contact_by_email(text);",
+  "drop function if exists public.add_project_member_from_contact(uuid, uuid, text);",
+  "drop function if exists public.add_project_member_to_contacts(uuid, uuid);",
+  "drop function if exists public.cloud_collab_display_name_for_user(uuid);",
   "",
 ];
 

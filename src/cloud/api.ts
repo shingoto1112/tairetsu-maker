@@ -116,6 +116,13 @@ export type CloudCollaborationItem = {
   userId: string | null;
 };
 
+export type CloudContactItem = {
+  createdAt: string | null;
+  displayName: string | null;
+  status: "accepted" | "blocked" | "pending";
+  userId: string;
+};
+
 type CloudCollaborationRow = {
   accepted_at: string | null;
   created_at: string;
@@ -126,6 +133,29 @@ type CloudCollaborationRow = {
   item_type: "invite" | "member";
   revoked_at: string | null;
   role: "editor" | "owner" | "viewer";
+  user_id: string | null;
+};
+
+type CloudContactRow = {
+  contact_user_id: string;
+  created_at: string | null;
+  display_name?: string | null;
+  status: "accepted" | "blocked" | "pending";
+};
+
+type CloudContactActionResult = {
+  contact_user_id: string | null;
+  display_name: string | null;
+  reason: string;
+  status: "accepted" | "blocked" | "pending" | null;
+  success: boolean;
+};
+
+type CloudProjectMemberFromContactResult = {
+  display_name: string | null;
+  reason: string;
+  role: "editor" | "viewer" | null;
+  success: boolean;
   user_id: string | null;
 };
 
@@ -210,6 +240,13 @@ const readDisplayName = (value: string | null | undefined): string | null => {
   }
   return trimmed;
 };
+
+const mapContactRow = (row: CloudContactRow): CloudContactItem => ({
+  createdAt: row.created_at,
+  displayName: readDisplayName(row.display_name),
+  status: row.status,
+  userId: row.contact_user_id,
+});
 
 export const createCloudApiClient = (
   config: CloudConfig,
@@ -317,6 +354,52 @@ export const createCloudApiClient = (
         p_project_id: projectId,
         p_role: role,
       }),
+
+    listUserContacts: async (): Promise<CloudContactItem[]> => {
+      const rows = await rpc<CloudContactRow>("list_user_contacts", {});
+      return rows.map(mapContactRow);
+    },
+
+    addContactByEmail: async (email: string): Promise<CloudContactActionResult> => {
+      const result = await rpcOne<CloudContactActionResult>("add_contact_by_email", {
+        p_email: email,
+      });
+      return {
+        ...result,
+        display_name: readDisplayName(result.display_name),
+      };
+    },
+
+    addProjectMemberFromContact: (
+      projectId: string,
+      contactUserId: string,
+      role: "editor" | "viewer",
+    ) =>
+      rpcOne<CloudProjectMemberFromContactResult>(
+        "add_project_member_from_contact",
+        {
+          p_contact_user_id: contactUserId,
+          p_project_id: projectId,
+          p_role: role,
+        },
+      ),
+
+    addProjectMemberToContacts: async (
+      projectId: string,
+      contactUserId: string,
+    ): Promise<CloudContactActionResult> => {
+      const result = await rpcOne<CloudContactActionResult>(
+        "add_project_member_to_contacts",
+        {
+          p_contact_user_id: contactUserId,
+          p_project_id: projectId,
+        },
+      );
+      return {
+        ...result,
+        display_name: readDisplayName(result.display_name),
+      };
+    },
 
     listCloudProjects: async (): Promise<CloudProjectSummary[]> => {
       const projects = await restGet<CloudProjectRow[]>(

@@ -1,11 +1,23 @@
 import { FormEvent, useMemo, useState } from "react";
-import { Copy, RefreshCw, Trash2, X } from "lucide-react";
-import type { CloudCollaborationItem } from "../cloud";
+import { Copy, RefreshCw, Trash2, UserPlus, X } from "lucide-react";
+import type { CloudCollaborationItem, CloudContactItem } from "../cloud";
+
+type CloudShareActionFeedback = {
+  message: string;
+  success: boolean;
+};
 
 type CloudShareModalProps = {
+  contacts: CloudContactItem[];
   currentUserId?: string;
   items: CloudCollaborationItem[];
   isBusy: boolean;
+  onAddContactByEmail: (email: string) => Promise<CloudShareActionFeedback>;
+  onAddContactToProject: (
+    contactUserId: string,
+    role: "editor" | "viewer",
+  ) => Promise<CloudShareActionFeedback>;
+  onAddMemberToContacts: (userId: string) => Promise<CloudShareActionFeedback>;
   onClose: () => void;
   onCreateInvite: (
     email: string,
@@ -46,10 +58,17 @@ const memberLabel = (
   return item.displayName || "名前未設定";
 };
 
+const contactLabel = (item: CloudContactItem): string =>
+  item.displayName || "名前未設定";
+
 export const CloudShareModal = ({
+  contacts,
   currentUserId,
   items,
   isBusy,
+  onAddContactByEmail,
+  onAddContactToProject,
+  onAddMemberToContacts,
   onClose,
   onCreateInvite,
   onRefresh,
@@ -60,6 +79,10 @@ export const CloudShareModal = ({
 }: CloudShareModalProps) => {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"editor" | "viewer">("editor");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactRoleById, setContactRoleById] = useState<
+    Record<string, "editor" | "viewer">
+  >({});
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -75,6 +98,22 @@ export const CloudShareModal = ({
     [items],
   );
   const members = items.filter((item) => item.type === "member");
+  const memberUserIds = useMemo(
+    () =>
+      new Set(
+        members
+          .map((item) => item.userId)
+          .filter((userId): userId is string => Boolean(userId)),
+      ),
+    [members],
+  );
+  const contactUserIds = useMemo(
+    () => new Set(contacts.map((contact) => contact.userId)),
+    [contacts],
+  );
+  const visibleContacts = contacts.filter(
+    (contact) => contact.status === "accepted",
+  );
 
   const submitInvite = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -85,6 +124,26 @@ export const CloudShareModal = ({
     setLastInviteLink(inviteLink);
     setMessage("招待リンクを作成しました。相手に共有してください。");
     setEmail("");
+  };
+
+  const submitContact = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const feedback = await onAddContactByEmail(contactEmail.trim());
+    setMessage(feedback.message);
+    if (feedback.success) {
+      setContactEmail("");
+    }
+  };
+
+  const addContactToProject = async (contact: CloudContactItem) => {
+    const roleForContact = contactRoleById[contact.userId] ?? "editor";
+    const feedback = await onAddContactToProject(contact.userId, roleForContact);
+    setMessage(feedback.message);
+  };
+
+  const addMemberToContacts = async (userId: string) => {
+    const feedback = await onAddMemberToContacts(userId);
+    setMessage(feedback.message);
   };
 
   const copyInviteLink = async () => {
@@ -163,6 +222,78 @@ export const CloudShareModal = ({
 
         <div className="cloud-share-section">
           <div className="cloud-share-section__header">
+            <h3>連絡先から追加</h3>
+            <button
+              className="mini-button"
+              disabled={isBusy}
+              onClick={() => void onRefresh()}
+              type="button"
+            >
+              <RefreshCw size={14} />
+              更新
+            </button>
+          </div>
+          <form className="cloud-share-contact-form" onSubmit={submitContact}>
+            <label>
+              メールアドレスで連絡先に追加
+              <input
+                type="email"
+                value={contactEmail}
+                onChange={(event) => setContactEmail(event.target.value)}
+                placeholder="member@example.com"
+              />
+            </label>
+            <button className="mini-button" disabled={isBusy} type="submit">
+              <UserPlus size={14} />
+              連絡先に追加
+            </button>
+          </form>
+          <div className="cloud-share-list">
+            {visibleContacts.map((contact) => {
+              const isProjectMember = memberUserIds.has(contact.userId);
+              return (
+                <div className="cloud-share-row" key={contact.userId}>
+                  <div>
+                    <strong>{contactLabel(contact)}</strong>
+                    <span>{isProjectMember ? "参加済み" : "連絡先"}</span>
+                  </div>
+                  <div className="cloud-share-row__actions">
+                    <select
+                      value={contactRoleById[contact.userId] ?? "editor"}
+                      disabled={isBusy || isProjectMember}
+                      onChange={(event) =>
+                        setContactRoleById((previous) => ({
+                          ...previous,
+                          [contact.userId]:
+                            event.target.value === "viewer" ? "viewer" : "editor",
+                        }))
+                      }
+                    >
+                      <option value="editor">編集</option>
+                      <option value="viewer">閲覧</option>
+                    </select>
+                    <button
+                      className="mini-button primary"
+                      disabled={isBusy || isProjectMember}
+                      onClick={() => void addContactToProject(contact)}
+                      type="button"
+                    >
+                      プロジェクトに追加
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {visibleContacts.length === 0 && (
+              <p className="library-cloud-message">
+                連絡先はまだありません。メールアドレスで追加できます。
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="cloud-share-section">
+          <div className="cloud-share-section__header">
             <h3>参加者</h3>
             <button
               className="mini-button"
@@ -179,9 +310,29 @@ export const CloudShareModal = ({
               <div className="cloud-share-row" key={item.id}>
                 <div>
                   <strong>{memberLabel(item, currentUserId)}</strong>
-                  <span>{roleLabel(item.role)}</span>
+                  <span>
+                    {roleLabel(item.role)}
+                    {item.userId &&
+                    item.userId !== currentUserId &&
+                    contactUserIds.has(item.userId)
+                      ? " / 連絡先済み"
+                      : ""}
+                  </span>
                 </div>
                 <div className="cloud-share-row__actions">
+                  {item.userId &&
+                    item.userId !== currentUserId &&
+                    !contactUserIds.has(item.userId) && (
+                      <button
+                        className="mini-button"
+                        disabled={isBusy}
+                        onClick={() => void addMemberToContacts(item.userId ?? "")}
+                        type="button"
+                      >
+                        <UserPlus size={14} />
+                        連絡先
+                      </button>
+                    )}
                   {item.userId && (
                     <select
                       value={item.role}

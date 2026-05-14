@@ -1185,7 +1185,15 @@ h2 {
   grid-template-columns: minmax(220px, 1fr) 140px auto;
 }
 
+.cloud-share-contact-form {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
 .cloud-share-invite label,
+.cloud-share-contact-form label,
 .cloud-share-section label {
   color: #334155;
   display: grid;
@@ -1258,7 +1266,9 @@ h2 {
 .cloud-share-row__actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
 }
 
 .cloud-help-modal {
@@ -5847,6 +5857,31 @@ h2 {
 }
 
 @media (max-width: 720px) {
+  .cloud-share-backdrop {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .cloud-share-modal {
+    max-height: calc(100vh - 20px);
+    width: 100%;
+  }
+
+  .cloud-share-invite,
+  .cloud-share-contact-form {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-share-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-share-row__actions {
+    justify-content: flex-start;
+  }
+
   .share-export-backdrop {
     align-items: stretch;
     padding: 10px;

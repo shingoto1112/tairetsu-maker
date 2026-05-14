@@ -58,6 +58,7 @@ import {
   type CloudApiClient,
   type CloudAuthSession,
   type CloudCollaborationItem,
+  type CloudContactItem,
   type CloudLockTarget,
   type CloudPermissionRole,
   type CloudProjectParts,
@@ -1678,6 +1679,7 @@ function App() {
   const [cloudCollaborationItems, setCloudCollaborationItems] = useState<
     CloudCollaborationItem[]
   >([]);
+  const [cloudContacts, setCloudContacts] = useState<CloudContactItem[]>([]);
   const [cloudPendingUpdates, setCloudPendingUpdates] = useState<
     CloudPendingUpdate[]
   >([]);
@@ -5633,6 +5635,7 @@ function App() {
       setActiveCloudProject(null);
       setCloudActiveLocks([]);
       setCloudCollaborationItems([]);
+      setCloudContacts([]);
       setCloudPendingUpdates([]);
       setIsCloudShareOpen(false);
       setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
@@ -6041,6 +6044,36 @@ function App() {
     } catch (error) {
       setNotice(getCloudErrorMessage(error));
     }
+  };
+
+  const refreshCloudContacts = async (
+    sessionOverride?: CloudAuthSession | null,
+  ) => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner" || !cloudConfig) {
+      setCloudContacts([]);
+      return;
+    }
+    try {
+      const activeSession = await getActiveCloudSession(sessionOverride);
+      if (!activeSession) {
+        setCloudContacts([]);
+        return;
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      setCloudContacts(await api.listUserContacts());
+    } catch (error) {
+      setNotice(getCloudErrorMessage(error));
+    }
+  };
+
+  const refreshCloudShareData = async (
+    sessionOverride?: CloudAuthSession | null,
+  ) => {
+    await Promise.all([
+      refreshCloudCollaboration(sessionOverride),
+      refreshCloudContacts(sessionOverride),
+    ]);
   };
 
   const restoreCloudLockFromSession = async (
@@ -7358,6 +7391,8 @@ function App() {
     clearCloudAuthSession();
     setCloudSession(null);
     setCloudProjects([]);
+    setCloudContacts([]);
+    setCloudCollaborationItems([]);
     setCloudError(null);
     setNotice("クラウドからログアウトしました。");
   };
@@ -7439,6 +7474,152 @@ function App() {
     } catch (error) {
       setNotice(getCloudErrorMessage(error));
       return null;
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const addCloudContactByEmail = async (
+    email: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    if (!cloudConfig) {
+      return { message: "Supabase接続が未設定です。", success: false };
+    }
+    if (!email.trim()) {
+      return {
+        message: "連絡先に追加するメールアドレスを入力してください。",
+        success: false,
+      };
+    }
+    setIsCloudBusy(true);
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        return { message: "クラウドにログインしてください。", success: false };
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const result = await api.addContactByEmail(email);
+      if (!result.success) {
+        const message =
+          result.reason === "user_not_found"
+            ? "このメールアドレスのアカウントが見つかりません。先に相手がアカウント作成してください。"
+            : result.reason === "self_contact"
+              ? "自分自身は連絡先に追加できません。"
+              : result.reason === "invalid_email"
+                ? "メールアドレスの形式を確認してください。"
+                : "連絡先を追加できませんでした。";
+        setNotice(message);
+        return { message, success: false };
+      }
+      await refreshCloudContacts(activeSession);
+      const label = result.display_name ?? "相手";
+      const message =
+        result.reason === "already_contact"
+          ? `${label}は連絡先に登録済みです。`
+          : `${label}を連絡先に追加しました。`;
+      setNotice(message);
+      return { message, success: true };
+    } catch (error) {
+      const message = getCloudErrorMessage(error);
+      setNotice(message);
+      return { message, success: false };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const addCloudContactToProject = async (
+    contactUserId: string,
+    role: "editor" | "viewer",
+  ): Promise<{ message: string; success: boolean }> => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner" || !cloudConfig) {
+      const message = "共有管理はownerのみ利用できます。";
+      setNotice(message);
+      return { message, success: false };
+    }
+    setIsCloudBusy(true);
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        return { message: "クラウドにログインしてください。", success: false };
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const result = await api.addProjectMemberFromContact(
+        cloudState.projectId,
+        contactUserId,
+        role,
+      );
+      if (!result.success) {
+        const message =
+          result.reason === "already_member"
+            ? "この連絡先はすでに参加者です。"
+            : result.reason === "contact_not_found"
+              ? "連絡先が見つかりません。更新してからもう一度試してください。"
+              : result.reason === "owner_required"
+                ? "プロジェクト参加者の追加はownerのみできます。"
+                : "連絡先をプロジェクトに追加できませんでした。";
+        setNotice(message);
+        return { message, success: false };
+      }
+      await refreshCloudShareData(activeSession);
+      const label = result.display_name ?? "連絡先";
+      const message = `${label}をプロジェクトに追加しました。`;
+      setNotice(message);
+      return { message, success: true };
+    } catch (error) {
+      const message = getCloudErrorMessage(error);
+      setNotice(message);
+      return { message, success: false };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const addCloudMemberToContacts = async (
+    userId: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner" || !cloudConfig) {
+      const message = "共有管理はownerのみ利用できます。";
+      setNotice(message);
+      return { message, success: false };
+    }
+    setIsCloudBusy(true);
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        return { message: "クラウドにログインしてください。", success: false };
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const result = await api.addProjectMemberToContacts(
+        cloudState.projectId,
+        userId,
+      );
+      if (!result.success) {
+        const message =
+          result.reason === "already_contact"
+            ? "この参加者は連絡先に登録済みです。"
+            : result.reason === "member_not_found"
+              ? "参加者が見つかりません。更新してからもう一度試してください。"
+              : result.reason === "self_contact"
+                ? "自分自身は連絡先に追加できません。"
+                : "参加者を連絡先に追加できませんでした。";
+        setNotice(message);
+        return { message, success: false };
+      }
+      await refreshCloudContacts(activeSession);
+      const label = result.display_name ?? "参加者";
+      const message =
+        result.reason === "already_contact"
+          ? `${label}は連絡先に登録済みです。`
+          : `${label}を連絡先に追加しました。`;
+      setNotice(message);
+      return { message, success: true };
+    } catch (error) {
+      const message = getCloudErrorMessage(error);
+      setNotice(message);
+      return { message, success: false };
     } finally {
       setIsCloudBusy(false);
     }
@@ -10034,7 +10215,7 @@ function App() {
                 disabled={isCloudBusy}
                 onClick={() => {
                   setIsCloudShareOpen(true);
-                  void refreshCloudCollaboration();
+                  void refreshCloudShareData();
                 }}
                 type="button"
               >
@@ -10658,12 +10839,16 @@ function App() {
     />
     {activeCloudProject?.role === "owner" && isCloudShareOpen && (
       <CloudShareModal
+        contacts={cloudContacts}
         currentUserId={cloudSession?.user.id}
         items={cloudCollaborationItems}
         isBusy={isCloudBusy}
+        onAddContactByEmail={addCloudContactByEmail}
+        onAddContactToProject={addCloudContactToProject}
+        onAddMemberToContacts={addCloudMemberToContacts}
         onClose={() => setIsCloudShareOpen(false)}
         onCreateInvite={createCloudProjectInvite}
-        onRefresh={refreshCloudCollaboration}
+        onRefresh={refreshCloudShareData}
         onRemoveMember={removeCloudProjectMember}
         onRevokeInvite={revokeCloudProjectInvite}
         onUpdateRole={updateCloudProjectMemberRole}

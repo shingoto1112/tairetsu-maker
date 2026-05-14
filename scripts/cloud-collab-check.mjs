@@ -118,6 +118,10 @@ const expectExistingUnauthedRpc = (result) => {
   return row?.success === false && row?.reason === "not_authenticated";
 };
 
+const expectExistingEmptyListRpc = (result) => {
+  return result.ok && Array.isArray(result.json);
+};
+
 const main = async () => {
   const tableResult = await tableProbe();
   printResult(tableResult);
@@ -183,6 +187,18 @@ const main = async () => {
       p_target_id: "scene-check",
       p_target_type: "scene",
     }),
+    await rpc("add_contact_by_email", {
+      p_email: "check@example.com",
+    }),
+    await rpc("add_project_member_from_contact", {
+      p_contact_user_id: dummyProjectId,
+      p_project_id: dummyProjectId,
+      p_role: "viewer",
+    }),
+    await rpc("add_project_member_to_contacts", {
+      p_contact_user_id: dummyProjectId,
+      p_project_id: dummyProjectId,
+    }),
   ];
 
   for (const result of checks) {
@@ -192,6 +208,14 @@ const main = async () => {
         `${result.label} did not return the expected unauthenticated response. Check that all SQL migrations were applied.`,
       );
     }
+  }
+
+  const listContactsResult = await rpc("list_user_contacts", {});
+  printResult(listContactsResult);
+  if (!expectExistingEmptyListRpc(listContactsResult)) {
+    throw new Error(
+      "rpc:list_user_contacts is not reachable. Check that all SQL migrations were applied.",
+    );
   }
 
   console.log(

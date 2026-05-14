@@ -148,6 +148,15 @@ const expectFailure = (label, result, expectedReason) => {
   return row;
 };
 
+const expectNoEmailFields = (label, rows) => {
+  const items = Array.isArray(rows) ? rows : [rows];
+  const leaked = items.find((item) => item && "email" in item && item.email);
+  if (leaked) {
+    throw new Error(`${label} leaked email: ${JSON.stringify(leaked)}`);
+  }
+  console.log(`OK ${label}: no email fields`);
+};
+
 const schemaVersion = 1;
 const createSmokeDraft = () => {
   const title = `Codex cloud smoke ${new Date().toISOString()}`;
@@ -296,6 +305,77 @@ const main = async () => {
   );
   const projectId = created.project_id;
 
+  expectFailure(
+    "owner cannot add missing contact",
+    await rpc(owner, "add_contact_by_email", {
+      p_email: `missing-${Date.now()}@example.invalid`,
+    }),
+    "user_not_found",
+  );
+  expectFailure(
+    "owner cannot add self contact",
+    await rpc(owner, "add_contact_by_email", {
+      p_email: process.env.CLOUD_OWNER_EMAIL,
+    }),
+    "self_contact",
+  );
+  const editorContact = expectSuccess(
+    "owner add editor contact",
+    await rpc(owner, "add_contact_by_email", {
+      p_email: process.env.CLOUD_EDITOR_EMAIL,
+    }),
+  );
+  const ownerContacts = await rpc(owner, "list_user_contacts", {});
+  expectNoEmailFields("list_user_contacts privacy", ownerContacts);
+  if (
+    !ownerContacts.some(
+      (contact) => contact.contact_user_id === editorContact.contact_user_id,
+    )
+  ) {
+    throw new Error("owner contact list did not include editor contact");
+  }
+  console.log("OK list_user_contacts includes editor contact");
+
+  const contactProjectDraft = createSmokeDraft();
+  contactProjectDraft.project.title = `${contactProjectDraft.project.title} contacts`;
+  const contactProject = expectSuccess(
+    "create contact project",
+    await rpc(owner, "create_cloud_project", {
+      p_legacy_project_id: contactProjectDraft.project.legacyProjectId,
+      p_mode: contactProjectDraft.project.mode,
+      p_resources: contactProjectDraft.resources,
+      p_schema_version: contactProjectDraft.project.schemaVersion,
+      p_scenes: contactProjectDraft.scenes,
+      p_title: contactProjectDraft.project.title,
+    }),
+  );
+  expectSuccess(
+    "owner add project member from contact",
+    await rpc(owner, "add_project_member_from_contact", {
+      p_contact_user_id: editorContact.contact_user_id,
+      p_project_id: contactProject.project_id,
+      p_role: "editor",
+    }),
+  );
+  expectFailure(
+    "owner cannot duplicate member from contact",
+    await rpc(owner, "add_project_member_from_contact", {
+      p_contact_user_id: editorContact.contact_user_id,
+      p_project_id: contactProject.project_id,
+      p_role: "viewer",
+    }),
+    "already_member",
+  );
+  expectFailure(
+    "editor cannot add project member from contact",
+    await rpc(editor, "add_project_member_from_contact", {
+      p_contact_user_id: editorContact.contact_user_id,
+      p_project_id: contactProject.project_id,
+      p_role: "viewer",
+    }),
+    "owner_required",
+  );
+
   const inviteToken = randomToken();
   expectSuccess(
     "create_project_invite",
@@ -310,6 +390,19 @@ const main = async () => {
     "accept_project_invite",
     await rpc(editor, "accept_project_invite", {
       p_invite_token: inviteToken,
+    }),
+  );
+  expectSuccess(
+    "owner add project member to contacts",
+    await rpc(owner, "add_project_member_to_contacts", {
+      p_contact_user_id: editorContact.contact_user_id,
+      p_project_id: projectId,
+    }),
+  );
+  expectNoEmailFields(
+    "list_project_collaboration privacy",
+    await rpc(owner, "list_project_collaboration", {
+      p_project_id: projectId,
     }),
   );
 
