@@ -286,7 +286,7 @@ Supabase実環境:
 
 - Git commit `b355b87` (`Extend cloud owner project operations`) を `main` にpush済み。
 - Vercel Production へ反映済み。
-  - deployment: `dpl_2ccD1j4ytfxtZHr6mdTLffcc6UMj`
+  - deployment: `dpl_8TEZHPkNs5gJLxugqxSVruJMTqPe`
   - production URL: `https://tairetsu-maker.vercel.app`
 - production URL でクラウドログインUI、ownerのクラウドプロジェクト一覧、project系ボタン一式、console error/warning 0件を確認済み。
 

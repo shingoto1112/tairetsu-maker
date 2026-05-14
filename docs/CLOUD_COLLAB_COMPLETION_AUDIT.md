@@ -131,14 +131,14 @@ Supabase Free 前提のロック式共同編集を、Web版で実際に複数ユ
 | Build gate | `npm run build` succeeded | Done |
 | Local UI smoke | Playwright CLI verified owner buttons, members lock/modal, sceneOrder save, editor project buttons absent, project lock blocks editor scene edit | Done |
 | GitHub push | Commit `b355b87` pushed to `origin/main` | Done |
-| Vercel production deploy | `npx vercel deploy --prebuilt --prod` produced `dpl_2ccD1j4ytfxtZHr6mdTLffcc6UMj` and aliased `https://tairetsu-maker.vercel.app` | Done |
+| Vercel production deploy | `npx vercel deploy --prebuilt --prod` produced `dpl_8TEZHPkNs5gJLxugqxSVruJMTqPe` and aliased `https://tairetsu-maker.vercel.app` | Done |
 | Production UI smoke | Production URL shows cloud login UI; owner can open latest smoke project and sees project operation buttons; console errors/warnings 0 | Done |
 
 ### Final verification summary
 
 - Supabase project: `https://jhpvdrdunyicrzptgtom.supabase.co`
 - Latest owner project-ops backend smoke project: `d0872735-1ae2-4650-bf2e-b29f183d1aff`
-- Production deployment: `dpl_2ccD1j4ytfxtZHr6mdTLffcc6UMj`
+- Production deployment: `dpl_8TEZHPkNs5gJLxugqxSVruJMTqPe`
 - Production URL: `https://tairetsu-maker.vercel.app`
 - `npm run cloud:check`: passed.
 - `npm run cloud:smoke`: passed with owner/editor/viewer.
