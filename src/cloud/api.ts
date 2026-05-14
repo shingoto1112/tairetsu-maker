@@ -205,7 +205,7 @@ const readUserIdFromAccessToken = (accessToken: string | null): string | null =>
 
 const readDisplayName = (value: string | null | undefined): string | null => {
   const trimmed = value?.trim();
-  if (!trimmed || trimmed.includes("@")) {
+  if (!trimmed || trimmed === "名前未設定" || trimmed.includes("@")) {
     return null;
   }
   return trimmed;
