@@ -3,6 +3,9 @@ import type { CloudConfig } from "./config";
 type SupabaseAuthUser = {
   email?: string;
   id: string;
+  user_metadata?: {
+    display_name?: unknown;
+  };
 };
 
 type SupabaseAuthResponse = {
@@ -14,6 +17,7 @@ type SupabaseAuthResponse = {
 };
 
 export type CloudAuthUser = {
+  displayName?: string;
   email?: string;
   id: string;
 };
@@ -65,6 +69,10 @@ const parseAuthSession = (response: SupabaseAuthResponse): CloudAuthSession => {
     refreshToken: response.refresh_token,
     tokenType: response.token_type ?? "bearer",
     user: {
+      displayName:
+        typeof response.user.user_metadata?.display_name === "string"
+          ? response.user.user_metadata.display_name
+          : undefined,
       email: response.user.email,
       id: response.user.id,
     },
@@ -136,8 +144,12 @@ export const createCloudAuthClient = (config: CloudConfig) => {
     signUpWithPassword: async (
       email: string,
       password: string,
+      displayName: string,
     ): Promise<CloudAuthSession | null> => {
       const response = await request<SupabaseAuthResponse>("signup", {
+        data: {
+          display_name: displayName,
+        },
         email,
         password,
       });

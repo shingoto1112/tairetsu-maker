@@ -17,6 +17,15 @@ export type CloudSaveNotification = {
   version: number | null;
 };
 
+export type CloudLockTakeoverRequest = {
+  actorId: string | null;
+  createdAt: string;
+  projectId: string;
+  requestId: string | null;
+  targetId: string;
+  targetType: "project" | "scene";
+};
+
 export type CloudRealtimeSubscription = {
   unsubscribe: () => Promise<void>;
 };
@@ -61,12 +70,46 @@ const parseSaveNotification = (
   };
 };
 
+const parseLockTakeoverRequest = (
+  payload: RealtimePayload,
+): CloudLockTakeoverRequest | null => {
+  const row = payload.new;
+  if (!row || row.action !== "lock_takeover_requested") {
+    return null;
+  }
+  const metadata =
+    row.metadata && typeof row.metadata === "object"
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const projectId = asString(row.project_id);
+  const targetType = asString(row.target_type);
+  const targetId = asString(row.target_id);
+  const createdAt = asString(row.created_at);
+  if (
+    !projectId ||
+    !targetId ||
+    !createdAt ||
+    (targetType !== "scene" && targetType !== "project")
+  ) {
+    return null;
+  }
+  return {
+    actorId: asString(row.actor_id),
+    createdAt,
+    projectId,
+    requestId: asString(metadata.requestId),
+    targetId,
+    targetType,
+  };
+};
+
 export const subscribeCloudProjectRealtime = (options: {
   accessToken: string;
   config: CloudConfig;
   onError?: (message: string) => void;
   onLockChange: () => void;
   onSave: (notification: CloudSaveNotification) => void;
+  onTakeoverRequest?: (request: CloudLockTakeoverRequest) => void;
   projectId: string;
 }): CloudRealtimeSubscription => {
   const client: SupabaseClient = createClient(
@@ -118,6 +161,10 @@ export const subscribeCloudProjectRealtime = (options: {
         const notification = parseSaveNotification(payload);
         if (notification) {
           options.onSave(notification);
+        }
+        const takeoverRequest = parseLockTakeoverRequest(payload);
+        if (takeoverRequest) {
+          options.onTakeoverRequest?.(takeoverRequest);
         }
       },
     )

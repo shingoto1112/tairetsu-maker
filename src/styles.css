@@ -801,6 +801,12 @@ h2 {
   justify-self: start;
 }
 
+.library-cloud-project__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 @media (max-width: 720px) {
   .library-cloud-panel__header {
     align-items: stretch;

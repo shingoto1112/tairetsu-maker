@@ -36,6 +36,16 @@ const inviteStatusLabel = (item: CloudCollaborationItem): string => {
   return "招待中";
 };
 
+const memberLabel = (
+  item: CloudCollaborationItem,
+  currentUserId?: string,
+): string => {
+  if (item.userId && item.userId === currentUserId) {
+    return item.displayName ? `${item.displayName}（あなた）` : "あなた";
+  }
+  return item.displayName || "名前未設定";
+};
+
 export const CloudShareModal = ({
   currentUserId,
   items,
@@ -168,7 +178,7 @@ export const CloudShareModal = ({
             {members.map((item) => (
               <div className="cloud-share-row" key={item.id}>
                 <div>
-                  <strong>{item.email || item.userId || "参加者"}</strong>
+                  <strong>{memberLabel(item, currentUserId)}</strong>
                   <span>{roleLabel(item.role)}</span>
                 </div>
                 <div className="cloud-share-row__actions">
@@ -214,7 +224,7 @@ export const CloudShareModal = ({
             {activeInvites.map((item) => (
               <div className="cloud-share-row" key={item.id}>
                 <div>
-                  <strong>{item.email || "招待"}</strong>
+                  <strong>招待中のメンバー</strong>
                   <span>
                     {roleLabel(item.role)} / {inviteStatusLabel(item)}
                   </span>

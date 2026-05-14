@@ -98,6 +98,7 @@ type CloudProjectRow = {
 
 type CloudProjectMemberRow = {
   display_name?: string | null;
+  hidden_at?: string | null;
   project_id: string;
   role: "owner" | "editor" | "viewer";
 };
@@ -105,6 +106,7 @@ type CloudProjectMemberRow = {
 export type CloudCollaborationItem = {
   acceptedAt: string | null;
   createdAt: string;
+  displayName: string | null;
   email: string | null;
   expiresAt: string | null;
   id: string;
@@ -117,6 +119,7 @@ export type CloudCollaborationItem = {
 type CloudCollaborationRow = {
   accepted_at: string | null;
   created_at: string;
+  display_name?: string | null;
   email: string | null;
   expires_at: string | null;
   item_id: string;
@@ -198,6 +201,14 @@ const readUserIdFromAccessToken = (accessToken: string | null): string | null =>
   } catch {
     return null;
   }
+};
+
+const readDisplayName = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.includes("@")) {
+    return null;
+  }
+  return trimmed;
 };
 
 export const createCloudApiClient = (
@@ -317,29 +328,47 @@ export const createCloudApiClient = (
         ].join(""),
       );
       const currentUserId = readUserIdFromAccessToken(getAccessToken());
-      const memberships = await restGet<CloudProjectMemberRow[]>(
-        [
-          "project_members?select=project_id,role,display_name",
-          currentUserId ? `&user_id=eq.${encodeURIComponent(currentUserId)}` : "",
-        ].join(""),
+      const membershipFilter = currentUserId
+        ? `&user_id=eq.${encodeURIComponent(currentUserId)}`
+        : "";
+      let memberships: CloudProjectMemberRow[];
+      try {
+        memberships = await restGet<CloudProjectMemberRow[]>(
+          [
+            "project_members?select=project_id,role,display_name,hidden_at",
+            membershipFilter,
+          ].join(""),
+        );
+      } catch {
+        memberships = await restGet<CloudProjectMemberRow[]>(
+          [
+            "project_members?select=project_id,role,display_name",
+            membershipFilter,
+          ].join(""),
+        );
+      }
+      const visibleMemberships = memberships.filter(
+        (membership) => !membership.hidden_at,
       );
       const roleByProjectId = new Map(
-        memberships.map((membership) => [
+        visibleMemberships.map((membership) => [
           membership.project_id,
           membership.role,
         ]),
       );
 
-      return projects.map((project) => ({
-        createdAt: project.created_at,
-        id: project.id,
-        legacyProjectId: project.legacy_project_id ?? undefined,
-        mode: project.mode,
-        role: roleByProjectId.get(project.id) ?? "viewer",
-        schemaVersion: project.schema_version,
-        title: project.title,
-        updatedAt: project.updated_at,
-      }));
+      return projects
+        .filter((project) => roleByProjectId.has(project.id))
+        .map((project) => ({
+          createdAt: project.created_at,
+          id: project.id,
+          legacyProjectId: project.legacy_project_id ?? undefined,
+          mode: project.mode,
+          role: roleByProjectId.get(project.id) ?? "viewer",
+          schemaVersion: project.schema_version,
+          title: project.title,
+          updatedAt: project.updated_at,
+        }));
     },
 
     listActiveEditLocks: async (
@@ -377,6 +406,7 @@ export const createCloudApiClient = (
       return rows.map((row) => ({
         acceptedAt: row.accepted_at,
         createdAt: row.created_at,
+        displayName: readDisplayName(row.display_name) ?? readDisplayName(row.email),
         email: row.email,
         expiresAt: row.expires_at,
         id: row.item_id,
@@ -504,6 +534,23 @@ export const createCloudApiClient = (
         p_project_id: projectId,
         p_target_id: target.targetId,
         p_target_type: target.targetType,
+      }),
+
+    requestLockTakeover: (projectId: string, target: CloudLockTarget) =>
+      rpcOne<CloudActionResult>("request_lock_takeover", {
+        p_project_id: projectId,
+        p_target_id: target.targetId,
+        p_target_type: target.targetType,
+      }),
+
+    deleteCloudProject: (projectId: string) =>
+      rpcOne<CloudActionResult>("delete_cloud_project", {
+        p_project_id: projectId,
+      }),
+
+    hideCloudProject: (projectId: string) =>
+      rpcOne<CloudActionResult>("hide_cloud_project", {
+        p_project_id: projectId,
       }),
 
     removeProjectMember: (projectId: string, userId: string) =>

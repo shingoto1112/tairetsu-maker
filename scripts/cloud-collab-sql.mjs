@@ -7,6 +7,9 @@ const migrationFiles = [
   "20260514000000_cloud_collaboration_foundation.sql",
   "20260514001000_cloud_collaboration_sharing_realtime.sql",
   "20260514002000_cloud_project_owner_operations.sql",
+  "20260514005000_cloud_collaboration_private_display_names.sql",
+  "20260514006000_cloud_project_delete_hide.sql",
+  "20260514007000_cloud_owner_takeover_requests.sql",
 ];
 
 const now = new Date().toISOString();

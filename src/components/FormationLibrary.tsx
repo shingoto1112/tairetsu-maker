@@ -15,6 +15,7 @@ import {
   Copy,
   Download,
   Edit3,
+  EyeOff,
   ExternalLink,
   Folder,
   LogIn,
@@ -60,14 +61,21 @@ type FormationLibraryProps = {
     isBusy: boolean;
     pendingInviteToken?: string | null;
     projects: CloudProjectSummary[];
+    userDisplayName?: string;
     userEmail?: string;
     onAcceptInvite: (inviteToken: string) => void | Promise<void>;
     onCopyCloudProjectToLocal: (project: CloudProjectSummary) => void | Promise<void>;
+    onDeleteCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
+    onHideCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onOpenCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onRefresh: () => void | Promise<void>;
     onSignIn: (email: string, password: string) => void | Promise<void>;
     onSignOut: () => void | Promise<void>;
-    onSignUp: (email: string, password: string) => void | Promise<void>;
+    onSignUp: (
+      email: string,
+      password: string,
+      displayName: string,
+    ) => void | Promise<void>;
     onUploadProject: (project: Project) => void | Promise<void>;
   };
   onCreate: (input: NewFormationInput) => void | Promise<void>;
@@ -167,10 +175,15 @@ export const FormationLibrary = ({
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [cloudDeleteTarget, setCloudDeleteTarget] =
+    useState<CloudProjectSummary | null>(null);
+  const [cloudHideTarget, setCloudHideTarget] =
+    useState<CloudProjectSummary | null>(null);
   const [exportTarget, setExportTarget] = useState<Project | null>(null);
   const [includeAudioInExport, setIncludeAudioInExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [cloudDisplayName, setCloudDisplayName] = useState("");
   const [cloudEmail, setCloudEmail] = useState("");
   const [cloudPassword, setCloudPassword] = useState("");
   const [cloudFormError, setCloudFormError] = useState<string | null>(null);
@@ -386,6 +399,18 @@ export const FormationLibrary = ({
     setDeleteTarget(null);
   };
 
+  const submitCloudDelete = async () => {
+    if (!cloud || !cloudDeleteTarget) return;
+    await cloud.onDeleteCloudProject(cloudDeleteTarget);
+    setCloudDeleteTarget(null);
+  };
+
+  const submitCloudHide = async () => {
+    if (!cloud || !cloudHideTarget) return;
+    await cloud.onHideCloudProject(cloudHideTarget);
+    setCloudHideTarget(null);
+  };
+
   const submitExport = async () => {
     if (!exportTarget) return;
     setIsExporting(true);
@@ -399,8 +424,13 @@ export const FormationLibrary = ({
   };
 
   const submitCloudAuth = async (mode: "signIn" | "signUp") => {
+    const displayName = cloudDisplayName.trim();
     const email = cloudEmail.trim();
     if (!cloud) {
+      return;
+    }
+    if (mode === "signUp" && !displayName) {
+      setCloudFormError("新規登録では表示名を入力してください。");
       return;
     }
     if (!email || !cloudPassword) {
@@ -417,7 +447,7 @@ export const FormationLibrary = ({
     if (mode === "signIn") {
       await cloud.onSignIn(email, cloudPassword);
     } else {
-      await cloud.onSignUp(email, cloudPassword);
+      await cloud.onSignUp(email, cloudPassword, displayName);
     }
   };
 
@@ -475,7 +505,7 @@ export const FormationLibrary = ({
               </button>
               {cloud.userEmail && (
                 <div className="library-cloud-account">
-                  <span>{cloud.userEmail}</span>
+                  <span>{cloud.userDisplayName || "ログイン中"}</span>
                   <button
                     type="button"
                     className="mini-button"
@@ -559,6 +589,31 @@ export const FormationLibrary = ({
                       >
                         ローカルへ複製
                       </button>
+                      <div className="library-cloud-project__actions">
+                        {cloudProject.role === "owner" ? (
+                          <button
+                            type="button"
+                            className="mini-button danger"
+                            onClick={() => setCloudDeleteTarget(cloudProject)}
+                            disabled={cloud.isBusy}
+                            aria-label="クラウド隊列表を削除"
+                          >
+                            <Trash2 size={14} />
+                            削除
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="mini-button"
+                            onClick={() => setCloudHideTarget(cloudProject)}
+                            disabled={cloud.isBusy}
+                            aria-label="クラウド隊列表を一覧から非表示"
+                          >
+                            <EyeOff size={14} />
+                            非表示
+                          </button>
+                        )}
+                      </div>
                     </article>
                   ))
                 )}
@@ -572,6 +627,19 @@ export const FormationLibrary = ({
                 void submitCloudAuth("signIn");
               }}
             >
+              <label>
+                表示名
+                <input
+                  type="text"
+                  value={cloudDisplayName}
+                  onChange={(event) => setCloudDisplayName(event.target.value)}
+                  autoComplete="name"
+                  placeholder="例: しんご"
+                />
+                <span className="library-cloud-password-hint">
+                  新規登録時に、ほかの参加者へこの名前だけが表示されます
+                </span>
+              </label>
               <label>
                 メールアドレス
                 <input
@@ -1240,6 +1308,102 @@ export const FormationLibrary = ({
               </button>
               <button className="mini-button danger" onClick={() => void submitDelete()} type="button">
                 削除する
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {cloudDeleteTarget && (
+        <div
+          className="new-formation-backdrop"
+          onPointerDown={() => setCloudDeleteTarget(null)}
+        >
+          <div
+            className="new-formation-dialog library-small-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="クラウド隊列表を削除"
+          >
+            <header>
+              <h2>クラウドから削除しますか？</h2>
+              <button
+                className="share-export-close"
+                onClick={() => setCloudDeleteTarget(null)}
+                type="button"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <p className="notice">
+              「{cloudDeleteTarget.title || "名称未設定"}」をクラウド一覧から削除します。
+              参加者全員の一覧から表示されなくなります。
+            </p>
+            <footer>
+              <button
+                className="mini-button"
+                onClick={() => setCloudDeleteTarget(null)}
+                type="button"
+              >
+                キャンセル
+              </button>
+              <button
+                className="mini-button danger"
+                onClick={() => void submitCloudDelete()}
+                type="button"
+                disabled={cloud?.isBusy}
+              >
+                削除する
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {cloudHideTarget && (
+        <div
+          className="new-formation-backdrop"
+          onPointerDown={() => setCloudHideTarget(null)}
+        >
+          <div
+            className="new-formation-dialog library-small-dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="クラウド隊列表を非表示"
+          >
+            <header>
+              <h2>一覧から非表示にしますか？</h2>
+              <button
+                className="share-export-close"
+                onClick={() => setCloudHideTarget(null)}
+                type="button"
+                aria-label="閉じる"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <p className="notice">
+              「{cloudHideTarget.title || "名称未設定"}」を自分のクラウド一覧から隠します。
+              クラウド上のデータや他の参加者の一覧には影響しません。
+            </p>
+            <footer>
+              <button
+                className="mini-button"
+                onClick={() => setCloudHideTarget(null)}
+                type="button"
+              >
+                キャンセル
+              </button>
+              <button
+                className="mini-button"
+                onClick={() => void submitCloudHide()}
+                type="button"
+                disabled={cloud?.isBusy}
+              >
+                非表示にする
               </button>
             </footer>
           </div>

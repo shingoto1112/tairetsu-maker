@@ -172,13 +172,24 @@ const main = async () => {
       p_summary: "cloud check",
       p_title: "cloud check",
     }),
+    await rpc("delete_cloud_project", {
+      p_project_id: dummyProjectId,
+    }),
+    await rpc("hide_cloud_project", {
+      p_project_id: dummyProjectId,
+    }),
+    await rpc("request_lock_takeover", {
+      p_project_id: dummyProjectId,
+      p_target_id: "scene-check",
+      p_target_type: "scene",
+    }),
   ];
 
   for (const result of checks) {
     printResult(result);
     if (!expectExistingUnauthedRpc(result)) {
       throw new Error(
-        `${result.label} did not return the expected unauthenticated response. Check that both SQL migrations were applied.`,
+        `${result.label} did not return the expected unauthenticated response. Check that all SQL migrations were applied.`,
       );
     }
   }

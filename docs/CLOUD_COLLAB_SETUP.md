@@ -25,10 +25,14 @@ Supabase の SQL Editor で、以下の順に migration SQL を実行します�
 1. `supabase/migrations/20260514000000_cloud_collaboration_foundation.sql`
 2. `supabase/migrations/20260514001000_cloud_collaboration_sharing_realtime.sql`
 3. `supabase/migrations/20260514002000_cloud_project_owner_operations.sql`
+4. `supabase/migrations/20260514005000_cloud_collaboration_private_display_names.sql`
+5. `supabase/migrations/20260514006000_cloud_project_delete_hide.sql`
+6. `supabase/migrations/20260514007000_cloud_owner_takeover_requests.sql`
 
 2つ目の migration では、招待テーブル/RPC と Realtime 用 publication 追加を行います。
 Hosted Supabase では `supabase_realtime` publication が存在するため、`edit_locks` と `audit_logs` の変更通知が使えるようになります。
 3つ目の migration では、owner専用のシーン構成保存とクラウド上書きimport用RPCを追加します。
+4つ目以降の migration では、表示名による参加者表示、クラウド隊列表の削除/非表示、owner の編集引き継ぎ依頼RPCを追加します。
 
 初心者向けに、必要なSQLをまとめてコピーするコマンドも用意しています。
 
