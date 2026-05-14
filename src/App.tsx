@@ -9461,6 +9461,28 @@ function App() {
   const canvasRemoteLockOwner = canvasRemoteLock
     ? cloudMemberNameById.get(canvasRemoteLock.lockedBy) ?? "他の参加者"
     : null;
+  const remoteEditingByFrameId = useMemo(() => {
+    if (!activeCloudProject) {
+      return {};
+    }
+    return Object.fromEntries(
+      cloudActiveLocks
+        .filter(
+          (lock) =>
+            lock.targetType === "scene" &&
+            lock.lockedBy !== cloudSession?.user.id,
+        )
+        .map((lock) => [
+          lock.targetId,
+          cloudMemberNameById.get(lock.lockedBy) ?? "他の参加者",
+        ]),
+    );
+  }, [
+    activeCloudProject,
+    cloudActiveLocks,
+    cloudMemberNameById,
+    cloudSession?.user.id,
+  ]);
   const canvasRemoteProjectLock = activeCloudProject
     ? cloudActiveLocks.find((lock) => lock.targetType === "project") ?? null
     : null;
@@ -10152,6 +10174,7 @@ function App() {
               project={project}
               selectedFrameId={displayFrame?.id ?? null}
               collapsed={isSceneThumbnailRailCollapsed}
+              remoteEditingByFrameId={remoteEditingByFrameId}
               onToggleCollapsed={() =>
                 setIsSceneThumbnailRailCollapsed((previous) => !previous)
               }

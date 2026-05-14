@@ -2415,6 +2415,15 @@ h2 {
   box-shadow: 0 0 0 2px rgba(13, 139, 120, 0.14);
 }
 
+.scene-thumbnail-card.is-remote-editing {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+.scene-thumbnail-card.is-active.is-remote-editing {
+  border-color: var(--accent-strong);
+}
+
 .scene-thumbnail-card__meta {
   align-items: center;
   display: flex;
@@ -2435,6 +2444,20 @@ h2 {
 
 .scene-thumbnail-card__label {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-thumbnail-card__lock {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  color: #9a3412;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 2px 6px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

@@ -13,6 +13,7 @@ type SceneThumbnailRailProps = {
   project: Project;
   selectedFrameId: string | null;
   collapsed: boolean;
+  remoteEditingByFrameId?: Record<string, string>;
   onToggleCollapsed: () => void;
   onSelectFrame: (frame: FormationFrame) => void;
   onFrameContextMenu?: (
@@ -44,6 +45,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
   project,
   selectedFrameId,
   collapsed,
+  remoteEditingByFrameId = {},
   onToggleCollapsed,
   onSelectFrame,
   onFrameContextMenu,
@@ -96,15 +98,25 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
               const width = Math.max(1, stageSize.widthMeters);
               const depth = Math.max(1, stageSize.depthMeters);
               const isSelected = frame.id === selectedFrameId;
+              const remoteEditorName = remoteEditingByFrameId[frame.id];
               return (
                 <button
                   className={
-                    isSelected
-                      ? "scene-thumbnail-card is-active"
-                      : "scene-thumbnail-card"
+                    [
+                      "scene-thumbnail-card",
+                      isSelected ? "is-active" : "",
+                      remoteEditorName ? "is-remote-editing" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
                   }
                   data-thumbnail-frame-id={frame.id}
                   key={frame.id}
+                  title={
+                    remoteEditorName
+                      ? `${remoteEditorName}が編集中です`
+                      : undefined
+                  }
                   onClick={() => onSelectFrame(frame)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -123,6 +135,11 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
                   <div className="scene-thumbnail-card__label">
                     {frame.label}
                   </div>
+                  {remoteEditorName && (
+                    <div className="scene-thumbnail-card__lock">
+                      {remoteEditorName}が編集中
+                    </div>
+                  )}
                   <svg
                     className="scene-thumbnail-preview"
                     viewBox={`0 0 ${width} ${depth}`}
