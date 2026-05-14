@@ -114,6 +114,7 @@ Supabase Free 前提のロック式共同編集を、Web版で実際に複数ユ
 | SQL/RPC追加 | `supabase/migrations/20260514002000_cloud_project_owner_operations.sql` | Done |
 | sceneOrder保存RPC | `save_scene_order_with_lock` handles version check, new scenes, deleted scenes, snapshots, audit log | Done |
 | import RPC | `import_cloud_project_with_lock` handles owner check, import lock, validation, snapshots, replace resources/scenes in transaction | Done |
+| JSON import support | `readTairetsuArchive` accepts raw Project JSON or `{ project }` JSON in addition to ZIP/`.tairetsu` | Done |
 | SQL bundle更新 | `scripts/cloud-collab-sql.mjs` includes 3 migrations | Done |
 | cloud check更新 | `scripts/cloud-collab-check.mjs` checks new RPCs | Done |
 | smoke拡張 | `scripts/cloud-collab-smoke.mjs` covers project locks/resources/sceneOrder add/reorder/delete/import | Done |
@@ -131,14 +132,15 @@ Supabase Free 前提のロック式共同編集を、Web版で実際に複数ユ
 | Build gate | `npm run build` succeeded | Done |
 | Local UI smoke | Playwright CLI verified owner buttons, members lock/modal, sceneOrder save, editor project buttons absent, project lock blocks editor scene edit | Done |
 | GitHub push | Commit `b355b87` pushed to `origin/main` | Done |
-| Vercel production deploy | `npx vercel deploy --prebuilt --prod` produced `dpl_8TEZHPkNs5gJLxugqxSVruJMTqPe` and aliased `https://tairetsu-maker.vercel.app` | Done |
+| Vercel production deploy | `npx vercel deploy --prebuilt --prod` produced `dpl_G6mdaZuBbj3X1Vs4vHfw6S4db3TF` and aliased `https://tairetsu-maker.vercel.app` | Done |
 | Production UI smoke | Production URL shows cloud login UI; owner can open latest smoke project and sees project operation buttons; console errors/warnings 0 | Done |
+| Production JSON import smoke | owner selected a raw Project JSON file, accepted the overwrite confirm dialog, and the project reloaded as `Codex JSON UI import smoke` with `クラウド隊列表を上書きしました。` | Done |
 
 ### Final verification summary
 
 - Supabase project: `https://jhpvdrdunyicrzptgtom.supabase.co`
 - Latest owner project-ops backend smoke project: `de64691c-dc73-4063-88aa-f725f85e85d9`
-- Production deployment: `dpl_8TEZHPkNs5gJLxugqxSVruJMTqPe`
+- Production deployment: `dpl_G6mdaZuBbj3X1Vs4vHfw6S4db3TF`
 - Production URL: `https://tairetsu-maker.vercel.app`
 - `npm run cloud:check`: passed.
 - `npm run cloud:smoke`: passed with owner/editor/viewer.
