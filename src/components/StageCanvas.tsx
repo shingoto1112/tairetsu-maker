@@ -92,6 +92,8 @@ type StageCanvasProps = {
   focusMode: boolean;
   isReadOnly?: boolean;
   readOnlyMessage?: string;
+  deferMemberDragCommit?: boolean;
+  deferObjectDragCommit?: boolean;
   remoteMemberLocks?: Record<string, string>;
   remoteObjectLocks?: Record<string, string>;
   currentTime: number;
@@ -148,6 +150,7 @@ type MemberDrag = {
   startPointer: Position;
   startPosition: Position;
   startPositions: Record<string, Position>;
+  latestPositions: Record<string, Position> | null;
   hasMoved: boolean;
   isBeginPending: boolean;
   endRequested: boolean;
@@ -200,6 +203,8 @@ type MemberDisplayOffset = {
 };
 
 type MemberTokenStyle = CSSProperties & {
+  "--member-drag-x"?: string;
+  "--member-drag-y"?: string;
   "--member-overlap-x": string;
   "--member-overlap-y": string;
 };
@@ -371,6 +376,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       focusMode,
       isReadOnly = false,
       readOnlyMessage,
+      deferMemberDragCommit = false,
+      deferObjectDragCommit = false,
       remoteMemberLocks = {},
       remoteObjectLocks = {},
       currentTime,
@@ -402,6 +409,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const fitAreaRef = useRef<HTMLDivElement | null>(null);
     const exportElementRef = useRef<HTMLDivElement | null>(null);
     const memberDragRef = useRef<MemberDrag | null>(null);
+    const memberElementRefs = useRef(new Map<string, HTMLElement>());
+    const memberDragClearFrameRef = useRef<number | null>(null);
     const memberAutoScrollerRef = useRef<EdgeAutoScroller | null>(null);
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
     const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
@@ -593,6 +602,37 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
     };
 
+    const setMemberElementRef = (memberId: string, element: HTMLElement | null) => {
+      if (element) {
+        memberElementRefs.current.set(memberId, element);
+        return;
+      }
+      memberElementRefs.current.delete(memberId);
+    };
+
+    const cancelPendingMemberDragClear = () => {
+      if (memberDragClearFrameRef.current !== null) {
+        window.cancelAnimationFrame(memberDragClearFrameRef.current);
+        memberDragClearFrameRef.current = null;
+      }
+    };
+
+    const clearMemberDragTransforms = (memberIds: string[]) => {
+      memberIds.forEach((id) => {
+        const element = memberElementRefs.current.get(id);
+        element?.style.removeProperty("--member-drag-x");
+        element?.style.removeProperty("--member-drag-y");
+      });
+    };
+
+    const scheduleClearMemberDragTransforms = (memberIds: string[]) => {
+      cancelPendingMemberDragClear();
+      memberDragClearFrameRef.current = window.requestAnimationFrame(() => {
+        memberDragClearFrameRef.current = null;
+        clearMemberDragTransforms(memberIds);
+      });
+    };
+
     useEffect(() => {
       isStagePinchLockedRef.current = isStagePinchLocked;
       if (isStagePinchLocked) {
@@ -605,6 +645,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       () => () => {
         cancelPendingStageZoom();
         cancelTouchContextMenu();
+        cancelPendingMemberDragClear();
+        clearMemberDragTransforms([...memberElementRefs.current.keys()]);
         memberAutoScrollerRef.current?.stop();
       },
       [],
@@ -1214,6 +1256,53 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       openContextMenuAt(event.clientX, event.clientY, target);
     }
 
+    const previewMemberDragTransforms = (
+      drag: MemberDrag,
+      nextPositions: Record<string, Position>,
+    ) => {
+      const stageElement = stageRef.current;
+      if (!stageElement) {
+        return;
+      }
+      const stageRect = stageElement.getBoundingClientRect();
+      drag.memberIds.forEach((id) => {
+        const startPosition = drag.startPositions[id];
+        const nextPosition = nextPositions[id];
+        const element = memberElementRefs.current.get(id);
+        if (!startPosition || !nextPosition || !element) {
+          return;
+        }
+        const startDisplayPosition = stagePointToDisplayPoint(
+          startPosition,
+          stage,
+          viewerPerspective,
+        );
+        const nextDisplayPosition = stagePointToDisplayPoint(
+          nextPosition,
+          stage,
+          viewerPerspective,
+        );
+        const dxPx =
+          ((nextDisplayPosition.x - startDisplayPosition.x) / stage.widthMeters) *
+          stageRect.width;
+        const dyPx =
+          ((nextDisplayPosition.y - startDisplayPosition.y) / stage.depthMeters) *
+          stageRect.height;
+        element.style.setProperty("--member-drag-x", `${dxPx}px`);
+        element.style.setProperty("--member-drag-y", `${dyPx}px`);
+      });
+    };
+
+    const commitDeferredMemberDrag = (drag: MemberDrag) => {
+      if (!deferMemberDragCommit || !drag.latestPositions) {
+        return;
+      }
+      Object.entries(drag.latestPositions).forEach(([id, position]) => {
+        onMoveMember(id, position);
+      });
+      scheduleClearMemberDragTransforms(drag.memberIds);
+    };
+
     const moveDraggedMember = (clientX: number, clientY: number) => {
       const drag = memberDragRef.current;
       if (!drag || !stageRef.current) {
@@ -1249,27 +1338,35 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         type: "member",
         id: drag.memberId,
       });
-      setActiveSnapGuides(guided.guides);
+      if (!deferMemberDragCommit) {
+        setActiveSnapGuides(guided.guides);
+      }
       const primaryNextPosition = constrainMemberPosition(guided.position, stage);
       const delta = {
         x: primaryNextPosition.x - primaryStartPosition.x,
         y: primaryNextPosition.y - primaryStartPosition.y,
       };
+      const nextPositions: Record<string, Position> = {};
       drag.memberIds.forEach((id) => {
         const startPosition = drag.startPositions[id];
         if (!startPosition) {
           return;
         }
-        onMoveMember(
-          id,
-          constrainMemberPosition(
+        nextPositions[id] = constrainMemberPosition(
             {
               x: startPosition.x + delta.x,
               y: startPosition.y + delta.y,
             },
             stage,
-          ),
         );
+      });
+      drag.latestPositions = nextPositions;
+      if (deferMemberDragCommit) {
+        previewMemberDragTransforms(drag, nextPositions);
+        return;
+      }
+      Object.entries(nextPositions).forEach(([id, position]) => {
+        onMoveMember(id, position);
       });
     };
 
@@ -1321,6 +1418,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!memberEditing || !stageRef.current) {
         return;
       }
+      cancelPendingMemberDragClear();
       const startPositions = Object.fromEntries(
         dragMemberIds
           .map((id) => [id, snapshot.positions[id]] as const)
@@ -1349,6 +1447,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           Object.keys(startPositions).length > 0
             ? startPositions
             : { [memberId]: snapshot.positions[memberId] ?? { x: 0, y: 0 } },
+        latestPositions: null,
         hasMoved: false,
         isBeginPending: false,
         endRequested: false,
@@ -1425,6 +1524,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           setIsMemberDragging(true);
           moveDraggedMember(latestDrag.currentClientX, latestDrag.currentClientY);
           if (latestDrag.endRequested) {
+            commitDeferredMemberDrag(latestDrag);
             memberDragRef.current = null;
             memberAutoScrollerRef.current?.stop();
             memberAutoScrollerRef.current = null;
@@ -1467,6 +1567,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             id,
             type: "member-position",
           }));
+          commitDeferredMemberDrag(drag);
           onEndProjectEdit(editTargets.length === 1 ? editTargets[0] : editTargets);
         }
         setIsMemberDragging(false);
@@ -2267,6 +2368,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     viewerPerspective={viewerPerspective}
                     selected={selected?.type === "object" && selected.id === object.id}
                     disabled={!objectEditing || isReadOnly}
+                    deferCommit={deferObjectDragCommit}
                     remoteLockOwner={remoteObjectLockOwner}
                     onSelect={() => onSelect({ type: "object", id: object.id })}
                     onContextMenu={(event) =>
@@ -2364,6 +2466,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   return (
                     <div
                       key={member.id}
+                      ref={(element) => setMemberElementRef(member.id, element)}
                       className={[
                         "member-token",
                         isSelected || selectedMemberIds.includes(member.id)

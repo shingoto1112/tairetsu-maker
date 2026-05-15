@@ -73,6 +73,8 @@ type ParadeCanvasProps = {
   focusMode: boolean;
   isReadOnly?: boolean;
   readOnlyMessage?: string;
+  deferMemberDragCommit?: boolean;
+  deferObjectDragCommit?: boolean;
   remoteMemberLocks?: Record<string, string>;
   remoteObjectLocks?: Record<string, string>;
   onSelect: (
@@ -195,8 +197,18 @@ type MemberDisplayOffset = {
 };
 
 type ParadeMemberStyle = CSSProperties & {
+  "--member-drag-x"?: string;
+  "--member-drag-y"?: string;
   "--member-overlap-x": string;
   "--member-overlap-y": string;
+};
+
+type ParadeObjectStyle = CSSProperties & {
+  "--object-drag-x"?: string;
+  "--object-drag-y"?: string;
+  "--object-drag-width"?: string;
+  "--object-drag-height"?: string;
+  "--object-drag-rotation"?: string;
 };
 
 const BASE_PX_PER_METER = 32;
@@ -355,6 +367,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       focusMode,
       isReadOnly = false,
       readOnlyMessage,
+      deferMemberDragCommit = false,
+      deferObjectDragCommit = false,
       remoteMemberLocks = {},
       remoteObjectLocks = {},
       onSelect,
@@ -402,6 +416,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const exportElementRef = useRef<HTMLDivElement | null>(null);
+    const memberElementRefs = useRef(new Map<string, HTMLElement>());
+    const objectElementRefs = useRef(new Map<string, HTMLElement>());
+    const memberDragClearFrameRef = useRef<number | null>(null);
+    const objectDragClearFrameRef = useRef<number | null>(null);
     const zoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
@@ -805,6 +823,160 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
     };
 
+    const setMemberElementRef = (memberId: string, element: HTMLElement | null) => {
+      if (element) {
+        memberElementRefs.current.set(memberId, element);
+        return;
+      }
+      memberElementRefs.current.delete(memberId);
+    };
+
+    const setObjectElementRef = (objectId: string, element: HTMLElement | null) => {
+      if (element) {
+        objectElementRefs.current.set(objectId, element);
+        return;
+      }
+      objectElementRefs.current.delete(objectId);
+    };
+
+    const cancelPendingMemberDragClear = () => {
+      if (memberDragClearFrameRef.current !== null) {
+        window.cancelAnimationFrame(memberDragClearFrameRef.current);
+        memberDragClearFrameRef.current = null;
+      }
+    };
+
+    const clearMemberDragTransforms = (memberIds: string[]) => {
+      memberIds.forEach((id) => {
+        const element = memberElementRefs.current.get(id);
+        element?.style.removeProperty("--member-drag-x");
+        element?.style.removeProperty("--member-drag-y");
+      });
+    };
+
+    const scheduleClearMemberDragTransforms = (memberIds: string[]) => {
+      cancelPendingMemberDragClear();
+      memberDragClearFrameRef.current = window.requestAnimationFrame(() => {
+        memberDragClearFrameRef.current = null;
+        clearMemberDragTransforms(memberIds);
+      });
+    };
+
+    const cancelPendingObjectDragClear = () => {
+      if (objectDragClearFrameRef.current !== null) {
+        window.cancelAnimationFrame(objectDragClearFrameRef.current);
+        objectDragClearFrameRef.current = null;
+      }
+    };
+
+    const clearObjectDragPreview = (objectId: string) => {
+      const element = objectElementRefs.current.get(objectId);
+      if (!element) {
+        return;
+      }
+      element.style.removeProperty("--object-drag-x");
+      element.style.removeProperty("--object-drag-y");
+      element.style.removeProperty("--object-drag-width");
+      element.style.removeProperty("--object-drag-height");
+      element.style.removeProperty("--object-drag-rotation");
+    };
+
+    const scheduleClearObjectDragPreview = (objectId: string) => {
+      cancelPendingObjectDragClear();
+      objectDragClearFrameRef.current = window.requestAnimationFrame(() => {
+        objectDragClearFrameRef.current = null;
+        clearObjectDragPreview(objectId);
+      });
+    };
+
+    const previewMemberDragTransforms = (
+      drag: Extract<DragState, { type: "member" }>,
+      nextPositions: Record<string, Position>,
+    ) => {
+      drag.memberIds.forEach((id) => {
+        const startPosition = drag.startPositions[id];
+        const nextPosition = nextPositions[id];
+        const element = memberElementRefs.current.get(id);
+        if (!startPosition || !nextPosition || !element) {
+          return;
+        }
+        element.style.setProperty(
+          "--member-drag-x",
+          `${(nextPosition.x - startPosition.x) * pxPerMeter}px`,
+        );
+        element.style.setProperty(
+          "--member-drag-y",
+          `${(nextPosition.y - startPosition.y) * pxPerMeter}px`,
+        );
+      });
+    };
+
+    const commitDeferredMemberDrag = (
+      drag: DragState,
+      latestPositions: Record<string, Position> | null,
+    ) => {
+      if (!deferMemberDragCommit || drag.type !== "member" || !latestPositions) {
+        return;
+      }
+      Object.entries(latestPositions).forEach(([id, position]) => {
+        onMoveMember(id, position);
+      });
+      scheduleClearMemberDragTransforms(drag.memberIds);
+    };
+
+    const previewObjectDrag = (
+      drag: Extract<DragState, { type: "object" }>,
+      patch: Partial<ObjectState>,
+    ) => {
+      const element = objectElementRefs.current.get(drag.id);
+      if (!element) {
+        return;
+      }
+      const nextState = {
+        ...drag.startState,
+        ...patch,
+        widthMeters: Math.max(
+          MIN_OBJECT_SIZE_METERS,
+          patch.widthMeters ?? drag.startState.widthMeters,
+        ),
+        heightMeters: Math.max(
+          MIN_OBJECT_SIZE_METERS,
+          patch.heightMeters ?? drag.startState.heightMeters,
+        ),
+      };
+      element.style.setProperty(
+        "--object-drag-x",
+        `${(nextState.x - drag.startState.x) * pxPerMeter}px`,
+      );
+      element.style.setProperty(
+        "--object-drag-y",
+        `${(nextState.y - drag.startState.y) * pxPerMeter}px`,
+      );
+      element.style.setProperty(
+        "--object-drag-width",
+        `${(nextState.widthMeters - drag.startState.widthMeters) * pxPerMeter}px`,
+      );
+      element.style.setProperty(
+        "--object-drag-height",
+        `${(nextState.heightMeters - drag.startState.heightMeters) * pxPerMeter}px`,
+      );
+      element.style.setProperty(
+        "--object-drag-rotation",
+        `${(nextState.rotation ?? 0) - drag.startState.rotation}deg`,
+      );
+    };
+
+    const commitDeferredObjectDrag = (
+      drag: DragState,
+      latestPatch: Partial<ObjectState> | null,
+    ) => {
+      if (!deferObjectDragCommit || drag.type !== "object" || !latestPatch) {
+        return;
+      }
+      onUpdateObjectState(drag.id, latestPatch);
+      scheduleClearObjectDragPreview(drag.id);
+    };
+
     useEffect(() => {
       isPinchLockedRef.current = isPinchLocked;
       if (isPinchLocked) {
@@ -846,6 +1018,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         }
         cancelTouchContextMenu();
         cancelPendingZoom();
+        cancelPendingMemberDragClear();
+        cancelPendingObjectDragClear();
+        clearMemberDragTransforms([...memberElementRefs.current.keys()]);
+        [...objectElementRefs.current.keys()].forEach(clearObjectDragPreview);
       },
       [],
     );
@@ -859,6 +1035,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       let didMove = dragState.hasMoved;
       let beginPending = dragState.isBeginPending;
       let endRequested = false;
+      let latestMemberPositions: Record<string, Position> | null = null;
+      let latestObjectPatch: Partial<ObjectState> | null = null;
       let autoScroller: ReturnType<typeof createEdgeAutoScroller> | null = null;
       let isCancelled = false;
       const applyDrag = (clientX: number, clientY: number) => {
@@ -925,7 +1103,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               return;
             }
             didMove = true;
-            if (!endRequested) {
+            const shouldKeepDragStateLocal =
+              (deferMemberDragCommit && dragState.type === "member") ||
+              (deferObjectDragCommit && dragState.type === "object");
+            if (!endRequested && !shouldKeepDragStateLocal) {
               setDragState({
                 ...dragState,
                 currentClientX,
@@ -936,6 +1117,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             }
             applyDrag(currentClientX, currentClientY);
             if (endRequested) {
+              commitDeferredMemberDrag(dragState, latestMemberPositions);
+              commitDeferredObjectDrag(dragState, latestObjectPatch);
               autoScroller?.stop();
               setDragState(null);
               onEndProjectEdit(normalizedEditTarget);
@@ -964,15 +1147,24 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             x: primaryNextPosition.x - primaryStartPosition.x,
             y: primaryNextPosition.y - primaryStartPosition.y,
           };
+          const nextPositions: Record<string, Position> = {};
           dragState.memberIds.forEach((id) => {
             const startPosition = dragState.startPositions[id];
             if (!startPosition) {
               return;
             }
-            onMoveMember(id, {
+            nextPositions[id] = {
               x: clamp(startPosition.x + primaryDelta.x, 0, settings.width),
               y: clamp(startPosition.y + primaryDelta.y, 0, canvasDistanceMeters),
-            });
+            };
+          });
+          latestMemberPositions = nextPositions;
+          if (deferMemberDragCommit) {
+            previewMemberDragTransforms(dragState, nextPositions);
+            return;
+          }
+          Object.entries(nextPositions).forEach(([id, position]) => {
+            onMoveMember(id, position);
           });
         } else if (dragState.interaction === "resize") {
           const maxWidth = Math.max(
@@ -999,10 +1191,15 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             MIN_OBJECT_SIZE_METERS,
             maxHeight,
           );
-          onUpdateObjectState(dragState.id, {
+          latestObjectPatch = {
             widthMeters: nextWidth,
             heightMeters: nextHeight,
-          });
+          };
+          if (deferObjectDragCommit) {
+            previewObjectDrag(dragState, latestObjectPatch);
+            return;
+          }
+          onUpdateObjectState(dragState.id, latestObjectPatch);
         } else if (dragState.interaction === "rotate") {
           const currentAngle =
             (Math.atan2(
@@ -1014,9 +1211,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           const nextRotation =
             Math.round((dragState.startState.rotation + currentAngle - dragState.startAngle) / 5) *
             5;
-          onUpdateObjectState(dragState.id, {
+          latestObjectPatch = {
             rotation: roundMeters(nextRotation),
-          });
+          };
+          if (deferObjectDragCommit) {
+            previewObjectDrag(dragState, latestObjectPatch);
+            return;
+          }
+          onUpdateObjectState(dragState.id, latestObjectPatch);
         } else {
           const maxObjectX = Math.max(
             0,
@@ -1033,7 +1235,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             settings.totalDistance,
             backwardDistanceMeters,
           );
-          onUpdateObjectState(dragState.id, { x: nextX, y: nextY });
+          latestObjectPatch = { x: nextX, y: nextY };
+          if (deferObjectDragCommit) {
+            previewObjectDrag(dragState, latestObjectPatch);
+            return;
+          }
+          onUpdateObjectState(dragState.id, latestObjectPatch);
         }
       };
       autoScroller =
@@ -1069,6 +1276,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   type: "member-position" as const,
                 }))
               : { id: dragState.id, type: "object-state" as const };
+          commitDeferredMemberDrag(dragState, latestMemberPositions);
+          commitDeferredObjectDrag(dragState, latestObjectPatch);
           onEndProjectEdit(
             Array.isArray(editTarget) && editTarget.length === 1
               ? editTarget[0]
@@ -1092,6 +1301,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onBeginProjectEdit,
       onMoveMember,
       onUpdateObjectState,
+      deferMemberDragCommit,
+      deferObjectDragCommit,
       pxPerMeter,
       settings.cellSizeMeters,
       backwardDistanceMeters,
@@ -1399,6 +1610,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (appendSelection) {
         return;
       }
+      cancelPendingMemberDragClear();
       const startPositions = Object.fromEntries(
         dragMemberIds
           .map((id) => [id, snapshot.positions[id]] as const)
@@ -1455,6 +1667,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       startTouchContextMenu(event, { type: "object", id: objectId });
+      cancelPendingObjectDragClear();
       setDragState({
         type: "object",
         interaction: "move",
@@ -1496,6 +1709,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         onReadOnlyEditAttempt?.();
         return;
       }
+      cancelPendingObjectDragClear();
       setDragState({
         type: "object",
         interaction: "resize",
@@ -1548,6 +1762,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         onReadOnlyEditAttempt?.();
         return;
       }
+      cancelPendingObjectDragClear();
       setDragState({
         type: "object",
         interaction: "rotate",
@@ -1876,23 +2091,25 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 const height = state.heightMeters * pxPerMeter;
                 const isSelected = selected?.type === "object" && selected.id === object.id;
                 const remoteObjectLockOwner = remoteObjectLocks[object.id] ?? null;
+                const objectStyle: ParadeObjectStyle = {
+                  left: `calc(${left}px + var(--object-drag-x, 0px))`,
+                  top: `calc(${top}px + var(--object-drag-y, 0px))`,
+                  width: `calc(${width}px + var(--object-drag-width, 0px))`,
+                  height: `calc(${height}px + var(--object-drag-height, 0px))`,
+                  borderColor: object.color,
+                  background: getObjectFill(object),
+                  transform: `rotate(calc(${state.rotation}deg + var(--object-drag-rotation, 0deg)))`,
+                  zIndex: state.zIndex,
+                };
                 return (
                   <button
                     key={object.id}
+                    ref={(element) => setObjectElementRef(object.id, element)}
                     type="button"
                     className={`parade-object ${isSelected ? "is-selected" : ""} ${
                       remoteObjectLockOwner ? "is-remote-locked" : ""
                     }`}
-                    style={{
-                      left,
-                      top,
-                      width,
-                      height,
-                      borderColor: object.color,
-                      background: getObjectFill(object),
-                      transform: `rotate(${state.rotation}deg)`,
-                      zIndex: state.zIndex,
-                    }}
+                    style={objectStyle}
                     onPointerDown={(event) => startObjectDrag(object.id, state, event)}
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "object", id: object.id })
@@ -1977,6 +2194,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 return (
                   <button
                     key={member.id}
+                    ref={(element) => setMemberElementRef(member.id, element)}
                     type="button"
                     className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""} ${
                       memberLabelClassName

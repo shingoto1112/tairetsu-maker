@@ -1,4 +1,5 @@
 import {
+  CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
   useEffect,
@@ -40,6 +41,7 @@ type DragState = {
   stageElement: HTMLElement;
   startState: ObjectState;
   startAngle: number;
+  latestPatch: Partial<ObjectState> | null;
   hasMoved: boolean;
   isBeginPending: boolean;
   endRequested: boolean;
@@ -52,6 +54,7 @@ type ResizableRotatableObjectProps = {
   viewerPerspective: ViewerPerspective;
   selected: boolean;
   disabled: boolean;
+  deferCommit?: boolean;
   remoteLockOwner?: string | null;
   onSelect: () => void;
   onMove: (state: Partial<ObjectState>) => void;
@@ -100,6 +103,7 @@ export const ResizableRotatableObject = ({
   viewerPerspective,
   selected,
   disabled,
+  deferCommit = false,
   remoteLockOwner = null,
   onSelect,
   onMove,
@@ -111,16 +115,120 @@ export const ResizableRotatableObject = ({
   onTouchLongPressStart,
   onLockedElementEditAttempt,
 }: ResizableRotatableObjectProps) => {
+  const objectRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const autoScrollerRef = useRef<EdgeAutoScroller | null>(null);
+  const objectDragClearFrameRef = useRef<number | null>(null);
   const editable = !disabled && !object.locked && !remoteLockOwner;
+
+  const cancelPendingObjectDragClear = () => {
+    if (objectDragClearFrameRef.current !== null) {
+      window.cancelAnimationFrame(objectDragClearFrameRef.current);
+      objectDragClearFrameRef.current = null;
+    }
+  };
+
+  const clearObjectDragPreview = () => {
+    const element = objectRef.current;
+    if (!element) {
+      return;
+    }
+    element.style.removeProperty("--object-drag-x");
+    element.style.removeProperty("--object-drag-y");
+    element.style.removeProperty("--object-drag-width");
+    element.style.removeProperty("--object-drag-height");
+    element.style.removeProperty("--object-drag-rotation");
+  };
+
+  const scheduleClearObjectDragPreview = () => {
+    cancelPendingObjectDragClear();
+    objectDragClearFrameRef.current = window.requestAnimationFrame(() => {
+      objectDragClearFrameRef.current = null;
+      clearObjectDragPreview();
+    });
+  };
 
   useEffect(
     () => () => {
+      cancelPendingObjectDragClear();
+      clearObjectDragPreview();
       autoScrollerRef.current?.stop();
     },
     [],
   );
+
+  const getDisplayTopLeft = (objectState: ObjectState) =>
+    viewerPerspective === "performer"
+      ? {
+          x: stage.widthMeters - objectState.x - objectState.widthMeters,
+          y: stage.depthMeters - objectState.y - objectState.heightMeters,
+        }
+      : { x: objectState.x, y: objectState.y };
+
+  const previewObjectDrag = (
+    drag: DragState,
+    patch: Partial<ObjectState>,
+  ) => {
+    const element = objectRef.current;
+    if (!element) {
+      return;
+    }
+    const stageRect = drag.stageElement.getBoundingClientRect();
+    const nextState = {
+      ...drag.startState,
+      ...patch,
+      widthMeters: Math.max(
+        0.1,
+        patch.widthMeters ?? drag.startState.widthMeters,
+      ),
+      heightMeters: Math.max(
+        0.1,
+        patch.heightMeters ?? drag.startState.heightMeters,
+      ),
+    };
+    const startDisplayTopLeft = getDisplayTopLeft(drag.startState);
+    const nextDisplayTopLeft = getDisplayTopLeft(nextState);
+    element.style.setProperty(
+      "--object-drag-x",
+      `${((nextDisplayTopLeft.x - startDisplayTopLeft.x) / stage.widthMeters) * stageRect.width}px`,
+    );
+    element.style.setProperty(
+      "--object-drag-y",
+      `${((nextDisplayTopLeft.y - startDisplayTopLeft.y) / stage.depthMeters) * stageRect.height}px`,
+    );
+    element.style.setProperty(
+      "--object-drag-width",
+      `${((nextState.widthMeters - drag.startState.widthMeters) / stage.widthMeters) * stageRect.width}px`,
+    );
+    element.style.setProperty(
+      "--object-drag-height",
+      `${((nextState.heightMeters - drag.startState.heightMeters) / stage.depthMeters) * stageRect.height}px`,
+    );
+    element.style.setProperty(
+      "--object-drag-rotation",
+      `${(nextState.rotation ?? 0) - drag.startState.rotation}deg`,
+    );
+  };
+
+  const applyObjectPatch = (
+    drag: DragState,
+    patch: Partial<ObjectState>,
+  ) => {
+    drag.latestPatch = patch;
+    if (deferCommit) {
+      previewObjectDrag(drag, patch);
+      return;
+    }
+    onMove(patch);
+  };
+
+  const commitDeferredObjectDrag = (drag: DragState) => {
+    if (!deferCommit || !drag.latestPatch) {
+      return;
+    }
+    onMove(drag.latestPatch);
+    scheduleClearObjectDragPreview();
+  };
 
   const applyDrag = (clientX: number, clientY: number) => {
     const drag = dragRef.current;
@@ -153,6 +261,7 @@ export const ResizableRotatableObject = ({
         latestDrag.hasMoved = true;
         applyDrag(latestDrag.currentClientX, latestDrag.currentClientY);
         if (latestDrag.endRequested) {
+          commitDeferredObjectDrag(latestDrag);
           dragRef.current = null;
           autoScrollerRef.current?.stop();
           autoScrollerRef.current = null;
@@ -176,7 +285,9 @@ export const ResizableRotatableObject = ({
         stage,
         viewerPerspective,
       );
-      onMove({ rotation: drag.startState.rotation + angle - drag.startAngle });
+      applyObjectPatch(drag, {
+        rotation: drag.startState.rotation + angle - drag.startAngle,
+      });
       return;
     }
 
@@ -191,7 +302,7 @@ export const ResizableRotatableObject = ({
     const dy = pointer.y - drag.startPointer.y;
 
     if (drag.kind === "resize") {
-      onMove({
+      applyObjectPatch(drag, {
         widthMeters: Math.max(
           0.1,
           snapToGrid(
@@ -245,7 +356,7 @@ export const ResizableRotatableObject = ({
       drag.startState.heightMeters,
       stage,
     );
-    onMove(next);
+    applyObjectPatch(drag, next);
   };
 
   const startInteraction = (
@@ -297,6 +408,7 @@ export const ResizableRotatableObject = ({
               viewerPerspective,
             )
           : 0,
+      latestPatch: null,
       hasMoved: false,
       isBeginPending: false,
       endRequested: false,
@@ -352,25 +464,20 @@ export const ResizableRotatableObject = ({
       autoScrollerRef.current?.stop();
       autoScrollerRef.current = null;
       if (drag.hasMoved) {
+        commitDeferredObjectDrag(drag);
         onInteractionEnd?.();
       }
     }
   };
 
-  const displayTopLeft =
-    viewerPerspective === "performer"
-      ? {
-          x: stage.widthMeters - state.x - state.widthMeters,
-          y: stage.depthMeters - state.y - state.heightMeters,
-        }
-      : { x: state.x, y: state.y };
+  const displayTopLeft = getDisplayTopLeft(state);
 
-  const style = {
-    left: `${(displayTopLeft.x / stage.widthMeters) * 100}%`,
-    top: `${(displayTopLeft.y / stage.depthMeters) * 100}%`,
-    width: `${(state.widthMeters / stage.widthMeters) * 100}%`,
-    height: `${(state.heightMeters / stage.depthMeters) * 100}%`,
-    transform: `rotate(${state.rotation}deg)`,
+  const style: CSSProperties = {
+    left: `calc(${(displayTopLeft.x / stage.widthMeters) * 100}% + var(--object-drag-x, 0px))`,
+    top: `calc(${(displayTopLeft.y / stage.depthMeters) * 100}% + var(--object-drag-y, 0px))`,
+    width: `calc(${(state.widthMeters / stage.widthMeters) * 100}% + var(--object-drag-width, 0px))`,
+    height: `calc(${(state.heightMeters / stage.depthMeters) * 100}% + var(--object-drag-height, 0px))`,
+    transform: `rotate(calc(${state.rotation}deg + var(--object-drag-rotation, 0deg)))`,
     zIndex: state.zIndex,
     borderColor: object.color,
     backgroundColor:
@@ -379,6 +486,7 @@ export const ResizableRotatableObject = ({
 
   return (
     <div
+      ref={objectRef}
       className={[
         "stage-object",
         `shape-${object.shape}`,

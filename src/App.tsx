@@ -12342,6 +12342,8 @@ function App() {
                   focusMode={focusMode}
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
+                  deferMemberDragCommit={Boolean(activeCloudProject)}
+                  deferObjectDragCommit={Boolean(activeCloudProject)}
                   remoteMemberLocks={remoteMemberPositionLocksById}
                   remoteObjectLocks={remoteObjectStateLocksById}
                   onSelect={selectStageElement}
@@ -12394,6 +12396,8 @@ function App() {
                   focusMode={focusMode}
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
+                  deferMemberDragCommit={Boolean(activeCloudProject)}
+                  deferObjectDragCommit={Boolean(activeCloudProject)}
                   remoteMemberLocks={remoteMemberPositionLocksById}
                   remoteObjectLocks={remoteObjectStateLocksById}
                   onSelect={selectStageElement}

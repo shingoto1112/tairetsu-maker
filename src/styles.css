@@ -329,8 +329,8 @@
   line-height: 1;
   overflow: visible;
   transform: translate(
-    calc(-50% + var(--member-overlap-x, 0px)),
-    calc(-50% + var(--member-overlap-y, 0px))
+    calc(-50% + var(--member-overlap-x, 0px) + var(--member-drag-x, 0px)),
+    calc(-50% + var(--member-overlap-y, 0px) + var(--member-drag-y, 0px))
   );
   writing-mode: horizontal-tb;
   z-index: 4;
@@ -4001,8 +4001,8 @@ h2 {
   text-align: center;
   touch-action: none;
   transform: translate(
-    calc(-50% + var(--member-overlap-x, 0px)),
-    calc(-50% + var(--member-overlap-y, 0px))
+    calc(-50% + var(--member-overlap-x, 0px) + var(--member-drag-x, 0px)),
+    calc(-50% + var(--member-overlap-y, 0px) + var(--member-drag-y, 0px))
   );
   user-select: none;
 }
@@ -4101,8 +4101,8 @@ h2 {
   outline: 3px solid rgba(245, 158, 11, 0.95);
   outline-offset: 4px;
   transform: translate(
-      calc(-50% + var(--member-overlap-x, 0px)),
-      calc(-50% + var(--member-overlap-y, 0px))
+      calc(-50% + var(--member-overlap-x, 0px) + var(--member-drag-x, 0px)),
+      calc(-50% + var(--member-overlap-y, 0px) + var(--member-drag-y, 0px))
     )
     scale(1.1);
 }
