@@ -27,9 +27,14 @@ export type CloudProjectPresence = CloudPresencePayload & {
 
 export type CloudSaveNotification = {
   actorId: string | null;
+  baseCellVersion: number | null;
   cellId: string | null;
+  cellVersion: number | null;
   cellLockTargetId: string | null;
   createdAt: string;
+  holderClientId: string | null;
+  leaseId: string | null;
+  operationId: string | null;
   patchType: string | null;
   patchValue: unknown;
   projectId: string;
@@ -37,6 +42,43 @@ export type CloudSaveNotification = {
   targetId: string;
   targetType: "project" | "scene";
   version: number | null;
+};
+
+export type CloudPreviewEvent = {
+  cellId: string;
+  cellKind: string;
+  holderClientId: string;
+  leaseId: string;
+  operationId: string;
+  projectId: string;
+  sceneId: string;
+  seq: number;
+  sentAt: string;
+  value: unknown;
+};
+
+export type CloudCommitEvent = {
+  cellId: string;
+  cellKind: string;
+  cellVersion: number;
+  holderClientId: string | null;
+  leaseId: string | null;
+  operationId: string | null;
+  projectId: string;
+  sceneId: string;
+  sentAt: string;
+};
+
+export type CloudLockEvent = {
+  actorId: string | null;
+  createdAt: string;
+  holderClientId: string | null;
+  leaseId: string | null;
+  operationId: string | null;
+  projectId: string;
+  targetId: string | null;
+  targetType: "project" | "scene" | "scene_cell" | null;
+  type: "lock_acquired" | "lock_expired" | "lock_released";
 };
 
 export type CloudLockTakeoverRequest = {
@@ -49,8 +91,18 @@ export type CloudLockTakeoverRequest = {
 };
 
 export type CloudRealtimeSubscription = {
+  sendCommit: (event: CloudCommitEvent) => Promise<void>;
+  sendPreview: (event: CloudPreviewEvent) => Promise<void>;
   updatePresence: (presence: CloudPresencePayload | null) => Promise<void>;
   unsubscribe: () => Promise<void>;
+};
+
+export const createCloudPreviewSequencer = (): (() => number) => {
+  let seq = 0;
+  return () => {
+    seq = seq >= Number.MAX_SAFE_INTEGER ? 1 : seq + 1;
+    return seq;
+  };
 };
 
 const asString = (value: unknown): string | null =>
@@ -138,9 +190,14 @@ const parseSaveNotification = (
   }
   return {
     actorId: asString(row.actor_id),
+    baseCellVersion: asNumber(metadata.baseCellVersion),
     cellId: asString(metadata.cellId),
+    cellVersion: asNumber(metadata.cellVersion),
     cellLockTargetId: asString(metadata.cellLockTargetId),
     createdAt,
+    holderClientId: asString(metadata.holderClientId),
+    leaseId: asString(metadata.leaseId),
+    operationId: asString(metadata.operationId),
     patchType: asString(metadata.patchType),
     patchValue: "patchValue" in metadata ? metadata.patchValue : null,
     projectId,
@@ -186,12 +243,56 @@ const parseLockTakeoverRequest = (
   };
 };
 
+const parseLockEvent = (payload: RealtimePayload): CloudLockEvent | null => {
+  const row = payload.new;
+  if (
+    !row ||
+    (row.action !== "lock_acquired" &&
+      row.action !== "lock_released" &&
+      row.action !== "lock_expired")
+  ) {
+    return null;
+  }
+  const metadata =
+    row.metadata && typeof row.metadata === "object"
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const projectId = asString(row.project_id);
+  const createdAt = asString(row.created_at);
+  const targetType = asString(row.target_type);
+  if (
+    !projectId ||
+    !createdAt ||
+    (targetType !== null &&
+      targetType !== "scene" &&
+      targetType !== "project" &&
+      targetType !== "scene_cell")
+  ) {
+    return null;
+  }
+
+  return {
+    actorId: asString(row.actor_id),
+    createdAt,
+    holderClientId: asString(metadata.holderClientId),
+    leaseId: asString(metadata.leaseId),
+    operationId: asString(metadata.operationId),
+    projectId,
+    targetId: asString(row.target_id),
+    targetType,
+    type: row.action,
+  };
+};
+
 export const subscribeCloudProjectRealtime = (options: {
   accessToken: string;
   config: CloudConfig;
   onError?: (message: string) => void;
+  onLockEvent?: (event: CloudLockEvent) => void;
   onLockChange: () => void;
   onPresenceChange?: (items: CloudProjectPresence[]) => void;
+  onCommit?: (event: CloudCommitEvent) => void;
+  onPreview?: (event: CloudPreviewEvent) => void;
   onSave: (notification: CloudSaveNotification) => void;
   onTakeoverRequest?: (request: CloudLockTakeoverRequest) => void;
   presence: CloudPresencePayload | null;
@@ -214,7 +315,7 @@ export const subscribeCloudProjectRealtime = (options: {
       },
       realtime: {
         params: {
-          eventsPerSecond: 5,
+          eventsPerSecond: 15,
         },
       },
     },
@@ -251,6 +352,18 @@ export const subscribeCloudProjectRealtime = (options: {
       },
     })
     .on("presence", { event: "sync" }, emitPresence)
+    .on("broadcast", { event: "preview" }, ({ payload }) => {
+      const event = payload as CloudPreviewEvent;
+      if (event?.projectId === options.projectId) {
+        options.onPreview?.(event);
+      }
+    })
+    .on("broadcast", { event: "commit" }, ({ payload }) => {
+      const event = payload as CloudCommitEvent;
+      if (event?.projectId === options.projectId) {
+        options.onCommit?.(event);
+      }
+    })
     .on(
       "postgres_changes",
       {
@@ -280,6 +393,10 @@ export const subscribeCloudProjectRealtime = (options: {
         if (takeoverRequest) {
           options.onTakeoverRequest?.(takeoverRequest);
         }
+        const lockEvent = parseLockEvent(payload);
+        if (lockEvent) {
+          options.onLockEvent?.(lockEvent);
+        }
       },
     )
     .subscribe((status) => {
@@ -300,6 +417,26 @@ export const subscribeCloudProjectRealtime = (options: {
     });
 
   return {
+    sendCommit: async (event) => {
+      if (!isSubscribed) {
+        return;
+      }
+      await channel.send({
+        event: "commit",
+        payload: event,
+        type: "broadcast",
+      });
+    },
+    sendPreview: async (event) => {
+      if (!isSubscribed) {
+        return;
+      }
+      await channel.send({
+        event: "preview",
+        payload: event,
+        type: "broadcast",
+      });
+    },
     updatePresence: async (presence) => {
       latestPresence = presence;
       await trackLatestPresence();

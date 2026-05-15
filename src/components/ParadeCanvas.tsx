@@ -84,9 +84,11 @@ type ParadeCanvasProps = {
   onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
   onBeginProjectEdit: (
     label?: string,
-    target?: SceneElementEditTarget,
+    target?: SceneElementEditTarget | SceneElementEditTarget[],
   ) => boolean | void | Promise<boolean | void>;
-  onEndProjectEdit: (target?: SceneElementEditTarget) => void;
+  onEndProjectEdit: (
+    target?: SceneElementEditTarget | SceneElementEditTarget[],
+  ) => void;
   onFrameViewStateChange: (frameId: string, viewState: SceneViewState) => void;
   onReflectPreviousFrame: (options: ParadeReflectOptions) => void;
   canUndo: boolean;
@@ -116,6 +118,7 @@ type DragState =
   | {
       type: "member";
       id: string;
+      memberIds: string[];
       startClientX: number;
       startClientY: number;
       currentClientX: number;
@@ -123,6 +126,7 @@ type DragState =
       startScrollLeft: number;
       startScrollTop: number;
       startPosition: Position;
+      startPositions: Record<string, Position>;
       hasMoved: boolean;
       isBeginPending: boolean;
     }
@@ -854,6 +858,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       let currentClientY = dragState.currentClientY;
       let didMove = dragState.hasMoved;
       let beginPending = dragState.isBeginPending;
+      let endRequested = false;
       let autoScroller: ReturnType<typeof createEdgeAutoScroller> | null = null;
       let isCancelled = false;
       const applyDrag = (clientX: number, clientY: number) => {
@@ -890,24 +895,27 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               ? "道具サイズ変更"
               : dragState.type === "object" && dragState.interaction === "rotate"
                 ? "道具回転"
-                : "パレード配置編集";
-          const editTarget: SceneElementEditTarget =
+                : dragState.type === "member" && dragState.memberIds.length > 1
+                  ? "複数メンバー移動"
+                  : "パレード配置編集";
+          const editTarget: SceneElementEditTarget | SceneElementEditTarget[] =
             dragState.type === "member"
-              ? { id: dragState.id, type: "member-position" }
+              ? dragState.memberIds.map((id) => ({
+                  id,
+                  type: "member-position",
+                }))
               : { id: dragState.id, type: "object-state" };
+          const normalizedEditTarget =
+            Array.isArray(editTarget) && editTarget.length === 1
+              ? editTarget[0]
+              : editTarget;
           beginPending = true;
-          setDragState({
-            ...dragState,
-            currentClientX: clientX,
-            currentClientY: clientY,
-            isBeginPending: true,
-          });
-          const beginResult = onBeginProjectEdit(editLabel, editTarget);
+          const beginResult = onBeginProjectEdit(editLabel, normalizedEditTarget);
           void Promise.resolve(beginResult).then((canEdit) => {
             beginPending = false;
             if (isCancelled) {
               if (canEdit !== false) {
-                onEndProjectEdit(editTarget);
+                onEndProjectEdit(normalizedEditTarget);
               }
               return;
             }
@@ -917,32 +925,55 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               return;
             }
             didMove = true;
-            setDragState({
-              ...dragState,
-              currentClientX,
-              currentClientY,
-              hasMoved: true,
-              isBeginPending: false,
-            });
+            if (!endRequested) {
+              setDragState({
+                ...dragState,
+                currentClientX,
+                currentClientY,
+                hasMoved: true,
+                isBeginPending: false,
+              });
+            }
             applyDrag(currentClientX, currentClientY);
+            if (endRequested) {
+              autoScroller?.stop();
+              setDragState(null);
+              onEndProjectEdit(normalizedEditTarget);
+              return;
+            }
             autoScroller?.update(currentClientX, currentClientY);
           });
           return;
         }
         if (dragState.type === "member") {
-          const nextPosition = {
+          const primaryStartPosition =
+            dragState.startPositions[dragState.id] ?? dragState.startPosition;
+          const primaryNextPosition = {
             x: clamp(
-              snapMeters(dragState.startPosition.x + dx, settings.cellSizeMeters),
+              snapMeters(primaryStartPosition.x + dx, settings.cellSizeMeters),
               0,
               settings.width,
             ),
             y: clamp(
-              snapMeters(dragState.startPosition.y + dy, settings.cellSizeMeters),
+              snapMeters(primaryStartPosition.y + dy, settings.cellSizeMeters),
               0,
               canvasDistanceMeters,
             ),
           };
-          onMoveMember(dragState.id, nextPosition);
+          const primaryDelta = {
+            x: primaryNextPosition.x - primaryStartPosition.x,
+            y: primaryNextPosition.y - primaryStartPosition.y,
+          };
+          dragState.memberIds.forEach((id) => {
+            const startPosition = dragState.startPositions[id];
+            if (!startPosition) {
+              return;
+            }
+            onMoveMember(id, {
+              x: clamp(startPosition.x + primaryDelta.x, 0, settings.width),
+              y: clamp(startPosition.y + primaryDelta.y, 0, canvasDistanceMeters),
+            });
+          });
         } else if (dragState.interaction === "resize") {
           const maxWidth = Math.max(
             MIN_OBJECT_SIZE_METERS,
@@ -1017,15 +1048,31 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         applyDrag(event.clientX, event.clientY);
         autoScroller?.update(event.clientX, event.clientY);
       };
-      const handlePointerUp = () => {
+      const handlePointerUp = (event?: globalThis.PointerEvent) => {
+        if (event) {
+          currentClientX = event.clientX;
+          currentClientY = event.clientY;
+        }
+        if (beginPending && !didMove) {
+          endRequested = true;
+          autoScroller?.stop();
+          return;
+        }
         const shouldEndEdit = didMove;
         autoScroller?.stop();
         setDragState(null);
         if (shouldEndEdit) {
-          onEndProjectEdit(
+          const editTarget =
             dragState.type === "member"
-              ? { id: dragState.id, type: "member-position" }
-              : { id: dragState.id, type: "object-state" },
+              ? dragState.memberIds.map((id) => ({
+                  id,
+                  type: "member-position" as const,
+                }))
+              : { id: dragState.id, type: "object-state" as const };
+          onEndProjectEdit(
+            Array.isArray(editTarget) && editTarget.length === 1
+              ? editTarget[0]
+              : editTarget,
           );
         }
       };
@@ -1325,8 +1372,21 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.stopPropagation();
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
-      onSelect({ type: "member", id: memberId }, { append: appendSelection });
-      const remoteLockOwner = remoteMemberLocks[memberId];
+      const dragMemberIds =
+        !appendSelection &&
+        selectedMemberIds.length > 1 &&
+        selectedMemberIds.includes(memberId)
+          ? selectedMemberIds
+          : [memberId];
+      if (!dragMemberIds.includes(memberId)) {
+        dragMemberIds.unshift(memberId);
+      }
+      if (!(dragMemberIds.length > 1 && dragMemberIds.includes(memberId))) {
+        onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      }
+      const remoteLockOwner = dragMemberIds
+        .map((id) => remoteMemberLocks[id])
+        .find(Boolean);
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);
         return;
@@ -1339,9 +1399,20 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (appendSelection) {
         return;
       }
+      const startPositions = Object.fromEntries(
+        dragMemberIds
+          .map((id) => [id, snapshot.positions[id]] as const)
+          .filter((entry): entry is readonly [string, Position] =>
+            Boolean(entry[1]),
+          ),
+      );
       setDragState({
         type: "member",
         id: memberId,
+        memberIds:
+          Object.keys(startPositions).length > 0
+            ? Object.keys(startPositions)
+            : [memberId],
         startClientX: event.clientX,
         startClientY: event.clientY,
         currentClientX: event.clientX,
@@ -1349,6 +1420,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
         startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startPosition: position,
+        startPositions:
+          Object.keys(startPositions).length > 0
+            ? startPositions
+            : { [memberId]: position },
         hasMoved: false,
         isBeginPending: false,
       });

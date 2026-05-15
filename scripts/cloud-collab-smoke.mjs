@@ -636,6 +636,7 @@ const main = async () => {
     "owner save member cell patch",
     await rpc(owner, "save_scene_cell_patch_with_lock", {
       p_cell_id: "m-smoke",
+      p_expected_base_version: 0,
       p_lock_token: ownerCellToken,
       p_patch_type: "member_position",
       p_project_id: projectId,
@@ -649,6 +650,7 @@ const main = async () => {
     "editor save different member cell patch",
     await rpc(editor, "save_scene_cell_patch_with_lock", {
       p_cell_id: "m-smoke-2",
+      p_expected_base_version: 0,
       p_lock_token: editorCellToken,
       p_patch_type: "member_position",
       p_project_id: projectId,
@@ -701,6 +703,7 @@ const main = async () => {
     "owner save object cell patch",
     await rpc(owner, "save_scene_cell_patch_with_lock", {
       p_cell_id: "o-smoke",
+      p_expected_base_version: 0,
       p_lock_token: ownerObjectToken,
       p_patch_type: "object_state",
       p_project_id: projectId,
@@ -725,6 +728,126 @@ const main = async () => {
       p_lock_token: ownerObjectToken,
       p_project_id: projectId,
       p_target_id: "scene-smoke-1|object_state|o-smoke",
+      p_target_type: "scene_cell",
+    }),
+  );
+
+  const phase4PatchCases = [
+    {
+      cellId: "m-smoke",
+      patchType: "member_visibility",
+      summary: "smoke member visibility patch",
+      targetId: "scene-smoke-1|member_visibility|m-smoke",
+      value: false,
+    },
+    {
+      cellId: "o-smoke",
+      patchType: "object_visibility",
+      summary: "smoke object visibility patch",
+      targetId: "scene-smoke-1|object_visibility|o-smoke",
+      value: false,
+    },
+    {
+      cellId: "o-smoke",
+      patchType: "object_assignment",
+      summary: "smoke object assignment patch",
+      targetId: "scene-smoke-1|object_assignment|o-smoke",
+      value: ["m-smoke"],
+    },
+    {
+      cellId: "_",
+      patchType: "notes",
+      summary: "smoke scene notes patch",
+      targetId: "scene-smoke-1|notes|_",
+      value: "Phase 4 smoke notes",
+    },
+  ];
+  for (const patchCase of phase4PatchCases) {
+    const lockToken = randomToken();
+    expectSuccess(
+      `owner acquire ${patchCase.patchType} cell`,
+      await rpc(owner, "acquire_edit_lock", {
+        p_lock_token: lockToken,
+        p_project_id: projectId,
+        p_target_id: patchCase.targetId,
+        p_target_type: "scene_cell",
+      }),
+    );
+    expectSuccess(
+      `owner save ${patchCase.patchType} patch`,
+      await rpc(owner, "save_scene_cell_patch_with_lock", {
+        p_cell_id: patchCase.cellId,
+        p_expected_base_version: 0,
+        p_lock_token: lockToken,
+        p_patch_type: patchCase.patchType,
+        p_project_id: projectId,
+        p_scene_id: "scene-smoke-1",
+        p_schema_version: schemaVersion,
+        p_summary: patchCase.summary,
+        p_value: patchCase.value,
+      }),
+    );
+    expectSuccess(
+      `owner release ${patchCase.patchType} cell`,
+      await rpc(owner, "release_edit_lock", {
+        p_lock_token: lockToken,
+        p_project_id: projectId,
+        p_target_id: patchCase.targetId,
+        p_target_type: "scene_cell",
+      }),
+    );
+  }
+
+  const cellVersions = await rpc(owner, "list_scene_cell_versions", {
+    p_project_id: projectId,
+  });
+  if (
+    !Array.isArray(cellVersions) ||
+    !cellVersions.some(
+      (item) =>
+        item.scene_id === "scene-smoke-1" &&
+        item.cell_kind === "member_position" &&
+        item.cell_id === "m-smoke" &&
+        item.version === 1,
+    )
+  ) {
+    throw new Error(
+      `scene_cell_versions did not include saved member version: ${JSON.stringify(cellVersions)}`,
+    );
+  }
+  console.log("OK scene_cell_versions lazy upsert");
+
+  const staleCellToken = randomToken();
+  expectSuccess(
+    "owner reacquire member cell",
+    await rpc(owner, "acquire_edit_lock", {
+      p_lock_token: staleCellToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke",
+      p_target_type: "scene_cell",
+    }),
+  );
+  expectFailure(
+    "owner stale member cell patch rejected",
+    await rpc(owner, "save_scene_cell_patch_with_lock", {
+      p_cell_id: "m-smoke",
+      p_expected_base_version: 0,
+      p_lock_token: staleCellToken,
+      p_patch_type: "member_position",
+      p_project_id: projectId,
+      p_scene_id: "scene-smoke-1",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke stale cell patch",
+      p_value: { x: 9, y: 9 },
+    }),
+    "version_conflict",
+  );
+  expectSuccess(
+    "owner release stale member cell",
+    await rpc(owner, "release_edit_lock", {
+      p_lock_token: staleCellToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke",
       p_target_type: "scene_cell",
     }),
   );

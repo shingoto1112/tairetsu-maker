@@ -116,7 +116,7 @@ export const CloudCollaborationHelpModal = ({
             <h3>困ったら戻せます</h3>
             <p>
               ownerはローカルのJSON / ZIP / .tairetsuでクラウドを上書きできます。
-              競合やロック喪失時は、未保存内容をJSONとして退避できます。
+              競合やロック喪失時は、最新を再読み込みしてから再度編集します。
             </p>
           </div>
         </article>

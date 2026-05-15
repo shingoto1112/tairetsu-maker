@@ -4,7 +4,7 @@
 
 この文書は、隊列メーカーに追加するクラウド共同編集の初期実装仕様です。
 完全リアルタイム共同編集ではなく、ロック式共同編集を採用します。
-初期実装はシーン単位ロックでしたが、2026-05-15時点でメンバー位置と道具stateから、セル単位ロック + 保存済みパッチ同期へ段階移行しています。
+初期実装はシーン単位ロックでしたが、2026-05-15時点でメンバー位置、道具state、表示/非表示、道具割当、シーンメモから、セル単位ロック + 保存済みパッチ同期へ段階移行しています。
 
 ## 基本方針
 
@@ -27,7 +27,11 @@
 
 - `scene:{sceneId}`
 - `scene_cell:{sceneId}|member_position|{memberId}`
+- `scene_cell:{sceneId}|member_visibility|{memberId}`
 - `scene_cell:{sceneId}|object_state|{objectId}`
+- `scene_cell:{sceneId}|object_visibility|{objectId}`
+- `scene_cell:{sceneId}|object_assignment|{objectId}`
+- `scene_cell:{sceneId}|notes|_`
 - `project:members`
 - `project:objects`
 - `project:settings`
@@ -49,18 +53,137 @@
 
 ## セル単位ロック + パッチ保存
 
-第1実装の対応範囲:
+対応範囲:
 
 - メンバー位置: `scene_cell:{sceneId}|member_position|{memberId}` を取得し、`positions[memberId]` だけ保存する。
 - 道具state: `scene_cell:{sceneId}|object_state|{objectId}` を取得し、`objectStates[objectId]` だけ保存する。
+- メンバー表示: `scene_cell:{sceneId}|member_visibility|{memberId}` を取得し、`memberVisibility[memberId]` だけ保存する。
+- 道具表示: `scene_cell:{sceneId}|object_visibility|{objectId}` を取得し、`objectStates[objectId].visible` だけ保存する。
+- 道具割当: `scene_cell:{sceneId}|object_assignment|{objectId}` を取得し、`objectAssignments[objectId]` だけ保存する。
+- シーンメモ: `scene_cell:{sceneId}|notes|_` を取得し、`notes` だけ保存する。
 
 操作開始時にロック取得へ進み、取得できた場合だけ移動/変更を反映します。
 ドロップ/操作完了時に `save_scene_cell_patch_with_lock` RPC で対象フィールドだけを保存し、保存成功後にセルロックを解除します。
 
-Realtimeではドラッグ中の座標は送信しません。
+Realtimeのlive previewは、現時点ではメンバー位置と道具stateだけを対象にします。
+表示/非表示、道具割当、シーンメモは保存済みpatch通知で同期します。
 保存成功時に `audit_logs` の `save_success` metadataへ `patchType`, `cellId`, `cellLockTargetId`, `patchValue` を記録し、他ユーザーは安全な場合のみ対象フィールドへ自動反映します。
 
-今回まだ完全対応していないもの:
+## Phase 0 live preview 基盤
+
+リアルタイム共同編集へ進む前段として、2026-05-15に live preview 基盤を追加しました。
+
+採用方針:
+
+- `scenes.data` JSONB を正式データとして維持する。
+- `scene_cell_versions` は既存全セル分をmigrationで作らず、保存時に lazy upsert する。
+- version行がないセルは `version = 0` とみなす。
+- `edit_locks` は新しい `edit_leases` tableを作らず、既存tableをTTL付きleaseとして拡張する。
+- Phase 0ではpreview型と送信口だけを用意し、ドラッグ中の座標をまだ保存データへ反映しない。
+
+`scene_cell_versions`:
+
+- `project_id`
+- `scene_id`
+- `cell_kind`
+- `cell_id`
+- `version`
+- `updated_by`
+- `updated_at`
+
+保存時の流れ:
+
+1. 権限を確認する。
+2. `edit_locks` 上のlease/token/client/operationを確認する。
+3. `scene_cell_versions` を lazy upsert する。
+4. 対象セルversionを `select ... for update` でロックする。
+5. `expectedBaseVersion` と現在versionを比較する。
+6. 一致した場合のみ `scenes.data` の対象フィールドへpatch適用する。
+7. `scene_cell_versions.version` と `scenes.version` を更新する。
+8. `audit_logs` に `cellVersion`, `baseCellVersion`, `leaseId`, `operationId`, `holderClientId` を含めて保存通知を残す。
+
+preview event / commit event:
+
+- preview eventは `projectId`, `sceneId`, `cellKind`, `cellId`, `leaseId`, `operationId`, `holderClientId`, `seq`, `value` を持つ。
+- commit eventは保存済みpatchの確定通知として `cellVersion` を持つ。
+- lock eventは `lock_acquired`, `lock_released`, `lock_expired` を扱い、可能な場合は `leaseId`, `operationId`, `holderClientId` を含む。
+- previewの `seq` は操作内の単調増加番号として扱い、古いpreviewを後から描画しないために使う。
+- previewは将来の表示専用レイヤーに反映し、`scenes.data` を直接変更しない。
+- 受信側は、対象セルに有効なleaseがある場合のみpreviewを信用する。
+
+## Phase 1 メンバー移動 live preview
+
+2026-05-15時点で、最初のlive preview対象としてメンバー移動を実装します。
+
+対象:
+
+- `scene_cell:{sceneId}|member_position|{memberId}`
+
+送信側の流れ:
+
+1. ユーザーがメンバーをドラッグし始める。
+2. 既存の `scene_cell` leaseを取得する。
+3. lease取得後、ドラッグ中の位置をRealtime broadcast `preview` として送る。
+4. previewには `projectId`, `sceneId`, `cellKind`, `cellId`, `leaseId`, `operationId`, `holderClientId`, `seq`, `value` を含める。
+5. 送信頻度は約80ms間隔に抑える。
+6. ドロップ時に `save_scene_cell_patch_with_lock` で正式保存する。
+7. 保存成功後、commit broadcastを送り、leaseを解除する。
+
+受信側の流れ:
+
+1. `preview` を受信する。
+2. 自分の同一cell操作中であれば無視する。
+3. `edit_locks` 上の現在の `leaseId`, `operationId`, `holderClientId` と一致する場合のみ採用する。
+4. 同じoperationでは `seq` が古いpreviewを無視する。
+5. 採用した位置は表示専用snapshotへ重ね、`project.frames` や `scenes.data` には混ぜない。
+6. commit / save notification / lock release / lock expired でpreview表示を消す。
+
+このPhaseで扱わないもの:
+
+- 道具移動、サイズ変更、回転のlive preview
+- 表示/非表示のlive preview
+- 道具割当のlive preview
+- シーンメモのlive preview
+- previewを使ったUndo/Redo
+
+正式データの更新は、引き続き保存済みcell patchだけで行います。
+
+## Phase 2 道具 state live preview
+
+2026-05-15時点で、2つ目のlive preview対象として道具stateを実装します。
+
+対象:
+
+- `scene_cell:{sceneId}|object_state|{objectId}`
+
+送信対象:
+
+- 道具移動
+- 道具サイズ変更
+- 道具回転
+
+送信側の流れ:
+
+1. ユーザーが道具の移動・サイズ変更・回転を始める。
+2. 既存の `scene_cell` leaseを取得する。
+3. lease取得後、ドラッグ中の `ObjectState` 全体をRealtime broadcast `preview` として送る。
+4. previewには `projectId`, `sceneId`, `cellKind`, `cellId`, `leaseId`, `operationId`, `holderClientId`, `seq`, `value` を含める。
+5. 送信頻度はメンバーpreviewと同じく約80ms間隔に抑える。
+6. ドロップ時に `save_scene_cell_patch_with_lock` で正式保存する。
+7. 保存成功後、commit broadcastを送り、leaseを解除する。
+
+受信側の流れ:
+
+1. `preview` を受信する。
+2. 自分の同一道具操作中であれば無視する。
+3. `edit_locks` 上の現在の `leaseId`, `operationId`, `holderClientId` と一致する場合のみ採用する。
+4. 同じoperationでは `seq` が古いpreviewを無視する。
+5. 採用した `ObjectState` は表示専用snapshotへ重ね、`project.frames` や `scenes.data` には混ぜない。
+6. commit / save notification / lock release / lock expired でpreview表示を消す。
+
+正式データの更新は、引き続き保存済みcell patchだけで行います。
+
+このPhaseでlive previewまで完全対応していないもの:
 
 - 表示/非表示
 - 道具割当
@@ -68,7 +191,69 @@ Realtimeではドラッグ中の座標は送信しません。
 - 複数選択の同時移動
 - キーボード移動のセル単位保存
 
-これらは既存のscene lockまたは後続のセル単位対応で扱います。
+表示/非表示、道具割当、シーンメモはPhase 4で保存済みpatch同期に対応していますが、ドラッグ中previewのような未保存previewは送りません。
+複数選択の隊列操作パネル移動/整列とキーボード移動はPhase 5で保存済みpatch同期に対応しています。
+キャンバス上で複数選択メンバーをドラッグして同時移動する操作はPhase 6で対応しています。
+
+## Phase 4 セル単位パッチ対象拡張
+
+2026-05-15時点で、live preview対象外だったシーン内操作のうち、保存済みpatchとして安全に分離できるものをセル単位保存に対応しました。
+
+対象:
+
+- `member_visibility`
+- `object_visibility`
+- `object_assignment`
+- `notes`
+
+方針:
+
+- 操作開始時または確定時に対象セルのleaseを取得する。
+- 複数セルを同時に変更する操作は、必要な全セルleaseを取得できた場合だけ変更を反映する。
+- 取得に失敗した場合は変更せず、取得済みleaseを解除する。
+- 変更後は対象セルごとに `save_scene_cell_patch_with_lock` を実行し、保存成功後にleaseを解除する。
+- シーンメモは入力中に毎文字保存せず、クラウド共同編集中はblur時にまとめて保存する。
+- live previewは送らず、保存成功後のpatch通知だけを他ユーザーへ反映する。
+
+## Phase 5 複数選択移動・キーボード移動
+
+2026-05-15時点で、単一セル操作だけでなく、複数の `member_position` / `object_state` をまとめて変える移動系操作をセル単位保存へ対応しました。
+
+対象:
+
+- キーボード矢印移動
+- 複数選択の矢印ボタン移動
+- 複数選択の左右反転
+- 隊列テンプレート適用
+- 整列/均等配置
+
+方針:
+
+- 変更対象となる全メンバー/道具のleaseを先に取得する。
+- すべて取得できた場合だけローカル表示へ反映する。
+- 取得に失敗した場合は変更せず、取得済みleaseを解除する。
+- 変更後は対象ごとに `save_scene_cell_patch_with_lock` を実行し、保存成功後にleaseを解除する。
+- 保存済みpatch同期のみで扱い、矢印キー押下中や一括整列中のlive previewは送らない。
+- ローカル編集では従来通りUndo/Redoへ履歴を積む。クラウド共同編集中はUndo/Redoを無効のままにする。
+
+## Phase 6 キャンバス上の複数選択ドラッグ
+
+2026-05-15時点で、ステージ/パレードのキャンバス上でも、複数選択メンバーを相対位置を保って同時ドラッグできるようにしました。
+
+対象:
+
+- ステージモードの複数選択メンバードラッグ
+- パレードモードの複数選択メンバードラッグ
+
+方針:
+
+- 複数選択中のメンバーの1人をドラッグした場合、その選択集合を同時移動対象にする。
+- ドラッグ開始時に対象全員の `member_position` leaseを取得する。
+- すべて取得できた場合だけドラッグを開始する。
+- 取得に失敗した場合は変更せず、取得済みleaseを解除する。
+- ドラッグ中の表示は既存の `member_position` preview経路を対象メンバーごとに使う。
+- 正式データはドロップ後に対象メンバーごとの `save_scene_cell_patch_with_lock` で保存する。
+- 単一メンバー移動の既存挙動は維持する。
 
 ## 権限
 
@@ -151,9 +336,16 @@ import用lockは保存成功時にRPC内で解除します。
 - `last_heartbeat_at`
 - `last_activity_at`
 - `expires_at`
+- `lease_id`
+- `operation_id`
+- `holder_client_id`
+- `renewed_at`
 
 ロック取得時にランダムな `lockToken` を発行し、DBにはhash化したtokenだけを保存します。
 保存、heartbeat、解除時には `lockToken` を渡し、DB側で検証します。
+
+`scene_cell` では、`lockToken` に加えて `lease_id`, `operation_id`, `holder_client_id` を検証します。
+これにより、同じユーザーの別タブ・別端末や古い操作からの保存を区別します。
 
 フロント側では `lockToken` を `sessionStorage` に保存し、`localStorage` には保存しません。
 タブ更新後に `sessionStorage` のtokenが残っていて、DB上のロックが有効な場合は編集継続を許可します。

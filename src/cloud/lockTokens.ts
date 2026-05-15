@@ -3,6 +3,7 @@ import { getCloudTargetLabel } from "./projectParts";
 
 const TOKEN_BYTES = 32;
 const SESSION_STORAGE_PREFIX = "tairetsu.cloud.lockToken";
+const CLIENT_ID_SESSION_STORAGE_KEY = "tairetsu.cloud.clientId";
 
 const bytesToBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
@@ -24,6 +25,20 @@ export const createCloudLockToken = (): string => {
   const bytes = new Uint8Array(TOKEN_BYTES);
   crypto.getRandomValues(bytes);
   return bytesToBase64Url(bytes);
+};
+
+export const createCloudLeaseId = (): string => crypto.randomUUID();
+
+export const createCloudOperationId = (): string => crypto.randomUUID();
+
+export const readCloudClientIdFromSession = (): string => {
+  const existing = window.sessionStorage.getItem(CLIENT_ID_SESSION_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+  const clientId = crypto.randomUUID();
+  window.sessionStorage.setItem(CLIENT_ID_SESSION_STORAGE_KEY, clientId);
+  return clientId;
 };
 
 export const hashCloudLockToken = async (lockToken: string): Promise<string> => {

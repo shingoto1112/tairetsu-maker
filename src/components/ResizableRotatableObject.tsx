@@ -42,6 +42,7 @@ type DragState = {
   startAngle: number;
   hasMoved: boolean;
   isBeginPending: boolean;
+  endRequested: boolean;
 };
 
 type ResizableRotatableObjectProps = {
@@ -151,6 +152,13 @@ export const ResizableRotatableObject = ({
         }
         latestDrag.hasMoved = true;
         applyDrag(latestDrag.currentClientX, latestDrag.currentClientY);
+        if (latestDrag.endRequested) {
+          dragRef.current = null;
+          autoScrollerRef.current?.stop();
+          autoScrollerRef.current = null;
+          onInteractionEnd?.();
+          return;
+        }
         autoScrollerRef.current?.update(
           latestDrag.currentClientX,
           latestDrag.currentClientY,
@@ -291,6 +299,7 @@ export const ResizableRotatableObject = ({
           : 0,
       hasMoved: false,
       isBeginPending: false,
+      endRequested: false,
     };
     const scrollContainer = stageElement.closest(".stage-fit-area");
     if (scrollContainer instanceof HTMLElement && kind !== "rotate") {
@@ -331,6 +340,14 @@ export const ResizableRotatableObject = ({
     onTouchLongPressEnd?.(event);
     const drag = dragRef.current;
     if (drag?.pointerId === event.pointerId) {
+      if (drag.isBeginPending && !drag.hasMoved) {
+        drag.endRequested = true;
+        drag.currentClientX = event.clientX;
+        drag.currentClientY = event.clientY;
+        autoScrollerRef.current?.stop();
+        autoScrollerRef.current = null;
+        return;
+      }
       dragRef.current = null;
       autoScrollerRef.current?.stop();
       autoScrollerRef.current = null;

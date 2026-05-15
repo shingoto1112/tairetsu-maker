@@ -171,7 +171,23 @@ export type SceneElementEditTarget =
     }
   | {
       id: string;
+      type: "member-visibility";
+    }
+  | {
+      id: string;
       type: "object-state";
+    }
+  | {
+      id: string;
+      type: "object-visibility";
+    }
+  | {
+      id: string;
+      type: "object-assignment";
+    }
+  | {
+      id: "_";
+      type: "notes";
     };
 
 export type MemberAppearanceOverride = {

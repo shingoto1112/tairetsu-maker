@@ -13,6 +13,7 @@ const migrationFiles = [
   "20260514008000_cloud_display_name_repair.sql",
   "20260515000000_cloud_contacts.sql",
   "20260515001000_cloud_scene_cell_locks.sql",
+  "20260515002000_cloud_live_preview_foundation.sql",
 ];
 
 const now = new Date().toISOString();
@@ -30,7 +31,15 @@ const chunks = [
   "drop function if exists public.add_project_member_from_contact(uuid, uuid, text);",
   "drop function if exists public.add_project_member_to_contacts(uuid, uuid);",
   "drop function if exists public.cloud_collab_display_name_for_user(uuid);",
+  "drop function if exists public.acquire_edit_lock(uuid, text, text, text, text, uuid, uuid);",
+  "drop function if exists public.acquire_edit_lock(uuid, text, text, text);",
+  "drop function if exists public.heartbeat_edit_lock(uuid, text, text, text, boolean, uuid, uuid, text);",
+  "drop function if exists public.heartbeat_edit_lock(uuid, text, text, text, boolean);",
+  "drop function if exists public.release_edit_lock(uuid, text, text, text, uuid, uuid, text);",
+  "drop function if exists public.release_edit_lock(uuid, text, text, text);",
+  "drop function if exists public.save_scene_cell_patch_with_lock(uuid, text, text, text, jsonb, text, integer, text, bigint, uuid, uuid, text);",
   "drop function if exists public.save_scene_cell_patch_with_lock(uuid, text, text, text, jsonb, text, integer, text);",
+  "drop function if exists public.list_scene_cell_versions(uuid);",
   "drop function if exists public.cloud_collab_scene_cell_scene_id(text);",
   "drop function if exists public.cloud_collab_scene_cell_target_id(text, text, text);",
   "",

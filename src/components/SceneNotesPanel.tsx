@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { StickyNote } from "lucide-react";
 import { FormationFrame } from "../types";
 import { formatTime } from "../utils/time";
@@ -7,6 +8,7 @@ type SceneNotesPanelProps = {
   frame?: FormationFrame;
   sceneNumber: number;
   canEditScene?: boolean;
+  commitOnBlur?: boolean;
   sceneReadOnlyMessage?: string;
   onUpdateFrame: (id: string, patch: Partial<FormationFrame>) => void;
 };
@@ -15,10 +17,16 @@ export const SceneNotesPanel = ({
   frame,
   sceneNumber,
   canEditScene = true,
+  commitOnBlur = false,
   sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onUpdateFrame,
 }: SceneNotesPanelProps) => {
   const sceneDisabled = !canEditScene;
+  const [notesDraft, setNotesDraft] = useState(frame?.notes ?? "");
+
+  useEffect(() => {
+    setNotesDraft(frame?.notes ?? "");
+  }, [frame?.id, frame?.notes]);
 
   if (!frame) {
     return (
@@ -53,12 +61,22 @@ export const SceneNotesPanel = ({
         <summary>メモ欄</summary>
         <textarea
           className="scene-notes-textarea"
-          value={frame.notes ?? ""}
+          value={commitOnBlur ? notesDraft : frame.notes ?? ""}
           disabled={sceneDisabled}
           title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-          onChange={(event) =>
-            onUpdateFrame(frame.id, { notes: event.target.value })
-          }
+          onBlur={() => {
+            if (commitOnBlur && notesDraft !== (frame.notes ?? "")) {
+              onUpdateFrame(frame.id, { notes: notesDraft });
+            }
+          }}
+          onChange={(event) => {
+            const nextNotes = event.target.value;
+            if (commitOnBlur) {
+              setNotesDraft(nextNotes);
+              return;
+            }
+            onUpdateFrame(frame.id, { notes: nextNotes });
+          }}
           placeholder="このシーンの注意点、移動のきっかけ、幕や道具の操作メモを書けます。"
           aria-label="シーンメモ"
         />

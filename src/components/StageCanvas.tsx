@@ -110,9 +110,11 @@ type StageCanvasProps = {
   onRedo: () => void;
   onBeginProjectEdit: (
     label?: string,
-    target?: SceneElementEditTarget,
+    target?: SceneElementEditTarget | SceneElementEditTarget[],
   ) => boolean | void | Promise<boolean | void>;
-  onEndProjectEdit: (target?: SceneElementEditTarget) => void;
+  onEndProjectEdit: (
+    target?: SceneElementEditTarget | SceneElementEditTarget[],
+  ) => void;
   onTogglePlayback: () => void;
   onSaveFrame: () => void;
   onCaptureStageImage: () => void;
@@ -138,14 +140,17 @@ export type StageScrollBounds = {
 type MemberDrag = {
   pointerId: number;
   memberId: string;
+  memberIds: string[];
   startClientX: number;
   startClientY: number;
   currentClientX: number;
   currentClientY: number;
   startPointer: Position;
   startPosition: Position;
+  startPositions: Record<string, Position>;
   hasMoved: boolean;
   isBeginPending: boolean;
+  endRequested: boolean;
 };
 
 type StageTouchPoint = {
@@ -435,7 +440,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       width: `${(memberDiameterMeters / stage.widthMeters) * 100}%`,
       height: `${(memberDiameterMeters / stage.depthMeters) * 100}%`,
     };
-    const memberEditing = mode === "members" && !isPlaying;
+    const memberEditing = !isPlaying;
     const objectEditing = mode === "objects" && !isPlaying;
     const isDenseProject = project.members.length >= 120;
     const simplifyMemberLabels =
@@ -1223,15 +1228,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         stage,
         viewerPerspective,
       );
+      const primaryStartPosition =
+        drag.startPositions[drag.memberId] ?? drag.startPosition;
       const next = constrainMemberPosition(
         {
           x: snapToGrid(
-            drag.startPosition.x + pointer.x - drag.startPointer.x,
+            primaryStartPosition.x + pointer.x - drag.startPointer.x,
             stage.gridSizeMeters,
             stage.showGrid,
           ),
           y: snapToGrid(
-            drag.startPosition.y + pointer.y - drag.startPointer.y,
+            primaryStartPosition.y + pointer.y - drag.startPointer.y,
             stage.gridSizeMeters,
             stage.showGrid,
           ),
@@ -1243,7 +1250,27 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         id: drag.memberId,
       });
       setActiveSnapGuides(guided.guides);
-      onMoveMember(drag.memberId, constrainMemberPosition(guided.position, stage));
+      const primaryNextPosition = constrainMemberPosition(guided.position, stage);
+      const delta = {
+        x: primaryNextPosition.x - primaryStartPosition.x,
+        y: primaryNextPosition.y - primaryStartPosition.y,
+      };
+      drag.memberIds.forEach((id) => {
+        const startPosition = drag.startPositions[id];
+        if (!startPosition) {
+          return;
+        }
+        onMoveMember(
+          id,
+          constrainMemberPosition(
+            {
+              x: startPosition.x + delta.x,
+              y: startPosition.y + delta.y,
+            },
+            stage,
+          ),
+        );
+      });
     };
 
     const handleMemberPointerDown = (
@@ -1261,8 +1288,21 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
-      onSelect({ type: "member", id: memberId }, { append: appendSelection });
-      const remoteLockOwner = remoteMemberLocks[memberId];
+      const dragMemberIds =
+        !appendSelection &&
+        selectedMemberIds.length > 1 &&
+        selectedMemberIds.includes(memberId)
+          ? selectedMemberIds
+          : [memberId];
+      if (!dragMemberIds.includes(memberId)) {
+        dragMemberIds.unshift(memberId);
+      }
+      if (!(dragMemberIds.length > 1 && dragMemberIds.includes(memberId))) {
+        onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      }
+      const remoteLockOwner = dragMemberIds
+        .map((id) => remoteMemberLocks[id])
+        .find(Boolean);
       if (remoteLockOwner) {
         event.preventDefault();
         onLockedElementEditAttempt?.(remoteLockOwner);
@@ -1281,6 +1321,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!memberEditing || !stageRef.current) {
         return;
       }
+      const startPositions = Object.fromEntries(
+        dragMemberIds
+          .map((id) => [id, snapshot.positions[id]] as const)
+          .filter((entry): entry is readonly [string, Position] =>
+            Boolean(entry[1]),
+          ),
+      );
       const startPointer = clientPointToMeters(
         event.clientX,
         event.clientY,
@@ -1291,14 +1338,20 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       memberDragRef.current = {
         pointerId: event.pointerId,
         memberId,
+        memberIds: Object.keys(startPositions).length > 0 ? Object.keys(startPositions) : [memberId],
         startClientX: event.clientX,
         startClientY: event.clientY,
         currentClientX: event.clientX,
         currentClientY: event.clientY,
         startPointer,
         startPosition: snapshot.positions[memberId] ?? { x: 0, y: 0 },
+        startPositions:
+          Object.keys(startPositions).length > 0
+            ? startPositions
+            : { [memberId]: snapshot.positions[memberId] ?? { x: 0, y: 0 } },
         hasMoved: false,
         isBeginPending: false,
+        endRequested: false,
       };
       if (fitAreaRef.current) {
         memberAutoScrollerRef.current?.stop();
@@ -1340,17 +1393,20 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         }
         cancelTouchContextMenu();
         drag.isBeginPending = true;
-        const beginResult = onBeginProjectEdit("メンバー移動", {
-          id: drag.memberId,
+        const editTargets: SceneElementEditTarget[] = drag.memberIds.map((id) => ({
+          id,
           type: "member-position",
-        });
-        const editTarget: SceneElementEditTarget = {
-          id: drag.memberId,
-          type: "member-position",
-        };
+        }));
+        const editTarget =
+          editTargets.length === 1 ? editTargets[0] : editTargets;
+        const pointerId = event.pointerId;
+        const beginResult = onBeginProjectEdit(
+          editTargets.length > 1 ? "複数メンバー移動" : "メンバー移動",
+          editTarget,
+        );
         void Promise.resolve(beginResult).then((canEdit) => {
           const latestDrag = memberDragRef.current;
-          if (!latestDrag || latestDrag.pointerId !== event.pointerId) {
+          if (!latestDrag || latestDrag.pointerId !== pointerId) {
             if (canEdit !== false) {
               onEndProjectEdit(editTarget);
             }
@@ -1368,6 +1424,15 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           latestDrag.hasMoved = true;
           setIsMemberDragging(true);
           moveDraggedMember(latestDrag.currentClientX, latestDrag.currentClientY);
+          if (latestDrag.endRequested) {
+            memberDragRef.current = null;
+            memberAutoScrollerRef.current?.stop();
+            memberAutoScrollerRef.current = null;
+            setActiveSnapGuides([]);
+            setIsMemberDragging(false);
+            onEndProjectEdit(editTarget);
+            return;
+          }
           memberAutoScrollerRef.current?.update(
             latestDrag.currentClientX,
             latestDrag.currentClientY,
@@ -1383,12 +1448,26 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       stopTouchContextMenu(event);
       const drag = memberDragRef.current;
       if (drag?.pointerId === event.pointerId) {
+        if (drag.isBeginPending && !drag.hasMoved) {
+          drag.endRequested = true;
+          drag.currentClientX = event.clientX;
+          drag.currentClientY = event.clientY;
+          memberAutoScrollerRef.current?.stop();
+          memberAutoScrollerRef.current = null;
+          setActiveSnapGuides([]);
+          setIsMemberDragging(false);
+          return;
+        }
         memberDragRef.current = null;
         memberAutoScrollerRef.current?.stop();
         memberAutoScrollerRef.current = null;
         setActiveSnapGuides([]);
         if (drag.hasMoved) {
-          onEndProjectEdit({ id: drag.memberId, type: "member-position" });
+          const editTargets: SceneElementEditTarget[] = drag.memberIds.map((id) => ({
+            id,
+            type: "member-position",
+          }));
+          onEndProjectEdit(editTargets.length === 1 ? editTargets[0] : editTargets);
         }
         setIsMemberDragging(false);
       }

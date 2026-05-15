@@ -179,6 +179,7 @@ const main = async () => {
     }),
     await rpc("save_scene_cell_patch_with_lock", {
       p_cell_id: "member-check",
+      p_expected_base_version: 0,
       p_lock_token: "cloud-check",
       p_patch_type: "member_position",
       p_project_id: dummyProjectId,
@@ -240,6 +241,16 @@ const main = async () => {
   if (!expectExistingEmptyListRpc(listContactsResult)) {
     throw new Error(
       "rpc:list_user_contacts is not reachable. Check that all SQL migrations were applied.",
+    );
+  }
+
+  const listCellVersionsResult = await rpc("list_scene_cell_versions", {
+    p_project_id: dummyProjectId,
+  });
+  printResult(listCellVersionsResult);
+  if (!expectExistingEmptyListRpc(listCellVersionsResult)) {
+    throw new Error(
+      "rpc:list_scene_cell_versions is not reachable. Check that all SQL migrations were applied.",
     );
   }
 

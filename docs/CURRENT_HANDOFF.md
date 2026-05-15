@@ -5,7 +5,172 @@
 
 最終更新: 2026-05-15
 
-## 最新作業メモ: セル単位ロック移行 第1実装
+## 最新作業メモ: Phase 6 キャンバス上の複数選択ドラッグ
+
+2026-05-15時点で、Phase 5 の隊列操作パネル/キーボード移動に続き、キャンバス上で複数選択メンバーをまとめてドラッグする操作を `member_position` の複数セルロック + patch保存へ対応しました。
+
+実装済みの中心:
+
+- ステージモードで、複数選択中のメンバーの1人をドラッグすると、選択メンバー全員の相対位置を保って同時移動します。
+- パレードモードでも同じく、複数選択中のメンバーをキャンバス上で同時ドラッグできます。
+- クラウド共同編集中は、ドラッグ開始時に対象メンバー全員の `member_position` leaseをまとめて取得します。
+- すべて取得できた場合だけドラッグを開始し、ドロップ時に対象ごとにpatch保存・lease解除します。
+- 取得に失敗した場合はドラッグを開始せず、取得済みleaseを解除します。
+- 既存の単一メンバー移動、道具移動/サイズ変更/回転、Phase 5 のキーボード移動は維持しています。
+
+検証状況:
+
+- `npm run typecheck`: 成功。
+- `git diff --check`: 成功（改行警告のみ）。
+- `npm run build`: 成功。
+- `npm run cloud:check`: 成功。
+- `npm run cloud:smoke`: 成功。最新smoke project ID: `9eeaee87-e567-4d10-a319-526da64b48f9`。
+
+未完了/注意:
+
+- 複数選択ドラッグ中のlive previewは、対象メンバーごとに既存の `member_position` preview経路で送信されます。DB保存は引き続きドロップ後のpatch保存のみです。
+- グループ表示、シーン名/時刻/順序は引き続きproject/sceneOrder側の扱いです。
+
+## 以前の作業メモ: Phase 5 複数選択移動・キーボード移動のセル単位保存
+
+2026-05-15時点で、Phase 4 のセル単位パッチ対象拡張に続き、複数メンバー位置をまとめて変える操作を `member_position` の複数セルロック + patch保存へ対応しました。
+
+実装済みの中心:
+
+- キーボード矢印移動は、選択中メンバー/道具に対応する `member_position` / `object_state` leaseを取得してから移動し、対象ごとに保存・解除します。
+- 複数選択の矢印ボタン移動、左右反転、隊列テンプレート適用、整列/均等配置は、対象メンバー全員の `member_position` leaseを取得してから変更します。
+- 複数セルのうち一部でもlease取得に失敗した場合は、変更を反映せず、取得済みleaseを解除します。
+- 保存済みpatch同期の方針を維持し、ドラッグ中previewは追加していません。
+- 既存のローカルUndo/Redoは維持し、クラウド共同編集中のUndo/Redo無効も維持しています。
+
+検証状況:
+
+- `npm run typecheck`: 成功。
+- `npm run build`: 成功。
+- `git diff --check`: 成功（改行警告のみ）。
+- `npm run cloud:check`: 成功。
+- `npm run cloud:smoke`: 成功。最新smoke project ID: `2f54f37f-eb27-45b5-9aaf-1fb522e5477f`。
+
+未完了/注意:
+
+- 複数選択メンバーをキャンバス上でドラッグして同時移動する専用UIは、今回の対象外です。既存の隊列操作パネルとキーボード移動のセル単位保存が対象です。
+- グループ表示、シーン名/時刻/順序は引き続きproject/sceneOrder側の扱いです。
+
+## 以前の作業メモ: Phase 4 セル単位パッチ対象拡張
+
+2026-05-15時点で、Phase 0-3 の live preview / cell patch 基盤を維持したまま、クラウド共同編集中のセル単位パッチ保存対象を広げました。
+
+実装済みの中心:
+
+- `member_visibility`: メンバーのこのシーンでの表示/非表示をセル単位ロック後に `memberVisibility[memberId]` だけ保存します。
+- `object_visibility`: 既存の `objectStates[objectId]` がある道具の表示/非表示を `objectStates[objectId].visible` だけ保存します。
+- `object_assignment`: 道具割当を `objectAssignments[objectId]` だけ保存します。
+- `notes`: シーンメモを `notes` セルとして保存します。クラウド共同編集中はメモ欄の入力をblur時にまとめて保存します。
+- 一括表示/非表示や前シーン割当反映のように複数セルを同時に変える操作は、必要なセルロックをまとめて取得してから変更し、対象ごとにpatch保存します。
+- `save_scene_cell_patch_with_lock` は既存の Phase 0 migration に含まれるpatch typeを利用し、追加migrationは不要です。
+- `scripts/cloud-collab-smoke.mjs` に `member_visibility`, `object_visibility`, `object_assignment`, `notes` の保存確認を追加しました。
+
+検証状況:
+
+- `npm run typecheck`: 成功。
+- `npm run build`: 成功。
+- `npm run cloud:check`: 成功。
+- `npm run cloud:smoke`: 成功。owner/editor/viewer、scene/cell/project lock、Phase 4対象patch保存、version conflict、project系操作が壊れていないことを確認。
+
+未完了/注意:
+
+- live preview は引き続き `member_position` と `object_state` が対象です。表示/非表示、道具割当、シーンメモは保存済みpatch同期のみです。
+- グループ表示、複数選択移動、キーボード移動、シーン名/時刻/順序は今回のPhase 4対象外です。
+- Web版へ反映する場合は、コミット/push後にVercel Productionの反映確認を行ってください。
+
+## 以前の作業メモ: Phase 2 道具 state live preview
+
+2026-05-15時点で、Phase 1 のメンバー移動previewに続き、道具 state の live preview を追加しました。
+
+実装済みの中心:
+
+- 道具の移動・サイズ変更・回転中に、`object_state` previewをRealtime broadcastで送信します。
+- preview対象は `scene_cell:{sceneId}|object_state|{objectId}` です。
+- preview値は `objectStates[objectId]` の完全な `ObjectState` で、保存データには混ぜず、受信側キャンバス用 `snapshot.objectStates` にだけ一時反映します。
+- 送信側は対象道具の `scene_cell` lease取得後だけpreviewを送ります。
+- 受信側は `leaseId`, `operationId`, `holderClientId` が現在の `edit_locks` と一致するpreviewだけ採用します。
+- 同じoperationでは `seq` が古いpreviewを無視します。
+- commit / 保存通知 / lock release / lock expired で道具previewを消します。
+- メンバー位置previewと道具state previewは同じ表示専用snapshotへ重ねます。
+
+検証状況:
+
+- `npm run typecheck`: 成功。
+- `npm run build`: 成功。
+- `git diff --check`: 成功（改行警告のみ）。
+- `npm run cloud:check`: 成功。
+- `npm run cloud:smoke`: 成功。既存のscene/cell/project lock、object cell保存、cell version管理が壊れていないことを確認。
+
+未完了/注意:
+
+- Phase 2は「道具stateの見えるlive preview」までです。複数端末での実操作確認は未実施です。
+- 表示/非表示、道具割当、シーンメモのlive previewは未対応です。
+
+## 最新作業メモ: Phase 1 メンバー移動 live preview
+
+2026-05-15時点で、Phase 0 の基盤を使い、クラウド共同編集中のメンバー移動 live preview を追加しました。
+
+実装済みの中心:
+
+- メンバー位置のドラッグ中だけ、Supabase Realtime broadcast `preview` を送信します。
+- previewは `scenes.data` やローカル保存データには混ぜず、受信側のキャンバス表示用 `snapshot` にだけ一時反映します。
+- 送信側は `scene_cell:{sceneId}|member_position|{memberId}` のlease取得後だけpreviewを送ります。
+- 受信側は `leaseId`, `operationId`, `holderClientId` が現在の `edit_locks` と一致するpreviewだけ採用します。
+- previewには `seq` を持たせ、同じoperationの古いpreviewは後から描画しません。
+- ドロップ時は従来通り `save_scene_cell_patch_with_lock` でcell patch保存し、commit broadcast / audit log通知でpreviewを消します。
+- Realtimeの送信上限を `eventsPerSecond: 15` に調整し、preview送信は約80ms間隔に抑えています。
+- 対象はメンバー移動のみです。道具移動、表示/非表示、道具割当、シーンメモのlive previewは未対応です。
+
+検証状況:
+
+- `npm run typecheck`: 成功。
+- `npm run build`: 成功。
+- `git diff --check`: 成功（改行警告のみ）。
+- `npm run cloud:check`: 成功。
+- `npm run cloud:smoke`: 成功。既存のscene/cell/project lock、cell patch保存、version_conflictが壊れていないことを確認。
+- `http://127.0.0.1:5173/` はHTTP 200。Playwright実ブラウザ確認は、この環境のbundled packageで `playwright-core` が解決できず未実施。
+
+未完了/注意:
+
+- Phase 1は「メンバー移動の見えるlive preview」までです。複数端末での実操作確認と、道具移動previewは次フェーズ候補です。
+- previewは表示専用です。保存済みの正式データは引き続きドロップ後のcell patch保存だけで更新します。
+
+## 最新作業メモ: Phase 0 live preview 基盤
+
+2026-05-15時点で、リアルタイム共同編集へ進む前段として Phase 0 の live preview 基盤を追加しました。
+
+実装済みの中心:
+
+- Supabase migration `supabase/migrations/20260515002000_cloud_live_preview_foundation.sql` を追加。
+- `scene_cell_versions` table を追加。既存全セル分のmigration生成はせず、保存時に lazy upsert します。
+- `edit_locks` は新テーブルを作らず既存拡張。`lease_id`, `operation_id`, `holder_client_id`, `renewed_at` を追加。
+- `acquire_edit_lock`, `heartbeat_edit_lock`, `release_edit_lock`, `save_scene_cell_patch_with_lock` は既存RPC名のまま、lease/client/operation metadataに対応。
+- `save_scene_cell_patch_with_lock` は `p_expected_base_version` を受け取り、対象セルのversion不一致時は `version_conflict` を返します。
+- フロントはタブ単位の `clientId`、操作単位の `leaseId` / `operationId` を生成し、セル保存時に渡します。
+- フロントはクラウドプロジェクト読込時に `list_scene_cell_versions` を読み込み、未作成セルはversion 0として扱います。
+- Realtime側に preview/commit/lock event 型、preview送信用のseq生成ヘルパー、preview/commit送信関数を追加。ただし Phase 0 ではドラッグ中座標の送信・表示反映はまだ行いません。
+- `scripts/cloud-collab-sql.mjs`, `scripts/cloud-collab-check.mjs`, `scripts/cloud-collab-smoke.mjs` を Phase 0 migration / cell version に対応。
+
+検証状況:
+
+- `npm run typecheck`: 成功。
+- `npm run build`: 成功。
+- `git diff --check`: 成功（改行警告のみ）。
+- `npm run cloud:check`: 成功。Phase 0 RPC、`list_scene_cell_versions`、cell version返却を確認済み。
+- `npm run cloud:smoke`: 成功。owner/editor/viewerで、同一シーン内の別メンバーcell同時編集、object cell保存、`scene_cell_versions` lazy upsert、古いbaseVersionの `version_conflict` を確認済み。
+
+未完了/注意:
+
+- Supabase本番DBには Phase 0 migration 適用済み。SQLを再生成する場合は `node scripts/cloud-collab-sql.mjs | Set-Clipboard` を使うと、npmログ行を混ぜずにコピーできます。
+- Phase 0 は「土台」までです。live previewのドラッグ中反映、lease整合チェック付きpreview受信、UI表示は後続Phaseで実装します。
+- 既存のシーン単位ロックとセル単位ロックは互換用に残しています。
+
+## 直前作業メモ: セル単位ロック移行 第1実装
 
 2026-05-15時点で、クラウド共同編集をシーン単位ロックから `scene_cell` ロック + パッチ保存へ段階移行中です。
 
@@ -304,6 +469,40 @@ Supabase実環境:
 
 - ユーザーが SQL Editor で3本目の migration を含むSQLを実行済み。
 - `save_scene_order_with_lock` / `import_cloud_project_with_lock` は `cloud:check` で到達確認済み。
+
+## 2026-05-15 live preview Phase 3 QA
+
+Phase 0-2 で追加済み:
+
+- `supabase/migrations/20260515002000_cloud_live_preview_foundation.sql`
+  - `edit_locks` に `lease_id` / `operation_id` / `holder_client_id` / `renewed_at` を追加。
+  - `scene_cell_versions` を追加し、セル単位 version は保存時 lazy upsert。
+  - `save_scene_cell_patch_with_lock` は `expectedBaseVersion` を比較し、対象セルだけ `scenes.data` へ patch 保存。
+- `src/App.tsx`
+  - `member_position` と `object_state` の live preview broadcast / receive / canvas overlay を追加。
+  - ドロップ後は cell patch 保存、commit通知、preview消去、lock解除。
+  - クラウド共同編集中は Undo / Redo 無効。ローカル編集では従来通り維持。
+- `src/cloud/realtime.ts`
+  - Realtime broadcast に `preview` / `commit` を追加。
+  - ドラッグ中の座標はDB保存せず、broadcast preview のみ送る。
+
+Phase 3 QA で確認済み:
+
+- `npm run cloud:smoke` 成功。
+  - 最新QA project ID: `06e46b2d-1149-4061-bfad-848a0bc8578a`
+  - title: `Codex cloud smoke 2026-05-15T08:50:28.144Z imported`
+- 独立した2ブラウザコンテキストで owner/editor が同じクラウドプロジェクトを開ける。
+- owner が `smoke` をドラッグ中、editor 側に `member_position` preview が反映され、ドロップ後も同じ位置に commit される。
+- owner が `object-smoke` をドラッグ中、editor 側に `object_state` preview が反映され、ドロップ後も同じ位置に commit される。
+- owner が `object-smoke` のサイズ変更ハンドルを操作した時、editor 側の道具サイズへ preview / commit が反映される。
+- 同じ `member_position` を editor が操作しようとした場合、位置は変わらず二重編集が防がれる。
+- 確認範囲の Realtime/console app error/warning は 0件。
+
+注意:
+
+- ブラウザ自動操作では非常に速いドラッグだと、lock取得前に移動が終わって preview が小さく見えることがある。人間操作相当のゆっくりしたドラッグでは preview が追従することを確認済み。
+- 道具を動かす時は左サイドの `道具` タブを使う。上部の `道具マスター` は project lock を取得するため、シーン配置は閲覧のみになる。
+- 道具回転は `object_state` patch の同じ経路に乗るが、自動ブラウザ操作では回転ハンドルのドラッグ角度を安定再現しにくく、今回はハンドル表示まで確認。手動QAまたは専用e2eで追加確認するとよい。
 
 残タスク:
 

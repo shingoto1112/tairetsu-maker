@@ -22,7 +22,10 @@ export type CloudRpcError = {
 
 export type CloudLockAcquireResult = {
   expires_at: string | null;
+  holder_client_id?: string | null;
+  lease_id?: string | null;
   locked_by: string | null;
+  operation_id?: string | null;
   reason: string;
   success: boolean;
 };
@@ -30,6 +33,7 @@ export type CloudLockAcquireResult = {
 export type CloudHeartbeatResult = {
   expires_at: string | null;
   reason: string;
+  renewed_at?: string | null;
   success: boolean;
 };
 
@@ -39,10 +43,19 @@ export type CloudReleaseResult = {
 };
 
 export type CloudSaveResult = {
+  cell_version?: number | null;
+  lease_id?: string | null;
+  operation_id?: string | null;
   reason: string;
   success: boolean;
   updated_at: string | null;
   version: number | null;
+};
+
+export type CloudLeaseMetadata = {
+  holderClientId?: string | null;
+  leaseId?: string | null;
+  operationId?: string | null;
 };
 
 export type CloudImportResult = {
@@ -162,22 +175,48 @@ type CloudProjectMemberFromContactResult = {
 
 export type CloudActiveLockSummary = {
   expiresAt: string;
+  holderClientId: string | null;
   lastActivityAt: string;
   lastHeartbeatAt: string;
+  leaseId: string | null;
   lockedAt: string;
   lockedBy: string;
+  operationId: string | null;
+  renewedAt: string | null;
   targetId: string;
   targetType: "project" | "scene" | "scene_cell";
 };
 
 type CloudActiveLockRow = {
   expires_at: string;
+  holder_client_id?: string | null;
   last_activity_at: string;
   last_heartbeat_at: string;
+  lease_id?: string | null;
   locked_at: string;
   locked_by: string;
+  operation_id?: string | null;
+  renewed_at?: string | null;
   target_id: string;
   target_type: "project" | "scene" | "scene_cell";
+};
+
+export type CloudSceneCellVersion = {
+  cellId: string;
+  cellKind: CloudSceneCellPatchType;
+  sceneId: string;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  version: number;
+};
+
+type CloudSceneCellVersionRow = {
+  cell_id: string;
+  cell_kind: CloudSceneCellPatchType;
+  scene_id: string;
+  updated_at: string | null;
+  updated_by: string | null;
+  version: number;
 };
 
 type CloudProjectResourceRow = {
@@ -242,12 +281,32 @@ const readDisplayName = (value: string | null | undefined): string | null => {
   return trimmed;
 };
 
+const isFutureIsoDate = (value: string | null | undefined): boolean => {
+  const time = Date.parse(value ?? "");
+  return Number.isFinite(time) && time > Date.now();
+};
+
 const mapContactRow = (row: CloudContactRow): CloudContactItem => ({
   createdAt: row.created_at,
   displayName: readDisplayName(row.display_name),
   status: row.status,
   userId: row.contact_user_id,
 });
+
+const addLeaseMetadata = (
+  payload: RpcPayload,
+  metadata?: CloudLeaseMetadata,
+): RpcPayload => {
+  if (!metadata) {
+    return payload;
+  }
+  return {
+    ...payload,
+    p_holder_client_id: metadata.holderClientId ?? null,
+    p_lease_id: metadata.leaseId ?? null,
+    p_operation_id: metadata.operationId ?? null,
+  };
+};
 
 export const createCloudApiClient = (
   config: CloudConfig,
@@ -462,20 +521,26 @@ export const createCloudApiClient = (
       const rows = await restGet<CloudActiveLockRow[]>(
         [
           "edit_locks",
-          "?select=target_type,target_id,locked_by,locked_at,last_heartbeat_at,last_activity_at,expires_at",
+          "?select=target_type,target_id,locked_by,locked_at,last_heartbeat_at,last_activity_at,expires_at,renewed_at,lease_id,operation_id,holder_client_id",
           `&project_id=eq.${encodedProjectId}`,
           "&order=locked_at.asc",
         ].join(""),
       );
-      return rows.map((row) => ({
-        expiresAt: row.expires_at,
-        lastActivityAt: row.last_activity_at,
-        lastHeartbeatAt: row.last_heartbeat_at,
-        lockedAt: row.locked_at,
-        lockedBy: row.locked_by,
-        targetId: row.target_id,
-        targetType: row.target_type,
-      }));
+      return rows
+        .map((row) => ({
+          expiresAt: row.expires_at,
+          holderClientId: row.holder_client_id ?? null,
+          lastActivityAt: row.last_activity_at,
+          lastHeartbeatAt: row.last_heartbeat_at,
+          leaseId: row.lease_id ?? null,
+          lockedAt: row.locked_at,
+          lockedBy: row.locked_by,
+          operationId: row.operation_id ?? null,
+          renewedAt: row.renewed_at ?? null,
+          targetId: row.target_id,
+          targetType: row.target_type,
+        }))
+        .filter((lock) => isFutureIsoDate(lock.expiresAt));
     },
 
     listProjectCollaboration: async (
@@ -575,17 +640,43 @@ export const createCloudApiClient = (
       };
     },
 
+    listSceneCellVersions: async (
+      projectId: string,
+    ): Promise<CloudSceneCellVersion[]> => {
+      const rows = await rpc<CloudSceneCellVersionRow>(
+        "list_scene_cell_versions",
+        {
+          p_project_id: projectId,
+        },
+      );
+      return rows.map((row) => ({
+        cellId: row.cell_id,
+        cellKind: row.cell_kind,
+        sceneId: row.scene_id,
+        updatedAt: row.updated_at,
+        updatedBy: row.updated_by,
+        version: row.version,
+      }));
+    },
+
     acquireEditLock: (
       projectId: string,
       target: CloudLockTarget,
       lockToken: string,
+      metadata?: CloudLeaseMetadata,
     ) =>
-      rpcOne<CloudLockAcquireResult>("acquire_edit_lock", {
-        p_lock_token: lockToken,
-        p_project_id: projectId,
-        p_target_id: target.targetId,
-        p_target_type: target.targetType,
-      }),
+      rpcOne<CloudLockAcquireResult>(
+        "acquire_edit_lock",
+        addLeaseMetadata(
+          {
+            p_lock_token: lockToken,
+            p_project_id: projectId,
+            p_target_id: target.targetId,
+            p_target_type: target.targetType,
+          },
+          metadata,
+        ),
+      ),
 
     forceReleaseEditLock: (projectId: string, target: CloudLockTarget) =>
       rpcOne<CloudReleaseResult>("force_release_edit_lock", {
@@ -599,26 +690,40 @@ export const createCloudApiClient = (
       target: CloudLockTarget,
       lockToken: string,
       hasActivity = false,
+      metadata?: CloudLeaseMetadata,
     ) =>
-      rpcOne<CloudHeartbeatResult>("heartbeat_edit_lock", {
-        p_has_activity: hasActivity,
-        p_lock_token: lockToken,
-        p_project_id: projectId,
-        p_target_id: target.targetId,
-        p_target_type: target.targetType,
-      }),
+      rpcOne<CloudHeartbeatResult>(
+        "heartbeat_edit_lock",
+        addLeaseMetadata(
+          {
+            p_has_activity: hasActivity,
+            p_lock_token: lockToken,
+            p_project_id: projectId,
+            p_target_id: target.targetId,
+            p_target_type: target.targetType,
+          },
+          metadata,
+        ),
+      ),
 
     releaseEditLock: (
       projectId: string,
       target: CloudLockTarget,
       lockToken: string,
+      metadata?: CloudLeaseMetadata,
     ) =>
-      rpcOne<CloudReleaseResult>("release_edit_lock", {
-        p_lock_token: lockToken,
-        p_project_id: projectId,
-        p_target_id: target.targetId,
-        p_target_type: target.targetType,
-      }),
+      rpcOne<CloudReleaseResult>(
+        "release_edit_lock",
+        addLeaseMetadata(
+          {
+            p_lock_token: lockToken,
+            p_project_id: projectId,
+            p_target_id: target.targetId,
+            p_target_type: target.targetType,
+          },
+          metadata,
+        ),
+      ),
 
     requestLockTakeover: (projectId: string, target: CloudLockTarget) =>
       rpcOne<CloudActionResult>("request_lock_takeover", {
@@ -734,17 +839,26 @@ export const createCloudApiClient = (
       lockToken: string,
       schemaVersion: number,
       summary?: string,
+      expectedBaseVersion?: number,
+      metadata?: CloudLeaseMetadata,
     ) =>
-      rpcOne<CloudSaveResult>("save_scene_cell_patch_with_lock", {
-        p_cell_id: cellId,
-        p_lock_token: lockToken,
-        p_patch_type: patchType,
-        p_project_id: projectId,
-        p_scene_id: sceneId,
-        p_schema_version: schemaVersion,
-        p_summary: summary ?? null,
-        p_value: value,
-      }),
+      rpcOne<CloudSaveResult>(
+        "save_scene_cell_patch_with_lock",
+        addLeaseMetadata(
+          {
+            p_cell_id: cellId,
+            p_expected_base_version: expectedBaseVersion ?? null,
+            p_lock_token: lockToken,
+            p_patch_type: patchType,
+            p_project_id: projectId,
+            p_scene_id: sceneId,
+            p_schema_version: schemaVersion,
+            p_summary: summary ?? null,
+            p_value: value,
+          },
+          metadata,
+        ),
+      ),
 
     updateProjectMemberRole: (
       projectId: string,

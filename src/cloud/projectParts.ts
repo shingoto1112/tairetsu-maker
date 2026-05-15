@@ -67,6 +67,12 @@ export const createSceneCellLockTargetId = (
   cellId = "_",
 ): string => [sceneId, patchType, cellId || "_"].join("|");
 
+export const createSceneCellVersionKey = (
+  sceneId: string,
+  patchType: CloudSceneCellPatchType,
+  cellId = "_",
+): string => createSceneCellLockTargetId(sceneId, patchType, cellId);
+
 export const createSceneCellLockTarget = (
   sceneId: string,
   patchType: CloudSceneCellPatchType,
