@@ -26,7 +26,9 @@ type TimelineProps = {
   selectedTargetName?: string | null;
   canEditProject?: boolean;
   canEditScene?: boolean;
+  canAddFrame?: boolean;
   projectReadOnlyMessage?: string;
+  addFrameReadOnlyMessage?: string;
   sceneReadOnlyMessage?: string;
   onSelectFrame: (id: string) => void;
   onAddFrame: () => void;
@@ -37,6 +39,7 @@ type TimelineProps = {
   onUpdateFrame: (id: string, patch: Partial<FormationFrame>) => void;
   onDeleteFrame: (id: string) => void;
   onReorderFrame: (draggedId: string, targetId: string) => void;
+  onSortFramesByTime: () => void;
   onCopyFrame: () => void;
   onPasteFrame: () => void;
   canPasteFrame: boolean;
@@ -57,7 +60,9 @@ export const Timeline = ({
   selectedTargetName,
   canEditProject = true,
   canEditScene = true,
+  canAddFrame = canEditProject,
   projectReadOnlyMessage = "初期クラウド編集では、シーン追加・削除・並び替え・名称変更は編集できません。",
+  addFrameReadOnlyMessage = projectReadOnlyMessage,
   sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onSelectFrame,
   onAddFrame,
@@ -68,6 +73,7 @@ export const Timeline = ({
   onUpdateFrame,
   onDeleteFrame,
   onReorderFrame,
+  onSortFramesByTime,
   onCopyFrame,
   onPasteFrame,
   canPasteFrame,
@@ -84,6 +90,7 @@ export const Timeline = ({
     ? frames.findIndex((frame) => frame.id === selectedFrame.id)
     : -1;
   const projectDisabled = !canEditProject;
+  const addFrameDisabled = !canAddFrame;
   const sceneDisabled = !canEditScene;
 
   useEffect(() => {
@@ -321,8 +328,8 @@ export const Timeline = ({
             <button
               className="mini-button primary"
               onClick={onAddFrame}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              disabled={addFrameDisabled}
+              title={addFrameDisabled ? addFrameReadOnlyMessage : undefined}
               type="button"
             >
               <Plus size={15} />
@@ -331,12 +338,22 @@ export const Timeline = ({
             <button
               className="mini-button"
               onClick={onAddFrameAtCurrentTime}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              disabled={addFrameDisabled}
+              title={addFrameDisabled ? addFrameReadOnlyMessage : undefined}
               type="button"
             >
               <Plus size={15} />
               現在時刻で追加
+            </button>
+            <button
+              className="mini-button"
+              onClick={onSortFramesByTime}
+              disabled={projectDisabled || frames.length <= 1}
+              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              type="button"
+            >
+              <Clock size={15} />
+              時刻順
             </button>
             <button className="mini-button" onClick={onCopyFrame} type="button">
               コピー

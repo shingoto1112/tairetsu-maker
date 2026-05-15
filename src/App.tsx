@@ -5621,15 +5621,15 @@ function App() {
     }
   };
 
-  const addFrame = (timeSec?: number) => {
-    const sortedFrames = sortFrames(project.frames);
+  const createFrameDraft = (sourceProject: Project, timeSec?: number): FormationFrame => {
+    const sortedFrames = sortFrames(sourceProject.frames);
     const lastFrame = sortedFrames[sortedFrames.length - 1];
     const fallbackTime = (lastFrame?.timeSec ?? 0) + 8;
     const frameTime = Math.max(0, timeSec ?? (currentTime > 0 ? currentTime : fallbackTime));
     const id = createId("f");
-    const frame: FormationFrame = {
+    return {
       id,
-      label: `Scene ${project.frames.length + 1}`,
+      label: `Scene ${sourceProject.frames.length + 1}`,
       timeSec: Number(frameTime.toFixed(2)),
       section: "",
       notes: "",
@@ -5657,14 +5657,74 @@ function App() {
       memberAppearanceOverrides: selectedFrame?.memberAppearanceOverrides
         ? { ...selectedFrame.memberAppearanceOverrides }
         : undefined,
-      positions: snapshot.positions,
-      objectStates: snapshot.objectStates,
+      positions: Object.fromEntries(
+        Object.entries(snapshot.positions).map(([memberId, position]) => [
+          memberId,
+          { ...position },
+        ]),
+      ),
+      objectStates: Object.fromEntries(
+        Object.entries(snapshot.objectStates).map(([objectId, objectState]) => [
+          objectId,
+          { ...objectState },
+        ]),
+      ),
     };
+  };
+
+  const addCloudFrame = async (timeSec?: number) => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState) {
+      return;
+    }
+    if (cloudState.role !== "owner") {
+      setNotice("クラウドでシーンを追加できるのはownerのみです。");
+      return;
+    }
+    if (isCloudBusyRef.current || isSaving) {
+      setNotice("クラウド処理中です。少し待ってからもう一度試してください。");
+      return;
+    }
+    const lockReady = await beginCloudProjectResourceEdit("sceneOrder", {
+      silent: true,
+    });
+    if (!lockReady) {
+      return;
+    }
+    const sourceProject = projectRef.current;
+    const frame = createFrameDraft(sourceProject, timeSec);
+    const nextProject = {
+      ...sourceProject,
+      frames: [...sourceProject.frames, frame],
+    };
+    const saved = await saveCloudProjectResource(nextProject, "sceneOrder", {
+      showNotice: false,
+    });
+    if (!saved) {
+      return;
+    }
+    setSelectedFrameId(frame.id);
+    setActivePanelTab("timeline");
+    const released = await releaseActiveCloudProjectLock({ silent: true });
+    setNotice(
+      released
+        ? "シーンを追加してクラウドへ保存しました。"
+        : "シーンを追加しました。全体編集ロックはTTLで自動解除されます。",
+    );
+  };
+
+  const addFrame = (timeSec?: number) => {
+    const cloudState = activeCloudProjectRef.current;
+    if (cloudState && cloudState.activeProjectLock?.lockKey !== "sceneOrder") {
+      void addCloudFrame(timeSec);
+      return;
+    }
+    const frame = createFrameDraft(projectRef.current, timeSec);
     updateProject((previous) => ({
       ...previous,
       frames: [...previous.frames, frame],
     }));
-    setSelectedFrameId(id);
+    setSelectedFrameId(frame.id);
     setNotice("フレームを追加しました。");
   };
 
@@ -5728,6 +5788,40 @@ function App() {
     });
     setSelectedFrameId(draggedId);
     setNotice("シーン順を変更しました。曲同期する場合は時刻も確認してください。");
+  };
+
+  const sortFramesByTime = () => {
+    let changed = false;
+    updateProject((previous) => {
+      const ordered = previous.frames
+        .map((frame, index) => ({ frame, index }))
+        .sort((left, right) => {
+          const leftTime = Number.isFinite(left.frame.timeSec)
+            ? left.frame.timeSec
+            : Number.POSITIVE_INFINITY;
+          const rightTime = Number.isFinite(right.frame.timeSec)
+            ? right.frame.timeSec
+            : Number.POSITIVE_INFINITY;
+          if (leftTime !== rightTime) {
+            return leftTime - rightTime;
+          }
+          return left.index - right.index;
+        })
+        .map(({ frame }) => frame);
+      changed = ordered.some((frame, index) => frame.id !== previous.frames[index]?.id);
+      if (!changed) {
+        return previous;
+      }
+      return {
+        ...previous,
+        frames: ordered,
+      };
+    }, "シーン時刻順並び替え");
+    setNotice(
+      changed
+        ? "シーンを時刻順に並び替えました。"
+        : "シーンはすでに時刻順です。",
+    );
   };
 
   const copyMemberToClipboard = (memberId?: string) => {
@@ -7802,14 +7896,17 @@ function App() {
     return result;
   };
 
-  const beginCloudProjectResourceEdit = async (resourceKey: CloudResourceKey) => {
+  const beginCloudProjectResourceEdit = async (
+    resourceKey: CloudResourceKey,
+    options: { silent?: boolean } = {},
+  ): Promise<boolean> => {
     let cloudState = activeCloudProjectRef.current;
     if (!cloudState) {
-      return;
+      return false;
     }
     if (cloudState.role !== "owner") {
       setNotice("全体データの編集はownerのみ可能です。");
-      return;
+      return false;
     }
     void CLOUD_OWNER_RESOURCE_KEYS;
     if (activeCloudCellLocksRef.current.length > 0) {
@@ -7817,16 +7914,16 @@ function App() {
         const saved = await saveCloudSceneCellPatch(lock, projectRef.current);
         if (!saved) {
           setNotice("操作中の対象を保存できませんでした。保存状態を確認してから全体編集を開始してください。");
-          return;
+          return false;
         }
         const released = await releaseCloudSceneCellLock(lock, { silent: true });
         if (!released) {
-          return;
+          return false;
         }
       }
       cloudState = activeCloudProjectRef.current;
       if (!cloudState) {
-        return;
+        return false;
       }
     }
     if (cloudState.activeSceneLock) {
@@ -7838,11 +7935,11 @@ function App() {
         : true;
       if (!saved) {
         setNotice("現在のシーンを保存できませんでした。保存状態を確認してから全体編集を開始してください。");
-        return;
+        return false;
       }
       const released = await releaseActiveCloudSceneLock({ silent: true });
       if (!released) {
-        return;
+        return false;
       }
       cloudState = {
         ...cloudState,
@@ -7850,8 +7947,10 @@ function App() {
       };
     }
     if (cloudState.activeProjectLock?.lockKey === resourceKey) {
-      setNotice(`${CLOUD_RESOURCE_LABELS[resourceKey]}は編集中です。`);
-      return;
+      if (!options.silent) {
+        setNotice(`${CLOUD_RESOURCE_LABELS[resourceKey]}は編集中です。`);
+      }
+      return true;
     }
     if (cloudState.activeProjectLock) {
       const projectLock = cloudState.activeProjectLock;
@@ -7863,11 +7962,11 @@ function App() {
           : true;
       if (!saved) {
         setNotice("編集中の全体データを保存できませんでした。保存状態を確認してから切り替えてください。");
-        return;
+        return false;
       }
       const released = await releaseActiveCloudProjectLock({ silent: true });
       if (!released) {
-        return;
+        return false;
       }
       cloudState = {
         ...cloudState,
@@ -7876,14 +7975,14 @@ function App() {
     }
     if (!cloudConfig) {
       setNotice("Supabase接続が未設定です。");
-      return;
+      return false;
     }
     setIsCloudBusy(true);
     try {
       const activeSession = await getActiveCloudSession();
       if (!activeSession) {
         setNotice("クラウドにログインしてください。");
-        return;
+        return false;
       }
       const target = createProjectLockTarget(resourceKey);
       const lockToken = createCloudLockToken();
@@ -7898,25 +7997,23 @@ function App() {
       if (!result.success) {
         setNotice(
           result.reason === "project_lock_wait_for_active_scene"
-            ? "全体設定を編集するには、現在のシーン編集が終わるまで待ってください。"
+            ? `${CLOUD_RESOURCE_LABELS[resourceKey]}を編集するには、現在のシーン編集が終わるまで待ってください。`
             : "全体編集ロックを取得できませんでした。",
         );
-        return;
+        return false;
       }
       saveCloudLockTokenToSession(cloudState.projectId, target, lockToken);
-      setActiveCloudProject((previous) =>
-        previous
-          ? {
-              ...previous,
-              activeProjectLock: {
-                baseVersion: previous.resourceVersions[resourceKey] ?? 1,
-                expiresAt: result.expires_at,
-                lockKey: resourceKey,
-                lockToken,
-              },
-            }
-          : previous,
-      );
+      const nextCloudState: CloudActiveProjectState = {
+        ...cloudState,
+        activeProjectLock: {
+          baseVersion: cloudState.resourceVersions[resourceKey] ?? 1,
+          expiresAt: result.expires_at,
+          lockKey: resourceKey,
+          lockToken,
+        },
+      };
+      activeCloudProjectRef.current = nextCloudState;
+      setActiveCloudProject(nextCloudState);
       const panelByResource: Record<CloudResourceKey, PanelTabId> = {
         audio: "audio",
         members: "members",
@@ -7928,10 +8025,14 @@ function App() {
       if (resourceKey === "members" || resourceKey === "objects") {
         setIsRosterManagerOpen(true);
       }
-      setNotice(`${CLOUD_RESOURCE_LABELS[resourceKey]}を編集モードにしました。`);
+      if (!options.silent) {
+        setNotice(`${CLOUD_RESOURCE_LABELS[resourceKey]}を編集モードにしました。`);
+      }
       void refreshCloudActiveLocks(activeSession);
+      return true;
     } catch (error) {
       setNotice(getCloudErrorMessage(error));
+      return false;
     } finally {
       setIsCloudBusy(false);
     }
@@ -11620,6 +11721,7 @@ function App() {
   const canEditCloudObjects = canEditCloudResource("objects");
   const canEditCloudAudio = canEditCloudResource("audio");
   const canEditCloudSceneOrder = canEditCloudResource("sceneOrder");
+  const canAddCloudScene = !activeCloudProject || activeCloudProject.role === "owner";
   const canEditProjectChrome = !activeCloudProject;
   const cloudReadOnlyMessage = activeCloudProject
     ? activeCloudProject.activeProjectLock
@@ -11894,7 +11996,13 @@ function App() {
           selectedTargetName={selectedPreviousReflectTargetName}
           canEditProject={canEditCloudSceneOrder}
           canEditScene={canEditCurrentScene}
+          canAddFrame={canAddCloudScene}
           projectReadOnlyMessage={cloudProjectReadOnlyMessage}
+          addFrameReadOnlyMessage={
+            activeCloudProject
+              ? "クラウドでシーンを追加できるのはownerのみです。"
+              : cloudProjectReadOnlyMessage
+          }
           sceneReadOnlyMessage={cloudReadOnlyMessage}
           onSelectFrame={(id) => {
             setSelectedFrameId(id);
@@ -11910,6 +12018,7 @@ function App() {
           onUpdateFrame={updateFrame}
           onDeleteFrame={deleteFrame}
           onReorderFrame={reorderFrames}
+          onSortFramesByTime={sortFramesByTime}
           onCopyFrame={() => copyFrameToClipboard()}
           onPasteFrame={pasteFrameFromClipboard}
           canPasteFrame={clipboard?.type === "frame"}
