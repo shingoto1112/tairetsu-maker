@@ -6425,7 +6425,7 @@ function App() {
     if (!cloudConfig) {
       return null;
     }
-    const session = sessionOverride ?? cloudSession;
+    const session = sessionOverride ?? cloudSessionRef.current;
     if (!session) {
       return null;
     }
@@ -6435,6 +6435,7 @@ function App() {
     const auth = createCloudAuthClient(cloudConfig);
     const refreshed = await auth.refreshSession(session.refreshToken);
     saveCloudAuthSession(refreshed);
+    cloudSessionRef.current = refreshed;
     setCloudSession(refreshed);
     return refreshed;
   };
@@ -8526,7 +8527,9 @@ function App() {
           ? "クラウド隊列表を開き、前回の編集ロックを復帰しました。"
           : cloudProject.role === "owner"
             ? "クラウド隊列表を開きました。"
-            : "クラウド隊列表を閲覧モードで開きました。編集するシーンで「このシーンを編集」を押してください。";
+            : cloudProject.role === "editor"
+              ? "クラウド隊列表を開きました。配置はドラッグ時に自動で編集ロックを取得します。"
+              : "クラウド隊列表を閲覧モードで開きました。";
       await openProjectInEditor(
         cloudOpenedProject,
         openMessage,
@@ -10633,7 +10636,7 @@ function App() {
         ? `${canvasRemoteProjectLockLabel}の編集中です。シーンは閲覧のみです。`
       : canvasRemoteLockOwner
         ? `このシーンは${canvasRemoteLockOwner}が編集中です。`
-      : "このシーンは閲覧中です。編集するには「このシーンを編集」を押してください。"
+      : "配置はメンバーや道具をドラッグすると自動で編集ロックを取得します。表示切替など一部の操作はシーン全体ロックを使います。"
     : undefined;
   const cloudProjectReadOnlyMessage = activeCloudProject
     ? activeCloudProject.activeProjectLock
@@ -10991,6 +10994,15 @@ function App() {
   const notifyCloudCellLockedEdit = (ownerName: string) => {
     setNotice(`${ownerName}がこの対象を操作中です。別のメンバーや道具は編集できます。`);
   };
+  const cloudBannerTitle = activeCloudProject
+    ? activeCloudProject.activeProjectLock
+      ? "クラウド全体編集中"
+      : activeCloudProject.activeSceneLock
+        ? "クラウド編集中"
+        : activeCloudProject.role === "viewer"
+          ? "クラウド閲覧中"
+          : "クラウド共同作業中"
+    : "";
 
   return (
     <>
@@ -11099,11 +11111,7 @@ function App() {
         <div className="shared-project-banner cloud-project-banner">
           <div>
             <strong>
-              {activeCloudProject.activeProjectLock
-                ? "クラウド全体編集中"
-                : activeCloudProject.activeSceneLock
-                ? "クラウド編集中"
-                : "クラウド閲覧中"}
+              {cloudBannerTitle}
             </strong>
             <span>
               {activeCloudProject.role === "viewer"
@@ -11226,12 +11234,13 @@ function App() {
               ) : (
                 <>
                   <button
-                    className="mini-button primary"
+                    className="mini-button"
                     disabled={isCloudBusy || !selectedFrame}
                     onClick={() => void beginCloudSceneEdit()}
+                    title="表示切替やメモなど、セル単位ロック未対応の操作に使います。通常のメンバー/道具移動はドラッグで自動ロックします。"
                     type="button"
                   >
-                    このシーンを編集
+                    シーン全体ロック
                   </button>
                   {activeCloudProject.role === "owner" && (
                     <>
