@@ -164,6 +164,16 @@ export type ObjectState = {
   zIndex: number;
 };
 
+export type SceneElementEditTarget =
+  | {
+      id: string;
+      type: "member-position";
+    }
+  | {
+      id: string;
+      type: "object-state";
+    };
+
 export type MemberAppearanceOverride = {
   color?: string;
 };

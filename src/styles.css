@@ -424,6 +424,13 @@
   outline-offset: 3px;
 }
 
+.parade-member.is-remote-locked,
+.parade-object.is-remote-locked {
+  cursor: not-allowed;
+  outline: 3px solid rgba(245, 158, 11, 0.9);
+  outline-offset: 4px;
+}
+
 .parade-member.is-focus {
   box-shadow: 0 0 0 6px rgba(250, 204, 21, 0.35), 0 6px 18px rgba(15, 23, 42, 0.2);
 }
@@ -1124,6 +1131,11 @@ h2 {
 
 .cloud-project-banner__update {
   color: #1d4ed8 !important;
+  font-weight: 700;
+}
+
+.cloud-project-banner__presence {
+  color: #2563eb !important;
   font-weight: 700;
 }
 
@@ -2425,9 +2437,18 @@ h2 {
   box-shadow: 0 0 0 2px rgba(13, 139, 120, 0.14);
 }
 
+.scene-thumbnail-card.is-remote-viewing {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.16);
+}
+
 .scene-thumbnail-card.is-remote-editing {
   border-color: #f59e0b;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+.scene-thumbnail-card.is-remote-editing.is-remote-viewing {
+  border-color: #f59e0b;
 }
 
 .scene-thumbnail-card.is-active.is-remote-editing {
@@ -2463,6 +2484,20 @@ h2 {
   border: 1px solid #fed7aa;
   border-radius: 999px;
   color: #9a3412;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 2px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-thumbnail-card__presence {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
   font-size: 10px;
   font-weight: 800;
   line-height: 1.2;
@@ -4056,6 +4091,12 @@ h2 {
   outline-offset: 3px;
 }
 
+.member-token.is-remote-locked {
+  cursor: not-allowed;
+  outline: 3px solid rgba(245, 158, 11, 0.9);
+  outline-offset: 4px;
+}
+
 .member-token.is-focus {
   outline: 3px solid rgba(245, 158, 11, 0.95);
   outline-offset: 4px;
@@ -4162,6 +4203,12 @@ h2 {
 
 .stage-object.is-locked {
   opacity: 0.72;
+}
+
+.stage-object.is-remote-locked {
+  cursor: not-allowed;
+  outline: 3px solid rgba(245, 158, 11, 0.9);
+  outline-offset: 4px;
 }
 
 .object-anchor-point {

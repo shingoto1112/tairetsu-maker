@@ -26,6 +26,7 @@ import type {
   ParadeSettings,
   Position,
   Project,
+  SceneElementEditTarget,
   SceneViewState,
   Selection,
   StageContextMenuRequest,
@@ -72,6 +73,8 @@ type ParadeCanvasProps = {
   focusMode: boolean;
   isReadOnly?: boolean;
   readOnlyMessage?: string;
+  remoteMemberLocks?: Record<string, string>;
+  remoteObjectLocks?: Record<string, string>;
   onSelect: (
     selection: Selection,
     options?: { append?: boolean },
@@ -79,8 +82,11 @@ type ParadeCanvasProps = {
   onStagePointerPositionChange: (position: Position) => void;
   onMoveMember: (id: string, position: Position) => void;
   onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
-  onBeginProjectEdit: (label?: string) => void;
-  onEndProjectEdit: () => void;
+  onBeginProjectEdit: (
+    label?: string,
+    target?: SceneElementEditTarget,
+  ) => boolean | void | Promise<boolean | void>;
+  onEndProjectEdit: (target?: SceneElementEditTarget) => void;
   onFrameViewStateChange: (frameId: string, viewState: SceneViewState) => void;
   onReflectPreviousFrame: (options: ParadeReflectOptions) => void;
   canUndo: boolean;
@@ -92,6 +98,7 @@ type ParadeCanvasProps = {
   onCaptureStageImage?: () => void;
   onContextMenuRequest: (request: StageContextMenuRequest) => void;
   onReadOnlyEditAttempt?: () => void;
+  onLockedElementEditAttempt?: (ownerName: string) => void;
 };
 
 export type ParadeCanvasHandle = HTMLDivElement & {
@@ -117,6 +124,7 @@ type DragState =
       startScrollTop: number;
       startPosition: Position;
       hasMoved: boolean;
+      isBeginPending: boolean;
     }
   | {
       type: "object";
@@ -130,6 +138,7 @@ type DragState =
       startScrollTop: number;
       startState: ObjectState;
       hasMoved: boolean;
+      isBeginPending: boolean;
     }
   | {
       type: "object";
@@ -146,6 +155,7 @@ type DragState =
       centerClientX: number;
       centerClientY: number;
       hasMoved: boolean;
+      isBeginPending: boolean;
     };
 
 type PinchTouchPoint = {
@@ -341,6 +351,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       focusMode,
       isReadOnly = false,
       readOnlyMessage,
+      remoteMemberLocks = {},
+      remoteObjectLocks = {},
       onSelect,
       onStagePointerPositionChange,
       onMoveMember,
@@ -356,9 +368,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     isFullscreen,
     onToggleFullscreen,
     onCaptureStageImage,
-    onContextMenuRequest,
-    onReadOnlyEditAttempt,
-  },
+      onContextMenuRequest,
+      onReadOnlyEditAttempt,
+      onLockedElementEditAttempt,
+    },
   ref,
 ) => {
     const currentFrame =
@@ -840,6 +853,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       let currentClientX = dragState.currentClientX;
       let currentClientY = dragState.currentClientY;
       let didMove = dragState.hasMoved;
+      let beginPending = dragState.isBeginPending;
+      let autoScroller: ReturnType<typeof createEdgeAutoScroller> | null = null;
+      let isCancelled = false;
       const applyDrag = (clientX: number, clientY: number) => {
         currentClientX = clientX;
         currentClientY = clientY;
@@ -848,6 +864,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           clientY - dragState.startClientY,
         );
         if (movementPx < 3) {
+          return;
+        }
+        if (beginPending) {
           return;
         }
         cancelTouchContextMenu();
@@ -872,14 +891,43 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               : dragState.type === "object" && dragState.interaction === "rotate"
                 ? "道具回転"
                 : "パレード配置編集";
-          onBeginProjectEdit(editLabel);
-          didMove = true;
+          const editTarget: SceneElementEditTarget =
+            dragState.type === "member"
+              ? { id: dragState.id, type: "member-position" }
+              : { id: dragState.id, type: "object-state" };
+          beginPending = true;
           setDragState({
             ...dragState,
             currentClientX: clientX,
             currentClientY: clientY,
-            hasMoved: true,
+            isBeginPending: true,
           });
+          const beginResult = onBeginProjectEdit(editLabel, editTarget);
+          void Promise.resolve(beginResult).then((canEdit) => {
+            beginPending = false;
+            if (isCancelled) {
+              if (canEdit !== false) {
+                onEndProjectEdit(editTarget);
+              }
+              return;
+            }
+            if (canEdit === false) {
+              autoScroller?.stop();
+              setDragState(null);
+              return;
+            }
+            didMove = true;
+            setDragState({
+              ...dragState,
+              currentClientX,
+              currentClientY,
+              hasMoved: true,
+              isBeginPending: false,
+            });
+            applyDrag(currentClientX, currentClientY);
+            autoScroller?.update(currentClientX, currentClientY);
+          });
+          return;
         }
         if (dragState.type === "member") {
           const nextPosition = {
@@ -957,7 +1005,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           onUpdateObjectState(dragState.id, { x: nextX, y: nextY });
         }
       };
-      const autoScroller =
+      autoScroller =
         dragState.type === "object" && dragState.interaction === "rotate"
           ? null
           : scrollRef.current
@@ -974,13 +1022,18 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         autoScroller?.stop();
         setDragState(null);
         if (shouldEndEdit) {
-          onEndProjectEdit();
+          onEndProjectEdit(
+            dragState.type === "member"
+              ? { id: dragState.id, type: "member-position" }
+              : { id: dragState.id, type: "object-state" },
+          );
         }
       };
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp, { once: true });
       window.addEventListener("pointercancel", handlePointerUp, { once: true });
       return () => {
+        isCancelled = true;
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         window.removeEventListener("pointercancel", handlePointerUp);
@@ -1273,6 +1326,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
       onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      const remoteLockOwner = remoteMemberLocks[memberId];
+      if (remoteLockOwner) {
+        onLockedElementEditAttempt?.(remoteLockOwner);
+        return;
+      }
       if (isReadOnly) {
         onReadOnlyEditAttempt?.();
         return;
@@ -1292,6 +1350,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startPosition: position,
         hasMoved: false,
+        isBeginPending: false,
       });
     };
 
@@ -1311,6 +1370,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
+      const remoteLockOwner = remoteObjectLocks[objectId];
+      if (remoteLockOwner) {
+        onLockedElementEditAttempt?.(remoteLockOwner);
+        return;
+      }
       if (isReadOnly) {
         onReadOnlyEditAttempt?.();
         return;
@@ -1328,6 +1392,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
         hasMoved: false,
+        isBeginPending: false,
       });
     };
 
@@ -1347,6 +1412,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       onSelect({ type: "object", id: objectId });
+      const remoteLockOwner = remoteObjectLocks[objectId];
+      if (remoteLockOwner) {
+        onLockedElementEditAttempt?.(remoteLockOwner);
+        return;
+      }
       if (isReadOnly) {
         onReadOnlyEditAttempt?.();
         return;
@@ -1363,6 +1433,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
         hasMoved: false,
+        isBeginPending: false,
       });
     };
 
@@ -1393,6 +1464,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           180) /
         Math.PI;
       onSelect({ type: "object", id: objectId });
+      const remoteLockOwner = remoteObjectLocks[objectId];
+      if (remoteLockOwner) {
+        onLockedElementEditAttempt?.(remoteLockOwner);
+        return;
+      }
       if (isReadOnly) {
         onReadOnlyEditAttempt?.();
         return;
@@ -1412,6 +1488,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         centerClientX,
         centerClientY,
         hasMoved: false,
+        isBeginPending: false,
       });
     };
 
@@ -1723,11 +1800,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 const width = state.widthMeters * pxPerMeter;
                 const height = state.heightMeters * pxPerMeter;
                 const isSelected = selected?.type === "object" && selected.id === object.id;
+                const remoteObjectLockOwner = remoteObjectLocks[object.id] ?? null;
                 return (
                   <button
                     key={object.id}
                     type="button"
-                    className={`parade-object ${isSelected ? "is-selected" : ""}`}
+                    className={`parade-object ${isSelected ? "is-selected" : ""} ${
+                      remoteObjectLockOwner ? "is-remote-locked" : ""
+                    }`}
                     style={{
                       left,
                       top,
@@ -1742,9 +1822,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "object", id: object.id })
                     }
+                    title={
+                      remoteObjectLockOwner
+                        ? `${remoteObjectLockOwner}が操作中です`
+                        : object.name
+                    }
                   >
                     <span className="parade-object__label">{object.name}</span>
-                    {isSelected && !object.locked && !isReadOnly && (
+                    {isSelected && !object.locked && !isReadOnly && !remoteObjectLockOwner && (
                       <>
                         <span className="object-anchor-point" aria-hidden="true" />
                         <span
@@ -1789,6 +1874,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   selected?.type === "member" && selected.id === member.id;
                 const isMultiSelected = selectedMemberIds.includes(member.id);
                 const isFocus = focusMode && focusMemberId === member.id;
+                const remoteMemberLockOwner = remoteMemberLocks[member.id] ?? null;
                 const labelLines = splitMemberLabel(member.name);
                 const memberLabelClassName = getMemberLabelClassName(
                   "parade-member",
@@ -1819,7 +1905,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     type="button"
                     className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""} ${
                       memberLabelClassName
-                    } ${
+                    } ${remoteMemberLockOwner ? "is-remote-locked" : ""} ${
                       simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus
                         ? "is-label-simplified"
                         : ""
@@ -1828,6 +1914,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     onPointerDown={(event) => startMemberDrag(member.id, position, event)}
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "member", id: member.id })
+                    }
+                    title={
+                      remoteMemberLockOwner
+                        ? `${remoteMemberLockOwner}が操作中です`
+                        : member.name
                     }
                   >
                     {!(simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus) && (

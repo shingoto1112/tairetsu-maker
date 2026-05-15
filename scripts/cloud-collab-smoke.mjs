@@ -167,6 +167,28 @@ const createSmokeDraft = () => {
     visible: true,
     zIndex: 20,
   };
+  const member2 = {
+    color: "#3b82f6",
+    id: "m-smoke-2",
+    name: "smoke2",
+    visible: true,
+    zIndex: 21,
+  };
+  const stageObject = {
+    color: "#f59e0b",
+    defaultRotation: 0,
+    defaultX: 1,
+    defaultY: 1,
+    heightMeters: 1,
+    id: "o-smoke",
+    locked: false,
+    name: "object-smoke",
+    shape: "rectangle",
+    type: "prop",
+    visible: true,
+    widthMeters: 1,
+    zIndex: 10,
+  };
   const stage = {
     audienceSide: "bottom",
     centerLineMode: "center",
@@ -192,9 +214,21 @@ const createSmokeDraft = () => {
     memberVisibility: {},
     notes: "",
     objectAssignments: {},
-    objectStates: {},
+    objectStates: {
+      [stageObject.id]: {
+        heightMeters: stageObject.heightMeters,
+        objectId: stageObject.id,
+        rotation: stageObject.defaultRotation,
+        visible: true,
+        widthMeters: stageObject.widthMeters,
+        x,
+        y,
+        zIndex: stageObject.zIndex,
+      },
+    },
     positions: {
       [member.id]: { x, y },
+      [member2.id]: { x: x + 1, y: y + 1 },
     },
     sceneViewState: undefined,
     stageDepthMeters: undefined,
@@ -210,13 +244,13 @@ const createSmokeDraft = () => {
     },
     resources: [
       {
-        data: { memberGroups: [], members: [member] },
+        data: { memberGroups: [], members: [member, member2] },
         resourceKey: "members",
         schemaVersion,
         version: 1,
       },
       {
-        data: { objectGroups: [], stageObjects: [] },
+        data: { objectGroups: [], stageObjects: [stageObject] },
         resourceKey: "objects",
         schemaVersion,
         version: 1,
@@ -543,6 +577,155 @@ const main = async () => {
       p_project_id: projectId,
       p_target_id: "scene-smoke-2",
       p_target_type: "scene",
+    }),
+  );
+
+  const ownerCellToken = randomToken();
+  const editorCellToken = randomToken();
+  expectSuccess(
+    "owner acquire member cell",
+    await rpc(owner, "acquire_edit_lock", {
+      p_lock_token: ownerCellToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke",
+      p_target_type: "scene_cell",
+    }),
+  );
+  expectFailure(
+    "editor blocked from same member cell",
+    await rpc(editor, "acquire_edit_lock", {
+      p_lock_token: randomToken(),
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke",
+      p_target_type: "scene_cell",
+    }),
+    "scene_cell_lock_active",
+  );
+  expectSuccess(
+    "editor acquire different member cell in same scene",
+    await rpc(editor, "acquire_edit_lock", {
+      p_lock_token: editorCellToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke-2",
+      p_target_type: "scene_cell",
+    }),
+  );
+  expectFailure(
+    "owner project lock blocked while cell lock active",
+    await rpc(owner, "acquire_edit_lock", {
+      p_lock_token: randomToken(),
+      p_project_id: projectId,
+      p_target_id: "members",
+      p_target_type: "project",
+    }),
+    "project_lock_wait_for_active_scene",
+  );
+  if (viewer) {
+    expectFailure(
+      "viewer blocked from member cell edit",
+      await rpc(viewer, "acquire_edit_lock", {
+        p_lock_token: randomToken(),
+        p_project_id: projectId,
+        p_target_id: "scene-smoke-1|member_position|m-smoke-2",
+        p_target_type: "scene_cell",
+      }),
+      "permission_denied",
+    );
+  }
+  expectSuccess(
+    "owner save member cell patch",
+    await rpc(owner, "save_scene_cell_patch_with_lock", {
+      p_cell_id: "m-smoke",
+      p_lock_token: ownerCellToken,
+      p_patch_type: "member_position",
+      p_project_id: projectId,
+      p_scene_id: "scene-smoke-1",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke member cell patch",
+      p_value: { x: 6, y: 6 },
+    }),
+  );
+  expectSuccess(
+    "editor save different member cell patch",
+    await rpc(editor, "save_scene_cell_patch_with_lock", {
+      p_cell_id: "m-smoke-2",
+      p_lock_token: editorCellToken,
+      p_patch_type: "member_position",
+      p_project_id: projectId,
+      p_scene_id: "scene-smoke-1",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke second member cell patch",
+      p_value: { x: 7, y: 7 },
+    }),
+  );
+  expectSuccess(
+    "owner release member cell",
+    await rpc(owner, "release_edit_lock", {
+      p_lock_token: ownerCellToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke",
+      p_target_type: "scene_cell",
+    }),
+  );
+  expectSuccess(
+    "editor release member cell",
+    await rpc(editor, "release_edit_lock", {
+      p_lock_token: editorCellToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|member_position|m-smoke-2",
+      p_target_type: "scene_cell",
+    }),
+  );
+
+  const ownerObjectToken = randomToken();
+  expectSuccess(
+    "owner acquire object cell",
+    await rpc(owner, "acquire_edit_lock", {
+      p_lock_token: ownerObjectToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|object_state|o-smoke",
+      p_target_type: "scene_cell",
+    }),
+  );
+  expectFailure(
+    "editor blocked from same object cell",
+    await rpc(editor, "acquire_edit_lock", {
+      p_lock_token: randomToken(),
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|object_state|o-smoke",
+      p_target_type: "scene_cell",
+    }),
+    "scene_cell_lock_active",
+  );
+  expectSuccess(
+    "owner save object cell patch",
+    await rpc(owner, "save_scene_cell_patch_with_lock", {
+      p_cell_id: "o-smoke",
+      p_lock_token: ownerObjectToken,
+      p_patch_type: "object_state",
+      p_project_id: projectId,
+      p_scene_id: "scene-smoke-1",
+      p_schema_version: schemaVersion,
+      p_summary: "smoke object cell patch",
+      p_value: {
+        heightMeters: 1,
+        objectId: "o-smoke",
+        rotation: 10,
+        visible: true,
+        widthMeters: 1,
+        x: 3,
+        y: 3,
+        zIndex: 10,
+      },
+    }),
+  );
+  expectSuccess(
+    "owner release object cell",
+    await rpc(owner, "release_edit_lock", {
+      p_lock_token: ownerObjectToken,
+      p_project_id: projectId,
+      p_target_id: "scene-smoke-1|object_state|o-smoke",
+      p_target_type: "scene_cell",
     }),
   );
 

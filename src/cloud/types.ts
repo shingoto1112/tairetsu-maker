@@ -24,7 +24,7 @@ export const CLOUD_SCHEMA_VERSION = 1;
 
 export type CloudPermissionRole = "owner" | "editor" | "viewer";
 
-export type CloudLockTargetType = "scene" | "project";
+export type CloudLockTargetType = "scene" | "project" | "scene_cell";
 
 export type CloudResourceKey =
   | "members"
@@ -43,6 +43,10 @@ export type CloudLockTarget =
   | {
       targetId: CloudProjectLockKey;
       targetType: "project";
+    }
+  | {
+      targetId: string;
+      targetType: "scene_cell";
     };
 
 export type CloudProjectRecordDraft = {

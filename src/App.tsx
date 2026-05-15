@@ -45,6 +45,7 @@ import {
   createCloudLockToken,
   createCloudProjectDraft,
   createProjectLockTarget,
+  createSceneCellLockTarget,
   createSceneLockTarget,
   extractCloudProjectResourceData,
   extractCloudSceneData,
@@ -52,6 +53,7 @@ import {
   isCloudAuthSessionExpired,
   readCloudAuthSession,
   readCloudLockTokenFromSession,
+  parseSceneCellLockTargetId,
   saveCloudAuthSession,
   saveCloudLockTokenToSession,
   type CloudActiveLockSummary,
@@ -66,9 +68,12 @@ import {
   type CloudProjectResourceData,
   type CloudProjectSummary,
   type CloudResourceKey,
+  type CloudSceneCellPatchType,
 } from "./cloud";
 import type {
   CloudLockTakeoverRequest,
+  CloudProjectPresence,
+  CloudRealtimeSubscription,
   CloudSaveNotification,
 } from "./cloud/realtime";
 import { createSampleProject } from "./sampleProject";
@@ -92,6 +97,7 @@ import {
   ParadeSettings,
   Position,
   Project,
+  SceneElementEditTarget,
   SceneViewState,
   Selection,
   StageConfig,
@@ -1372,6 +1378,15 @@ type CloudActiveProjectLock = {
   lockToken: string;
 };
 
+type CloudActiveCellLock = {
+  cellId: string;
+  expiresAt: string | null;
+  lockToken: string;
+  patchType: CloudSceneCellPatchType;
+  sceneId: string;
+  targetId: string;
+};
+
 type CloudActiveProjectState = {
   activeProjectLock: CloudActiveProjectLock | null;
   activeSceneLock: CloudActiveSceneLock | null;
@@ -1400,6 +1415,11 @@ const CLOUD_OWNER_RESOURCE_KEYS: CloudResourceKey[] = [
   "sceneOrder",
 ];
 
+const getSceneCellPatchType = (
+  target: SceneElementEditTarget,
+): CloudSceneCellPatchType =>
+  target.type === "member-position" ? "member_position" : "object_state";
+
 const OWNER_TAKEOVER_WAIT_MS = 10_000;
 const OWNER_TAKEOVER_POLL_MS = 1_000;
 
@@ -1410,6 +1430,22 @@ const wait = (durationMs: number): Promise<void> =>
 
 type CloudPendingUpdate = CloudSaveNotification & {
   label: string;
+};
+
+const readCloudDisplayName = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.includes("@") || trimmed === "名前未設定") {
+    return null;
+  }
+  return trimmed;
+};
+
+const formatCloudPresenceNames = (names: string[]): string => {
+  const uniqueNames = [...new Set(names.filter(Boolean))];
+  if (uniqueNames.length <= 2) {
+    return uniqueNames.join("、");
+  }
+  return `${uniqueNames.slice(0, 2).join("、")}ほか${uniqueNames.length - 2}人`;
 };
 
 const readCloudInviteTokenFromLocation = (): string | null => {
@@ -1507,6 +1543,64 @@ const isCloudSceneOnlyProjectChange = (
   JSON.stringify(stripCloudSceneOnlyProjectGuard(previous, sceneId)) ===
   JSON.stringify(stripCloudSceneOnlyProjectGuard(nextProject, sceneId));
 
+const stripCloudSceneCellProjectGuard = (
+  project: Project,
+  lock: CloudActiveCellLock,
+): unknown => {
+  const { lastOpenedAt, updatedAt, ...rest } = project;
+  void lastOpenedAt;
+  void updatedAt;
+  return {
+    ...rest,
+    frames: project.frames.map((frame) => {
+      if (frame.id !== lock.sceneId) {
+        return frame;
+      }
+      if (lock.patchType === "member_position") {
+        const { [lock.cellId]: _ignored, ...positions } = frame.positions;
+        void _ignored;
+        return { ...frame, positions };
+      }
+      if (lock.patchType === "object_state") {
+        const { [lock.cellId]: _ignored, ...objectStates } = frame.objectStates;
+        void _ignored;
+        return { ...frame, objectStates };
+      }
+      if (lock.patchType === "member_visibility") {
+        const visibility = { ...(frame.memberVisibility ?? {}) };
+        delete visibility[lock.cellId];
+        return { ...frame, memberVisibility: visibility };
+      }
+      if (lock.patchType === "object_visibility") {
+        const objectState = frame.objectStates[lock.cellId];
+        const objectStates = {
+          ...frame.objectStates,
+          [lock.cellId]: objectState
+            ? { ...objectState, visible: undefined }
+            : objectState,
+        };
+        return { ...frame, objectStates };
+      }
+      if (lock.patchType === "object_assignment") {
+        const assignments = { ...(frame.objectAssignments ?? {}) };
+        delete assignments[lock.cellId];
+        return { ...frame, objectAssignments: assignments };
+      }
+      const { notes, ...frameRest } = frame;
+      void notes;
+      return frameRest;
+    }),
+  };
+};
+
+const isCloudSceneCellOnlyProjectChange = (
+  previous: Project,
+  nextProject: Project,
+  lock: CloudActiveCellLock,
+): boolean =>
+  JSON.stringify(stripCloudSceneCellProjectGuard(previous, lock)) ===
+  JSON.stringify(stripCloudSceneCellProjectGuard(nextProject, lock));
+
 const stripCloudSettingsResourceGuard = (project: Project): unknown => {
   const {
     animationSettings,
@@ -1564,17 +1658,18 @@ const stripCloudAudioResourceGuard = (project: Project): unknown => {
 };
 
 const getComparableCommonSceneData = (
-  previous: Project,
-  nextProject: Project,
+  leftProject: Project,
+  rightProject: Project,
 ): unknown => {
-  const previousFramesById = new Map(
-    previous.frames.map((frame) => [frame.id, frame]),
+  const leftFramesById = new Map(
+    leftProject.frames.map((frame) => [frame.id, frame]),
   );
-  return nextProject.frames
-    .filter((frame) => previousFramesById.has(frame.id))
-    .map((frame) => ({
+  const rightFrameIds = new Set(rightProject.frames.map((frame) => frame.id));
+  return [...leftFramesById.entries()]
+    .filter(([frameId]) => rightFrameIds.has(frameId))
+    .map(([frameId, frame]) => ({
       data: extractCloudSceneData(frame),
-      id: frame.id,
+      id: frameId,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
 };
@@ -1603,11 +1698,11 @@ const stripCloudSceneOrderResourceGuard = (
   return {
     next: {
       project: strip(nextProject),
-      sceneData: getComparableCommonSceneData(previous, nextProject),
+      sceneData: getComparableCommonSceneData(nextProject, previous),
     },
     previous: {
       project: strip(previous),
-      sceneData: getComparableCommonSceneData(previous, previous),
+      sceneData: getComparableCommonSceneData(previous, nextProject),
     },
   };
 };
@@ -1682,6 +1777,12 @@ function App() {
   const [cloudContacts, setCloudContacts] = useState<CloudContactItem[]>([]);
   const [cloudPendingUpdates, setCloudPendingUpdates] = useState<
     CloudPendingUpdate[]
+  >([]);
+  const [cloudPresenceItems, setCloudPresenceItems] = useState<
+    CloudProjectPresence[]
+  >([]);
+  const [activeCloudCellLocks, setActiveCloudCellLocks] = useState<
+    CloudActiveCellLock[]
   >([]);
   const [cloudInviteToken, setCloudInviteToken] = useState<string | null>(
     () => readCloudInviteTokenFromLocation(),
@@ -1782,11 +1883,16 @@ function App() {
   const autoSaveTimerRef = useRef<number | null>(null);
   const pendingAutoSaveProjectRef = useRef<Project | null>(null);
   const activeCloudProjectRef = useRef<CloudActiveProjectState | null>(null);
+  const cloudRealtimeSubscriptionRef =
+    useRef<CloudRealtimeSubscription | null>(null);
   const cloudLockActivityRef = useRef(false);
   const cloudProjectLockActivityRef = useRef(false);
+  const activeCloudCellLocksRef = useRef<CloudActiveCellLock[]>([]);
   const ownerAutoSceneLockKeyRef = useRef<string | null>(null);
   const ownerSceneSwitchKeyRef = useRef<string | null>(null);
   const cloudSessionRef = useRef<CloudAuthSession | null>(cloudSession);
+  const isCloudBusyRef = useRef(isCloudBusy);
+  const isCloudShareOpenRef = useRef(isCloudShareOpen);
   const isDirtyRef = useRef(isDirty);
   const selectedFrameIdRef = useRef<string | null>(selectedFrameId);
 
@@ -1803,11 +1909,27 @@ function App() {
 
   useEffect(() => {
     activeCloudProjectRef.current = activeCloudProject;
+    if (!activeCloudProject) {
+      activeCloudCellLocksRef.current = [];
+      setActiveCloudCellLocks([]);
+    }
   }, [activeCloudProject]);
+
+  useEffect(() => {
+    activeCloudCellLocksRef.current = activeCloudCellLocks;
+  }, [activeCloudCellLocks]);
 
   useEffect(() => {
     cloudSessionRef.current = cloudSession;
   }, [cloudSession]);
+
+  useEffect(() => {
+    isCloudBusyRef.current = isCloudBusy;
+  }, [isCloudBusy]);
+
+  useEffect(() => {
+    isCloudShareOpenRef.current = isCloudShareOpen;
+  }, [isCloudShareOpen]);
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
@@ -1909,8 +2031,17 @@ function App() {
       }
       const sceneId = selectedFrameIdRef.current;
       const activeLock = cloudState.activeSceneLock;
+      const matchingCellLock = activeCloudCellLocksRef.current.find(
+        (cellLock) =>
+          cellLock.sceneId === sceneId &&
+          isCloudSceneCellOnlyProjectChange(previous, nextProject, cellLock),
+      );
+      if (matchingCellLock) {
+        cloudLockActivityRef.current = true;
+        return true;
+      }
       if (!sceneId || !activeLock || activeLock.sceneId !== sceneId) {
-        setNotice("クラウド隊列表は閲覧中です。編集するには「このシーンを編集」を押してください。");
+        setNotice("この操作はまだセル単位共同編集に対応していません。対象の編集ロックを取得してください。");
         return false;
       }
       if (!isCloudSceneOnlyProjectChange(previous, nextProject, activeLock.sceneId)) {
@@ -1950,8 +2081,15 @@ function App() {
         return false;
       }
       const activeLock = cloudState.activeSceneLock;
+      const matchingCellLock = activeCloudCellLocksRef.current.find((cellLock) =>
+        isCloudSceneCellOnlyProjectChange(previous, nextProject, cellLock),
+      );
+      if (matchingCellLock) {
+        cloudLockActivityRef.current = true;
+        return true;
+      }
       if (!activeLock) {
-        setNotice("クラウド隊列表は閲覧中です。編集するには「このシーンを編集」を押してください。");
+        setNotice("クラウド共同編集では、この操作の編集ロックを取得してから変更します。");
         return false;
       }
       if (!isCloudSceneOnlyProjectChange(previous, nextProject, activeLock.sceneId)) {
@@ -1980,7 +2118,7 @@ function App() {
       if (!allowCloudProjectChange(previous, nextProject)) {
         return;
       }
-      if (!historyBatchRef.current) {
+      if (!activeCloudProjectRef.current && !historyBatchRef.current) {
         const lastHistoryPush = lastHistoryPushRef.current;
         const shouldCoalesce =
           options.coalesceHistory !== false &&
@@ -2124,6 +2262,283 @@ function App() {
     project,
   ]);
 
+  async function releaseCloudSceneCellLock(
+    lock: CloudActiveCellLock,
+    options: { silent?: boolean } = {},
+  ): Promise<boolean> {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || !cloudConfig) {
+      return false;
+    }
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        if (!options.silent) {
+          setNotice("クラウドにログインしてください。");
+        }
+        return false;
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const target = createSceneCellLockTarget(
+        lock.sceneId,
+        lock.patchType,
+        lock.cellId,
+      );
+      const result = await api.releaseEditLock(
+        cloudState.projectId,
+        target,
+        lock.lockToken,
+      );
+      if (!result.success && result.reason !== "lock_not_found_or_token_mismatch") {
+        if (!options.silent) {
+          setNotice("セル編集ロックの解除に失敗しました。");
+        }
+        return false;
+      }
+      clearCloudLockTokenFromSession(cloudState.projectId, target);
+      const nextLocks = activeCloudCellLocksRef.current.filter(
+        (item) => item.targetId !== lock.targetId,
+      );
+      activeCloudCellLocksRef.current = nextLocks;
+      setActiveCloudCellLocks(nextLocks);
+      void refreshCloudActiveLocks(activeSession);
+      return true;
+    } catch (error) {
+      if (!options.silent) {
+        setNotice(getCloudErrorMessage(error));
+      }
+      return false;
+    }
+  }
+
+  async function saveCloudSceneCellPatch(
+    lock: CloudActiveCellLock,
+    sourceProject: Project,
+  ): Promise<boolean> {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || !cloudConfig) {
+      return false;
+    }
+    const frame = sourceProject.frames.find((item) => item.id === lock.sceneId);
+    if (!frame) {
+      setNotice("クラウドへ保存するシーンが見つかりません。");
+      return false;
+    }
+    const value =
+      lock.patchType === "member_position"
+        ? frame.positions[lock.cellId]
+        : lock.patchType === "object_state"
+          ? frame.objectStates[lock.cellId]
+          : lock.patchType === "member_visibility"
+            ? frame.memberVisibility?.[lock.cellId] ?? true
+            : lock.patchType === "object_visibility"
+              ? frame.objectStates[lock.cellId]?.visible ?? true
+              : lock.patchType === "object_assignment"
+                ? frame.objectAssignments?.[lock.cellId] ?? []
+                : frame.notes ?? "";
+    if (value === undefined) {
+      downloadCloudBackupJson(sourceProject, {
+        sceneId: lock.sceneId,
+        type: "scene",
+      });
+      setNotice("保存対象が見つからなかったため、変更内容をJSONで退避しました。");
+      return false;
+    }
+    if (isSaving) {
+      return false;
+    }
+    setIsSaving(true);
+    clearPendingAutoSave();
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        setNotice("クラウドにログインしてください。");
+        return false;
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const result = await api.saveSceneCellPatchWithLock(
+        cloudState.projectId,
+        lock.sceneId,
+        lock.patchType,
+        lock.cellId,
+        value,
+        lock.lockToken,
+        CLOUD_SCHEMA_VERSION,
+        lock.patchType === "member_position"
+          ? "member position patch"
+          : "object state patch",
+      );
+      if (!result.success || result.version === null) {
+        downloadCloudBackupJson(sourceProject, {
+          sceneId: lock.sceneId,
+          type: "scene",
+        });
+        setNotice("セル単位のクラウド保存に失敗しました。変更内容をJSONで退避しました。");
+        return false;
+      }
+      const updatedAt = result.updated_at ?? new Date().toISOString();
+      const savedProject = {
+        ...sourceProject,
+        updatedAt,
+      };
+      projectRef.current = savedProject;
+      setProject(savedProject);
+      setActiveCloudProject((previous) =>
+        previous
+          ? {
+              ...previous,
+              sceneVersions: {
+                ...previous.sceneVersions,
+                [lock.sceneId]: result.version ?? previous.sceneVersions[lock.sceneId] ?? 1,
+              },
+              updatedAt,
+            }
+          : previous,
+      );
+      setIsDirty(false);
+      return true;
+    } catch (error) {
+      downloadCloudBackupJson(sourceProject, {
+        sceneId: lock.sceneId,
+        type: "scene",
+      });
+      setNotice(`${getCloudErrorMessage(error)} 変更内容をJSONで退避しました。`);
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function beginCloudSceneCellEdit(
+    label: string | undefined,
+    target: SceneElementEditTarget,
+  ): Promise<boolean> {
+    let cloudState = activeCloudProjectRef.current;
+    const sceneId = selectedFrameIdRef.current;
+    if (!cloudState || !sceneId) {
+      return false;
+    }
+    if (cloudState.role === "viewer") {
+      setNotice("閲覧のみの権限では編集できません。");
+      return false;
+    }
+    if (cloudState.activeProjectLock) {
+      setNotice("全体データの編集中です。保存または編集終了してからシーン編集を開始してください。");
+      return false;
+    }
+    if (cloudState.activeSceneLock) {
+      const sceneLock = cloudState.activeSceneLock;
+      const saved = isDirtyRef.current
+        ? await saveCloudCurrentScene(projectRef.current, sceneLock.sceneId, {
+            showNotice: false,
+          })
+        : true;
+      if (!saved) {
+        return false;
+      }
+      const released = await releaseActiveCloudSceneLock({ silent: true });
+      if (!released) {
+        return false;
+      }
+      cloudState = activeCloudProjectRef.current;
+      if (!cloudState) {
+        return false;
+      }
+    }
+    if (!cloudConfig) {
+      setNotice("Supabase接続が未設定です。");
+      return false;
+    }
+    const patchType = getSceneCellPatchType(target);
+    const lockTarget = createSceneCellLockTarget(sceneId, patchType, target.id);
+    const existingLock = activeCloudCellLocksRef.current.find(
+      (item) => item.targetId === lockTarget.targetId,
+    );
+    if (existingLock) {
+      return true;
+    }
+    setIsCloudBusy(true);
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        setNotice("クラウドにログインしてください。");
+        return false;
+      }
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const lockToken = createCloudLockToken();
+      const result = await acquireCloudEditLock(
+        api,
+        cloudState,
+        lockTarget,
+        lockToken,
+        activeSession.user.id,
+      );
+      if (!result.success) {
+        if (result.reason === "project_lock_active") {
+          setNotice("全体データの編集中です。シーンは閲覧のみです。");
+          return false;
+        }
+        const lockedBy = result.locked_by
+          ? cloudMemberNameById.get(result.locked_by) ?? "他の参加者"
+          : "他の参加者";
+        setNotice(
+          result.reason === "scene_cell_lock_active"
+            ? `${lockedBy}がこの対象を操作中です。`
+            : "セル編集ロックを取得できませんでした。",
+        );
+        return false;
+      }
+      saveCloudLockTokenToSession(cloudState.projectId, lockTarget, lockToken);
+      const nextLock: CloudActiveCellLock = {
+        cellId: target.id,
+        expiresAt: result.expires_at,
+        lockToken,
+        patchType,
+        sceneId,
+        targetId: lockTarget.targetId,
+      };
+      const nextLocks = [
+        ...activeCloudCellLocksRef.current.filter(
+          (item) => item.targetId !== lockTarget.targetId,
+        ),
+        nextLock,
+      ];
+      activeCloudCellLocksRef.current = nextLocks;
+      setActiveCloudCellLocks(nextLocks);
+      void refreshCloudActiveLocks(activeSession);
+      if (label) {
+        setNotice(`${label}を共同編集モードで開始しました。`);
+      }
+      return true;
+    } catch (error) {
+      setNotice(getCloudErrorMessage(error));
+      return false;
+    } finally {
+      setIsCloudBusy(false);
+    }
+  }
+
+  async function endCloudSceneCellEdit(
+    target: SceneElementEditTarget,
+  ): Promise<void> {
+    const sceneId = selectedFrameIdRef.current;
+    if (!sceneId) {
+      return;
+    }
+    const patchType = getSceneCellPatchType(target);
+    const lockTarget = createSceneCellLockTarget(sceneId, patchType, target.id);
+    const lock = activeCloudCellLocksRef.current.find(
+      (item) => item.targetId === lockTarget.targetId,
+    );
+    if (!lock) {
+      return;
+    }
+    const saved = await saveCloudSceneCellPatch(lock, projectRef.current);
+    if (saved) {
+      await releaseCloudSceneCellLock(lock, { silent: true });
+    }
+  }
+
   useEffect(() => {
     const handlePageHide = () => flushPendingAutoSave();
     window.addEventListener("pagehide", handlePageHide);
@@ -2136,19 +2551,33 @@ function App() {
   }, [flushPendingAutoSave]);
 
   const beginProjectHistoryBatch = useCallback(
-    (label?: string) => {
+    (label?: string, target?: SceneElementEditTarget): boolean | Promise<boolean> => {
+      if (activeCloudProjectRef.current) {
+        if (!target) {
+          setNotice("クラウド共同編集では、この操作はまだセル単位保存に対応していません。");
+          return false;
+        }
+        return beginCloudSceneCellEdit(label, target);
+      }
       isProjectEditBatchActiveRef.current = true;
       if (historyBatchRef.current) {
-        return;
+        return true;
       }
       historyBatchRef.current = { label };
       pushUndoSnapshot(projectRef.current, label);
       refreshHistoryCounts();
+      return true;
     },
     [pushUndoSnapshot, refreshHistoryCounts],
   );
 
-  const endProjectHistoryBatch = useCallback(() => {
+  const endProjectHistoryBatch = useCallback((target?: SceneElementEditTarget) => {
+    if (activeCloudProjectRef.current) {
+      if (target) {
+        void endCloudSceneCellEdit(target);
+      }
+      return;
+    }
     historyBatchRef.current = null;
     isProjectEditBatchActiveRef.current = false;
     if (
@@ -2380,6 +2809,14 @@ function App() {
         return;
       }
       const key = event.key.toLowerCase();
+      if (
+        activeCloudProjectRef.current &&
+        (key === "z" || key === "y")
+      ) {
+        event.preventDefault();
+        setNotice("クラウド共同編集では元に戻す/やり直しは使えません。");
+        return;
+      }
       if (key === "z" && event.shiftKey) {
         event.preventDefault();
         redoProject();
@@ -6421,6 +6858,15 @@ function App() {
     if (target.targetType === "project") {
       return CLOUD_RESOURCE_LABELS[target.targetId as CloudProjectLockKey] ?? "全体データ";
     }
+    if (target.targetType === "scene_cell") {
+      const parsed = parseSceneCellLockTargetId(target.targetId);
+      const frameLabel =
+        parsed &&
+        (projectRef.current.frames.find((frame) => frame.id === parsed.sceneId)
+          ?.label ??
+          "シーン");
+      return `${frameLabel || "シーン"}の対象`;
+    }
     return (
       projectRef.current.frames.find((frame) => frame.id === target.targetId)?.label ??
       "シーン"
@@ -6441,9 +6887,28 @@ function App() {
       if (target.targetType === "project") {
         return true;
       }
+      if (target.targetType === "scene_cell") {
+        const targetCell = parseSceneCellLockTargetId(target.targetId);
+        const lockCell =
+          lock.targetType === "scene_cell"
+            ? parseSceneCellLockTargetId(lock.targetId)
+            : null;
+        return (
+          lock.targetType === "project" ||
+          (targetCell !== null &&
+            lock.targetType === "scene" &&
+            lock.targetId === targetCell.sceneId) ||
+          (targetCell !== null &&
+            lockCell !== null &&
+            lockCell.sceneId === targetCell.sceneId &&
+            lock.targetId === target.targetId)
+        );
+      }
       return (
         lock.targetType === "project" ||
-        (lock.targetType === "scene" && lock.targetId === target.targetId)
+        (lock.targetType === "scene" && lock.targetId === target.targetId) ||
+        (lock.targetType === "scene_cell" &&
+          parseSceneCellLockTargetId(lock.targetId)?.sceneId === target.targetId)
       );
     });
   };
@@ -6526,6 +6991,11 @@ function App() {
       const conflictTarget =
         conflict.targetType === "project"
           ? createProjectLockTarget(conflict.targetId as CloudProjectLockKey)
+          : conflict.targetType === "scene_cell"
+            ? ({
+                targetId: conflict.targetId,
+                targetType: "scene_cell",
+              } satisfies CloudLockTarget)
           : createSceneLockTarget(conflict.targetId);
       const result = await api.forceReleaseEditLock(
         cloudState.projectId,
@@ -6585,6 +7055,23 @@ function App() {
       return;
     }
     void CLOUD_OWNER_RESOURCE_KEYS;
+    if (activeCloudCellLocksRef.current.length > 0) {
+      for (const lock of [...activeCloudCellLocksRef.current]) {
+        const saved = await saveCloudSceneCellPatch(lock, projectRef.current);
+        if (!saved) {
+          setNotice("操作中の対象を保存できませんでした。保存または退避してから全体編集を開始してください。");
+          return;
+        }
+        const released = await releaseCloudSceneCellLock(lock, { silent: true });
+        if (!released) {
+          return;
+        }
+      }
+      cloudState = activeCloudProjectRef.current;
+      if (!cloudState) {
+        return;
+      }
+    }
     if (cloudState.activeSceneLock) {
       const sceneLock = cloudState.activeSceneLock;
       const saved = isDirtyRef.current
@@ -6838,10 +7325,7 @@ function App() {
         return;
       }
       ownerAutoSceneLockKeyRef.current = null;
-      const started = await beginCloudSceneEdit({ silent: true });
-      if (started) {
-        ownerAutoSceneLockKeyRef.current = `${cloudState.projectId}:${nextSceneId}`;
-      }
+      setNotice("前のシーンの編集を終了しました。次のシーンは操作開始時に対象ごとのロックを取得します。");
     } finally {
       ownerSceneSwitchKeyRef.current = null;
     }
@@ -6861,35 +7345,6 @@ function App() {
       void switchOwnerCloudSceneEdit(currentFrameId);
       return;
     }
-    if (
-      !cloudState ||
-      cloudState.role !== "owner" ||
-      !currentFrameId ||
-      cloudState.activeSceneLock ||
-      cloudState.activeProjectLock ||
-      isCloudBusy
-    ) {
-      return;
-    }
-    const currentUserId = cloudSessionRef.current?.user.id;
-    const hasBlockingRemoteLock = cloudActiveLocks.some(
-      (lock) =>
-        lock.lockedBy !== currentUserId &&
-        (lock.targetType === "project" ||
-          (lock.targetType === "scene" && lock.targetId === currentFrameId)),
-    );
-    if (hasBlockingRemoteLock) {
-      return;
-    }
-    const lockKey = `${cloudState.projectId}:${currentFrameId}`;
-    if (ownerAutoSceneLockKeyRef.current === lockKey) {
-      return;
-    }
-    void beginCloudSceneEdit({ silent: true }).then((started) => {
-      if (started) {
-        ownerAutoSceneLockKeyRef.current = lockKey;
-      }
-    });
   }, [
     activeCloudProject?.activeProjectLock?.lockKey,
     activeCloudProject?.activeSceneLock?.sceneId,
@@ -7022,6 +7477,16 @@ function App() {
     }
     const activeSceneLock = cloudState.activeSceneLock;
     const activeProjectLock = cloudState.activeProjectLock;
+    const activeCellLocks = activeCloudCellLocksRef.current;
+    const cellLocksToRelease = activeCellLocks.filter((lock) => {
+      if (request.targetType === "project") {
+        return true;
+      }
+      if (request.targetType === "scene") {
+        return lock.sceneId === request.targetId;
+      }
+      return lock.targetId === request.targetId;
+    });
     const shouldReleaseScene =
       Boolean(activeSceneLock) &&
       (request.targetType === "project" ||
@@ -7030,11 +7495,38 @@ function App() {
       Boolean(activeProjectLock) &&
       (request.targetType === "project" ||
         request.targetType === "scene");
-    if (!shouldReleaseScene && !shouldReleaseProject) {
+    if (
+      !shouldReleaseScene &&
+      !shouldReleaseProject &&
+      cellLocksToRelease.length === 0
+    ) {
       return;
     }
 
     setNotice("ownerが編集を開始しようとしています。現在の変更を保存します。");
+    if (cellLocksToRelease.length > 0) {
+      let allSaved = true;
+      for (const lock of cellLocksToRelease) {
+        const saved = await saveCloudSceneCellPatch(lock, projectRef.current);
+        allSaved = allSaved && saved;
+        if (!saved) {
+          downloadCloudBackupJson(projectRef.current, {
+            sceneId: lock.sceneId,
+            type: "scene",
+          });
+        }
+        await releaseCloudSceneCellLock(lock, { silent: true });
+      }
+      setNotice(
+        allSaved
+          ? "ownerが編集を開始するため、操作中の対象を保存して編集を終了しました。"
+          : "ownerが編集を開始するため、未保存内容をJSONで退避して編集を終了しました。",
+      );
+      if (!shouldReleaseScene && !shouldReleaseProject) {
+        return;
+      }
+    }
+
     if (shouldReleaseScene && activeSceneLock) {
       const saved = isDirtyRef.current
         ? await saveCloudCurrentScene(projectRef.current, activeSceneLock.sceneId, {
@@ -7079,6 +7571,129 @@ function App() {
       );
     }
   };
+
+  function applyCloudScenePatchNotification(
+    notification: CloudSaveNotification,
+  ): boolean {
+    if (
+      notification.targetType !== "scene" ||
+      !notification.patchType ||
+      !activeCloudProjectRef.current ||
+      activeCloudProjectRef.current.projectId !== notification.projectId ||
+      activeCloudProjectRef.current.activeSceneLock ||
+      activeCloudProjectRef.current.activeProjectLock ||
+      activeCloudCellLocksRef.current.length > 0 ||
+      isDirtyRef.current
+    ) {
+      return false;
+    }
+    const cellId = notification.cellId ?? "_";
+    const patchType = notification.patchType as CloudSceneCellPatchType;
+    const patchValue = notification.patchValue;
+    const sourceProject = projectRef.current;
+    const frame = sourceProject.frames.find(
+      (item) => item.id === notification.targetId,
+    );
+    if (!frame) {
+      return false;
+    }
+    const nextFrames = sourceProject.frames.map((item) => {
+      if (item.id !== notification.targetId) {
+        return item;
+      }
+      if (patchType === "member_position") {
+        if (
+          !patchValue ||
+          typeof patchValue !== "object" ||
+          typeof (patchValue as Position).x !== "number" ||
+          typeof (patchValue as Position).y !== "number"
+        ) {
+          return item;
+        }
+        return {
+          ...item,
+          positions: {
+            ...item.positions,
+            [cellId]: patchValue as Position,
+          },
+        };
+      }
+      if (patchType === "object_state") {
+        if (!patchValue || typeof patchValue !== "object") {
+          return item;
+        }
+        return {
+          ...item,
+          objectStates: {
+            ...item.objectStates,
+            [cellId]: patchValue as ObjectState,
+          },
+        };
+      }
+      if (patchType === "member_visibility") {
+        return {
+          ...item,
+          memberVisibility: {
+            ...(item.memberVisibility ?? {}),
+            [cellId]: Boolean(patchValue),
+          },
+        };
+      }
+      if (patchType === "object_visibility") {
+        const previousState = item.objectStates[cellId];
+        if (!previousState) {
+          return item;
+        }
+        return {
+          ...item,
+          objectStates: {
+            ...item.objectStates,
+            [cellId]: {
+              ...previousState,
+              visible: Boolean(patchValue),
+            },
+          },
+        };
+      }
+      if (patchType === "object_assignment") {
+        return {
+          ...item,
+          objectAssignments: {
+            ...(item.objectAssignments ?? {}),
+            [cellId]: Array.isArray(patchValue) ? (patchValue as string[]) : [],
+          },
+        };
+      }
+      return {
+        ...item,
+        notes: typeof patchValue === "string" ? patchValue : "",
+      };
+    });
+    const updatedAt = new Date().toISOString();
+    const nextProject = {
+      ...sourceProject,
+      frames: nextFrames,
+      updatedAt,
+    };
+    projectRef.current = nextProject;
+    setProject(nextProject);
+    if (notification.version !== null) {
+      setActiveCloudProject((previous) =>
+        previous
+          ? {
+              ...previous,
+              sceneVersions: {
+                ...previous.sceneVersions,
+                [notification.targetId]: notification.version ?? previous.sceneVersions[notification.targetId] ?? 1,
+              },
+              updatedAt,
+            }
+          : previous,
+      );
+    }
+    setNotice("他の参加者の保存済み変更を取り込みました。");
+    return true;
+  }
 
   useEffect(() => {
     const activeLock = activeCloudProject?.activeSceneLock;
@@ -7152,6 +7767,68 @@ function App() {
   }, [
     activeCloudProject?.activeSceneLock?.lockToken,
     activeCloudProject?.activeSceneLock?.sceneId,
+    activeCloudProject?.projectId,
+    cloudConfig,
+  ]);
+
+  useEffect(() => {
+    if (!activeCloudProject || activeCloudCellLocks.length === 0 || !cloudConfig) {
+      return undefined;
+    }
+
+    const heartbeat = async () => {
+      const cloudState = activeCloudProjectRef.current;
+      const locks = activeCloudCellLocksRef.current;
+      if (!cloudState || locks.length === 0 || !cloudConfig) {
+        return;
+      }
+      try {
+        const activeSession = await getActiveCloudSession(cloudSessionRef.current);
+        if (!activeSession) {
+          return;
+        }
+        const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+        const nextLocks: CloudActiveCellLock[] = [];
+        for (const lock of locks) {
+          const target = createSceneCellLockTarget(
+            lock.sceneId,
+            lock.patchType,
+            lock.cellId,
+          );
+          const result = await api.heartbeatEditLock(
+            cloudState.projectId,
+            target,
+            lock.lockToken,
+            cloudLockActivityRef.current,
+          );
+          if (!result.success) {
+            downloadCloudBackupJson(projectRef.current, {
+              sceneId: lock.sceneId,
+              type: "scene",
+            });
+            clearCloudLockTokenFromSession(cloudState.projectId, target);
+            setNotice("セル編集ロックが解除されました。未保存内容をJSONで退避しました。");
+            continue;
+          }
+          nextLocks.push({
+            ...lock,
+            expiresAt: result.expires_at,
+          });
+        }
+        cloudLockActivityRef.current = false;
+        activeCloudCellLocksRef.current = nextLocks;
+        setActiveCloudCellLocks(nextLocks);
+      } catch (error) {
+        console.warn("セル編集ロックのheartbeatに失敗しました。", error);
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void heartbeat();
+    }, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [
+    activeCloudCellLocks,
     activeCloudProject?.projectId,
     cloudConfig,
   ]);
@@ -7259,6 +7936,7 @@ function App() {
           onLockChange: () => {
             void refreshCloudActiveLocks(cloudSessionRef.current);
           },
+          onPresenceChange: setCloudPresenceItems,
           onSave: (notification) => {
             if (notification.actorId === cloudSessionRef.current?.user.id) {
               return;
@@ -7271,22 +7949,81 @@ function App() {
                 : CLOUD_RESOURCE_LABELS[
                     notification.targetId as CloudProjectLockKey
                   ] ?? "全体データ";
-            setCloudPendingUpdates((previous) => {
-              const nextUpdate = { ...notification, label };
-              const filtered = previous.filter(
-                (item) =>
-                  item.targetType !== notification.targetType ||
-                  item.targetId !== notification.targetId,
-              );
-              return [...filtered, nextUpdate].slice(-8);
-            });
-            setNotice("クラウド側に更新があります。必要なら再読み込みしてください。");
+            const queuePendingUpdate = () => {
+              setCloudPendingUpdates((previous) => {
+                const nextUpdate = { ...notification, label };
+                const filtered = previous.filter(
+                  (item) =>
+                    item.targetType !== notification.targetType ||
+                    item.targetId !== notification.targetId,
+                );
+                return [...filtered, nextUpdate].slice(-8);
+              });
+              setNotice("クラウド側に更新があります。必要なら再読み込みしてください。");
+            };
+            const cloudState = activeCloudProjectRef.current;
+            if (applyCloudScenePatchNotification(notification)) {
+              return;
+            }
+            const canAutoReload =
+              cloudState?.projectId === notification.projectId &&
+              !cloudState.activeSceneLock &&
+              !cloudState.activeProjectLock &&
+              activeCloudCellLocksRef.current.length === 0 &&
+              !isDirtyRef.current &&
+              !isCloudBusyRef.current &&
+              !isCloudShareOpenRef.current;
+            if (canAutoReload) {
+              void reloadActiveCloudProject({ automatic: true }).then((success) => {
+                if (!success) {
+                  queuePendingUpdate();
+                }
+              });
+              return;
+            }
+            queuePendingUpdate();
           },
           onTakeoverRequest: (request) => {
             void handleCloudLockTakeoverRequest(request);
           },
+          presence: null,
+          presenceKey: activeSession.user.id,
           projectId: activeCloudProject.projectId,
         });
+        cloudRealtimeSubscriptionRef.current = subscription;
+        const currentCloudState = activeCloudProjectRef.current;
+        if (currentCloudState) {
+          const activeCellLock = activeCloudCellLocksRef.current[0] ?? null;
+          const sceneId =
+            currentCloudState.activeSceneLock?.sceneId ??
+            activeCellLock?.sceneId ??
+            selectedFrameIdRef.current ??
+            projectRef.current.frames[0]?.id ??
+            null;
+          const sceneLabel = sceneId
+            ? projectRef.current.frames.find((frame) => frame.id === sceneId)
+                ?.label ?? null
+            : null;
+          const projectLock = currentCloudState.activeProjectLock;
+          const status = projectLock
+            ? "project-editing"
+            : currentCloudState.activeSceneLock || activeCellLock
+              ? "editing"
+              : "viewing";
+          void subscription.updatePresence({
+            displayName:
+              readCloudDisplayName(activeSession.user.displayName) ??
+              "名前未設定",
+            role: currentCloudState.role,
+            sceneId,
+            sceneLabel,
+            status,
+            targetId: projectLock ? projectLock.lockKey : sceneId,
+            targetType: projectLock ? "project" : sceneId ? "scene" : null,
+            updatedAt: new Date().toISOString(),
+            userId: activeSession.user.id,
+          });
+        }
         cleanup = subscription.unsubscribe;
       } catch (error) {
         console.warn("クラウド更新通知の開始に失敗しました。", error);
@@ -7297,6 +8034,8 @@ function App() {
 
     return () => {
       isDisposed = true;
+      setCloudPresenceItems([]);
+      cloudRealtimeSubscriptionRef.current = null;
       if (cleanup) {
         void cleanup();
       }
@@ -7814,21 +8553,32 @@ function App() {
     }
   };
 
-  const reloadActiveCloudProject = async () => {
+  const reloadActiveCloudProject = async (
+    options: { automatic?: boolean } = {},
+  ): Promise<boolean> => {
     const cloudState = activeCloudProjectRef.current;
     if (!cloudState || !cloudConfig) {
-      return;
+      return false;
     }
-    if (cloudState.activeSceneLock || cloudState.activeProjectLock || isDirty) {
+    if (
+      cloudState.activeSceneLock ||
+      cloudState.activeProjectLock ||
+      activeCloudCellLocksRef.current.length > 0 ||
+      isDirtyRef.current
+    ) {
       setNotice("編集中の変更があります。保存または編集終了してから再読み込みしてください。");
-      return;
+      return false;
     }
+    if (isCloudBusyRef.current) {
+      return false;
+    }
+    isCloudBusyRef.current = true;
     setIsCloudBusy(true);
     try {
       const activeSession = await getActiveCloudSession();
       if (!activeSession) {
         setNotice("クラウドにログインしてください。");
-        return;
+        return false;
       }
       const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const parts = await api.loadCloudProjectParts(cloudState.projectId);
@@ -7857,10 +8607,17 @@ function App() {
       if (cloudState.role === "owner") {
         await refreshCloudCollaboration(activeSession);
       }
-      setNotice("クラウド側の最新状態を再読み込みしました。");
+      setNotice(
+        options.automatic
+          ? "クラウド側の更新を自動で読み込みました。"
+          : "クラウド側の最新状態を再読み込みしました。",
+      );
+      return true;
     } catch (error) {
       setNotice(getCloudErrorMessage(error));
+      return false;
     } finally {
+      isCloudBusyRef.current = false;
       setIsCloudBusy(false);
     }
   };
@@ -9630,6 +10387,122 @@ function App() {
       ),
     [cloudCollaborationItems],
   );
+  useEffect(() => {
+    const subscription = cloudRealtimeSubscriptionRef.current;
+    if (!subscription) {
+      return;
+    }
+    if (!activeCloudProject || !cloudSession) {
+      void subscription.updatePresence(null);
+      return;
+    }
+
+    const activeCellLock = activeCloudCellLocks[0] ?? null;
+    const sceneId =
+      activeCloudProject.activeSceneLock?.sceneId ??
+      activeCellLock?.sceneId ??
+      canvasFrameId;
+    const sceneLabel = sceneId
+      ? projectRef.current.frames.find((frame) => frame.id === sceneId)?.label ??
+        null
+      : null;
+    const projectLock = activeCloudProject.activeProjectLock;
+    const status = projectLock
+      ? "project-editing"
+      : activeCloudProject.activeSceneLock || activeCellLock
+        ? "editing"
+        : "viewing";
+    const targetType = projectLock ? "project" : sceneId ? "scene" : null;
+    const targetId = projectLock ? projectLock.lockKey : sceneId ?? null;
+
+    void subscription.updatePresence({
+      displayName:
+        readCloudDisplayName(cloudSession.user.displayName) ?? "名前未設定",
+      role: activeCloudProject.role,
+      sceneId: sceneId ?? null,
+      sceneLabel,
+      status,
+      targetId,
+      targetType,
+      updatedAt: new Date().toISOString(),
+      userId: cloudSession.user.id,
+    });
+  }, [
+    activeCloudProject?.activeProjectLock?.lockKey,
+    activeCloudProject?.activeSceneLock?.sceneId,
+    activeCloudProject?.projectId,
+    activeCloudProject?.role,
+    activeCloudCellLocks,
+    canvasFrameId,
+    cloudSession?.user.displayName,
+    cloudSession?.user.id,
+  ]);
+  const latestRemotePresenceItems = useMemo(() => {
+    const currentUserId = cloudSession?.user.id;
+    const byUserId = new Map<string, CloudProjectPresence>();
+    for (const item of cloudPresenceItems) {
+      if (!item.userId || item.userId === currentUserId) {
+        continue;
+      }
+      const displayName = readCloudDisplayName(item.displayName) ?? "名前未設定";
+      const normalized = { ...item, displayName };
+      const previous = byUserId.get(item.userId);
+      if (!previous || normalized.updatedAt > previous.updatedAt) {
+        byUserId.set(item.userId, normalized);
+      }
+    }
+    return [...byUserId.values()].sort((left, right) =>
+      left.displayName.localeCompare(right.displayName, "ja"),
+    );
+  }, [cloudPresenceItems, cloudSession?.user.id]);
+  const remoteViewingByFrameId = useMemo(() => {
+    const next: Record<string, string[]> = {};
+    for (const item of latestRemotePresenceItems) {
+      if (item.status !== "viewing" || !item.sceneId) {
+        continue;
+      }
+      next[item.sceneId] = [...(next[item.sceneId] ?? []), item.displayName];
+    }
+    return next;
+  }, [latestRemotePresenceItems]);
+  const cloudPresenceSummary = useMemo(() => {
+    if (latestRemotePresenceItems.length === 0) {
+      return null;
+    }
+    const currentSceneViewers = canvasFrameId
+      ? latestRemotePresenceItems.filter(
+          (item) => item.status === "viewing" && item.sceneId === canvasFrameId,
+        )
+      : [];
+    if (currentSceneViewers.length > 0) {
+      return `このシーンを閲覧中: ${formatCloudPresenceNames(
+        currentSceneViewers.map((item) => item.displayName),
+      )}`;
+    }
+    const projectEditor = latestRemotePresenceItems.find(
+      (item) => item.status === "project-editing",
+    );
+    if (projectEditor) {
+      const targetLabel =
+        projectEditor.targetId && projectEditor.targetId in CLOUD_RESOURCE_LABELS
+          ? CLOUD_RESOURCE_LABELS[projectEditor.targetId as CloudProjectLockKey]
+          : "全体データ";
+      return `${projectEditor.displayName}が${targetLabel}を操作中です。`;
+    }
+    const firstScenePresence = latestRemotePresenceItems.find(
+      (item) => item.sceneId,
+    );
+    if (firstScenePresence) {
+      return `${firstScenePresence.displayName}が${
+        firstScenePresence.sceneLabel ?? "別シーン"
+      }を${
+        firstScenePresence.status === "editing" ? "編集中" : "閲覧中"
+      }です。`;
+    }
+    return `${formatCloudPresenceNames(
+      latestRemotePresenceItems.map((item) => item.displayName),
+    )}がオンラインです。`;
+  }, [canvasFrameId, latestRemotePresenceItems]);
   const canvasRemoteLock =
     activeCloudProject && canvasFrameId
       ? cloudActiveLocks.find(
@@ -9646,20 +10519,76 @@ function App() {
     if (!activeCloudProject) {
       return {};
     }
-    return Object.fromEntries(
-      cloudActiveLocks
-        .filter(
-          (lock) =>
-            lock.targetType === "scene" &&
-            lock.lockedBy !== cloudSession?.user.id,
-        )
-        .map((lock) => [
-          lock.targetId,
-          cloudMemberNameById.get(lock.lockedBy) ?? "他の参加者",
-        ]),
-    );
+    const next: Record<string, string> = {};
+    for (const lock of cloudActiveLocks) {
+      if (lock.lockedBy === cloudSession?.user.id) {
+        continue;
+      }
+      if (lock.targetType === "scene") {
+        next[lock.targetId] = cloudMemberNameById.get(lock.lockedBy) ?? "他の参加者";
+        continue;
+      }
+      if (lock.targetType === "scene_cell") {
+        const parsed = parseSceneCellLockTargetId(lock.targetId);
+        if (parsed) {
+          next[parsed.sceneId] =
+            cloudMemberNameById.get(lock.lockedBy) ?? "他の参加者";
+        }
+      }
+    }
+    return next;
   }, [
     activeCloudProject,
+    cloudActiveLocks,
+    cloudMemberNameById,
+    cloudSession?.user.id,
+  ]);
+  const remoteMemberPositionLocksById = useMemo(() => {
+    if (!activeCloudProject || !canvasFrameId) {
+      return {};
+    }
+    const next: Record<string, string> = {};
+    for (const lock of cloudActiveLocks) {
+      if (lock.targetType !== "scene_cell" || lock.lockedBy === cloudSession?.user.id) {
+        continue;
+      }
+      const parsed = parseSceneCellLockTargetId(lock.targetId);
+      if (
+        parsed?.sceneId === canvasFrameId &&
+        parsed.patchType === "member_position"
+      ) {
+        next[parsed.cellId] = cloudMemberNameById.get(lock.lockedBy) ?? "他の参加者";
+      }
+    }
+    return next;
+  }, [
+    activeCloudProject,
+    canvasFrameId,
+    cloudActiveLocks,
+    cloudMemberNameById,
+    cloudSession?.user.id,
+  ]);
+  const remoteObjectStateLocksById = useMemo(() => {
+    if (!activeCloudProject || !canvasFrameId) {
+      return {};
+    }
+    const next: Record<string, string> = {};
+    for (const lock of cloudActiveLocks) {
+      if (lock.targetType !== "scene_cell" || lock.lockedBy === cloudSession?.user.id) {
+        continue;
+      }
+      const parsed = parseSceneCellLockTargetId(lock.targetId);
+      if (
+        parsed?.sceneId === canvasFrameId &&
+        parsed.patchType === "object_state"
+      ) {
+        next[parsed.cellId] = cloudMemberNameById.get(lock.lockedBy) ?? "他の参加者";
+      }
+    }
+    return next;
+  }, [
+    activeCloudProject,
+    canvasFrameId,
     cloudActiveLocks,
     cloudMemberNameById,
     cloudSession?.user.id,
@@ -9674,6 +10603,15 @@ function App() {
   const isCloudSceneReadOnly = Boolean(
     activeCloudProject &&
       activeCloudProject.activeSceneLock?.sceneId !== canvasFrameId,
+  );
+  const isCloudCanvasReadOnly = Boolean(
+    activeCloudProject &&
+      (activeCloudProject.role === "viewer" ||
+        activeCloudProject.activeProjectLock ||
+        canvasRemoteProjectLock ||
+        canvasRemoteLock ||
+        (activeCloudProject.activeSceneLock &&
+          activeCloudProject.activeSceneLock.sceneId !== canvasFrameId)),
   );
   const canEditCurrentScene = !activeCloudProject || !isCloudSceneReadOnly;
   const activeCloudProjectLockKey =
@@ -10050,6 +10988,10 @@ function App() {
     }
   };
 
+  const notifyCloudCellLockedEdit = (ownerName: string) => {
+    setNotice(`${ownerName}がこの対象を操作中です。別のメンバーや道具は編集できます。`);
+  };
+
   return (
     <>
     <div className="app-shell">
@@ -10189,6 +11131,14 @@ function App() {
                 {cloudPendingUpdates.map((update) => update.label).join("、")}
               </span>
             )}
+            {cloudPresenceSummary && (
+              <span className="cloud-project-banner__presence">
+                {cloudPresenceSummary}
+              </span>
+            )}
+            <span className="cloud-project-banner__presence">
+              クラウド共同編集では元に戻す/やり直しは使えません。
+            </span>
           </div>
           <div className="shared-project-banner__actions">
             <button
@@ -10356,6 +11306,7 @@ function App() {
               selectedFrameId={displayFrame?.id ?? null}
               collapsed={isSceneThumbnailRailCollapsed}
               remoteEditingByFrameId={remoteEditingByFrameId}
+              remoteViewingByFrameId={remoteViewingByFrameId}
               onToggleCollapsed={() =>
                 setIsSceneThumbnailRailCollapsed((previous) => !previous)
               }
@@ -10385,14 +11336,16 @@ function App() {
                   isMemberSelectionMode={isMemberSelectionMode}
                   focusMemberId={project.focusMemberId}
                   focusMode={focusMode}
-                  isReadOnly={isCloudSceneReadOnly}
+                  isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
+                  remoteMemberLocks={remoteMemberPositionLocksById}
+                  remoteObjectLocks={remoteObjectStateLocksById}
                   onSelect={selectStageElement}
                   onStagePointerPositionChange={handleStagePointerPositionChange}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
-                  canUndo={historyCounts.undo > 0}
-                  canRedo={historyCounts.redo > 0}
+                  canUndo={!activeCloudProject && historyCounts.undo > 0}
+                  canRedo={!activeCloudProject && historyCounts.redo > 0}
                   onUndo={undoProject}
                   onRedo={redoProject}
                   onBeginProjectEdit={beginProjectHistoryBatch}
@@ -10410,6 +11363,7 @@ function App() {
                   onCaptureStageImage={captureStageImage}
                   onContextMenuRequest={handleStageContextMenu}
                   onReadOnlyEditAttempt={notifyCloudReadOnlyEdit}
+                  onLockedElementEditAttempt={notifyCloudCellLockedEdit}
                 />
               ) : (
                 <StageCanvas
@@ -10434,14 +11388,16 @@ function App() {
                   isMemberSelectionMode={isMemberSelectionMode}
                   focusMemberId={project.focusMemberId}
                   focusMode={focusMode}
-                  isReadOnly={isCloudSceneReadOnly}
+                  isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
+                  remoteMemberLocks={remoteMemberPositionLocksById}
+                  remoteObjectLocks={remoteObjectStateLocksById}
                   onSelect={selectStageElement}
                   onStagePointerPositionChange={handleStagePointerPositionChange}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
-                  canUndo={historyCounts.undo > 0}
-                  canRedo={historyCounts.redo > 0}
+                  canUndo={!activeCloudProject && historyCounts.undo > 0}
+                  canRedo={!activeCloudProject && historyCounts.redo > 0}
                   onUndo={undoProject}
                   onRedo={redoProject}
                   onBeginProjectEdit={beginProjectHistoryBatch}
@@ -10464,6 +11420,7 @@ function App() {
                   onSeekAudio={seek}
                   onContextMenuRequest={handleStageContextMenu}
                   onReadOnlyEditAttempt={notifyCloudReadOnlyEdit}
+                  onLockedElementEditAttempt={notifyCloudCellLockedEdit}
                 />
               )}
             </div>

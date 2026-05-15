@@ -12,6 +12,7 @@ const migrationFiles = [
   "20260514007000_cloud_owner_takeover_requests.sql",
   "20260514008000_cloud_display_name_repair.sql",
   "20260515000000_cloud_contacts.sql",
+  "20260515001000_cloud_scene_cell_locks.sql",
 ];
 
 const now = new Date().toISOString();
@@ -29,6 +30,9 @@ const chunks = [
   "drop function if exists public.add_project_member_from_contact(uuid, uuid, text);",
   "drop function if exists public.add_project_member_to_contacts(uuid, uuid);",
   "drop function if exists public.cloud_collab_display_name_for_user(uuid);",
+  "drop function if exists public.save_scene_cell_patch_with_lock(uuid, text, text, text, jsonb, text, integer, text);",
+  "drop function if exists public.cloud_collab_scene_cell_scene_id(text);",
+  "drop function if exists public.cloud_collab_scene_cell_target_id(text, text, text);",
   "",
 ];
 

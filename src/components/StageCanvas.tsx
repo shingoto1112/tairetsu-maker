@@ -33,6 +33,7 @@ import {
   OriginMode,
   Position,
   Project,
+  SceneElementEditTarget,
   Selection,
   StageContextMenuRequest,
   StageSnapshot,
@@ -91,6 +92,8 @@ type StageCanvasProps = {
   focusMode: boolean;
   isReadOnly?: boolean;
   readOnlyMessage?: string;
+  remoteMemberLocks?: Record<string, string>;
+  remoteObjectLocks?: Record<string, string>;
   currentTime: number;
   audioDuration: number;
   audioName: string | null;
@@ -105,8 +108,11 @@ type StageCanvasProps = {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  onBeginProjectEdit: (label?: string) => void;
-  onEndProjectEdit: () => void;
+  onBeginProjectEdit: (
+    label?: string,
+    target?: SceneElementEditTarget,
+  ) => boolean | void | Promise<boolean | void>;
+  onEndProjectEdit: (target?: SceneElementEditTarget) => void;
   onTogglePlayback: () => void;
   onSaveFrame: () => void;
   onCaptureStageImage: () => void;
@@ -115,6 +121,7 @@ type StageCanvasProps = {
   onSeekAudio: (timeSec: number) => void;
   onContextMenuRequest: (request: StageContextMenuRequest) => void;
   onReadOnlyEditAttempt?: () => void;
+  onLockedElementEditAttempt?: (ownerName: string) => void;
 };
 
 export type StageCanvasHandle = HTMLDivElement & {
@@ -138,6 +145,7 @@ type MemberDrag = {
   startPointer: Position;
   startPosition: Position;
   hasMoved: boolean;
+  isBeginPending: boolean;
 };
 
 type StageTouchPoint = {
@@ -358,6 +366,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       focusMode,
       isReadOnly = false,
       readOnlyMessage,
+      remoteMemberLocks = {},
+      remoteObjectLocks = {},
       currentTime,
       audioDuration,
       audioName,
@@ -379,6 +389,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       onSeekAudio,
       onContextMenuRequest,
       onReadOnlyEditAttempt,
+      onLockedElementEditAttempt,
     },
     exportRef,
   ) => {
@@ -1251,6 +1262,12 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const appendSelection =
         isMemberSelectionMode || event.ctrlKey || event.metaKey;
       onSelect({ type: "member", id: memberId }, { append: appendSelection });
+      const remoteLockOwner = remoteMemberLocks[memberId];
+      if (remoteLockOwner) {
+        event.preventDefault();
+        onLockedElementEditAttempt?.(remoteLockOwner);
+        return;
+      }
       if (isReadOnly) {
         event.preventDefault();
         onReadOnlyEditAttempt?.();
@@ -1281,6 +1298,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         startPointer,
         startPosition: snapshot.positions[memberId] ?? { x: 0, y: 0 },
         hasMoved: false,
+        isBeginPending: false,
       };
       if (fitAreaRef.current) {
         memberAutoScrollerRef.current?.stop();
@@ -1307,6 +1325,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!drag || drag.pointerId !== event.pointerId || !stageRef.current) {
         return;
       }
+      drag.currentClientX = event.clientX;
+      drag.currentClientY = event.clientY;
+      if (drag.isBeginPending) {
+        return;
+      }
       if (!drag.hasMoved) {
         const movementPx = Math.hypot(
           event.clientX - drag.startClientX,
@@ -1316,9 +1339,41 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           return;
         }
         cancelTouchContextMenu();
-        onBeginProjectEdit("メンバー移動");
-        drag.hasMoved = true;
-        setIsMemberDragging(true);
+        drag.isBeginPending = true;
+        const beginResult = onBeginProjectEdit("メンバー移動", {
+          id: drag.memberId,
+          type: "member-position",
+        });
+        const editTarget: SceneElementEditTarget = {
+          id: drag.memberId,
+          type: "member-position",
+        };
+        void Promise.resolve(beginResult).then((canEdit) => {
+          const latestDrag = memberDragRef.current;
+          if (!latestDrag || latestDrag.pointerId !== event.pointerId) {
+            if (canEdit !== false) {
+              onEndProjectEdit(editTarget);
+            }
+            return;
+          }
+          latestDrag.isBeginPending = false;
+          if (canEdit === false) {
+            memberDragRef.current = null;
+            memberAutoScrollerRef.current?.stop();
+            memberAutoScrollerRef.current = null;
+            setActiveSnapGuides([]);
+            setIsMemberDragging(false);
+            return;
+          }
+          latestDrag.hasMoved = true;
+          setIsMemberDragging(true);
+          moveDraggedMember(latestDrag.currentClientX, latestDrag.currentClientY);
+          memberAutoScrollerRef.current?.update(
+            latestDrag.currentClientX,
+            latestDrag.currentClientY,
+          );
+        });
+        return;
       }
       moveDraggedMember(event.clientX, event.clientY);
       memberAutoScrollerRef.current?.update(event.clientX, event.clientY);
@@ -1333,7 +1388,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         memberAutoScrollerRef.current = null;
         setActiveSnapGuides([]);
         if (drag.hasMoved) {
-          onEndProjectEdit();
+          onEndProjectEdit({ id: drag.memberId, type: "member-position" });
         }
         setIsMemberDragging(false);
       }
@@ -2123,6 +2178,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 if (!objectState) {
                   return null;
                 }
+                const remoteObjectLockOwner = remoteObjectLocks[object.id] ?? null;
                 return (
                   <ResizableRotatableObject
                     key={object.id}
@@ -2132,6 +2188,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     viewerPerspective={viewerPerspective}
                     selected={selected?.type === "object" && selected.id === object.id}
                     disabled={!objectEditing || isReadOnly}
+                    remoteLockOwner={remoteObjectLockOwner}
                     onSelect={() => onSelect({ type: "object", id: object.id })}
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "object", id: object.id })
@@ -2185,12 +2242,14 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                               : kind === "rotate"
                                 ? "道具回転"
                                 : "道具移動",
+                            { id: object.id, type: "object-state" },
                           )
                     }
                     onInteractionEnd={() => {
                       setActiveSnapGuides([]);
-                      onEndProjectEdit();
+                      onEndProjectEdit({ id: object.id, type: "object-state" });
                     }}
+                    onLockedElementEditAttempt={onLockedElementEditAttempt}
                   />
                 );
               })}
@@ -2210,6 +2269,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     selected?.type === "member" && selected.id === member.id;
                   const isFocus = focusMemberId === member.id;
                   const isDimmed = focusMode && Boolean(focusMemberId) && !isFocus;
+                  const remoteMemberLockOwner = remoteMemberLocks[member.id] ?? null;
                   const labelLines = splitMemberLabel(member.name);
                   const memberLabelClassName = getMemberLabelClassName(
                     "member-token",
@@ -2232,6 +2292,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                           : "",
                         isFocus ? "is-focus" : "",
                         isDimmed ? "is-dimmed" : "",
+                        remoteMemberLockOwner ? "is-remote-locked" : "",
                         memberLabelClassName,
                         simplifyMemberLabels && !isSelected && !isFocus
                           ? "is-label-simplified"
@@ -2266,7 +2327,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       }
                       role="button"
                       tabIndex={0}
-                      title={member.name}
+                      title={
+                        remoteMemberLockOwner
+                          ? `${remoteMemberLockOwner}が操作中です`
+                          : member.name
+                      }
                       aria-label={member.name}
                     >
                       {!(simplifyMemberLabels && !isSelected && !isFocus) && (

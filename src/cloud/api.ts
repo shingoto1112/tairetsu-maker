@@ -1,4 +1,5 @@
 import type { CloudConfig } from "./config";
+import type { CloudSceneCellPatchType } from "./projectParts";
 import type {
   CloudLockTarget,
   CloudProjectDraft,
@@ -166,7 +167,7 @@ export type CloudActiveLockSummary = {
   lockedAt: string;
   lockedBy: string;
   targetId: string;
-  targetType: "project" | "scene";
+  targetType: "project" | "scene" | "scene_cell";
 };
 
 type CloudActiveLockRow = {
@@ -176,7 +177,7 @@ type CloudActiveLockRow = {
   locked_at: string;
   locked_by: string;
   target_id: string;
-  target_type: "project" | "scene";
+  target_type: "project" | "scene" | "scene_cell";
 };
 
 type CloudProjectResourceRow = {
@@ -722,6 +723,27 @@ export const createCloudApiClient = (
         p_scene_id: sceneId,
         p_schema_version: schemaVersion,
         p_summary: summary ?? null,
+      }),
+
+    saveSceneCellPatchWithLock: (
+      projectId: string,
+      sceneId: string,
+      patchType: CloudSceneCellPatchType,
+      cellId: string,
+      value: unknown,
+      lockToken: string,
+      schemaVersion: number,
+      summary?: string,
+    ) =>
+      rpcOne<CloudSaveResult>("save_scene_cell_patch_with_lock", {
+        p_cell_id: cellId,
+        p_lock_token: lockToken,
+        p_patch_type: patchType,
+        p_project_id: projectId,
+        p_scene_id: sceneId,
+        p_schema_version: schemaVersion,
+        p_summary: summary ?? null,
+        p_value: value,
       }),
 
     updateProjectMemberRole: (

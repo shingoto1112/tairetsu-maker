@@ -14,6 +14,7 @@ type SceneThumbnailRailProps = {
   selectedFrameId: string | null;
   collapsed: boolean;
   remoteEditingByFrameId?: Record<string, string>;
+  remoteViewingByFrameId?: Record<string, string[]>;
   onToggleCollapsed: () => void;
   onSelectFrame: (frame: FormationFrame) => void;
   onFrameContextMenu?: (
@@ -41,11 +42,20 @@ const getFrameStageSize = (
 const objectOpacity = (object: StageObject): number =>
   object.type === "curtain" ? 0.42 : 0.32;
 
+const formatPresenceNames = (names: string[]): string => {
+  const uniqueNames = [...new Set(names.filter(Boolean))];
+  if (uniqueNames.length <= 2) {
+    return uniqueNames.join("、");
+  }
+  return `${uniqueNames.slice(0, 2).join("、")}ほか${uniqueNames.length - 2}人`;
+};
+
 export const SceneThumbnailRail = memo(function SceneThumbnailRail({
   project,
   selectedFrameId,
   collapsed,
   remoteEditingByFrameId = {},
+  remoteViewingByFrameId = {},
   onToggleCollapsed,
   onSelectFrame,
   onFrameContextMenu,
@@ -99,12 +109,24 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
               const depth = Math.max(1, stageSize.depthMeters);
               const isSelected = frame.id === selectedFrameId;
               const remoteEditorName = remoteEditingByFrameId[frame.id];
+              const remoteViewerNames = remoteViewingByFrameId[frame.id] ?? [];
+              const remoteViewerLabel =
+                remoteViewerNames.length > 0
+                  ? `${formatPresenceNames(remoteViewerNames)}が閲覧中`
+                  : null;
+              const statusTitle = [
+                remoteEditorName ? `${remoteEditorName}が編集中です` : null,
+                remoteViewerLabel,
+              ]
+                .filter(Boolean)
+                .join("\n");
               return (
                 <button
                   className={
                     [
                       "scene-thumbnail-card",
                       isSelected ? "is-active" : "",
+                      remoteViewerLabel ? "is-remote-viewing" : "",
                       remoteEditorName ? "is-remote-editing" : "",
                     ]
                       .filter(Boolean)
@@ -112,11 +134,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
                   }
                   data-thumbnail-frame-id={frame.id}
                   key={frame.id}
-                  title={
-                    remoteEditorName
-                      ? `${remoteEditorName}が編集中です`
-                      : undefined
-                  }
+                  title={statusTitle || undefined}
                   onClick={() => onSelectFrame(frame)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -138,6 +156,11 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
                   {remoteEditorName && (
                     <div className="scene-thumbnail-card__lock">
                       {remoteEditorName}が編集中
+                    </div>
+                  )}
+                  {remoteViewerLabel && !remoteEditorName && (
+                    <div className="scene-thumbnail-card__presence">
+                      {remoteViewerLabel}
                     </div>
                   )}
                   <svg

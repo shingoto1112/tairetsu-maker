@@ -41,6 +41,7 @@ type DragState = {
   startState: ObjectState;
   startAngle: number;
   hasMoved: boolean;
+  isBeginPending: boolean;
 };
 
 type ResizableRotatableObjectProps = {
@@ -50,14 +51,16 @@ type ResizableRotatableObjectProps = {
   viewerPerspective: ViewerPerspective;
   selected: boolean;
   disabled: boolean;
+  remoteLockOwner?: string | null;
   onSelect: () => void;
   onMove: (state: Partial<ObjectState>) => void;
-  onInteractionStart?: (kind: InteractionKind) => void;
+  onInteractionStart?: (kind: InteractionKind) => boolean | void | Promise<boolean | void>;
   onInteractionEnd?: () => void;
   onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
   onTouchLongPressEnd?: (event: PointerEvent<HTMLElement>) => void;
   onTouchLongPressMove?: (event: PointerEvent<HTMLElement>) => void;
   onTouchLongPressStart?: (event: PointerEvent<HTMLElement>) => void;
+  onLockedElementEditAttempt?: (ownerName: string) => void;
 };
 
 const OBJECT_DRAG_SNAP_METERS = 0.25;
@@ -96,6 +99,7 @@ export const ResizableRotatableObject = ({
   viewerPerspective,
   selected,
   disabled,
+  remoteLockOwner = null,
   onSelect,
   onMove,
   onInteractionStart,
@@ -104,10 +108,11 @@ export const ResizableRotatableObject = ({
   onTouchLongPressEnd,
   onTouchLongPressMove,
   onTouchLongPressStart,
+  onLockedElementEditAttempt,
 }: ResizableRotatableObjectProps) => {
   const dragRef = useRef<DragState | null>(null);
   const autoScrollerRef = useRef<EdgeAutoScroller | null>(null);
-  const editable = !disabled && !object.locked;
+  const editable = !disabled && !object.locked && !remoteLockOwner;
 
   useEffect(
     () => () => {
@@ -123,9 +128,35 @@ export const ResizableRotatableObject = ({
     }
     drag.currentClientX = clientX;
     drag.currentClientY = clientY;
+    if (drag.isBeginPending) {
+      return;
+    }
     if (!drag.hasMoved) {
-      onInteractionStart?.(drag.kind);
-      drag.hasMoved = true;
+      drag.isBeginPending = true;
+      const beginResult = onInteractionStart?.(drag.kind) ?? true;
+      void Promise.resolve(beginResult).then((canEdit) => {
+        const latestDrag = dragRef.current;
+        if (!latestDrag || latestDrag.pointerId !== drag.pointerId) {
+          if (canEdit !== false) {
+            onInteractionEnd?.();
+          }
+          return;
+        }
+        latestDrag.isBeginPending = false;
+        if (canEdit === false) {
+          dragRef.current = null;
+          autoScrollerRef.current?.stop();
+          autoScrollerRef.current = null;
+          return;
+        }
+        latestDrag.hasMoved = true;
+        applyDrag(latestDrag.currentClientX, latestDrag.currentClientY);
+        autoScrollerRef.current?.update(
+          latestDrag.currentClientX,
+          latestDrag.currentClientY,
+        );
+      });
+      return;
     }
 
     if (drag.kind === "rotate") {
@@ -218,6 +249,10 @@ export const ResizableRotatableObject = ({
       return;
     }
     onSelect();
+    if (remoteLockOwner) {
+      onLockedElementEditAttempt?.(remoteLockOwner);
+      return;
+    }
     onTouchLongPressStart?.(event);
     if (!editable) {
       return;
@@ -255,6 +290,7 @@ export const ResizableRotatableObject = ({
             )
           : 0,
       hasMoved: false,
+      isBeginPending: false,
     };
     const scrollContainer = stageElement.closest(".stage-fit-area");
     if (scrollContainer instanceof HTMLElement && kind !== "rotate") {
@@ -331,6 +367,7 @@ export const ResizableRotatableObject = ({
         `shape-${object.shape}`,
         selected ? "is-selected" : "",
         object.locked ? "is-locked" : "",
+        remoteLockOwner ? "is-remote-locked" : "",
       ].join(" ")}
       style={style}
       onPointerDown={(event) => startInteraction(event, "move")}
@@ -340,6 +377,7 @@ export const ResizableRotatableObject = ({
       onContextMenu={onContextMenu}
       role="button"
       tabIndex={0}
+      title={remoteLockOwner ? `${remoteLockOwner}が操作中です` : object.name}
     >
       <span className="stage-object__label">{object.name}</span>
       {selected && editable && (

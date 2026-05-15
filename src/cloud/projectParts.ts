@@ -53,10 +53,56 @@ export const createProjectLockTarget = (
   targetType: "project",
 });
 
+export type CloudSceneCellPatchType =
+  | "member_position"
+  | "object_state"
+  | "member_visibility"
+  | "object_visibility"
+  | "object_assignment"
+  | "notes";
+
+export const createSceneCellLockTargetId = (
+  sceneId: string,
+  patchType: CloudSceneCellPatchType,
+  cellId = "_",
+): string => [sceneId, patchType, cellId || "_"].join("|");
+
+export const createSceneCellLockTarget = (
+  sceneId: string,
+  patchType: CloudSceneCellPatchType,
+  cellId = "_",
+): CloudLockTarget => ({
+  targetId: createSceneCellLockTargetId(sceneId, patchType, cellId),
+  targetType: "scene_cell",
+});
+
+export const parseSceneCellLockTargetId = (
+  targetId: string,
+): { cellId: string; patchType: CloudSceneCellPatchType; sceneId: string } | null => {
+  const [sceneId, rawPatchType, cellId = "_"] = targetId.split("|");
+  if (!sceneId) {
+    return null;
+  }
+  const patchType = rawPatchType as CloudSceneCellPatchType;
+  if (
+    patchType !== "member_position" &&
+    patchType !== "object_state" &&
+    patchType !== "member_visibility" &&
+    patchType !== "object_visibility" &&
+    patchType !== "object_assignment" &&
+    patchType !== "notes"
+  ) {
+    return null;
+  }
+  return { cellId, patchType, sceneId };
+};
+
 export const getCloudTargetLabel = (target: CloudLockTarget): string =>
   target.targetType === "scene"
     ? `scene:${target.targetId}`
-    : `project:${target.targetId}`;
+    : target.targetType === "project"
+      ? `project:${target.targetId}`
+      : `scene_cell:${target.targetId}`;
 
 export const extractCloudSceneData = (
   frame: FormationFrame,

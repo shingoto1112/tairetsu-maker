@@ -3,7 +3,29 @@
 このファイルは、長くなったCodexチャットから新しいチャットへ作業を引き継ぐためのメモです。
 新しいチャットでは、まず `AGENTS.md`、`docs/SPEC.md`、このファイルを読んでから作業してください。
 
-最終更新: 2026-05-14
+最終更新: 2026-05-15
+
+## 最新作業メモ: セル単位ロック移行 第1実装
+
+2026-05-15時点で、クラウド共同編集をシーン単位ロックから `scene_cell` ロック + パッチ保存へ段階移行中です。
+
+実装済みの中心:
+
+- Supabase migration `supabase/migrations/20260515001000_cloud_scene_cell_locks.sql` を追加。
+- `edit_locks.target_type` に `scene_cell` を追加。
+- `save_scene_cell_patch_with_lock` RPC を追加。
+- メンバー位置は `member_position` セルロックで `positions[memberId]` だけ保存。
+- 道具移動/サイズ変更/回転は `object_state` セルロックで `objectStates[objectId]` だけ保存。
+- 同じシーン内でも別メンバー/別道具なら同時編集可能な設計。
+- クラウド共同編集中は Undo / Redo を無効化。ローカル編集では維持。
+- 保存済みパッチ通知は、安全な場合のみ対象フィールドへ自動反映。自分が操作中/未保存の場合は更新通知へフォールバック。
+- `scripts/cloud-collab-check.mjs` と `scripts/cloud-collab-smoke.mjs` にセル単位RPC検証を追加。
+
+未完了/注意:
+
+- Supabase本番DBには新migrationを適用する必要があります。`node scripts/cloud-collab-sql.mjs | Set-Clipboard` 済みなので、SQL Editorで実行後に `npm run cloud:check` / `npm run cloud:smoke` を再実行してください。
+- 表示/非表示、道具割当、シーンメモ、複数選択移動、キーボード移動は第1実装では完全なセル単位保存対象外です。
+- 既存の `scene:{sceneId}` ロックは互換用に残しています。
 
 ## 現在のリポジトリ
 

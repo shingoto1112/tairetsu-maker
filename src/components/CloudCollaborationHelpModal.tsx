@@ -1,6 +1,7 @@
 import {
   CloudDownload,
   CloudUpload,
+  Eye,
   LockKeyhole,
   RefreshCw,
   Save,
@@ -60,6 +61,16 @@ export const CloudCollaborationHelpModal = ({
           </div>
         </article>
         <article>
+          <Eye size={18} />
+          <div>
+            <h3>閲覧中の人が分かります</h3>
+            <p>
+              ほかの参加者がどのシーンを見ているか、シーン小窓とクラウド表示に
+              出ます。編集中のシーンは、これまで通りロック表示が優先されます。
+            </p>
+          </div>
+        </article>
+        <article>
           <UserPlus size={18} />
           <div>
             <h3>連絡先から追加</h3>
@@ -82,10 +93,10 @@ export const CloudCollaborationHelpModal = ({
         <article>
           <RefreshCw size={18} />
           <div>
-            <h3>更新は手動で読み込み</h3>
+            <h3>安全なときは自動で読み込み</h3>
             <p>
-              ほかの人が保存しても自動では切り替わりません。「更新を再読み込み」を
-              押して最新状態を取り込みます。
+              閲覧中で未保存変更がない場合は、ほかの人の保存を自動で読み込みます。
+              編集中や未保存変更がある場合は、通知から手動で取り込みます。
             </p>
           </div>
         </article>

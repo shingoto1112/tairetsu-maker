@@ -118,6 +118,17 @@ const expectExistingUnauthedRpc = (result) => {
   return row?.success === false && row?.reason === "not_authenticated";
 };
 
+const expectExistingProtectedRpc = (result) => {
+  if (!result.ok) {
+    return false;
+  }
+  const row = Array.isArray(result.json) ? result.json[0] : result.json;
+  return (
+    row?.success === false &&
+    (row.reason === "not_authenticated" || row.reason === "lock_required")
+  );
+};
+
 const expectExistingEmptyListRpc = (result) => {
   return result.ok && Array.isArray(result.json);
 };
@@ -166,6 +177,16 @@ const main = async () => {
       p_schema_version: 1,
       p_summary: "cloud check",
     }),
+    await rpc("save_scene_cell_patch_with_lock", {
+      p_cell_id: "member-check",
+      p_lock_token: "cloud-check",
+      p_patch_type: "member_position",
+      p_project_id: dummyProjectId,
+      p_scene_id: "scene-check",
+      p_schema_version: 1,
+      p_summary: "cloud check",
+      p_value: { x: 0, y: 0 },
+    }),
     await rpc("import_cloud_project_with_lock", {
       p_lock_token: "cloud-check",
       p_mode: "stage",
@@ -203,7 +224,11 @@ const main = async () => {
 
   for (const result of checks) {
     printResult(result);
-    if (!expectExistingUnauthedRpc(result)) {
+    const isCellPatchCheck = result.label === "rpc:save_scene_cell_patch_with_lock";
+    const isExpected = isCellPatchCheck
+      ? expectExistingProtectedRpc(result)
+      : expectExistingUnauthedRpc(result);
+    if (!isExpected) {
       throw new Error(
         `${result.label} did not return the expected unauthenticated response. Check that all SQL migrations were applied.`,
       );
