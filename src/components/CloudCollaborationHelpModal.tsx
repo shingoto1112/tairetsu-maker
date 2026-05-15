@@ -1,4 +1,13 @@
-import { LockKeyhole, RefreshCw, Save, Users, X } from "lucide-react";
+import {
+  CloudDownload,
+  CloudUpload,
+  LockKeyhole,
+  RefreshCw,
+  Save,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 
 type CloudCollaborationHelpModalProps = {
   onClose: () => void;
@@ -51,6 +60,16 @@ export const CloudCollaborationHelpModal = ({
           </div>
         </article>
         <article>
+          <UserPlus size={18} />
+          <div>
+            <h3>連絡先から追加</h3>
+            <p>
+              一度つながった相手は連絡先に登録できます。ownerは共有管理から、
+              招待リンクを送り直さずに連絡先を参加者へ追加できます。
+            </p>
+          </div>
+        </article>
+        <article>
           <Save size={18} />
           <div>
             <h3>保存すると共有されます</h3>
@@ -70,11 +89,32 @@ export const CloudCollaborationHelpModal = ({
             </p>
           </div>
         </article>
+        <article>
+          <CloudDownload size={18} />
+          <div>
+            <h3>バックアップを残せます</h3>
+            <p>
+              共有と書き出しからPDFやZIP / .tairetsuを書き出せます。クラウドで
+              大きく編集する前は、ローカルへ複製して控えを作ると安心です。
+            </p>
+          </div>
+        </article>
+        <article>
+          <CloudUpload size={18} />
+          <div>
+            <h3>困ったら戻せます</h3>
+            <p>
+              ownerはローカルのJSON / ZIP / .tairetsuでクラウドを上書きできます。
+              競合やロック喪失時は、未保存内容をJSONとして退避できます。
+            </p>
+          </div>
+        </article>
       </div>
 
       <div className="cloud-help-note">
         ownerだけが、共有管理、メンバー名簿、道具マスター、音源設定、
-        シーン構成、クラウド上書きを操作できます。
+        シーン構成、クラウド上書きを操作できます。editorはシーン内の配置やメモ、
+        viewerは閲覧だけを担当します。
       </div>
     </section>
   </div>
