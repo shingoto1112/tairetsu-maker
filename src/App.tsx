@@ -502,6 +502,24 @@ type NavigatorWithFileShare = Navigator & {
   canShare?: (data: ShareData) => boolean;
 };
 
+type AppConfirmOptions = {
+  cancelLabel?: string;
+  confirmLabel?: string;
+  message: string;
+  tone?: "default" | "danger";
+  title: string;
+};
+
+type ExportProgressState = {
+  detail?: string;
+  title: string;
+};
+
+type CloudSceneOrderSaveStatus = {
+  label: string;
+  status: "pending" | "saving" | "saved" | "error";
+};
+
 type ClipboardItemLike = unknown;
 
 type ClipboardItemConstructor = new (
@@ -528,6 +546,30 @@ const formatExportTimestamp = (date = new Date()): string => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
     date.getDate(),
   )}_${pad(date.getHours())}-${pad(date.getMinutes())}`;
+};
+
+const sortFormationFramesByTime = (
+  frames: FormationFrame[],
+): { changed: boolean; frames: FormationFrame[] } => {
+  const ordered = frames
+    .map((frame, index) => ({ frame, index }))
+    .sort((left, right) => {
+      const leftTime = Number.isFinite(left.frame.timeSec)
+        ? left.frame.timeSec
+        : Number.POSITIVE_INFINITY;
+      const rightTime = Number.isFinite(right.frame.timeSec)
+        ? right.frame.timeSec
+        : Number.POSITIVE_INFINITY;
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+      return left.index - right.index;
+    })
+    .map(({ frame }) => frame);
+  return {
+    changed: ordered.some((frame, index) => frame.id !== frames[index]?.id),
+    frames: ordered,
+  };
 };
 
 const isAppleTouchDevice = (): boolean =>
@@ -2002,6 +2044,13 @@ function App() {
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
   const [isShareExportOpen, setIsShareExportOpen] = useState(false);
   const [isRosterManagerOpen, setIsRosterManagerOpen] = useState(false);
+  const [appConfirm, setAppConfirm] = useState<AppConfirmOptions | null>(null);
+  const [exportProgress, setExportProgress] =
+    useState<ExportProgressState | null>(null);
+  const [cloudSceneOrderSaveStatus, setCloudSceneOrderSaveStatus] =
+    useState<CloudSceneOrderSaveStatus | null>(null);
+  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [printScope, setPrintScope] = useState<"all" | "current">("all");
   const [printOptions, setPrintOptions] = useState<ShareExportOptions | null>(
     null,
@@ -2077,6 +2126,11 @@ function App() {
   const stageExportRef = useRef<StageExportElement | null>(null);
   const printExportRef = useRef<HTMLDivElement | null>(null);
   const cloudImportInputRef = useRef<HTMLInputElement | null>(null);
+  const appConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(
+    null,
+  );
+  const cloudSceneOrderSaveTimerRef = useRef<number | null>(null);
+  const cloudSceneOrderStatusTimerRef = useRef<number | null>(null);
   const stageFullscreenRef = useRef<HTMLDivElement | null>(null);
   const animationPreviewRef = useRef<number | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2177,6 +2231,97 @@ function App() {
   useEffect(() => {
     selectedFrameIdRef.current = selectedFrameId;
   }, [selectedFrameId]);
+
+  const closeAppConfirm = useCallback((confirmed: boolean) => {
+    appConfirmResolverRef.current?.(confirmed);
+    appConfirmResolverRef.current = null;
+    setAppConfirm(null);
+  }, []);
+
+  const requestAppConfirm = useCallback(
+    (options: AppConfirmOptions): Promise<boolean> =>
+      new Promise((resolve) => {
+        appConfirmResolverRef.current?.(false);
+        appConfirmResolverRef.current = resolve;
+        setAppConfirm(options);
+      }),
+    [],
+  );
+
+  const clearCloudSceneOrderAutoSave = useCallback(() => {
+    if (cloudSceneOrderSaveTimerRef.current !== null) {
+      window.clearTimeout(cloudSceneOrderSaveTimerRef.current);
+      cloudSceneOrderSaveTimerRef.current = null;
+    }
+  }, []);
+
+  const clearCloudSceneOrderStatusTimer = useCallback(() => {
+    if (cloudSceneOrderStatusTimerRef.current !== null) {
+      window.clearTimeout(cloudSceneOrderStatusTimerRef.current);
+      cloudSceneOrderStatusTimerRef.current = null;
+    }
+  }, []);
+
+  const showCloudSceneOrderSaveStatus = useCallback(
+    (status: CloudSceneOrderSaveStatus["status"], label: string) => {
+      clearCloudSceneOrderStatusTimer();
+      setCloudSceneOrderSaveStatus({ label, status });
+      if (status === "saved") {
+        cloudSceneOrderStatusTimerRef.current = window.setTimeout(() => {
+          setCloudSceneOrderSaveStatus((current) =>
+            current?.status === "saved" && current.label === label ? null : current,
+          );
+          cloudSceneOrderStatusTimerRef.current = null;
+        }, 2500);
+      }
+    },
+    [clearCloudSceneOrderStatusTimer],
+  );
+
+  useEffect(() => {
+    if (!appConfirm) {
+      return undefined;
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeAppConfirm(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [appConfirm, closeAppConfirm]);
+
+  useEffect(
+    () => () => {
+      clearCloudSceneOrderAutoSave();
+      clearCloudSceneOrderStatusTimer();
+    },
+    [clearCloudSceneOrderAutoSave, clearCloudSceneOrderStatusTimer],
+  );
+
+  useEffect(() => {
+    if (!activeCloudProject || activeCloudProject.role !== "owner") {
+      clearCloudSceneOrderStatusTimer();
+      setCloudSceneOrderSaveStatus(null);
+    }
+  }, [
+    activeCloudProject?.projectId,
+    activeCloudProject?.role,
+    clearCloudSceneOrderStatusTimer,
+  ]);
+
+  useEffect(() => {
+    if (!isSearchDialogOpen) {
+      return undefined;
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSearchDialogOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSearchDialogOpen]);
 
   const setAudioSource = useCallback(
     (url: string | null, name: string | null) => {
@@ -4928,6 +5073,50 @@ function App() {
     }
   };
 
+  const confirmAndDeleteMember = async (id: string) => {
+    const member = projectRef.current.members.find((item) => item.id === id);
+    if (!member) {
+      return;
+    }
+    const isDisplayed = isMemberDisplayedInAnyFrame(id);
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "削除する",
+      message: isDisplayed
+        ? `「${member.name}」は隊列内に表示中です。削除すると各シーンの配置や道具割当からも外れます。`
+        : `「${member.name}」を削除します。`,
+      title: "メンバーを削除しますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+    deleteMember(id);
+    setNotice(`${member.name} を削除しました。`);
+  };
+
+  const confirmAndDeleteObject = async (id: string) => {
+    const object = projectRef.current.stageObjects.find((item) => item.id === id);
+    if (!object) {
+      return;
+    }
+    const isDisplayed = isObjectDisplayedInAnyFrame(id);
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "削除する",
+      message: isDisplayed
+        ? `「${object.name}」は隊列内に表示中です。削除すると各シーンの配置や道具割当からも外れます。`
+        : `「${object.name}」を削除します。`,
+      title: "道具を削除しますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+    deleteObject(id);
+    setNotice(`${object.name} を削除しました。`);
+  };
+
   const nudgeObjectZ = (id: string, delta: number) => {
     const current = snapshot.objectStates[id];
     updateObject(id, { zIndex: Math.max(0, (current?.zIndex ?? 0) + delta) });
@@ -5691,26 +5880,36 @@ function App() {
     if (!lockReady) {
       return;
     }
-    const sourceProject = projectRef.current;
-    const frame = createFrameDraft(sourceProject, timeSec);
-    const nextProject = {
-      ...sourceProject,
-      frames: [...sourceProject.frames, frame],
-    };
-    const saved = await saveCloudProjectResource(nextProject, "sceneOrder", {
-      showNotice: false,
-    });
-    if (!saved) {
-      return;
+    let saved = false;
+    try {
+      const sourceProject = projectRef.current;
+      const frame = createFrameDraft(sourceProject, timeSec);
+      const nextProject = {
+        ...sourceProject,
+        frames: [...sourceProject.frames, frame],
+      };
+      saved = await saveCloudProjectResource(nextProject, "sceneOrder", {
+        showNotice: false,
+      });
+      if (!saved) {
+        return;
+      }
+      setSelectedFrameId(frame.id);
+      setActivePanelTab("timeline");
+    } finally {
+      if (activeCloudProjectRef.current?.activeProjectLock?.lockKey === "sceneOrder") {
+        const released = await releaseActiveCloudProjectLock({ silent: true });
+        if (saved) {
+          setNotice(
+            released
+              ? "シーンを追加してクラウドへ保存しました。"
+              : "シーンを追加しました。全体編集ロックはTTLで自動解除されます。",
+          );
+        } else if (!released) {
+          setNotice("シーン追加は保存されませんでした。全体編集ロックはTTLで自動解除されます。");
+        }
+      }
     }
-    setSelectedFrameId(frame.id);
-    setActivePanelTab("timeline");
-    const released = await releaseActiveCloudProjectLock({ silent: true });
-    setNotice(
-      released
-        ? "シーンを追加してクラウドへ保存しました。"
-        : "シーンを追加しました。全体編集ロックはTTLで自動解除されます。",
-    );
   };
 
   const addFrame = (timeSec?: number) => {
@@ -5725,8 +5924,73 @@ function App() {
       frames: [...previous.frames, frame],
     }));
     setSelectedFrameId(frame.id);
-    setNotice("フレームを追加しました。");
+    setNotice("シーンを追加しました。");
   };
+
+  async function flushCloudSceneOrderAutoSave(summary: string): Promise<void> {
+    clearCloudSceneOrderAutoSave();
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner") {
+      return;
+    }
+    if (isCloudBusyRef.current || isSaving) {
+      scheduleCloudSceneOrderAutoSave(summary, 500);
+      return;
+    }
+    showCloudSceneOrderSaveStatus("saving", summary);
+    const alreadyHadSceneOrderLock =
+      cloudState.activeProjectLock?.lockKey === "sceneOrder";
+    const lockReady =
+      alreadyHadSceneOrderLock ||
+      (await beginCloudProjectResourceEdit("sceneOrder", { silent: true }));
+    if (!lockReady) {
+      showCloudSceneOrderSaveStatus("error", summary);
+      return;
+    }
+    let saved = false;
+    try {
+      saved = await saveCloudProjectResource(
+        projectRef.current,
+        "sceneOrder",
+        { showNotice: false },
+      );
+      if (saved) {
+        showCloudSceneOrderSaveStatus("saved", summary);
+        setNotice(`${summary}をクラウドへ保存しました。`);
+      } else {
+        showCloudSceneOrderSaveStatus("error", summary);
+      }
+    } catch (error) {
+      console.error(`${summary}のクラウド保存に失敗しました。`, error);
+      showCloudSceneOrderSaveStatus("error", summary);
+      setNotice(`${summary}のクラウド保存に失敗しました。`);
+    } finally {
+      if (
+        !alreadyHadSceneOrderLock &&
+        activeCloudProjectRef.current?.activeProjectLock?.lockKey === "sceneOrder"
+      ) {
+        const released = await releaseActiveCloudProjectLock({ silent: true });
+        if (saved && !released) {
+          setNotice(`${summary}をクラウドへ保存しました。全体編集ロックはTTLで自動解除されます。`);
+        }
+      }
+    }
+  }
+
+  function scheduleCloudSceneOrderAutoSave(
+    summary = "シーン構成",
+    delayMs = 700,
+  ): void {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner") {
+      return;
+    }
+    clearCloudSceneOrderAutoSave();
+    showCloudSceneOrderSaveStatus("pending", summary);
+    cloudSceneOrderSaveTimerRef.current = window.setTimeout(() => {
+      void flushCloudSceneOrderAutoSave(summary);
+    }, delayMs);
+  }
 
   const updateFrame = (id: string, patch: Partial<FormationFrame>) => {
     const applyChange = () => {
@@ -5738,6 +6002,15 @@ function App() {
       }), "シーン編集");
     };
     const patchKeys = Object.keys(patch);
+    if (
+      activeCloudProjectRef.current &&
+      activeCloudProjectRef.current.role === "owner" &&
+      patchKeys.some((key) => key === "label" || key === "section" || key === "timeSec")
+    ) {
+      applyChange();
+      scheduleCloudSceneOrderAutoSave("シーン情報");
+      return;
+    }
     if (
       activeCloudProjectRef.current &&
       !activeCloudProjectRef.current.activeSceneLock &&
@@ -5755,18 +6028,35 @@ function App() {
     applyChange();
   };
 
-  const deleteFrame = (id: string) => {
+  const deleteFrame = async (id: string) => {
     if (project.frames.length <= 1) {
-      setNotice("フレームは最低1個必要です。");
+      setNotice("シーンは最低1個必要です。");
       return;
     }
-    const remaining = project.frames.filter((frame) => frame.id !== id);
+    const targetFrame = project.frames.find((frame) => frame.id === id);
+    if (!targetFrame) {
+      return;
+    }
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "削除する",
+      message: `「${targetFrame.label || "無題"}」を削除します。配置、メモ、道具割当もこのシーンごと削除されます。`,
+      title: "シーンを削除しますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+    const remaining = projectRef.current.frames.filter((frame) => frame.id !== id);
     updateProject((previous) => ({
       ...previous,
       frames: previous.frames.filter((frame) => frame.id !== id),
     }));
-    if (selectedFrameId === id) {
+    if (selectedFrameIdRef.current === id) {
       setSelectedFrameId(remaining[0]?.id ?? null);
+    }
+    if (activeCloudProjectRef.current?.role === "owner") {
+      scheduleCloudSceneOrderAutoSave("シーン削除", 100);
     }
   };
 
@@ -5788,33 +6078,77 @@ function App() {
     });
     setSelectedFrameId(draggedId);
     setNotice("シーン順を変更しました。曲同期する場合は時刻も確認してください。");
+    if (activeCloudProjectRef.current?.role === "owner") {
+      scheduleCloudSceneOrderAutoSave("シーン順変更", 100);
+    }
+  };
+
+  const sortCloudFramesByTime = async () => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState) {
+      return;
+    }
+    if (cloudState.role !== "owner") {
+      setNotice("クラウドでシーン順を変更できるのはownerのみです。");
+      return;
+    }
+    if (isCloudBusyRef.current || isSaving) {
+      setNotice("クラウド処理中です。少し待ってからもう一度試してください。");
+      return;
+    }
+    const lockReady = await beginCloudProjectResourceEdit("sceneOrder", {
+      silent: true,
+    });
+    if (!lockReady) {
+      return;
+    }
+    let changed = false;
+    let saved = false;
+    try {
+      const sourceProject = projectRef.current;
+      const ordered = sortFormationFramesByTime(sourceProject.frames);
+      changed = ordered.changed;
+      if (!changed) {
+        setNotice("シーンはすでに時刻順です。");
+        return;
+      }
+      saved = await saveCloudProjectResource(
+        { ...sourceProject, frames: ordered.frames },
+        "sceneOrder",
+        { showNotice: false },
+      );
+      if (!saved) {
+        return;
+      }
+      setNotice("シーンを時刻順に並び替えてクラウドへ保存しました。");
+    } finally {
+      if (activeCloudProjectRef.current?.activeProjectLock?.lockKey === "sceneOrder") {
+        const released = await releaseActiveCloudProjectLock({ silent: true });
+        if (changed && saved && !released) {
+          setNotice("シーンを時刻順に並び替えました。全体編集ロックはTTLで自動解除されます。");
+        } else if (changed && !saved && !released) {
+          setNotice("シーンの並び替えは保存されませんでした。全体編集ロックはTTLで自動解除されます。");
+        }
+      }
+    }
   };
 
   const sortFramesByTime = () => {
+    const cloudState = activeCloudProjectRef.current;
+    if (cloudState && cloudState.activeProjectLock?.lockKey !== "sceneOrder") {
+      void sortCloudFramesByTime();
+      return;
+    }
     let changed = false;
     updateProject((previous) => {
-      const ordered = previous.frames
-        .map((frame, index) => ({ frame, index }))
-        .sort((left, right) => {
-          const leftTime = Number.isFinite(left.frame.timeSec)
-            ? left.frame.timeSec
-            : Number.POSITIVE_INFINITY;
-          const rightTime = Number.isFinite(right.frame.timeSec)
-            ? right.frame.timeSec
-            : Number.POSITIVE_INFINITY;
-          if (leftTime !== rightTime) {
-            return leftTime - rightTime;
-          }
-          return left.index - right.index;
-        })
-        .map(({ frame }) => frame);
-      changed = ordered.some((frame, index) => frame.id !== previous.frames[index]?.id);
+      const ordered = sortFormationFramesByTime(previous.frames);
+      changed = ordered.changed;
       if (!changed) {
         return previous;
       }
       return {
         ...previous,
-        frames: ordered,
+        frames: ordered.frames,
       };
     }, "シーン時刻順並び替え");
     setNotice(
@@ -6182,9 +6516,12 @@ function App() {
     setActivePanelTab("timeline");
     setMode("preview");
     setNotice(`「${frame.label}」を貼り付けました。`);
+    if (activeCloudProjectRef.current?.role === "owner") {
+      scheduleCloudSceneOrderAutoSave("シーン貼り付け", 100);
+    }
   };
 
-  const pasteFrameIntoExisting = (targetFrameId?: string) => {
+  const pasteFrameIntoExisting = async (targetFrameId?: string) => {
     if (clipboard?.type !== "frame") {
       setNotice("貼り付けるシーンがコピーされていません。");
       return;
@@ -6197,6 +6534,16 @@ function App() {
       return;
     }
     const sourceFrame = clipboard.frame;
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "上書きする",
+      message: `「${targetFrame.label || "無題"}」の配置、メモ、道具割当を、コピー中の「${sourceFrame.label || "無題"}」の内容で上書きします。`,
+      title: "このシーンへ貼り付けますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
     updateProject((previous) => ({
       ...previous,
       frames: previous.frames.map((frame) =>
@@ -6209,6 +6556,9 @@ function App() {
     setActivePanelTab("timeline");
     setMode("preview");
     setNotice(`「${targetFrame.label}」へシーン内容を貼り付けました。`);
+    if (activeCloudProjectRef.current?.role === "owner") {
+      scheduleCloudSceneOrderAutoSave("シーン貼り付け", 100);
+    }
   };
 
   const copySelectionToClipboard = () => {
@@ -6257,13 +6607,13 @@ function App() {
     setSceneContextMenu({ frameId: frame.id, clientX, clientY });
   };
 
-  const runContextMenuAction = (action: () => void) => {
-    action();
+  const runContextMenuAction = (action: () => void | Promise<void>) => {
+    void action();
     setContextMenu(null);
   };
 
-  const runSceneContextMenuAction = (action: () => void) => {
-    action();
+  const runSceneContextMenuAction = (action: () => void | Promise<void>) => {
+    void action();
     setSceneContextMenu(null);
     setSceneContextMenuPosition(null);
   };
@@ -6418,7 +6768,7 @@ function App() {
       return;
     }
     if (clipboard?.type === "frame") {
-      pasteFrameIntoExisting(selectedFrame?.id);
+      void pasteFrameIntoExisting(selectedFrame?.id);
       return;
     }
     setNotice("貼り付ける内容がありません。");
@@ -6588,9 +6938,8 @@ function App() {
     setMode("preview");
   };
 
-  const runProjectSearch = () => {
-    const query = window.prompt("検索する名前を入力してください。");
-    const keyword = query?.trim().toLowerCase();
+  const executeProjectSearch = (query: string) => {
+    const keyword = query.trim().toLowerCase();
     if (!keyword) {
       return;
     }
@@ -6646,6 +6995,11 @@ function App() {
     }
 
     setNotice(`「${query}」は見つかりませんでした。`);
+  };
+
+  const runProjectSearch = () => {
+    setSearchQuery("");
+    setIsSearchDialogOpen(true);
   };
 
   useEffect(() => {
@@ -7080,11 +7434,15 @@ function App() {
       setNotice("Supabase接続が未設定です。");
       return;
     }
-    if (
-      !window.confirm(
-        "現在のクラウド隊列表を、選択したファイルの内容で上書きします。実行前の状態はクラウド履歴に退避します。続けますか？",
-      )
-    ) {
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "上書きする",
+      message:
+        "現在のクラウド隊列表を、選択したファイルの内容で上書きします。実行前の状態はクラウド履歴に退避します。",
+      title: "クラウド隊列表を上書きしますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
       setNotice("クラウド上書きをキャンセルしました。");
       return;
     }
@@ -7772,11 +8130,14 @@ function App() {
     const lockedByName = displayLockedBy
       ? cloudMemberNameById.get(displayLockedBy) ?? "他の参加者"
       : "他の参加者";
-    if (
-      !window.confirm(
-        `${lockedByName}が編集中です。相手に保存を依頼してから、${targetLabel}の編集を続行しますか？`,
-      )
-    ) {
+    const takeoverConfirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "保存を依頼する",
+      message: `${lockedByName}が編集中です。相手に保存を依頼してから、${targetLabel}の編集を続行しますか？`,
+      title: "編集中の操作を引き継ぎますか？",
+      tone: "default",
+    });
+    if (!takeoverConfirmed) {
       return false;
     }
     const requestResult = await api.requestLockTakeover(
@@ -7797,11 +8158,15 @@ function App() {
     if (cleared) {
       return true;
     }
-    if (
-      !window.confirm(
+    const forceConfirmed = await requestAppConfirm({
+      cancelLabel: "待つ",
+      confirmLabel: "強制解除する",
+      message:
         "相手の保存完了を確認できませんでした。未保存内容が残っている可能性があります。強制的に編集を続行しますか？",
-      )
-    ) {
+      title: "ロックを強制解除しますか？",
+      tone: "danger",
+    });
+    if (!forceConfirmed) {
       return false;
     }
     conflicts = await getConflictingCloudLocks(
@@ -10030,22 +10395,39 @@ function App() {
   };
 
   const printProject = async (scope: "all" | "current" = "all") => {
-    setPrintScope(scope);
-    setPrintVariant("document");
-    setIsPrintPreviewMounted(true);
-    setNotice(
-      scope === "current"
-        ? "現在のシーンを印刷画面でPDF保存できます。"
-        : "全シーンの印刷用プレビューを開きます。ブラウザの印刷画面でPDF保存できます。",
-    );
-    await waitForPaint();
-    const cleanupAfterPrint = () => {
-      setIsPrintPreviewMounted(false);
-      window.removeEventListener("afterprint", cleanupAfterPrint);
-    };
-    window.addEventListener("afterprint", cleanupAfterPrint, { once: true });
-    window.print();
-    window.setTimeout(cleanupAfterPrint, 3000);
+    setExportProgress({
+      detail:
+        scope === "current"
+          ? selectedFrame?.label ?? "現在のシーン"
+          : project.title || "隊列メーカー",
+      title: "印刷用レイアウトを準備中",
+    });
+    try {
+      setPrintScope(scope);
+      setPrintVariant("document");
+      setIsPrintPreviewMounted(true);
+      setNotice(
+        scope === "current"
+          ? "現在のシーンを印刷画面でPDF保存できます。"
+          : "全シーンの印刷用プレビューを開きます。ブラウザの印刷画面でPDF保存できます。",
+      );
+      await waitForPaint();
+      const cleanupAfterPrint = () => {
+        setIsPrintPreviewMounted(false);
+        window.removeEventListener("afterprint", cleanupAfterPrint);
+      };
+      window.addEventListener("afterprint", cleanupAfterPrint, { once: true });
+      setExportProgress(null);
+      window.print();
+      window.setTimeout(cleanupAfterPrint, 3000);
+    } catch (error) {
+      setExportProgress(null);
+      setNotice(
+        error instanceof Error
+          ? `印刷用レイアウトの準備に失敗しました: ${error.message}`
+          : "印刷用レイアウトの準備に失敗しました。",
+      );
+    }
   };
 
   const handleShareExport = async (request: ShareExportRequest) => {
@@ -10056,8 +10438,12 @@ function App() {
         : project.title || "隊列メーカー");
 
     if (request.format === "image") {
+      const fallbackFileName = withFileExtension(filenameBase, "png");
+      setExportProgress({
+        detail: fallbackFileName,
+        title: "画像を書き出し中",
+      });
       try {
-        const fallbackFileName = withFileExtension(filenameBase, "png");
         const status = await shareOrSaveGeneratedBlob({
           fallbackFileName,
           fileType: "画像",
@@ -10077,12 +10463,18 @@ function App() {
             ? `画像書き出しに失敗しました: ${error.message}`
             : "画像書き出しに失敗しました。",
         );
+      } finally {
+        setExportProgress(null);
       }
       return;
     }
 
+    const fallbackFileName = withFileExtension(filenameBase, "pdf");
+    setExportProgress({
+      detail: fallbackFileName,
+      title: "書類を書き出し中",
+    });
     try {
-      const fallbackFileName = withFileExtension(filenameBase, "pdf");
       const status = await shareOrSaveGeneratedBlob({
         fallbackFileName,
         fileType: "PDF",
@@ -10103,6 +10495,8 @@ function App() {
           ? `PDF書き出しに失敗しました: ${error.message}`
           : "PDF書き出しに失敗しました。",
       );
+    } finally {
+      setExportProgress(null);
     }
   };
 
@@ -10113,7 +10507,15 @@ function App() {
         return;
       }
     }
-    await exportTairetsuProject(projectRef.current, includeAudio);
+    setExportProgress({
+      detail: projectRef.current.title || "隊列メーカー",
+      title: "隊列表を書き出し中",
+    });
+    try {
+      await exportTairetsuProject(projectRef.current, includeAudio);
+    } finally {
+      setExportProgress(null);
+    }
   };
 
   const changeLoop = (patch: {
@@ -10745,6 +11147,58 @@ function App() {
     setNotice("道具グループを削除しました。道具本体は残ります。");
   };
 
+  const confirmAndDeleteMemberGroup = async (id: string) => {
+    const group = (projectRef.current.memberGroups ?? []).find(
+      (item) => item.id === id,
+    );
+    if (!group) {
+      return;
+    }
+    const hasDisplayedMember = group.memberIds.some((memberId) =>
+      isMemberDisplayedInAnyFrame(memberId),
+    );
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "削除する",
+      message: hasDisplayedMember
+        ? `「${group.name}」の所属メンバーが隊列内に表示中です。グループを削除してもメンバー本体は削除されず、未所属になります。`
+        : `「${group.name}」を削除します。メンバー本体は削除されず、未所属になります。`,
+      title: "メンバーグループを削除しますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+    deleteGroup(id);
+    setNotice(`${group.name} を削除しました。メンバー本体は残ります。`);
+  };
+
+  const confirmAndDeleteObjectGroup = async (id: string) => {
+    const group = (projectRef.current.objectGroups ?? []).find(
+      (item) => item.id === id,
+    );
+    if (!group) {
+      return;
+    }
+    const hasDisplayedObject = group.objectIds.some((objectId) =>
+      isObjectDisplayedInAnyFrame(objectId),
+    );
+    const confirmed = await requestAppConfirm({
+      cancelLabel: "キャンセル",
+      confirmLabel: "削除する",
+      message: hasDisplayedObject
+        ? `「${group.name}」の所属道具が隊列内に表示中です。グループを削除しても道具本体は削除されず、未所属になります。`
+        : `「${group.name}」を削除します。道具本体は削除されず、未所属になります。`,
+      title: "道具グループを削除しますか？",
+      tone: "danger",
+    });
+    if (!confirmed) {
+      return;
+    }
+    deleteObjectGroup(id);
+    setNotice(`${group.name} を削除しました。道具本体は残ります。`);
+  };
+
   const isMemberAssignedInFrame = (
     frame: FormationFrame,
     memberId: string,
@@ -10788,82 +11242,20 @@ function App() {
   const isObjectDisplayedInAnyFrame = (objectId: string) =>
     project.frames.some((frame) => isObjectDisplayedInFrame(objectId, frame));
 
-  const deleteRosterMember = (memberId: string) => {
-    const member = project.members.find((item) => item.id === memberId);
-    if (!member) {
-      return;
-    }
-    if (
-      isMemberDisplayedInAnyFrame(memberId) &&
-      !window.confirm(
-        `「${member.name}」は隊列内に表示中です。削除しますか？`,
-      )
-    ) {
-      return;
-    }
-    deleteMember(memberId);
-    setNotice(`${member.name} を削除しました。`);
+  const deleteRosterMember = async (memberId: string) => {
+    await confirmAndDeleteMember(memberId);
   };
 
-  const deleteRosterObject = (objectId: string) => {
-    const object = project.stageObjects.find((item) => item.id === objectId);
-    if (!object) {
-      return;
-    }
-    if (
-      isObjectDisplayedInAnyFrame(objectId) &&
-      !window.confirm(
-        `「${object.name}」は隊列内に表示中です。削除しますか？`,
-      )
-    ) {
-      return;
-    }
-    deleteObject(objectId);
-    setNotice(`${object.name} を削除しました。`);
+  const deleteRosterObject = async (objectId: string) => {
+    await confirmAndDeleteObject(objectId);
   };
 
-  const deleteRosterMemberGroup = (groupId: string) => {
-    const group = (project.memberGroups ?? []).find(
-      (item) => item.id === groupId,
-    );
-    if (!group) {
-      return;
-    }
-    const hasDisplayedMember = group.memberIds.some((memberId) =>
-      isMemberDisplayedInAnyFrame(memberId),
-    );
-    if (
-      hasDisplayedMember &&
-      !window.confirm(
-        `「${group.name}」の所属メンバーが隊列内に表示中です。グループを削除しますか？メンバー本体は削除されず未所属になります。`,
-      )
-    ) {
-      return;
-    }
-    deleteGroup(groupId);
-    setNotice(`${group.name} を削除しました。メンバー本体は残ります。`);
+  const deleteRosterMemberGroup = async (groupId: string) => {
+    await confirmAndDeleteMemberGroup(groupId);
   };
 
-  const deleteRosterObjectGroup = (groupId: string) => {
-    const group = (project.objectGroups ?? []).find(
-      (item) => item.id === groupId,
-    );
-    if (!group) {
-      return;
-    }
-    const hasDisplayedObject = group.objectIds.some((objectId) =>
-      isObjectDisplayedInAnyFrame(objectId),
-    );
-    if (
-      hasDisplayedObject &&
-      !window.confirm(
-        `「${group.name}」の所属道具が隊列内に表示中です。グループを削除しますか？道具本体は削除されず未所属になります。`,
-      )
-    ) {
-      return;
-    }
-    deleteObjectGroup(groupId);
-    setNotice(`${group.name} を削除しました。道具本体は残ります。`);
+  const deleteRosterObjectGroup = async (groupId: string) => {
+    await confirmAndDeleteObjectGroup(groupId);
   };
 
   const addObjectToGroup = (
@@ -11720,8 +12112,13 @@ function App() {
   const canEditCloudMembers = canEditCloudResource("members");
   const canEditCloudObjects = canEditCloudResource("objects");
   const canEditCloudAudio = canEditCloudResource("audio");
-  const canEditCloudSceneOrder = canEditCloudResource("sceneOrder");
-  const canAddCloudScene = !activeCloudProject || activeCloudProject.role === "owner";
+  const canManageCloudSceneOrder =
+    !activeCloudProject ||
+    (activeCloudProject.role === "owner" &&
+      (!activeCloudProject.activeProjectLock ||
+        activeCloudProject.activeProjectLock.lockKey === "sceneOrder") &&
+      !canvasRemoteProjectLockLabel);
+  const canAddCloudScene = canManageCloudSceneOrder;
   const canEditProjectChrome = !activeCloudProject;
   const cloudReadOnlyMessage = activeCloudProject
     ? activeCloudProject.activeProjectLock
@@ -11783,11 +12180,11 @@ function App() {
             onSetMemberFrameVisibility={setMembersFrameVisibility}
             onSetAllMembersFrameVisibility={setAllMembersFrameVisibility}
             onSetGroupFrameVisibility={setGroupsFrameVisibility}
-            onDelete={deleteMember}
+            onDelete={(id) => void confirmAndDeleteMember(id)}
             onAddMember={addMember}
             onCreateGroup={createGroup}
             onUpdateGroup={updateGroup}
-            onDeleteGroup={deleteGroup}
+            onDeleteGroup={(id) => void confirmAndDeleteMemberGroup(id)}
             onAddMemberToGroup={addMemberToGroup}
             onSelectGroup={selectGroup}
             onChangeMemberGroup={updateMemberGroup}
@@ -11847,7 +12244,7 @@ function App() {
           }}
           onUpdateObject={updateObject}
           onUpdateObjectState={updateObjectState}
-          onDelete={deleteObject}
+          onDelete={(id) => void confirmAndDeleteObject(id)}
           onNudgeZ={nudgeObjectZ}
           onAddObject={(visibleInCurrentFrame) =>
             addStageObject(defaultStageObjectDraft, visibleInCurrentFrame)
@@ -11860,7 +12257,7 @@ function App() {
           }
           onCreateObjectGroup={createObjectGroup}
           onUpdateObjectGroup={updateObjectGroup}
-          onDeleteObjectGroup={deleteObjectGroup}
+          onDeleteObjectGroup={(id) => void confirmAndDeleteObjectGroup(id)}
           onAddObjectToGroup={addObjectToGroup}
           onChangeObjectGroup={updateObjectGroupMembership}
           onSetAllObjectsFrameVisibility={setAllObjectsFrameVisibility}
@@ -11994,12 +12391,13 @@ function App() {
           defaultStageDepth={project.stage.depthMeters}
           previousFrame={selectedPreviousFrame}
           selectedTargetName={selectedPreviousReflectTargetName}
-          canEditProject={canEditCloudSceneOrder}
+          canEditProject={canManageCloudSceneOrder}
           canEditScene={canEditCurrentScene}
           canAddFrame={canAddCloudScene}
+          canSortFrames={canManageCloudSceneOrder}
           projectReadOnlyMessage={cloudProjectReadOnlyMessage}
           addFrameReadOnlyMessage={
-            activeCloudProject
+            activeCloudProject && activeCloudProject.role !== "owner"
               ? "クラウドでシーンを追加できるのはownerのみです。"
               : cloudProjectReadOnlyMessage
           }
@@ -12021,7 +12419,13 @@ function App() {
           onSortFramesByTime={sortFramesByTime}
           onCopyFrame={() => copyFrameToClipboard()}
           onPasteFrame={pasteFrameFromClipboard}
+          onPasteFrameIntoCurrent={() =>
+            void pasteFrameIntoExisting(displayFrame?.id ?? selectedFrame?.id)
+          }
           canPasteFrame={clipboard?.type === "frame"}
+          sceneOrderSaveStatus={
+            activeCloudProject?.role === "owner" ? cloudSceneOrderSaveStatus : null
+          }
           onApplyPreviousSceneState={applyPreviousSceneStateToCurrentFrame}
         />
       );
@@ -12657,7 +13061,7 @@ function App() {
                 onClick={() =>
                   runContextMenuAction(() => {
                     if (contextMenu.target.type === "member") {
-                      deleteMember(contextMenu.target.id);
+                      void confirmAndDeleteMember(contextMenu.target.id);
                     }
                   })
                 }
@@ -12722,7 +13126,7 @@ function App() {
                 onClick={() =>
                   runContextMenuAction(() => {
                     if (contextMenu.target.type === "object") {
-                      deleteObject(contextMenu.target.id);
+                      void confirmAndDeleteObject(contextMenu.target.id);
                     }
                   })
                 }
@@ -12931,6 +13335,104 @@ function App() {
     )}
     {isCloudHelpOpen && (
       <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
+    )}
+    {exportProgress && (
+      <div className="export-progress-backdrop" role="presentation">
+        <section
+          className="export-progress-card"
+          role="status"
+          aria-live="polite"
+          aria-label={exportProgress.title}
+        >
+          <div className="export-progress-card__bar" />
+          <h2>{exportProgress.title}</h2>
+          {exportProgress.detail && <p>{exportProgress.detail}</p>}
+        </section>
+      </div>
+    )}
+    {isSearchDialogOpen && (
+      <div
+        className="app-confirm-backdrop"
+        onPointerDown={() => setIsSearchDialogOpen(false)}
+        role="presentation"
+      >
+        <form
+          className="app-search-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="検索"
+          onPointerDown={(event) => event.stopPropagation()}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const keyword = searchQuery.trim();
+            setIsSearchDialogOpen(false);
+            executeProjectSearch(keyword);
+          }}
+        >
+          <h2>検索</h2>
+          <label>
+            メンバー・道具・シーン名
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="検索する名前を入力"
+            />
+          </label>
+          <div className="app-confirm-dialog__actions">
+            <button
+              className="secondary"
+              onClick={() => setIsSearchDialogOpen(false)}
+              type="button"
+            >
+              キャンセル
+            </button>
+            <button className="primary" type="submit">
+              検索
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
+    {appConfirm && (
+      <div
+        className="app-confirm-backdrop"
+        onPointerDown={() => closeAppConfirm(false)}
+        role="presentation"
+      >
+        <section
+          className={
+            appConfirm.tone === "danger"
+              ? "app-confirm-dialog app-confirm-dialog--danger"
+              : "app-confirm-dialog"
+          }
+          role="dialog"
+          aria-modal="true"
+          aria-label={appConfirm.title}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <h2>{appConfirm.title}</h2>
+          <p>{appConfirm.message}</p>
+          <div className="app-confirm-dialog__actions">
+            <button
+              className="secondary"
+              onClick={() => closeAppConfirm(false)}
+              type="button"
+            >
+              {appConfirm.cancelLabel ?? "キャンセル"}
+            </button>
+            <button
+              className={
+                appConfirm.tone === "danger" ? "danger" : "primary"
+              }
+              onClick={() => closeAppConfirm(true)}
+              type="button"
+            >
+              {appConfirm.confirmLabel ?? "続行"}
+            </button>
+          </div>
+        </section>
+      </div>
     )}
     <RosterManagementModal
       isOpen={

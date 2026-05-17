@@ -27,6 +27,7 @@ type TimelineProps = {
   canEditProject?: boolean;
   canEditScene?: boolean;
   canAddFrame?: boolean;
+  canSortFrames?: boolean;
   projectReadOnlyMessage?: string;
   addFrameReadOnlyMessage?: string;
   sceneReadOnlyMessage?: string;
@@ -42,7 +43,12 @@ type TimelineProps = {
   onSortFramesByTime: () => void;
   onCopyFrame: () => void;
   onPasteFrame: () => void;
+  onPasteFrameIntoCurrent: () => void;
   canPasteFrame: boolean;
+  sceneOrderSaveStatus?: {
+    label: string;
+    status: "pending" | "saving" | "saved" | "error";
+  } | null;
   onApplyPreviousSceneState: (
     includeVisible: boolean,
     selectedOnly?: boolean,
@@ -61,6 +67,7 @@ export const Timeline = ({
   canEditProject = true,
   canEditScene = true,
   canAddFrame = canEditProject,
+  canSortFrames = canEditProject,
   projectReadOnlyMessage = "初期クラウド編集では、シーン追加・削除・並び替え・名称変更は編集できません。",
   addFrameReadOnlyMessage = projectReadOnlyMessage,
   sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
@@ -76,7 +83,9 @@ export const Timeline = ({
   onSortFramesByTime,
   onCopyFrame,
   onPasteFrame,
+  onPasteFrameIntoCurrent,
   canPasteFrame,
+  sceneOrderSaveStatus,
   onApplyPreviousSceneState,
 }: TimelineProps) => {
   const [draggingFrameId, setDraggingFrameId] = useState<string | null>(null);
@@ -91,6 +100,7 @@ export const Timeline = ({
     : -1;
   const projectDisabled = !canEditProject;
   const addFrameDisabled = !canAddFrame;
+  const sortFramesDisabled = !canSortFrames;
   const sceneDisabled = !canEditScene;
 
   useEffect(() => {
@@ -292,6 +302,21 @@ export const Timeline = ({
         </button>
         <button
           className="mini-button danger"
+          onClick={onPasteFrameIntoCurrent}
+          disabled={projectDisabled || !canPasteFrame}
+          title={
+            projectDisabled
+              ? projectReadOnlyMessage
+              : !canPasteFrame
+                ? "先にコピーしたシーンが必要です。"
+                : undefined
+          }
+          type="button"
+        >
+          現在シーンへ上書き
+        </button>
+        <button
+          className="mini-button danger"
           onClick={() => onDeleteFrame(frame.id)}
           disabled={projectDisabled || frames.length <= 1}
           title={projectDisabled ? projectReadOnlyMessage : undefined}
@@ -348,8 +373,8 @@ export const Timeline = ({
             <button
               className="mini-button"
               onClick={onSortFramesByTime}
-              disabled={projectDisabled || frames.length <= 1}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              disabled={sortFramesDisabled || frames.length <= 1}
+              title={sortFramesDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
               <Clock size={15} />
@@ -362,14 +387,39 @@ export const Timeline = ({
               className="mini-button"
               onClick={onPasteFrame}
               disabled={projectDisabled || !canPasteFrame}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
+              title={
+                projectDisabled
+                  ? projectReadOnlyMessage
+                  : !canPasteFrame
+                    ? "先にコピーしたシーンが必要です。"
+                    : undefined
+              }
               type="button"
             >
-              貼り付け
+              新規として貼り付け
             </button>
           </div>
         }
       />
+      {sceneOrderSaveStatus && (
+        <div
+          className={`timeline-save-status is-${sceneOrderSaveStatus.status}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="timeline-save-status__dot" aria-hidden="true" />
+          <strong>
+            {sceneOrderSaveStatus.status === "pending"
+              ? "保存待ち"
+              : sceneOrderSaveStatus.status === "saving"
+                ? "保存中"
+                : sceneOrderSaveStatus.status === "saved"
+                  ? "保存済み"
+                  : "保存失敗"}
+          </strong>
+          <span>{sceneOrderSaveStatus.label}</span>
+        </div>
+      )}
       {projectDisabled && (
         <p className="notice warning">{projectReadOnlyMessage}</p>
       )}
