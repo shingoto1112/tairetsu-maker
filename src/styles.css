@@ -3821,6 +3821,11 @@ h2 {
   border-right: 1px solid #e2e8f0;
 }
 
+.ruler-corner--right {
+  border-left: 1px solid #e2e8f0;
+  border-right: 0;
+}
+
 .ruler-reference-labels {
   align-self: stretch;
   box-sizing: border-box;
@@ -3879,6 +3884,11 @@ h2 {
   border-right: 1px solid #e2e8f0;
 }
 
+.meter-ruler--vertical-right {
+  border-left: 1px solid #e2e8f0;
+  border-right: 0;
+}
+
 .meter-ruler__tick {
   position: absolute;
 }
@@ -3915,6 +3925,11 @@ h2 {
   transform: translateY(-50%);
 }
 
+.meter-ruler--vertical-right .meter-ruler__tick {
+  left: var(--ruler-label-offset-px, 31px);
+  right: auto;
+}
+
 .meter-ruler--vertical .meter-ruler__tick::after {
   background: #cbd5e1;
   content: "";
@@ -3923,6 +3938,11 @@ h2 {
   right: var(--ruler-label-offset-negative-px, -31px);
   top: 50%;
   width: var(--ruler-label-offset-px, 31px);
+}
+
+.meter-ruler--vertical-right .meter-ruler__tick::after {
+  left: var(--ruler-label-offset-negative-px, -31px);
+  right: auto;
 }
 
 .stage-surface {

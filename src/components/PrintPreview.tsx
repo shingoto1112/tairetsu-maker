@@ -208,10 +208,8 @@ const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
 };
 
 const getTickStep = (meters: number): number => {
-  if (meters > 24) return 4;
-  if (meters > 14) return 2;
-  if (meters > 8) return 1;
-  return 0.5;
+  const safeMeters = Math.max(0, meters);
+  return safeMeters <= 16 ? 1 : Math.ceil(safeMeters / 12);
 };
 
 const buildTicks = (meters: number): number[] => {
@@ -316,10 +314,9 @@ const shouldPrintAssignmentSide = (options: ShareExportOptions): boolean =>
   options.includeAssignments;
 
 const shouldPrintRightRuler = (
-  isParade: boolean,
   options: ShareExportOptions,
 ): boolean =>
-  isParade && options.includeMeterRulers;
+  options.includeMeterRulers;
 
 const getAssignmentSideGapMm = (
   isParade: boolean,
@@ -519,10 +516,11 @@ const getPrintMetrics = (
     isParade,
     options.includeMeterRulers,
   );
-  const rightRulerWidthMm = shouldPrintRightRuler(isParade, options)
-    ? getPrintSideRulerWidthMm(true, true)
+  const rightRulerWidthMm = shouldPrintRightRuler(options)
+    ? getPrintSideRulerWidthMm(isParade, true)
     : 0;
-  const stageRightSafetyMm = rightRulerWidthMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
+  const stageRightSafetyMm =
+    isParade && rightRulerWidthMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
   const commonWidthMeters = Math.max(
     1,
     ...frames.map((frame) => getEffectiveSize(project, frame).widthMeters),
@@ -827,10 +825,11 @@ const PrintStagePreview = ({
     isParade,
     options.includeMeterRulers,
   );
-  const rightRulerMm = shouldPrintRightRuler(isParade, options)
-    ? getPrintSideRulerWidthMm(true, true)
+  const rightRulerMm = shouldPrintRightRuler(options)
+    ? getPrintSideRulerWidthMm(isParade, true)
     : 0;
-  const stageRightSafetyMm = rightRulerMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
+  const stageRightSafetyMm =
+    isParade && rightRulerMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
   const totalPreviewWidthMm =
     leftRulerMm + metrics.stageWidthMm + rightRulerMm + stageRightSafetyMm;
   const totalDistance =

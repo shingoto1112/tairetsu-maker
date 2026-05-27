@@ -683,8 +683,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const rulerBottomPadding = showMeterRulers ? RULER_BOTTOM_PADDING_PX : 0;
       const rulerLabelWidth = showMeterRulers ? RULER_LABEL_WIDTH_PX : 0;
       const rulerLabelHeight = showMeterRulers ? RULER_LABEL_HEIGHT_PX : 0;
+      const rulerSideCount = showMeterRulers ? 2 : 0;
       const memberBleedMeters = showMeterRulers ? memberDiameterMeters / 2 : 0;
-      const availableWidth = Math.max(0, fitWidth - rulerLabelWidth);
+      const availableWidth = Math.max(0, fitWidth - rulerLabelWidth * rulerSideCount);
       const availableHeight = Math.max(
         0,
         fitHeight - rulerLabelHeight - rulerBottomPadding,
@@ -699,7 +700,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         ? Math.max(
             1,
             Math.min(
-              availableWidth / (safeWidthMeters + memberBleedMeters),
+              availableWidth /
+                (safeWidthMeters + memberBleedMeters * rulerSideCount),
               availableHeight / (safeDepthMeters + memberBleedMeters),
             ),
           )
@@ -1925,7 +1927,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               }
               style={{
                 gridTemplateColumns: showMeterRulers
-                  ? `${visibleStageSize.rulerWidth}px ${visibleStageSize.widthPx}px`
+                  ? `${visibleStageSize.rulerWidth}px ${visibleStageSize.widthPx}px ${visibleStageSize.rulerWidth}px`
                   : `${visibleStageSize.widthPx}px`,
                 gridTemplateRows: showMeterRulers
                   ? `${visibleStageSize.rulerHeight}px ${visibleStageSize.heightPx}px`
@@ -1970,7 +1972,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       </span>
                     ))}
               </div>
-              <div className="meter-ruler meter-ruler--vertical" aria-hidden="true">
+              <div className="ruler-corner ruler-corner--right" aria-hidden="true" />
+              <div
+                className="meter-ruler meter-ruler--vertical meter-ruler--vertical-left"
+                aria-hidden="true"
+              >
                 {verticalTicks.map((tick) => (
                   <span
                     key={`y-${tick}`}
@@ -2531,6 +2537,28 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     </div>
                   );
                 })}
+              </div>
+              <div
+                className="meter-ruler meter-ruler--vertical meter-ruler--vertical-right"
+                aria-hidden="true"
+              >
+                {verticalTicks.map((tick) => (
+                  <span
+                    key={`y-right-${tick}`}
+                    className="meter-ruler__tick"
+                    style={{ top: `${(tick / stage.depthMeters) * 100}%` }}
+                  >
+                    {coordinateLabel(
+                      "y",
+                      tick,
+                      stage.widthMeters,
+                      stage.depthMeters,
+                      originMode,
+                      frontDirection,
+                      viewerPerspective,
+                    )}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
