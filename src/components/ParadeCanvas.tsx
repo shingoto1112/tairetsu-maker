@@ -2039,7 +2039,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               }}
               onPointerDown={(event) => {
                 trackStagePointerPosition(event.clientX, event.clientY);
-                onSelect(null);
+                if (!isMemberSelectionMode) {
+                  onSelect(null);
+                }
                 startTouchContextMenu(event, { type: "stage" });
               }}
               onPointerMove={(event) => {

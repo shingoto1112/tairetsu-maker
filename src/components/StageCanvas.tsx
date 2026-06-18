@@ -2010,7 +2010,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 }}
                 onPointerDown={(event) => {
                   updateStagePointerPosition(event);
-                  onSelect(null);
+                  if (!isMemberSelectionMode) {
+                    onSelect(null);
+                  }
                   startTouchContextMenu(event, { type: "stage" });
                 }}
                 onPointerEnter={updateStagePointerPosition}
