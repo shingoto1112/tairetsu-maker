@@ -5634,8 +5634,8 @@ h2 {
   line-height: 1;
   position: absolute;
   top: 1.2mm;
-  transform: translateX(-50%);
   white-space: nowrap;
+  width: 7mm;
 }
 
 .print-ruler-y {
@@ -5671,10 +5671,13 @@ h2 {
 }
 
 .print-ruler-y span {
+  align-items: center;
+  display: inline-flex;
+  height: 4mm;
+  justify-content: flex-end;
   position: absolute;
   right: 1.5mm;
   text-align: right;
-  transform: translateY(-50%);
   white-space: nowrap;
 }
 
@@ -5702,6 +5705,7 @@ h2 {
 }
 
 .print-ruler-y--right span {
+  justify-content: flex-start;
   left: 2mm;
   right: auto;
   text-align: left;
@@ -5731,14 +5735,20 @@ h2 {
 }
 
 .print-center-line {
-  background: rgba(13, 139, 120, 0.45);
-  bottom: 0;
-  left: var(--print-stage-center-x-mm, 50%);
+  height: 100%;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
   position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  width: 2px;
-  z-index: 0;
+  width: 100%;
+  z-index: 1;
+}
+
+.print-center-line line {
+  stroke: rgba(13, 139, 120, 0.45);
+  stroke-linecap: square;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
 }
 
 .print-parade-distance-line {
@@ -5773,7 +5783,6 @@ h2 {
   padding: 0;
   position: absolute;
   text-align: center;
-  transform: translate(-50%, -50%);
   width: var(--print-member-size, 7mm);
   z-index: 20;
 }

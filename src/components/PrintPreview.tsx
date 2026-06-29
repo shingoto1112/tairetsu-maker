@@ -77,6 +77,8 @@ const PRINT_RULER_BOTTOM_MM = 3;
 const PRINT_SCENE_TITLE_MM = 9;
 const PRINT_STAGE_RIGHT_SAFETY_MM = 8;
 const PRINT_STAGE_MEMBER_CLEARANCE_MM = 1.5;
+const PRINT_RULER_X_LABEL_WIDTH_MM = 7;
+const PRINT_RULER_Y_LABEL_HEIGHT_MM = 4;
 const PRINT_ASSIGNMENT_SHEET_MIN_HEIGHT_MM = 60;
 const PRINT_ASSIGNMENT_CARD_GAP_MM = 4;
 const PRINT_ASSIGNMENT_CARD_PADDING_MM = 4;
@@ -226,6 +228,12 @@ const buildTicks = (meters: number): number[] => {
 
 const metersToPrintMm = (meters: number, metrics: PrintMetrics): string =>
   `${meters * metrics.mmPerMeter}mm`;
+
+const metersToPrintCenteredMm = (
+  meters: number,
+  metrics: PrintMetrics,
+  sizeMm: number,
+): string => `${meters * metrics.mmPerMeter - sizeMm / 2}mm`;
 
 const getObjectState = (
   frame: FormationFrame,
@@ -870,7 +878,11 @@ const PrintStagePreview = ({
             className: getPrintMeterRulerClassName(meter),
             key: meter,
             label: `${meter}m`,
-            top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
+            top: metersToPrintCenteredMm(
+              internalY - verticalRange.topMeters,
+              metrics,
+              PRINT_RULER_Y_LABEL_HEIGHT_MM,
+            ),
           });
         }
         if (labels.length === 0) {
@@ -884,7 +896,11 @@ const PrintStagePreview = ({
             className: getPrintMeterRulerClassName(fallbackMeter),
             key: fallbackMeter,
             label: `${fallbackMeter}m`,
-            top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
+            top: metersToPrintCenteredMm(
+              internalY - verticalRange.topMeters,
+              metrics,
+              PRINT_RULER_Y_LABEL_HEIGHT_MM,
+            ),
           });
         }
         return labels;
@@ -895,7 +911,11 @@ const PrintStagePreview = ({
           className: undefined,
           key: tick,
           label: `${actualTick}m`,
-          top: metersToPrintMm(tick, metrics),
+          top: metersToPrintCenteredMm(
+            tick,
+            metrics,
+            PRINT_RULER_Y_LABEL_HEIGHT_MM,
+          ),
         };
       });
   const paradeGuideLines = isParade
@@ -989,8 +1009,16 @@ const PrintStagePreview = ({
           backgroundColor: memberColor,
           color: labelColor,
           fontSize: `${getPrintMemberLabelFontSizeMm(memberDiameterMm, labelLines)}mm`,
-          left: metersToPrintMm(centerXMeters, metrics),
-          top: metersToPrintMm(centerYMeters - verticalRange.topMeters, metrics),
+          left: metersToPrintCenteredMm(
+            centerXMeters,
+            metrics,
+            memberDiameterMm,
+          ),
+          top: metersToPrintCenteredMm(
+            centerYMeters - verticalRange.topMeters,
+            metrics,
+            memberDiameterMm,
+          ),
           zIndex,
         }}
       >
@@ -1138,7 +1166,13 @@ const PrintStagePreview = ({
               ? centerSplitLabels.map((item) => (
                   <span
                     key={`x-center-split-${item.key}`}
-                    style={{ left: metersToPrintMm(item.positionMeters, metrics) }}
+                    style={{
+                      left: metersToPrintCenteredMm(
+                        item.positionMeters,
+                        metrics,
+                        PRINT_RULER_X_LABEL_WIDTH_MM,
+                      ),
+                    }}
                   >
                     {item.label}
                   </span>
@@ -1152,7 +1186,13 @@ const PrintStagePreview = ({
                   return (
                     <span
                       key={`x-${tick}`}
-                      style={{ left: metersToPrintMm(tick, metrics) }}
+                      style={{
+                        left: metersToPrintCenteredMm(
+                          tick,
+                          metrics,
+                          PRINT_RULER_X_LABEL_WIDTH_MM,
+                        ),
+                      }}
                     >
                       {label}
                     </span>
@@ -1198,7 +1238,24 @@ const PrintStagePreview = ({
           backgroundSize: `${metersToPrintMm(metrics.gridSizeMeters, metrics)} ${metersToPrintMm(metrics.gridSizeMeters, metrics)}`,
         }}
       >
-        <span className="print-center-line" />
+        <svg
+          aria-hidden="true"
+          className="print-center-line"
+          focusable="false"
+          preserveAspectRatio="none"
+          viewBox="0 0 100 100"
+        >
+          <line
+            stroke="rgba(13, 139, 120, 0.45)"
+            strokeLinecap="square"
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+            x1="50"
+            x2="50"
+            y1="0"
+            y2="100"
+          />
+        </svg>
         {paradeGuideLines.map((line) => (
           <span
             aria-hidden="true"
