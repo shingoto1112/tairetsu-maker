@@ -25,6 +25,12 @@ type WindowWithSavePicker = Window & {
   ) => Promise<FileSystemFileHandleLike>;
 };
 
+type NavigatorWithUserActivation = Navigator & {
+  userActivation?: {
+    isActive: boolean;
+  };
+};
+
 export type UserFileSaveStatus = "saved" | "downloaded" | "cancelled";
 
 export const saveGeneratedBlob = async ({
@@ -43,7 +49,8 @@ export const saveGeneratedBlob = async ({
     throw new Error("保存するファイルの作成に失敗しました。");
   }
 
-  if (savePicker) {
+  const userActivation = (navigator as NavigatorWithUserActivation).userActivation;
+  if (savePicker && userActivation?.isActive !== false) {
     try {
       const handle = await savePicker({
         suggestedName: fallbackFileName,
@@ -56,6 +63,13 @@ export const saveGeneratedBlob = async ({
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         return "cancelled";
+      }
+      if (
+        error instanceof DOMException &&
+        (error.name === "NotAllowedError" || error.name === "SecurityError")
+      ) {
+        downloadBlob(blob, fallbackFileName);
+        return "downloaded";
       }
       throw error;
     }
