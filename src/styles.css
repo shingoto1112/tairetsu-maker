@@ -92,18 +92,35 @@
 }
 
 .parade-control-panel__header {
+  align-items: center;
   display: grid;
-  gap: 2px;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.parade-control-panel__header strong {
+.parade-control-panel__heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.parade-control-panel__heading strong {
   color: #0f766e;
   font-size: 0.92rem;
 }
 
-.parade-control-panel__header span {
+.parade-control-panel__heading span {
   color: #64748b;
   font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parade-history-controls {
+  align-items: center;
+  display: flex;
+  gap: 4px;
 }
 
 .parade-control-section {

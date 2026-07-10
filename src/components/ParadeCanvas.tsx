@@ -5,6 +5,8 @@ import {
   Lock,
   Maximize2,
   Minimize2,
+  Redo2,
+  Undo2,
   Unlock,
   ZoomIn,
   ZoomOut,
@@ -1786,8 +1788,32 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       <div className={isReadOnly ? "parade-canvas-shell is-read-only" : "parade-canvas-shell"}>
         <aside className="parade-control-panel" aria-label="パレード操作">
           <div className="parade-control-panel__header">
-            <strong>パレード操作</strong>
-            <span>{selectedFrameLabel}</span>
+            <div className="parade-control-panel__heading">
+              <strong>パレード操作</strong>
+              <span>{selectedFrameLabel}</span>
+            </div>
+            <div className="parade-history-controls" aria-label="編集履歴">
+              <button
+                className="mini-button icon-only undo-redo-button"
+                type="button"
+                onClick={onUndo}
+                disabled={!canUndo || isReadOnly}
+                title="元に戻す（Ctrl+Z）"
+                aria-label="元に戻す"
+              >
+                <Undo2 size={17} />
+              </button>
+              <button
+                className="mini-button icon-only undo-redo-button"
+                type="button"
+                onClick={onRedo}
+                disabled={!canRedo || isReadOnly}
+                title="やり直し（Ctrl+Y / Ctrl+Shift+Z）"
+                aria-label="やり直し"
+              >
+                <Redo2 size={17} />
+              </button>
+            </div>
           </div>
           {isReadOnly && (
             <p className="stage-readonly-pill parade-readonly-pill" title={readOnlyMessage}>
@@ -1950,17 +1976,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               {isFullscreen ? "解除" : "全画面"}
             </button>
-          </section>
-          <section className="parade-control-section">
-            <h3>編集</h3>
-            <div className="parade-control-row">
-              <button type="button" className="mini-button" onClick={onUndo} disabled={!canUndo || isReadOnly}>
-                元に戻す
-              </button>
-              <button type="button" className="mini-button" onClick={onRedo} disabled={!canRedo || isReadOnly}>
-                やり直し
-              </button>
-            </div>
           </section>
         </aside>
 
