@@ -61,7 +61,7 @@ export const StageSettingsPanel = ({
       <section className="panel-section">
         <PanelStickyHeader
           title="パレード設定"
-          meta={`現在: 全体距離${effectiveParadeSettings.totalDistance}m / 0m後方${effectiveParadeSettings.backwardDistanceMeters ?? 0}m / 横幅${effectiveParadeSettings.width}m`}
+          meta={`現在: 全体距離${effectiveParadeSettings.totalDistance}m / 後方${effectiveParadeSettings.backwardDistanceMeters ?? 0}m / 横幅${effectiveParadeSettings.width}m`}
         />
         <div className="settings-grid">
           <label>
@@ -79,7 +79,7 @@ export const StageSettingsPanel = ({
             />
           </label>
           <label>
-            0mライン後方
+            後方表示距離
             <NumericInput
               min={0}
               step="1"
@@ -184,7 +184,7 @@ export const StageSettingsPanel = ({
         </div>
         {disabled && <p className="notice warning">{readOnlyNotice}</p>}
         <p className="notice muted">
-          0mライン後方を増やすと、スタート後ろに -1m、-2m... の範囲を追加できます。横方向表示方式は表示だけを切り替えます。
+          後方表示距離を増やすと、0mラインより後ろに -1m、-2m... の範囲を追加できます。横方向表示方式は表示だけを切り替えます。
         </p>
       </section>
     );
