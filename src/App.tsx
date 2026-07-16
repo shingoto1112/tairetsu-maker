@@ -1346,16 +1346,20 @@ const getEffectiveStageSize = (
   frame: FormationFrame | undefined,
 ): Pick<Project["stage"], "widthMeters" | "depthMeters"> => {
   if (project.mode === "parade") {
+    const totalDistance = positiveNumber(
+      project.paradeSettings?.totalDistance,
+      project.stage.depthMeters,
+      1,
+    );
     return {
       widthMeters: positiveNumber(
         project.paradeSettings?.width,
         project.stage.widthMeters,
         1,
       ),
-      depthMeters: positiveNumber(
-        project.paradeSettings?.totalDistance,
-        project.stage.depthMeters,
-        1,
+      depthMeters: getSafeParadeCanvasDistance(
+        totalDistance,
+        project.paradeSettings?.backwardDistanceMeters,
       ),
     };
   }
