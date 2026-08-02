@@ -28,8 +28,10 @@ Bundle IDを変更する場合は、App Store Connectのアプリ作成前に
 
 ## 3. App Store Connect API key
 
-1. App Store Connectの「ユーザとアクセス」から「統合」またはAPIキー画面を開く。
-2. Team API keyを新規作成し、TestFlight配布に必要な権限を与える。
+1. 初回だけ、Account HolderがApp Store Connectの「ユーザとアクセス」→「統合」→
+   「App Store Connect API」でアクセスを申請する。Appleの承認後に次へ進む。
+2. Account HolderまたはAdminでTeam API keyを新規作成し、アプリのアップロードと
+   TestFlight管理が可能な権限を与える。
 3. Issuer IDとKey IDを控える。
 4. `.p8` private keyをダウンロードする。再ダウンロードできないため安全に保管する。
 5. Windows PowerShellでprivate keyをBase64化する。
@@ -44,8 +46,8 @@ private key、Base64文字列、Appleパスワードをリポジトリ、Issue�
 
 ## 4. GitHub EnvironmentとSecrets
 
-GitHub repositoryのSettings、Environmentsで `ios-testflight` を作る。必要なら実行前の
-承認者を設定する。同Environmentへ次のSecretsを登録する。
+GitHub repositoryの `ios-testflight` Environmentは作成済み。必要なら実行前の承認者を
+設定し、同Environmentへ次のSecretsを登録する。
 
 | Secret | 内容 |
 | --- | --- |
@@ -56,6 +58,14 @@ GitHub repositoryのSettings、Environmentsで `ios-testflight` を作る。必�
 
 署名付き配布は `.github/workflows/ios-testflight.yml` の手動実行時だけ行う。通常の
 pushとpull requestでは `.github/workflows/ios-build.yml` の署名なしビルドだけを行う。
+Xcodeはローカルの配布証明書がない場合にクラウド管理証明書を利用する。Account Holder
+以外の権限で運用する場合は、App Store Connectでクラウド管理証明書へのアクセスも
+許可する。
+
+公式資料:
+
+- [App Store Connect APIを始める](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)
+- [クラウド管理証明書](https://developer.apple.com/help/account/certificates/cloud-managed-certificates/)
 
 ## 5. Supabase AuthのiPadコールバック
 
