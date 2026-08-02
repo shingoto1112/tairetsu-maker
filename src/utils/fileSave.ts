@@ -1,4 +1,5 @@
 import { downloadBlob } from "./exportImage";
+import { getAppFeatureFlags, shareBlobWithNativeSheet } from "../platform";
 
 type FilePickerAcceptType = {
   accept: Record<string, string[]>;
@@ -31,7 +32,7 @@ type NavigatorWithUserActivation = Navigator & {
   };
 };
 
-export type UserFileSaveStatus = "saved" | "downloaded" | "cancelled";
+export type UserFileSaveStatus = "saved" | "shared" | "downloaded" | "cancelled";
 
 export const saveGeneratedBlob = async ({
   fallbackFileName,
@@ -47,6 +48,14 @@ export const saveGeneratedBlob = async ({
 
   if (blob.size <= 0) {
     throw new Error("保存するファイルの作成に失敗しました。");
+  }
+
+  if (getAppFeatureFlags().nativeFileShare) {
+    return shareBlobWithNativeSheet({
+      blob,
+      fileName: fallbackFileName,
+      title: fallbackFileName,
+    });
   }
 
   const userActivation = (navigator as NavigatorWithUserActivation).userActivation;

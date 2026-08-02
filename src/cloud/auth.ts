@@ -116,6 +116,53 @@ export const createCloudAuthClient = (config: CloudConfig) => {
   };
 
   return {
+    createSessionFromRedirectUrl: async (
+      redirectUrl: string,
+    ): Promise<CloudAuthSession> => {
+      const url = new URL(redirectUrl);
+      const parameters = new URLSearchParams(
+        url.hash.startsWith("#") ? url.hash.slice(1) : url.hash,
+      );
+      for (const [key, value] of url.searchParams.entries()) {
+        if (!parameters.has(key)) {
+          parameters.set(key, value);
+        }
+      }
+      const authError = parameters.get("error_description") ?? parameters.get("error");
+      if (authError) {
+        throw new CloudAuthError(authError, 400, { message: authError });
+      }
+      const accessToken = parameters.get("access_token");
+      const refreshToken = parameters.get("refresh_token");
+      if (!accessToken || !refreshToken) {
+        throw new CloudAuthError(
+          "確認リンクからログイン情報を取得できませんでした。",
+          400,
+          null,
+        );
+      }
+      const userResponse = await fetch(`${config.url}/auth/v1/user`, {
+        headers: {
+          apikey: config.anonKey,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      if (!userResponse.ok) {
+        throw new CloudAuthError(
+          "確認済みアカウントの情報を取得できませんでした。",
+          userResponse.status,
+          null,
+        );
+      }
+      return parseAuthSession({
+        access_token: accessToken,
+        expires_in: Number(parameters.get("expires_in") ?? 3600),
+        refresh_token: refreshToken,
+        token_type: parameters.get("token_type") ?? "bearer",
+        user: (await userResponse.json()) as SupabaseAuthUser,
+      });
+    },
+
     refreshSession: async (refreshToken: string): Promise<CloudAuthSession> =>
       parseAuthSession(
         await request<SupabaseAuthResponse>(
@@ -145,8 +192,12 @@ export const createCloudAuthClient = (config: CloudConfig) => {
       email: string,
       password: string,
       displayName: string,
+      emailRedirectTo?: string,
     ): Promise<CloudAuthSession | null> => {
-      const response = await request<SupabaseAuthResponse>("signup", {
+      const path = emailRedirectTo
+        ? `signup?redirect_to=${encodeURIComponent(emailRedirectTo)}`
+        : "signup";
+      const response = await request<SupabaseAuthResponse>(path, {
         data: {
           display_name: displayName,
         },

@@ -19,6 +19,7 @@ vite.config.d.ts
 *.log
 vite-dev.err
 vite-dev.log
+vite-*.err
 
 # Hosting/provider local state
 .vercel

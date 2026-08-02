@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
 import { AssignmentPanel } from "./components/AssignmentPanel";
 import { AudioPanel } from "./components/AudioPanel";
@@ -53,6 +54,7 @@ import {
   extractCloudProjectResourceData,
   extractCloudSceneData,
   getCloudConfig,
+  hydrateCloudAuthSessionFromNativeStorage,
   isCloudAuthSessionExpired,
   readCloudAuthSession,
   readCloudClientIdFromSession,
@@ -84,6 +86,12 @@ import type {
   CloudSaveNotification,
 } from "./cloud/realtime";
 import { createSampleProject } from "./sampleProject";
+import {
+  deletePersonalCloudDraft,
+  getAppFeatureFlags,
+  readPersonalCloudDraft,
+  writePersonalCloudDraft,
+} from "./platform";
 import {
   AnimationSettings,
   AlignmentAction,
@@ -157,6 +165,7 @@ import {
 } from "./utils/parade";
 import { readProjectFromHash } from "./utils/share";
 import {
+  hydrateProjectsFromNativeStorage,
   loadProjectFromStorage,
   loadProjectsFromStorage,
   saveProjectToStorage,
@@ -238,6 +247,8 @@ const HISTORY_LIMIT = 50;
 const HISTORY_COALESCE_MS = 1200;
 const FLOATING_MENU_MARGIN_PX = 10;
 const APP_NAME = "隊列メーカー";
+const APP_FEATURES = getAppFeatureFlags();
+const IPAD_AUTH_REDIRECT_URL = "jp.tairetsu.maker://auth/callback";
 const MEMBER_COLOR_PRESETS = [
   { label: "赤 ライト", value: "#fca5a5" },
   { label: "赤 明るめ", value: "#f87171" },
@@ -2142,6 +2153,7 @@ function App() {
   const memberColorEditorRef = useRef<HTMLDivElement | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
   const pendingAutoSaveProjectRef = useRef<Project | null>(null);
+  const personalCloudDraftTimerRef = useRef<number | null>(null);
   const activeCloudProjectRef = useRef<CloudActiveProjectState | null>(null);
   const cloudRealtimeSubscriptionRef =
     useRef<CloudRealtimeSubscription | null>(null);
@@ -2165,6 +2177,25 @@ function App() {
         ? `${project.title} - ${APP_NAME}`
         : APP_NAME;
   }, [appView, project.title]);
+
+  useEffect(() => {
+    if (!APP_FEATURES.nativeFileShare || initial.shared) {
+      return undefined;
+    }
+    let cancelled = false;
+    void hydrateProjectsFromNativeStorage()
+      .then((projects) => {
+        if (!cancelled && projects) {
+          setSavedProjects(projects.map(normalizeProject));
+        }
+      })
+      .catch((error) => {
+        console.warn("iPadのローカル隊列表を復元できませんでした。", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initial.shared]);
 
   useEffect(() => {
     projectRef.current = project;
@@ -2399,6 +2430,9 @@ function App() {
       if (!cloudState) {
         return true;
       }
+      if (!APP_FEATURES.collaboration && cloudState.role === "owner") {
+        return true;
+      }
       const activeProjectLock = cloudState.activeProjectLock;
       if (activeProjectLock) {
         if (
@@ -2452,6 +2486,9 @@ function App() {
     (previous: Project, nextProject: Project): boolean => {
       const cloudState = activeCloudProjectRef.current;
       if (!cloudState) {
+        return true;
+      }
+      if (!APP_FEATURES.collaboration && cloudState.role === "owner") {
         return true;
       }
       const activeProjectLock = cloudState.activeProjectLock;
@@ -2513,7 +2550,10 @@ function App() {
       if (!allowCloudProjectChange(previous, nextProject)) {
         return;
       }
-      if (!activeCloudProjectRef.current && !historyBatchRef.current) {
+      if (
+        (!activeCloudProjectRef.current || !APP_FEATURES.collaboration) &&
+        !historyBatchRef.current
+      ) {
         const lastHistoryPush = lastHistoryPushRef.current;
         const shouldCoalesce =
           options.coalesceHistory !== false &&
@@ -2656,6 +2696,43 @@ function App() {
     isSharedProject,
     project,
   ]);
+
+  useEffect(() => {
+    if (
+      APP_FEATURES.collaboration ||
+      appView !== "editor" ||
+      !activeCloudProject ||
+      activeCloudProject.role !== "owner" ||
+      !isDirty
+    ) {
+      if (personalCloudDraftTimerRef.current !== null) {
+        window.clearTimeout(personalCloudDraftTimerRef.current);
+        personalCloudDraftTimerRef.current = null;
+      }
+      return undefined;
+    }
+    if (personalCloudDraftTimerRef.current !== null) {
+      window.clearTimeout(personalCloudDraftTimerRef.current);
+    }
+    personalCloudDraftTimerRef.current = window.setTimeout(() => {
+      personalCloudDraftTimerRef.current = null;
+      void writePersonalCloudDraft({
+        baseUpdatedAt: activeCloudProject.updatedAt ?? null,
+        cloudProjectId: activeCloudProject.projectId,
+        project: cloneProject(projectRef.current),
+        savedAt: new Date().toISOString(),
+      }).catch((error) => {
+        console.warn("本人専用クラウドの端末ドラフトを保存できませんでした。", error);
+        setNotice("端末内の一時保存に失敗しました。保存ボタンを押してください。");
+      });
+    }, 600);
+    return () => {
+      if (personalCloudDraftTimerRef.current !== null) {
+        window.clearTimeout(personalCloudDraftTimerRef.current);
+        personalCloudDraftTimerRef.current = null;
+      }
+    };
+  }, [activeCloudProject, appView, isDirty, project]);
 
   async function releaseCloudSceneCellLock(
     lock: CloudActiveCellLock,
@@ -3055,7 +3132,7 @@ function App() {
     targets: SceneElementEditTarget[],
     applyChange: () => void,
   ): Promise<boolean> {
-    if (!activeCloudProjectRef.current) {
+    if (!activeCloudProjectRef.current || !APP_FEATURES.collaboration) {
       applyChange();
       return true;
     }
@@ -3127,7 +3204,22 @@ function App() {
   }
 
   useEffect(() => {
-    const handlePageHide = () => flushPendingAutoSave();
+    const handlePageHide = () => {
+      flushPendingAutoSave();
+      const cloudState = activeCloudProjectRef.current;
+      if (
+        !APP_FEATURES.collaboration &&
+        cloudState?.role === "owner" &&
+        isDirtyRef.current
+      ) {
+        void writePersonalCloudDraft({
+          baseUpdatedAt: cloudState.updatedAt ?? null,
+          cloudProjectId: cloudState.projectId,
+          project: cloneProject(projectRef.current),
+          savedAt: new Date().toISOString(),
+        });
+      }
+    };
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("beforeunload", handlePageHide);
     return () => {
@@ -3142,7 +3234,7 @@ function App() {
       label?: string,
       target?: SceneElementEditTarget | SceneElementEditTarget[],
     ): boolean | Promise<boolean> => {
-      if (activeCloudProjectRef.current) {
+      if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
         if (!target) {
           setNotice("クラウド共同編集では、この操作はまだセル単位保存に対応していません。");
           return false;
@@ -3167,7 +3259,7 @@ function App() {
   const endProjectHistoryBatch = useCallback((
     target?: SceneElementEditTarget | SceneElementEditTarget[],
   ) => {
-    if (activeCloudProjectRef.current) {
+    if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
       if (target) {
         const targets = Array.isArray(target) ? target : [target];
         void endCloudSceneCellEdits(targets);
@@ -3407,6 +3499,7 @@ function App() {
       const key = event.key.toLowerCase();
       if (
         activeCloudProjectRef.current &&
+        APP_FEATURES.collaboration &&
         (key === "z" || key === "y")
       ) {
         event.preventDefault();
@@ -3700,7 +3793,7 @@ function App() {
       };
       projectRef.current = nextProject;
       setProject(nextProject);
-      if (activeCloudProjectRef.current) {
+      if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
         return;
       }
       setIsDirty(true);
@@ -5757,11 +5850,148 @@ function App() {
           : frame,
       ),
     }));
-    if (activeCloudProjectRef.current) {
+    if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
       await saveCloudCurrentScene(nextProject, activeFrameId);
       return;
     }
     setNotice(`「${selectedFrame.label}」に現在の隊形を保存しました。`);
+  };
+
+  const savePersonalCloudProject = async (
+    sourceProject: Project,
+    options: { showNotice?: boolean } = { showNotice: true },
+  ): Promise<boolean> => {
+    const cloudState = activeCloudProjectRef.current;
+    if (!cloudState || cloudState.role !== "owner" || !cloudConfig) {
+      setNotice("自分専用クラウドの保存情報を確認できませんでした。");
+      return false;
+    }
+    const localDraft = {
+      baseUpdatedAt: cloudState.updatedAt ?? null,
+      cloudProjectId: cloudState.projectId,
+      project: cloneProject(sourceProject),
+      savedAt: new Date().toISOString(),
+    };
+    try {
+      await writePersonalCloudDraft(localDraft);
+    } catch (error) {
+      console.warn("本人専用クラウドの端末ドラフトを保存できませんでした。", error);
+      setNotice("端末内の一時保存に失敗しました。空き容量を確認してください。");
+      return false;
+    }
+    if (!navigator.onLine) {
+      setNotice("オフラインのため端末へ保存しました。接続後に保存するとクラウドへ同期します。");
+      return true;
+    }
+    if (isSaving) {
+      return false;
+    }
+    setIsSaving(true);
+    let api: CloudApiClient | null = null;
+    let lockToken: string | null = null;
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        setNotice("端末へ保存しました。クラウドへ同期するには再度ログインしてください。");
+        return true;
+      }
+      api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const remoteParts = await api.loadCloudProjectParts(cloudState.projectId);
+      const remoteUpdatedAt = remoteParts.updatedAt ?? null;
+      const hasConflict =
+        Boolean(cloudState.updatedAt) &&
+        Boolean(remoteUpdatedAt) &&
+        cloudState.updatedAt !== remoteUpdatedAt;
+      if (hasConflict) {
+        const overwrite = await requestAppConfirm({
+          cancelLabel: "端末に残す",
+          confirmLabel: "クラウドを上書き",
+          message:
+            "この隊列表を開いた後にクラウド側も更新されています。端末の内容で上書きすると、現在のクラウド版は履歴へ退避されます。",
+          title: "クラウド側に新しい更新があります",
+          tone: "default",
+        });
+        if (!overwrite) {
+          setNotice("同期せず端末へ保存しました。次回開いた時も続きを選べます。");
+          return true;
+        }
+      }
+
+      const target = createProjectLockTarget("import");
+      lockToken = createCloudLockToken();
+      const lockResult = await api.acquireEditLock(
+        cloudState.projectId,
+        target,
+        lockToken,
+      );
+      if (!lockResult.success) {
+        setNotice("端末へ保存しました。クラウドが処理中のため同期は保留しました。");
+        return true;
+      }
+      saveCloudLockTokenToSession(cloudState.projectId, target, lockToken);
+      const result = await api.importCloudProjectWithLock(
+        cloudState.projectId,
+        createCloudProjectDraft(sourceProject, {
+          resourceVersion: 1,
+          sceneVersion: 1,
+        }),
+        lockToken,
+        "iPad personal cloud sync",
+      );
+      clearCloudLockTokenFromSession(cloudState.projectId, target);
+      lockToken = null;
+      if (!result.success) {
+        setNotice("端末へ保存しましたが、クラウド同期に失敗しました。後でもう一度保存してください。");
+        return true;
+      }
+
+      const syncedParts = await api.loadCloudProjectParts(cloudState.projectId);
+      const { resourceVersions, sceneVersions } = createCloudVersionMaps(syncedParts);
+      const sceneCellVersions = createCloudSceneCellVersionMap(
+        await api.listSceneCellVersions(cloudState.projectId),
+      );
+      const updatedAt =
+        syncedParts.updatedAt ?? result.updated_at ?? new Date().toISOString();
+      const syncedProject = normalizeProject({
+        ...sourceProject,
+        updatedAt,
+      });
+      projectRef.current = syncedProject;
+      setProject(syncedProject);
+      setActiveCloudProject((previous) =>
+        previous
+          ? {
+              ...previous,
+              resourceVersions,
+              sceneCellVersions,
+              sceneVersions,
+              title: syncedProject.title,
+              updatedAt,
+            }
+          : previous,
+      );
+      await deletePersonalCloudDraft(cloudState.projectId);
+      setIsDirty(false);
+      if (options.showNotice ?? true) {
+        setNotice("端末の変更を自分専用クラウドへ同期しました。");
+      }
+      return true;
+    } catch (error) {
+      console.warn("本人専用クラウドの同期に失敗しました。", error);
+      setNotice("端末へ保存しました。通信を確認し、後でもう一度保存してください。");
+      return true;
+    } finally {
+      if (api && lockToken) {
+        const target = createProjectLockTarget("import");
+        try {
+          await api.releaseEditLock(cloudState.projectId, target, lockToken);
+        } catch {
+          // TTL also releases an interrupted import lock.
+        }
+        clearCloudLockTokenFromSession(cloudState.projectId, target);
+      }
+      setIsSaving(false);
+    }
   };
 
   const saveProjectManually = async (
@@ -5772,6 +6002,9 @@ function App() {
       return false;
     }
     const cloudState = activeCloudProjectRef.current;
+    if (cloudState && !APP_FEATURES.collaboration) {
+      return savePersonalCloudProject(projectRef.current, options);
+    }
     if (cloudState?.activeProjectLock) {
       if (cloudState.activeProjectLock.lockKey === "import") {
         setNotice("クラウド上書き中です。完了まで待ってください。");
@@ -5918,7 +6151,11 @@ function App() {
 
   const addFrame = (timeSec?: number) => {
     const cloudState = activeCloudProjectRef.current;
-    if (cloudState && cloudState.activeProjectLock?.lockKey !== "sceneOrder") {
+    if (
+      APP_FEATURES.collaboration &&
+      cloudState &&
+      cloudState.activeProjectLock?.lockKey !== "sceneOrder"
+    ) {
       void addCloudFrame(timeSec);
       return;
     }
@@ -6008,6 +6245,7 @@ function App() {
     const patchKeys = Object.keys(patch);
     if (
       activeCloudProjectRef.current &&
+      APP_FEATURES.collaboration &&
       activeCloudProjectRef.current.role === "owner" &&
       patchKeys.some((key) => key === "label" || key === "section" || key === "timeSec")
     ) {
@@ -6059,7 +6297,10 @@ function App() {
     if (selectedFrameIdRef.current === id) {
       setSelectedFrameId(remaining[0]?.id ?? null);
     }
-    if (activeCloudProjectRef.current?.role === "owner") {
+    if (
+      APP_FEATURES.collaboration &&
+      activeCloudProjectRef.current?.role === "owner"
+    ) {
       scheduleCloudSceneOrderAutoSave("シーン削除", 100);
     }
   };
@@ -6082,7 +6323,10 @@ function App() {
     });
     setSelectedFrameId(draggedId);
     setNotice("シーン順を変更しました。曲同期する場合は時刻も確認してください。");
-    if (activeCloudProjectRef.current?.role === "owner") {
+    if (
+      APP_FEATURES.collaboration &&
+      activeCloudProjectRef.current?.role === "owner"
+    ) {
       scheduleCloudSceneOrderAutoSave("シーン順変更", 100);
     }
   };
@@ -6139,7 +6383,11 @@ function App() {
 
   const sortFramesByTime = () => {
     const cloudState = activeCloudProjectRef.current;
-    if (cloudState && cloudState.activeProjectLock?.lockKey !== "sceneOrder") {
+    if (
+      APP_FEATURES.collaboration &&
+      cloudState &&
+      cloudState.activeProjectLock?.lockKey !== "sceneOrder"
+    ) {
       void sortCloudFramesByTime();
       return;
     }
@@ -6520,7 +6768,10 @@ function App() {
     setActivePanelTab("timeline");
     setMode("preview");
     setNotice(`「${frame.label}」を貼り付けました。`);
-    if (activeCloudProjectRef.current?.role === "owner") {
+    if (
+      APP_FEATURES.collaboration &&
+      activeCloudProjectRef.current?.role === "owner"
+    ) {
       scheduleCloudSceneOrderAutoSave("シーン貼り付け", 100);
     }
   };
@@ -6560,7 +6811,10 @@ function App() {
     setActivePanelTab("timeline");
     setMode("preview");
     setNotice(`「${targetFrame.label}」へシーン内容を貼り付けました。`);
-    if (activeCloudProjectRef.current?.role === "owner") {
+    if (
+      APP_FEATURES.collaboration &&
+      activeCloudProjectRef.current?.role === "owner"
+    ) {
       scheduleCloudSceneOrderAutoSave("シーン貼り付け", 100);
     }
   };
@@ -9257,7 +9511,12 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (!activeCloudProject || !cloudConfig || !cloudSession) {
+    if (
+      !APP_FEATURES.collaboration ||
+      !activeCloudProject ||
+      !cloudConfig ||
+      !cloudSession
+    ) {
       return undefined;
     }
     let isDisposed = false;
@@ -9470,7 +9729,12 @@ function App() {
     setIsCloudBusy(true);
     try {
       const auth = createCloudAuthClient(cloudConfig);
-      const session = await auth.signUpWithPassword(email, password, displayName);
+      const session = await auth.signUpWithPassword(
+        email,
+        password,
+        displayName,
+        APP_FEATURES.nativeFileShare ? IPAD_AUTH_REDIRECT_URL : undefined,
+      );
       if (session) {
         saveCloudAuthSession(session);
         setCloudSession(session);
@@ -9504,6 +9768,83 @@ function App() {
     setCloudError(null);
     setNotice("クラウドからログアウトしました。");
   };
+
+  useEffect(() => {
+    if (!APP_FEATURES.nativeFileShare || !cloudConfig) {
+      return undefined;
+    }
+    let disposed = false;
+
+    const activateSession = async (session: CloudAuthSession) => {
+      const activeSession = isCloudAuthSessionExpired(session)
+        ? await createCloudAuthClient(cloudConfig).refreshSession(session.refreshToken)
+        : session;
+      if (disposed) {
+        return;
+      }
+      saveCloudAuthSession(activeSession);
+      cloudSessionRef.current = activeSession;
+      setCloudSession(activeSession);
+      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      setCloudProjects(
+        (await api.listCloudProjects()).filter((item) => item.role === "owner"),
+      );
+      setCloudError(null);
+    };
+
+    const restoreSession = async () => {
+      try {
+        const session = await hydrateCloudAuthSessionFromNativeStorage();
+        if (session) {
+          await activateSession(session);
+        }
+      } catch (error) {
+        if (!disposed) {
+          console.warn("iPadのログイン情報を復元できませんでした。", error);
+          setCloudError("ログイン情報を復元できませんでした。再度ログインしてください。");
+        }
+      }
+    };
+
+    const handleAuthUrl = async (url: string) => {
+      if (!url.startsWith(IPAD_AUTH_REDIRECT_URL)) {
+        return;
+      }
+      setIsCloudBusy(true);
+      try {
+        const session = await createCloudAuthClient(
+          cloudConfig,
+        ).createSessionFromRedirectUrl(url);
+        await activateSession(session);
+        if (!disposed) {
+          setNotice("メール確認が完了し、クラウドへログインしました。");
+        }
+      } catch (error) {
+        if (!disposed) {
+          setCloudError(getCloudErrorMessage(error));
+        }
+      } finally {
+        if (!disposed) {
+          setIsCloudBusy(false);
+        }
+      }
+    };
+
+    void restoreSession();
+    const listener = CapacitorApp.addListener("appUrlOpen", ({ url }) => {
+      void handleAuthUrl(url);
+    });
+    void CapacitorApp.getLaunchUrl().then((launch) => {
+      if (launch?.url) {
+        void handleAuthUrl(launch.url);
+      }
+    });
+
+    return () => {
+      disposed = true;
+      void listener.then((handle) => handle.remove());
+    };
+  }, [cloudConfig]);
 
   const acceptCloudInvite = async (inviteToken: string) => {
     if (!cloudConfig) {
@@ -9879,22 +10220,57 @@ function App() {
       const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const parts = await api.loadCloudProjectParts(cloudProject.id);
       const now = new Date().toISOString();
-      const cloudOpenedProject = normalizeProject({
+      let cloudOpenedProject = normalizeProject({
         ...buildProjectFromCloudParts(parts),
         lastOpenedAt: now,
-        updatedAt: now,
+        updatedAt: parts.updatedAt ?? cloudProject.updatedAt ?? now,
       });
       const { resourceVersions, sceneVersions } = createCloudVersionMaps(parts);
       const sceneCellVersions = createCloudSceneCellVersionMap(
         await api.listSceneCellVersions(cloudProject.id),
       );
-      const restoredLock = await restoreCloudLockFromSession(
-        cloudProject.id,
-        parts,
-        activeSession,
-      );
-      const openMessage =
-        restoredLock.activeSceneLock || restoredLock.activeProjectLock
+      const restoredLock = APP_FEATURES.collaboration
+        ? await restoreCloudLockFromSession(
+            cloudProject.id,
+            parts,
+            activeSession,
+          )
+        : { activeProjectLock: null, activeSceneLock: null };
+      let openedFromDraft = false;
+      let draftBaseUpdatedAt: string | null = null;
+      if (!APP_FEATURES.collaboration && cloudProject.role === "owner") {
+        const draft = await readPersonalCloudDraft(cloudProject.id);
+        if (draft) {
+          const remoteUpdatedAt = parts.updatedAt ?? cloudProject.updatedAt ?? null;
+          const hasRemoteConflict =
+            Boolean(draft.baseUpdatedAt) &&
+            Boolean(remoteUpdatedAt) &&
+            draft.baseUpdatedAt !== remoteUpdatedAt;
+          const useDraft = hasRemoteConflict
+            ? await requestAppConfirm({
+                cancelLabel: "クラウド版を開く",
+                confirmLabel: "端末の続きを開く",
+                message:
+                  "前回の端末内編集後にクラウド側も更新されています。端末の続きを開いても、保存時にもう一度確認し、勝手には上書きしません。",
+                title: "未同期の編集があります",
+                tone: "default",
+              })
+            : true;
+          if (useDraft) {
+            cloudOpenedProject = normalizeProject({
+              ...cloneProject(draft.project),
+              lastOpenedAt: now,
+            });
+            openedFromDraft = true;
+            draftBaseUpdatedAt = draft.baseUpdatedAt;
+          } else {
+            await deletePersonalCloudDraft(cloudProject.id);
+          }
+        }
+      }
+      const openMessage = openedFromDraft
+        ? "端末に残っていた未同期の編集を開きました。保存ボタンでクラウドへ同期できます。"
+        : restoredLock.activeSceneLock || restoredLock.activeProjectLock
           ? "クラウド隊列表を開き、前回の編集ロックを復帰しました。"
           : cloudProject.role === "owner"
             ? "クラウド隊列表を開きました。"
@@ -9914,11 +10290,15 @@ function App() {
             sceneCellVersions,
             sceneVersions,
             title: cloudProject.title,
-            updatedAt: cloudProject.updatedAt,
+            updatedAt:
+              draftBaseUpdatedAt ?? parts.updatedAt ?? cloudProject.updatedAt,
           },
           persistLocal: false,
         },
       );
+      if (openedFromDraft) {
+        setIsDirty(true);
+      }
       setCloudPendingUpdates([]);
       setCloudError(null);
     } catch (error) {
@@ -10190,7 +10570,7 @@ function App() {
   };
 
   const getSaveStatusNotice = (
-    status: UserFileSaveStatus | "shared",
+    status: UserFileSaveStatus,
     fileType: "PDF" | "画像",
   ): string => {
     if (status === "shared") {
@@ -10217,10 +10597,18 @@ function App() {
     generateBlob: () => Promise<Blob>;
     pickerTypes: Parameters<typeof saveGeneratedBlob>[0]["pickerTypes"];
     title: string;
-  }): Promise<UserFileSaveStatus | "shared"> => {
+  }): Promise<UserFileSaveStatus> => {
     const blob = await generateBlob();
     if (blob.size <= 0) {
       throw new Error("保存するファイルの作成に失敗しました。");
+    }
+
+    if (APP_FEATURES.nativeFileShare) {
+      return saveGeneratedBlob({
+        fallbackFileName,
+        generateBlob: async () => blob,
+        pickerTypes,
+      });
     }
 
     const file = new File([blob], fallbackFileName, {
@@ -10336,6 +10724,20 @@ function App() {
 
     try {
       const blob = await generateStageScreenshotBlob();
+      if (APP_FEATURES.nativeFileShare) {
+        const status = await saveGeneratedBlob({
+          fallbackFileName: filename,
+          generateBlob: async () => blob,
+          pickerTypes: [
+            {
+              accept: { "image/png": [".png"] },
+              description: "PNG画像",
+            },
+          ],
+        });
+        setNotice(getSaveStatusNotice(status, "画像"));
+        return;
+      }
       const file = new File([blob], filename, { type: "image/png" });
       const nav = navigator as NavigatorWithFileShare;
 
@@ -12094,12 +12496,14 @@ function App() {
       "全体データ"
     : null;
   const isCloudSceneReadOnly = Boolean(
-    activeCloudProject &&
+    APP_FEATURES.collaboration &&
+      activeCloudProject &&
       activeCloudProject.activeSceneLock &&
       activeCloudProject.activeSceneLock?.sceneId !== canvasFrameId,
   );
   const isCloudCanvasReadOnly = Boolean(
-    activeCloudProject &&
+    APP_FEATURES.collaboration &&
+      activeCloudProject &&
       (activeCloudProject.role === "viewer" ||
         activeCloudProject.activeProjectLock ||
         canvasRemoteProjectLock ||
@@ -12111,21 +12515,27 @@ function App() {
   const activeCloudProjectLockKey =
     activeCloudProject?.activeProjectLock?.lockKey ?? null;
   const canEditCloudResource = (resourceKey: CloudResourceKey) =>
-    !activeCloudProject || activeCloudProjectLockKey === resourceKey;
+    !activeCloudProject ||
+    !APP_FEATURES.collaboration ||
+    activeCloudProjectLockKey === resourceKey;
   const canEditCloudSettings = canEditCloudResource("settings");
   const canEditCloudMembers = canEditCloudResource("members");
   const canEditCloudObjects = canEditCloudResource("objects");
   const canEditCloudAudio = canEditCloudResource("audio");
   const canManageCloudSceneOrder =
     !activeCloudProject ||
+    !APP_FEATURES.collaboration ||
     (activeCloudProject.role === "owner" &&
       (!activeCloudProject.activeProjectLock ||
         activeCloudProject.activeProjectLock.lockKey === "sceneOrder") &&
       !canvasRemoteProjectLockLabel);
   const canAddCloudScene = canManageCloudSceneOrder;
-  const canEditProjectChrome = !activeCloudProject;
+  const canEditProjectChrome =
+    !activeCloudProject || !APP_FEATURES.collaboration;
   const cloudReadOnlyMessage = activeCloudProject
-    ? activeCloudProject.activeProjectLock
+    ? !APP_FEATURES.collaboration
+      ? "変更内容は端末へ自動保存され、保存ボタンで自分専用クラウドへ同期されます。"
+      : activeCloudProject.activeProjectLock
       ? "全体設定の編集中です。シーンは閲覧のみです。"
       : activeCloudProject.role === "viewer"
       ? "閲覧のみの権限です。"
@@ -12136,7 +12546,9 @@ function App() {
       : "配置はメンバーや道具をドラッグすると自動で編集ロックを取得します。表示切替など一部の操作はシーン全体ロックを使います。"
     : undefined;
   const cloudProjectReadOnlyMessage = activeCloudProject
-    ? activeCloudProject.activeProjectLock
+    ? !APP_FEATURES.collaboration
+      ? undefined
+      : activeCloudProject.activeProjectLock
       ? `${CLOUD_RESOURCE_LABELS[activeCloudProject.activeProjectLock.lockKey]}を編集中です。別の全体データは編集できません。`
       : canvasRemoteProjectLockLabel
         ? `${canvasRemoteProjectLockLabel}を他の参加者が編集中です。全体データとシーンは閲覧のみです。`
@@ -12145,7 +12557,9 @@ function App() {
         : "全体データはownerのみ編集できます。"
     : undefined;
   const cloudSettingsReadOnlyMessage = activeCloudProject
-    ? activeCloudProject.role === "owner"
+    ? !APP_FEATURES.collaboration
+      ? undefined
+      : activeCloudProject.role === "owner"
       ? "全体設定を編集するには、上部の「全体設定を編集」を押してください。"
       : "全体設定の編集はownerのみ可能です。"
     : undefined;
@@ -12471,8 +12885,11 @@ function App() {
           configured: Boolean(cloudConfig),
           error: cloudError,
           isBusy: isCloudBusy,
+          personalMode: !APP_FEATURES.collaboration,
           pendingInviteToken: cloudInviteToken,
-          projects: cloudProjects,
+          projects: APP_FEATURES.collaboration
+            ? cloudProjects
+            : cloudProjects.filter((project) => project.role === "owner"),
           userDisplayName: cloudSession?.user.displayName,
           userEmail: cloudSession?.user.email,
           onAcceptInvite: acceptCloudInvite,
@@ -12507,7 +12924,9 @@ function App() {
     setNotice(`${ownerName}がこの対象を操作中です。別のメンバーや道具は編集できます。`);
   };
   const cloudBannerTitle = activeCloudProject
-    ? activeCloudProject.activeProjectLock
+    ? !APP_FEATURES.collaboration
+      ? "自分専用クラウド"
+      : activeCloudProject.activeProjectLock
       ? "クラウド全体編集中"
       : activeCloudProject.activeSceneLock
         ? "クラウド編集中"
@@ -12581,6 +13000,7 @@ function App() {
         }}
         onOpenRosterManager={() => {
           if (
+            APP_FEATURES.collaboration &&
             activeCloudProject &&
             activeCloudProject.activeProjectLock?.lockKey !== "members" &&
             activeCloudProject.activeProjectLock?.lockKey !== "objects"
@@ -12626,7 +13046,11 @@ function App() {
               {cloudBannerTitle}
             </strong>
             <span>
-              {activeCloudProject.role === "viewer"
+              {!APP_FEATURES.collaboration
+                ? isDirty
+                  ? "端末に未同期の変更があります。保存するとクラウドへ同期します。"
+                  : "自分専用クラウドと同期済みです。"
+                : activeCloudProject.role === "viewer"
                 ? "閲覧のみの権限です。"
                 : activeCloudProject.activeProjectLock
                   ? `編集中: ${
@@ -12651,24 +13075,28 @@ function App() {
                 {cloudPendingUpdates.map((update) => update.label).join("、")}
               </span>
             )}
-            {cloudPresenceSummary && (
+            {APP_FEATURES.collaboration && cloudPresenceSummary && (
               <span className="cloud-project-banner__presence">
                 {cloudPresenceSummary}
               </span>
             )}
-            <span className="cloud-project-banner__presence">
-              クラウド共同編集では元に戻す/やり直しは使えません。
-            </span>
+            {APP_FEATURES.collaboration && (
+              <span className="cloud-project-banner__presence">
+                クラウド共同編集では元に戻す/やり直しは使えません。
+              </span>
+            )}
           </div>
           <div className="shared-project-banner__actions">
-            <button
-              className="mini-button"
-              onClick={() => setIsCloudHelpOpen(true)}
-              type="button"
-            >
-              <CircleHelp size={14} />
-              共同作業の使い方
-            </button>
+            {APP_FEATURES.collaboration && (
+              <button
+                className="mini-button"
+                onClick={() => setIsCloudHelpOpen(true)}
+                type="button"
+              >
+                <CircleHelp size={14} />
+                共同作業の使い方
+              </button>
+            )}
             {cloudPendingUpdates.length > 0 && (
               <button
                 className="mini-button primary"
@@ -12679,7 +13107,7 @@ function App() {
                 更新を再読み込み
               </button>
             )}
-            {activeCloudProject.role === "owner" && (
+            {APP_FEATURES.collaboration && activeCloudProject.role === "owner" && (
               <button
                 className="mini-button"
                 disabled={isCloudBusy}
@@ -12692,7 +13120,16 @@ function App() {
                 共有管理
               </button>
             )}
-            {activeCloudProject.role !== "viewer" &&
+            {!APP_FEATURES.collaboration ? (
+              <button
+                className="mini-button primary"
+                disabled={isSaving || isCloudBusy}
+                onClick={() => void saveProjectManually()}
+                type="button"
+              >
+                {isSaving ? "同期中" : "クラウドへ同期"}
+              </button>
+            ) : activeCloudProject.role !== "viewer" &&
               (activeCloudProject.activeProjectLock &&
               activeCloudProject.activeProjectLock.lockKey !== "import" ? (
                 <>
@@ -12859,16 +13296,26 @@ function App() {
                   focusMode={focusMode}
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
-                  deferMemberDragCommit={Boolean(activeCloudProject)}
-                  deferObjectDragCommit={Boolean(activeCloudProject)}
+                  deferMemberDragCommit={Boolean(
+                    activeCloudProject && APP_FEATURES.collaboration,
+                  )}
+                  deferObjectDragCommit={Boolean(
+                    activeCloudProject && APP_FEATURES.collaboration,
+                  )}
                   remoteMemberLocks={remoteMemberPositionLocksById}
                   remoteObjectLocks={remoteObjectStateLocksById}
                   onSelect={selectStageElement}
                   onStagePointerPositionChange={handleStagePointerPositionChange}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
-                  canUndo={!activeCloudProject && historyCounts.undo > 0}
-                  canRedo={!activeCloudProject && historyCounts.redo > 0}
+                  canUndo={
+                    (!activeCloudProject || !APP_FEATURES.collaboration) &&
+                    historyCounts.undo > 0
+                  }
+                  canRedo={
+                    (!activeCloudProject || !APP_FEATURES.collaboration) &&
+                    historyCounts.redo > 0
+                  }
                   onUndo={undoProject}
                   onRedo={redoProject}
                   onBeginProjectEdit={beginProjectHistoryBatch}
@@ -12913,16 +13360,26 @@ function App() {
                   focusMode={focusMode}
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
-                  deferMemberDragCommit={Boolean(activeCloudProject)}
-                  deferObjectDragCommit={Boolean(activeCloudProject)}
+                  deferMemberDragCommit={Boolean(
+                    activeCloudProject && APP_FEATURES.collaboration,
+                  )}
+                  deferObjectDragCommit={Boolean(
+                    activeCloudProject && APP_FEATURES.collaboration,
+                  )}
                   remoteMemberLocks={remoteMemberPositionLocksById}
                   remoteObjectLocks={remoteObjectStateLocksById}
                   onSelect={selectStageElement}
                   onStagePointerPositionChange={handleStagePointerPositionChange}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
-                  canUndo={!activeCloudProject && historyCounts.undo > 0}
-                  canRedo={!activeCloudProject && historyCounts.redo > 0}
+                  canUndo={
+                    (!activeCloudProject || !APP_FEATURES.collaboration) &&
+                    historyCounts.undo > 0
+                  }
+                  canRedo={
+                    (!activeCloudProject || !APP_FEATURES.collaboration) &&
+                    historyCounts.redo > 0
+                  }
                   onUndo={undoProject}
                   onRedo={redoProject}
                   onBeginProjectEdit={beginProjectHistoryBatch}
@@ -13319,7 +13776,7 @@ function App() {
       onExport={handleShareExport}
       onExportZip={handleShareExportZip}
     />
-    {activeCloudProject?.role === "owner" && isCloudShareOpen && (
+    {APP_FEATURES.collaboration && activeCloudProject?.role === "owner" && isCloudShareOpen && (
       <CloudShareModal
         contacts={cloudContacts}
         currentUserId={cloudSession?.user.id}
@@ -13337,7 +13794,7 @@ function App() {
         projectTitle={project.title}
       />
     )}
-    {isCloudHelpOpen && (
+    {APP_FEATURES.collaboration && isCloudHelpOpen && (
       <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
     )}
     {exportProgress && (
@@ -13442,11 +13899,12 @@ function App() {
       isOpen={
         isRosterManagerOpen &&
         (!activeCloudProject ||
+          !APP_FEATURES.collaboration ||
           activeCloudProject.activeProjectLock?.lockKey === "members" ||
           activeCloudProject.activeProjectLock?.lockKey === "objects")
       }
       allowedModes={
-        activeCloudProject
+        activeCloudProject && APP_FEATURES.collaboration
           ? activeCloudProject.activeProjectLock?.lockKey === "members"
             ? ["members"]
             : activeCloudProject.activeProjectLock?.lockKey === "objects"

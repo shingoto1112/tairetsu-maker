@@ -59,6 +59,7 @@ type FormationLibraryProps = {
     configured: boolean;
     error?: string | null;
     isBusy: boolean;
+    personalMode?: boolean;
     pendingInviteToken?: string | null;
     projects: CloudProjectSummary[];
     userDisplayName?: string;
@@ -212,6 +213,9 @@ export const FormationLibrary = ({
     libraryMenu === null
       ? null
       : sortedProjects.find((project) => project.id === libraryMenu.projectId) ?? null;
+  const visibleCloudProjects = cloud?.personalMode
+    ? cloud.projects.filter((project) => project.role === "owner")
+    : cloud?.projects ?? [];
 
   useEffect(() => {
     if (!libraryMenu) {
@@ -490,19 +494,25 @@ export const FormationLibrary = ({
               </h2>
               <p>
                 {cloud.userEmail
-                  ? "クラウド隊列表を開いて、共有管理からメンバーを招待できます。"
-                  : "ログインすると、隊列表をクラウド保存してほかの人と共同作業できます。"}
+                  ? cloud.personalMode
+                    ? "自分専用のクラウド隊列表を保存・読み込みできます。"
+                    : "クラウド隊列表を開いて、共有管理からメンバーを招待できます。"
+                  : cloud.personalMode
+                    ? "ログインすると、隊列表を自分専用のクラウドへ保存できます。"
+                    : "ログインすると、隊列表をクラウド保存してほかの人と共同作業できます。"}
               </p>
             </div>
             <div className="library-cloud-header-actions">
-              <button
-                className="mini-button"
-                onClick={() => setIsCloudHelpOpen(true)}
-                type="button"
-              >
-                <CircleHelp size={14} />
-                共同作業の使い方
-              </button>
+              {!cloud.personalMode && (
+                <button
+                  className="mini-button"
+                  onClick={() => setIsCloudHelpOpen(true)}
+                  type="button"
+                >
+                  <CircleHelp size={14} />
+                  共同作業の使い方
+                </button>
+              )}
               {cloud.userEmail && (
                 <div className="library-cloud-account">
                   <span>{cloud.userDisplayName || "ログイン中"}</span>
@@ -540,31 +550,35 @@ export const FormationLibrary = ({
                 <span>ローカルカードのメニューからクラウドへアップロードできます。</span>
               </div>
               {cloud.error && <p className="dialog-error">{cloud.error}</p>}
-              <div className="library-cloud-invite">
-                <label>
-                  招待リンク / 招待コード
-                  <input
-                    value={cloudInviteToken}
-                    onChange={(event) => setCloudInviteToken(event.target.value)}
-                    placeholder="招待リンクを貼り付け"
-                  />
-                </label>
-                <button
-                  className="mini-button"
-                  disabled={cloud.isBusy}
-                  onClick={() => void submitCloudInvite()}
-                  type="button"
-                >
-                  参加
-                </button>
-              </div>
+              {!cloud.personalMode && (
+                <div className="library-cloud-invite">
+                  <label>
+                    招待リンク / 招待コード
+                    <input
+                      value={cloudInviteToken}
+                      onChange={(event) => setCloudInviteToken(event.target.value)}
+                      placeholder="招待リンクを貼り付け"
+                    />
+                  </label>
+                  <button
+                    className="mini-button"
+                    disabled={cloud.isBusy}
+                    onClick={() => void submitCloudInvite()}
+                    type="button"
+                  >
+                    参加
+                  </button>
+                </div>
+              )}
               <div className="library-cloud-list">
-                {cloud.projects.length === 0 ? (
+                {visibleCloudProjects.length === 0 ? (
                   <p className="library-cloud-message">
-                    クラウドプロジェクトはまだありません。過去のクラウド隊列表が表示されない場合は、更新を押してください。
+                    {cloud.personalMode
+                      ? "自分専用のクラウド隊列表はまだありません。過去の隊列表が表示されない場合は、更新を押してください。"
+                      : "クラウドプロジェクトはまだありません。過去のクラウド隊列表が表示されない場合は、更新を押してください。"}
                   </p>
                 ) : (
-                  cloud.projects.map((cloudProject) => (
+                  visibleCloudProjects.map((cloudProject) => (
                     <article
                       key={cloudProject.id}
                       className="library-cloud-project"
@@ -578,7 +592,9 @@ export const FormationLibrary = ({
                         <strong>{cloudProject.title || "名称未設定"}</strong>
                         <span>
                           {cloudProject.mode === "parade" ? "パレード" : "ステージ"} /{" "}
-                          {formatCloudProjectRole(cloudProject.role)}
+                          {cloud.personalMode
+                            ? "自分専用"
+                            : formatCloudProjectRole(cloudProject.role)}
                         </span>
                       </button>
                       <button
@@ -637,7 +653,9 @@ export const FormationLibrary = ({
                   placeholder="例: しんご"
                 />
                 <span className="library-cloud-password-hint">
-                  新規登録時に、ほかの参加者へこの名前だけが表示されます
+                  {cloud.personalMode
+                    ? "新規登録時にアカウントへ設定する名前です"
+                    : "新規登録時に、ほかの参加者へこの名前だけが表示されます"}
                 </span>
               </label>
               <label>
@@ -688,7 +706,7 @@ export const FormationLibrary = ({
         </section>
       )}
 
-      {isCloudHelpOpen && (
+      {!cloud?.personalMode && isCloudHelpOpen && (
         <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
       )}
 

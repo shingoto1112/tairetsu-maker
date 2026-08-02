@@ -1,4 +1,10 @@
 import { AudioMeta } from "../types";
+import {
+  deleteNativeAudioBlob,
+  getAppRuntime,
+  loadNativeAudioBlob,
+  saveNativeAudioBlob,
+} from "../platform";
 
 const DB_NAME = "tairetsu-maker-audio";
 const DB_VERSION = 1;
@@ -96,9 +102,13 @@ export const saveAudioBlobToIndexedDb = async (
       : new File([blob], meta.name, {
           type,
         });
-  await withAudioStore("readwrite", (store) =>
-    store.put({ id, blob: file } satisfies AudioRecord),
-  );
+  if (getAppRuntime() === "capacitor-ios") {
+    await saveNativeAudioBlob(id, file, file.type || type);
+  } else {
+    await withAudioStore("readwrite", (store) =>
+      store.put({ id, blob: file } satisfies AudioRecord),
+    );
+  }
   return {
     id,
     name: meta.name || file.name,
@@ -111,6 +121,9 @@ export const saveAudioBlobToIndexedDb = async (
 export const loadAudioBlobFromIndexedDb = async (
   audioId: string,
 ): Promise<Blob | null> => {
+  if (getAppRuntime() === "capacitor-ios") {
+    return loadNativeAudioBlob(audioId);
+  }
   try {
     const record = await withAudioStore<AudioRecord | undefined>("readonly", (store) =>
       store.get(audioId),
@@ -122,6 +135,10 @@ export const loadAudioBlobFromIndexedDb = async (
 };
 
 export const deleteAudioBlobFromIndexedDb = async (audioId: string): Promise<void> => {
+  if (getAppRuntime() === "capacitor-ios") {
+    await deleteNativeAudioBlob(audioId);
+    return;
+  }
   try {
     await withAudioStore("readwrite", (store) => store.delete(audioId));
   } catch {

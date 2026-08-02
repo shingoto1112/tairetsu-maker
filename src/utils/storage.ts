@@ -1,4 +1,9 @@
 import { Project } from "../types";
+import {
+  getAppRuntime,
+  loadNativeProjectsMirror,
+  saveNativeProjectsMirror,
+} from "../platform";
 
 const STORAGE_KEY = "stageflow.project.v1";
 const PROJECTS_STORAGE_KEY = "stageflow.projects.v1";
@@ -66,10 +71,31 @@ export const saveProjectsToStorage = (projects: Project[]): void => {
     const withIdentity = ensureProjectIdentity(project);
     uniqueProjects.set(withIdentity.id as string, withIdentity);
   });
+  const sortedProjects = sortStoredProjects([...uniqueProjects.values()]);
   window.localStorage.setItem(
     PROJECTS_STORAGE_KEY,
-    JSON.stringify(sortStoredProjects([...uniqueProjects.values()])),
+    JSON.stringify(sortedProjects),
   );
+  if (getAppRuntime() === "capacitor-ios") {
+    void saveNativeProjectsMirror(sortedProjects).catch((error) => {
+      console.warn("iPadのローカル保存ミラーを更新できませんでした。", error);
+    });
+  }
+};
+
+export const hydrateProjectsFromNativeStorage = async (): Promise<Project[] | null> => {
+  if (getAppRuntime() !== "capacitor-ios") {
+    return null;
+  }
+  const nativeProjects = await loadNativeProjectsMirror();
+  if (nativeProjects) {
+    const projects = sortStoredProjects(nativeProjects.map(ensureProjectIdentity));
+    window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+    return projects;
+  }
+  const browserProjects = loadProjectsFromStorage();
+  await saveNativeProjectsMirror(browserProjects);
+  return browserProjects;
 };
 
 export const saveProjectToStorage = (project: Project): void => {
