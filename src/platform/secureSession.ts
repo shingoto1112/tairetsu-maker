@@ -10,9 +10,13 @@ let secureStorageReady: Promise<void> | null = null;
 
 const prepareSecureStorage = (): Promise<void> => {
   if (!secureStorageReady) {
-    secureStorageReady = SecureStorage.setDefaultKeychainAccess(
+    const initialization = SecureStorage.setDefaultKeychainAccess(
       KeychainAccess.whenUnlockedThisDeviceOnly,
     );
+    secureStorageReady = initialization.catch((error) => {
+      secureStorageReady = null;
+      throw error;
+    });
   }
   return secureStorageReady;
 };
