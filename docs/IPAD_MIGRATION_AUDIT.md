@@ -55,9 +55,11 @@ Swift 書き直しは不要である。
 
 1. Web/Tauriでは現在のlocalStorageを正式動作として維持する。
 2. Capacitor iOSではlocalStorageへ即時保存し、native Filesystemへ非同期ミラーする。
-3. 起動時はnative mirrorを優先して復元し、localStorageへ再展開する。
-4. 十分な回帰テスト後に、iPadだけnative mirrorを正式保存先として扱う。
-5. 書き込み中断に備えて一時ファイルから置換し、世代バックアップを残す。
+3. 両保存先に保存時刻を持たせ、起動時は正常かつ新しい方を採用する。旧形式の
+   localStorageが有効なら、意図した全削除を復活させないためlocalStorageを優先する。
+4. native mirrorは保存を直列化し、一時ファイルから置換して世代バックアップを残す。
+5. localStorageの破損・消失、または書き込み途中の終了時は、native本体・一時ファイル・
+   バックアップのうち最新の正常データから復旧する。
 
 音源は大容量になるためPreferencesやlocalStorageへ入れず、native Filesystemへ保存する。
 

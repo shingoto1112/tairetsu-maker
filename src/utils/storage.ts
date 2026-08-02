@@ -7,6 +7,7 @@ import {
 
 const STORAGE_KEY = "stageflow.project.v1";
 const PROJECTS_STORAGE_KEY = "stageflow.projects.v1";
+const PROJECTS_STORAGE_UPDATED_AT_KEY = "stageflow.projects.updatedAt.v1";
 
 const createProjectId = (): string => {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -29,7 +30,35 @@ const parseProjects = (raw: string | null): Project[] => {
   if (!Array.isArray(parsed)) {
     return [];
   }
-  return parsed.filter((item): item is Project => Boolean(item && typeof item === "object"));
+  return parsed.filter((item): item is Project =>
+    Boolean(item && typeof item === "object"),
+  );
+};
+
+const parseProjectsSnapshot = (raw: string): Project[] | null => {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is Project =>
+          Boolean(item && typeof item === "object"),
+        )
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const parseSavedAt = (raw: string | null): string | null => {
+  if (!raw) {
+    return null;
+  }
+  const time = Date.parse(raw);
+  return Number.isFinite(time) ? raw : null;
+};
+
+const getSavedAtTime = (savedAt: string | null): number => {
+  const time = savedAt ? Date.parse(savedAt) : 0;
+  return Number.isFinite(time) ? time : 0;
 };
 
 const getSortTime = (project: Project): number => {
@@ -72,40 +101,80 @@ export const saveProjectsToStorage = (projects: Project[]): void => {
     uniqueProjects.set(withIdentity.id as string, withIdentity);
   });
   const sortedProjects = sortStoredProjects([...uniqueProjects.values()]);
+  const savedAt = new Date().toISOString();
   window.localStorage.setItem(
     PROJECTS_STORAGE_KEY,
     JSON.stringify(sortedProjects),
   );
+  window.localStorage.setItem(PROJECTS_STORAGE_UPDATED_AT_KEY, savedAt);
   if (getAppRuntime() === "capacitor-ios") {
-    void saveNativeProjectsMirror(sortedProjects).catch((error) => {
+    void saveNativeProjectsMirror(sortedProjects, savedAt).catch((error) => {
       console.warn("iPadのローカル保存ミラーを更新できませんでした。", error);
     });
   }
 };
 
-export const hydrateProjectsFromNativeStorage = async (): Promise<Project[] | null> => {
+export const hydrateProjectsFromNativeStorage = async (): Promise<
+  Project[] | null
+> => {
   if (getAppRuntime() !== "capacitor-ios") {
     return null;
   }
-  const nativeProjects = await loadNativeProjectsMirror();
-  if (nativeProjects) {
-    const projects = sortStoredProjects(nativeProjects.map(ensureProjectIdentity));
+  const nativeMirror = await loadNativeProjectsMirror();
+  const browserRaw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
+  let browserProjects: Project[] | null = null;
+  if (browserRaw !== null) {
+    const parsedProjects = parseProjectsSnapshot(browserRaw);
+    if (parsedProjects) {
+      browserProjects = sortStoredProjects(
+        parsedProjects.map(ensureProjectIdentity),
+      );
+    }
+  } else {
+    const legacyProject = loadProjectFromStorage();
+    browserProjects = legacyProject
+      ? [ensureProjectIdentity(legacyProject)]
+      : null;
+  }
+  const browserSavedAt = parseSavedAt(
+    window.localStorage.getItem(PROJECTS_STORAGE_UPDATED_AT_KEY),
+  );
+  const nativeIsNewer =
+    nativeMirror &&
+    browserProjects &&
+    nativeMirror.savedAt &&
+    browserSavedAt &&
+    getSavedAtTime(nativeMirror.savedAt) > getSavedAtTime(browserSavedAt);
+  if (nativeMirror && (!browserProjects || nativeIsNewer)) {
+    const projects = sortStoredProjects(
+      nativeMirror.projects.map(ensureProjectIdentity),
+    );
+    const savedAt = nativeMirror.savedAt ?? new Date().toISOString();
     window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+    window.localStorage.setItem(PROJECTS_STORAGE_UPDATED_AT_KEY, savedAt);
+    await saveNativeProjectsMirror(projects, savedAt);
     return projects;
   }
-  const browserProjects = loadProjectsFromStorage();
-  await saveNativeProjectsMirror(browserProjects);
-  return browserProjects;
+  const projects = browserProjects ?? [];
+  const savedAt = browserSavedAt ?? new Date().toISOString();
+  window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+  window.localStorage.setItem(PROJECTS_STORAGE_UPDATED_AT_KEY, savedAt);
+  await saveNativeProjectsMirror(projects, savedAt);
+  return projects;
 };
 
 export const saveProjectToStorage = (project: Project): void => {
   const withIdentity = ensureProjectIdentity(project);
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(withIdentity));
   const projects = loadProjectsFromStorage();
-  const existingIndex = projects.findIndex((item) => item.id === withIdentity.id);
+  const existingIndex = projects.findIndex(
+    (item) => item.id === withIdentity.id,
+  );
   const nextProjects =
     existingIndex >= 0
-      ? projects.map((item) => (item.id === withIdentity.id ? withIdentity : item))
+      ? projects.map((item) =>
+          item.id === withIdentity.id ? withIdentity : item,
+        )
       : [withIdentity, ...projects];
   saveProjectsToStorage(nextProjects);
 };
