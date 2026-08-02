@@ -241,7 +241,10 @@ export const createTairetsuArchive = async (
   zip.file("project.json", JSON.stringify(exportedProject, null, 2));
 
   if (includesAudio && options.audioBlob && project.audio) {
-    zip.file(`audio/audio.${getAudioExtension(project)}`, options.audioBlob);
+    zip.file(
+      `audio/audio.${getAudioExtension(project)}`,
+      await options.audioBlob.arrayBuffer(),
+    );
   }
 
   return zip.generateAsync({

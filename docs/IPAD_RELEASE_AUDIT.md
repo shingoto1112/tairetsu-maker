@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | TypeScript | `npm run typecheck` | 成功 |
 | Web production build | `npm run build` | 成功 |
-| iPad固有ユニットテスト | `npm test`、7 files / 26 tests | 成功 |
+| iPad・互換性ユニットテスト | `npm test`、8 files / 31 tests | 成功 |
 | Capacitor同期 | `npx cap sync ios` | 成功 |
 | Windows/Tauri build | `npm run desktop:build` | 成功 |
 | production依存脆弱性 | `npm audit --omit=dev` | 0件 |
@@ -22,6 +22,8 @@
 ユニットテストは、Web/Tauri/iPad機能フラグ、iOS Auth callback、ローカルプロジェクト
 復旧、本人専用クラウド下書きの世代復旧、Keychainセッション、音源Blob保存、共有シート
 用一時ファイルと後始末を直接検証している。
+加えて、JSON、ZIP / `.tairetsu`、音源付きアーカイブ、共有先で二重ZIP化された
+アーカイブが同じProjectデータへ戻ることを検証している。
 
 ## 実装証拠
 
