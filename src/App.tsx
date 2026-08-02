@@ -3220,9 +3220,28 @@ function App() {
         });
       }
     };
+    let disposed = false;
+    let removeAppStateListener: (() => Promise<void>) | null = null;
+    if (APP_FEATURES.nativeFileShare) {
+      void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+        if (!isActive) {
+          handlePageHide();
+        }
+      }).then((listener) => {
+        if (disposed) {
+          void listener.remove();
+          return;
+        }
+        removeAppStateListener = () => listener.remove();
+      });
+    }
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("beforeunload", handlePageHide);
     return () => {
+      disposed = true;
+      if (removeAppStateListener) {
+        void removeAppStateListener();
+      }
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("beforeunload", handlePageHide);
       flushPendingAutoSave();

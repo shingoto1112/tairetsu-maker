@@ -63,6 +63,11 @@ Swift 書き直しは不要である。
 
 音源は大容量になるためPreferencesやlocalStorageへ入れず、native Filesystemへ保存する。
 
+本人専用クラウドの未同期下書きもnative Filesystemへ保存する。保存はプロジェクトごとに
+直列化し、一時ファイルから本体へ置換して一世代のバックアップを残す。起動時は本体、
+一時ファイル、バックアップのうち最新の正常データを採用する。iPadがバックグラウンドへ
+移る時にも未保存下書きを書き出す。
+
 ## personal cloud mode
 
 - `runtime.features.collaboration` を false にする。
@@ -88,10 +93,12 @@ Swift 書き直しは不要である。
 ## 外部依存の未確定事項
 
 - Bundle ID `jp.tairetsu.maker` の最終承認
-- Apple Developer Program登録
 - App Store Connectのアプリレコード作成
-- 署名証明書、Provisioning Profile、API key
+- App Store Connect API keyと署名付きTestFlight upload
 - App Store向けアイコン、説明、プライバシーポリシー
 - 実機TestFlight確認
+
+Apple Developer Programへの加入と現行契約への同意、SupabaseのiOS Redirect URL、
+GitHub `ios-testflight` EnvironmentとTeam ID secretは設定済み。
 
 これらが未完了でも、署名なしiOS buildとアプリ本体の実装・テストは進められる。
