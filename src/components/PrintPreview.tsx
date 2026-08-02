@@ -235,6 +235,40 @@ const metersToPrintCenteredMm = (
   sizeMm: number,
 ): string => `${meters * metrics.mmPerMeter - sizeMm / 2}mm`;
 
+const formatPrintSvgCoordinate = (value: number): string =>
+  Number(value.toFixed(6)).toString();
+
+const buildPrintGridPath = (
+  widthMeters: number,
+  heightMeters: number,
+  topMeters: number,
+  stepMeters: number,
+): string => {
+  if (stepMeters <= 0) {
+    return "";
+  }
+
+  const commands: string[] = [];
+  const epsilon = 0.000001;
+  for (let x = 0; x <= widthMeters + epsilon; x += stepMeters) {
+    const coordinate = formatPrintSvgCoordinate(Math.min(x, widthMeters));
+    commands.push(`M ${coordinate} 0 V ${formatPrintSvgCoordinate(heightMeters)}`);
+  }
+
+  const bottomMeters = topMeters + heightMeters;
+  const firstGridY = Math.ceil((topMeters - epsilon) / stepMeters) * stepMeters;
+  for (
+    let absoluteY = firstGridY;
+    absoluteY <= bottomMeters + epsilon;
+    absoluteY += stepMeters
+  ) {
+    const localY = formatPrintSvgCoordinate(absoluteY - topMeters);
+    commands.push(`M 0 ${localY} H ${formatPrintSvgCoordinate(widthMeters)}`);
+  }
+
+  return commands.join(" ");
+};
+
 const getObjectState = (
   frame: FormationFrame,
   object: StageObject,
@@ -941,7 +975,7 @@ const PrintStagePreview = ({
           totalDistance;
         const start = Math.ceil(minDistance / 5) * 5;
         const end = Math.floor(maxDistance / 5) * 5;
-        const lines: Array<{ isMajor: boolean; key: number; top: string }> = [];
+        const lines: Array<{ isMajor: boolean; key: number; yMeters: number }> = [];
 
         for (let meter = start; meter <= end + 0.001; meter += 5) {
           if (meter < -backwardDistanceMeters || meter > totalDistance) {
@@ -959,13 +993,19 @@ const PrintStagePreview = ({
           lines.push({
             isMajor,
             key: meter,
-            top: metersToPrintMm(internalY - verticalRange.topMeters, metrics),
+            yMeters: internalY - verticalRange.topMeters,
           });
         }
 
         return lines;
       })()
     : [];
+  const printGridPath = buildPrintGridPath(
+    commonWidthMeters,
+    totalDepthMeters,
+    verticalRange.topMeters,
+    metrics.gridSizeMeters,
+  );
   const previewStyle = {
     gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
     gridTemplateRows: `${rulerTopMm}mm ${stageHeightMm}mm`,
@@ -1234,41 +1274,58 @@ const PrintStagePreview = ({
         ]
         .filter(Boolean)
         .join(" ")}
-        style={{
-          backgroundSize: `${metersToPrintMm(metrics.gridSizeMeters, metrics)} ${metersToPrintMm(metrics.gridSizeMeters, metrics)}`,
-        }}
       >
         <svg
           aria-hidden="true"
-          className="print-center-line"
+          className="print-stage-guides"
           focusable="false"
           preserveAspectRatio="none"
-          viewBox="0 0 100 100"
+          viewBox={`0 0 ${commonWidthMeters} ${totalDepthMeters}`}
         >
+          {options.includeGrid && printGridPath && (
+            <path
+              className="print-grid-lines"
+              d={printGridPath}
+              fill="none"
+              shapeRendering="geometricPrecision"
+              stroke="rgba(100, 116, 139, 0.18)"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+          {paradeGuideLines.map((line) => (
+            <line
+              className={
+                line.isMajor
+                  ? "print-parade-distance-line print-parade-distance-line--major"
+                  : "print-parade-distance-line"
+              }
+              key={`parade-distance-${line.key}`}
+              stroke={
+                line.isMajor
+                  ? "rgba(13, 139, 120, 0.76)"
+                  : "rgba(13, 139, 120, 0.42)"
+              }
+              strokeWidth={line.isMajor ? "2.5" : "1.5"}
+              vectorEffect="non-scaling-stroke"
+              x1="0"
+              x2={commonWidthMeters}
+              y1={line.yMeters}
+              y2={line.yMeters}
+            />
+          ))}
           <line
+            className="print-center-line"
             stroke="rgba(13, 139, 120, 0.45)"
             strokeLinecap="square"
             strokeWidth="1.5"
             vectorEffect="non-scaling-stroke"
-            x1="50"
-            x2="50"
+            x1={commonWidthMeters / 2}
+            x2={commonWidthMeters / 2}
             y1="0"
-            y2="100"
+            y2={totalDepthMeters}
           />
         </svg>
-        {paradeGuideLines.map((line) => (
-          <span
-            aria-hidden="true"
-            className={[
-              "print-parade-distance-line",
-              line.isMajor ? "print-parade-distance-line--major" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            key={`parade-distance-${line.key}`}
-            style={{ top: line.top }}
-          />
-        ))}
         {gapAfter && (
           <span
             className="print-scene-gap-start"
