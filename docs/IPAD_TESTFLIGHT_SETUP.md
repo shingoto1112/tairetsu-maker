@@ -14,12 +14,15 @@ GitHub ActionsのmacOS runnerで行います。Appleアカウントの本人確�
 - 対象: iPadのみ
 - 最低iPadOS: 15.0
 
+AppleへのApp ID登録前の最終確認待ち。`jp.tairetsu.maker` を確定した後は、
+TestFlight/App Storeで使用するBundle IDとして原則変更しない。
+
 Bundle IDを変更する場合は、App Store Connectのアプリ作成前に
 `capacitor.config.ts` とXcode projectの両方を変更する。
 
 ## 2. Apple側の準備
 
-1. Apple Developer Programへ本人のApple Accountで加入する。
+1. Apple Developer Programへ本人のApple Accountで加入する。（加入済み、現行契約への同意済み）
 2. DeveloperのCertificates, Identifiers & Profilesで、Bundle ID
    `jp.tairetsu.maker` のApp IDを登録する。
 3. App Store Connectの「マイApp」から新規アプリを作る。
@@ -56,6 +59,9 @@ GitHub repositoryの `ios-testflight` Environmentは作成済み。必要なら�
 | `APP_STORE_CONNECT_API_KEY_ID` | API keyのKey ID |
 | `APP_STORE_CONNECT_API_KEY_BASE64` | `.p8`をBase64化した文字列 |
 
+`APPLE_TEAM_ID` は2026-08-03に `ios-testflight` Environmentへ登録済み。
+残る3項目は、App Store ConnectでTeam API keyを発行した後に本人が登録する。
+
 署名付き配布は `.github/workflows/ios-testflight.yml` の手動実行時だけ行う。通常の
 pushとpull requestでは `.github/workflows/ios-build.yml` の署名なしビルドだけを行う。
 Xcodeはローカルの配布証明書がない場合にクラウド管理証明書を利用する。Account Holder
@@ -74,6 +80,8 @@ Supabase DashboardのAuthentication、URL Configurationを開き、Redirect URLs
 ```text
 jp.tairetsu.maker://auth/callback
 ```
+
+このRedirect URLは2026-08-03に本番Supabaseへ追加済み。
 
 新規登録の確認メールをiPadで開いた場合、このURLからアプリへ戻る。アプリは受け取った
 セッションを検証し、iOS Keychainへ保存する。publishable key以外の秘密鍵はアプリへ
