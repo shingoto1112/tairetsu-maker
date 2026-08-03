@@ -33,8 +33,8 @@ Bundle IDを変更する場合は、App Store Connectのアプリ作成前に
 
 1. 初回だけ、Account HolderがApp Store Connectの「ユーザとアクセス」→「統合」→
    「App Store Connect API」でアクセスを申請する。Appleの承認後に次へ進む。
-2. Account HolderまたはAdminでTeam API keyを新規作成し、アプリのアップロードと
-   TestFlight管理が可能な権限を与える。
+2. Account HolderまたはAdminでTeam API keyを新規作成し、権限は `Admin` にする。
+   GitHub Actions上のXcodeがクラウド配布証明書を使うために必要となる。
 3. Issuer IDとKey IDを控える。
 4. `.p8` private keyをダウンロードする。再ダウンロードできないため安全に保管する。
 5. Windows PowerShellでprivate keyをBase64化する。
@@ -61,6 +61,8 @@ GitHub repositoryの `ios-testflight` Environmentは作成済み。必要なら�
 
 4項目とも2026-08-03に `ios-testflight` Environmentへ登録済み。秘密鍵のBase64文字列を
 一時的に置いたWindowsクリップボードも登録確認後に消去済み。
+初回の `App Manager` キーはクラウド署名権限が不足したため無効化し、現在は
+`Admin` のTestFlight専用キーを使用する。
 
 署名付き配布は `.github/workflows/ios-testflight.yml` の手動実行時だけ行う。通常の
 pushとpull requestでは `.github/workflows/ios-build.yml` の署名なしビルドだけを行う。

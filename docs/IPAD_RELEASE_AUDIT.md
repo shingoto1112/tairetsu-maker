@@ -4,8 +4,9 @@
 
 ## 判定
 
-アプリ実装と署名なしiOS buildは完了している。TestFlight配布と対象iPadでの実機確認は
-未完了のため、iPad初期版はまだリリース完了扱いにしない。
+アプリ実装、署名付きarchive、TestFlightアップロード、内部テスターへの配信準備は
+完了している。対象iPadでのインストールと実機確認が未完了のため、iPad初期版はまだ
+リリース完了扱いにしない。
 
 ## 自動検証済み
 
@@ -49,7 +50,9 @@
 - App Store Connect APIアクセス: 申請・承認済み
 - App Store Connect API key secrets: GitHub `ios-testflight` Environmentへ登録済み
 - 対象iPad: Apple DeveloperのiPad端末として登録済み
-- 署名付きarchive / TestFlight upload: 初回署名問題を確認し、端末登録後の再実行待ち
+- TestFlight upload: GitHub Actions run 30815777094で成功
+- App Store Connect: バージョン1.0・ビルド4が「提出準備完了」
+- 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 
 ## TestFlight実機で必ず確認する項目
 
