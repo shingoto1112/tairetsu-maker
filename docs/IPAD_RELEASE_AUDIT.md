@@ -46,8 +46,8 @@
 - Bundle ID: `jp.tairetsu.maker` で確定
 - App ID: `Tairetsu Maker` / `jp.tairetsu.maker` を登録済み
 - App Store Connectアプリレコード: iOS「隊列メーカー」を作成済み
-- App Store Connect APIアクセス: 利用条件への同意・申請待ち
-- App Store Connect API key secrets: 未登録
+- App Store Connect APIアクセス: 申請・承認済み
+- App Store Connect API key secrets: GitHub `ios-testflight` Environmentへ登録済み
 - 署名付きarchive / TestFlight upload: 未実行
 
 ## TestFlight実機で必ず確認する項目

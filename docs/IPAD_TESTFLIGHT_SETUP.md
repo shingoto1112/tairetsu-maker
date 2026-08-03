@@ -59,8 +59,8 @@ GitHub repositoryの `ios-testflight` Environmentは作成済み。必要なら�
 | `APP_STORE_CONNECT_API_KEY_ID` | API keyのKey ID |
 | `APP_STORE_CONNECT_API_KEY_BASE64` | `.p8`をBase64化した文字列 |
 
-`APPLE_TEAM_ID` は2026-08-03に `ios-testflight` Environmentへ登録済み。
-残る3項目は、App Store ConnectでTeam API keyを発行した後に本人が登録する。
+4項目とも2026-08-03に `ios-testflight` Environmentへ登録済み。秘密鍵のBase64文字列を
+一時的に置いたWindowsクリップボードも登録確認後に消去済み。
 
 署名付き配布は `.github/workflows/ios-testflight.yml` の手動実行時だけ行う。通常の
 pushとpull requestでは `.github/workflows/ios-build.yml` の署名なしビルドだけを行う。
