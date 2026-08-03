@@ -48,7 +48,8 @@
 - App Store Connectアプリレコード: iOS「隊列メーカー」を作成済み
 - App Store Connect APIアクセス: 申請・承認済み
 - App Store Connect API key secrets: GitHub `ios-testflight` Environmentへ登録済み
-- 署名付きarchive / TestFlight upload: 未実行
+- 署名付きarchive / TestFlight upload: 初回実行済み。開発プロファイル作成に必要な
+  登録端末が0台のため、対象iPadのUDID登録待ち
 
 ## TestFlight実機で必ず確認する項目
 
