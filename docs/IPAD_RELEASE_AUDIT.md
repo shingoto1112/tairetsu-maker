@@ -17,7 +17,7 @@
 | Capacitor同期 | `npx cap sync ios` | 成功 |
 | Windows/Tauri build | `npm run desktop:build` | 成功 |
 | production依存脆弱性 | `npm audit --omit=dev` | 0件 |
-| macOS iOS Simulator build | GitHub Actions run 30766985344 | 成功 |
+| macOS iOS Simulator build | GitHub Actions run 30767209452 | 成功 |
 
 ユニットテストは、Web/Tauri/iPad機能フラグ、iOS Auth callback、ローカルプロジェクト
 復旧、本人専用クラウド下書きの世代復旧、Keychainセッション、音源Blob保存、共有シート
@@ -43,8 +43,10 @@
 - 現行契約: 同意済み
 - GitHub `ios-testflight` Environment: 作成済み
 - `APPLE_TEAM_ID` secret: 登録済み
-- Bundle ID: `jp.tairetsu.maker` の最終確認待ち
-- App ID / App Store Connectアプリレコード: 未作成
+- Bundle ID: `jp.tairetsu.maker` で確定
+- App ID: `Tairetsu Maker` / `jp.tairetsu.maker` を登録済み
+- App Store Connectアプリレコード: iOS「隊列メーカー」を作成済み
+- App Store Connect APIアクセス: 利用条件への同意・申請待ち
 - App Store Connect API key secrets: 未登録
 - 署名付きarchive / TestFlight upload: 未実行
 

@@ -14,8 +14,8 @@ GitHub ActionsのmacOS runnerで行います。Appleアカウントの本人確�
 - 対象: iPadのみ
 - 最低iPadOS: 15.0
 
-AppleへのApp ID登録前の最終確認待ち。`jp.tairetsu.maker` を確定した後は、
-TestFlight/App Storeで使用するBundle IDとして原則変更しない。
+`jp.tairetsu.maker` で確定し、2026-08-03にAppleのApp IDとApp Store Connectの
+iOSアプリへ登録済み。TestFlight/App Storeで使用するBundle IDとして原則変更しない。
 
 Bundle IDを変更する場合は、App Store Connectのアプリ作成前に
 `capacitor.config.ts` とXcode projectの両方を変更する。
@@ -24,10 +24,10 @@ Bundle IDを変更する場合は、App Store Connectのアプリ作成前に
 
 1. Apple Developer Programへ本人のApple Accountで加入する。（加入済み、現行契約への同意済み）
 2. DeveloperのCertificates, Identifiers & Profilesで、Bundle ID
-   `jp.tairetsu.maker` のApp IDを登録する。
-3. App Store Connectの「マイApp」から新規アプリを作る。
-4. プラットフォームはiOS、名前は「隊列メーカー」、上のBundle IDを選ぶ。
-5. SKUは外部公開されない任意値にする。例: `tairetsu-maker-ipad`。
+   `jp.tairetsu.maker` のApp IDを登録する。（2026-08-03登録済み）
+3. App Store Connectの「マイApp」から新規アプリを作る。（2026-08-03作成済み）
+4. プラットフォームはiOS、名前は「隊列メーカー」、上のBundle IDを選ぶ。（設定済み）
+5. SKUは外部公開されない任意値にする。（`tairetsu-maker-ipad` で設定済み）
 
 ## 3. App Store Connect API key
 
