@@ -557,28 +557,30 @@ export const MemberPanel = ({
       )}
       {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
-      <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
-        <button
-          className={visibilityTab === "visible" ? "is-active" : ""}
-          onClick={() => onVisibilityTabChange("visible")}
-          type="button"
-        >
-          表示 {visibleMembers.length}
-        </button>
-        <button
-          className={visibilityTab === "hidden" ? "is-active" : ""}
-          onClick={() => onVisibilityTabChange("hidden")}
-          type="button"
-        >
-          非表示 {hiddenMembers.length}
-        </button>
+      <div className="panel-visibility-summary">
+        <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
+          <button
+            className={visibilityTab === "visible" ? "is-active" : ""}
+            onClick={() => onVisibilityTabChange("visible")}
+            type="button"
+          >
+            表示 {visibleMembers.length}
+          </button>
+          <button
+            className={visibilityTab === "hidden" ? "is-active" : ""}
+            onClick={() => onVisibilityTabChange("hidden")}
+            type="button"
+          >
+            非表示 {hiddenMembers.length}
+          </button>
+        </div>
+        <p className="muted-text">
+          現在の追加先:
+          {isVisibleTab
+            ? " このシーンでステージに表示"
+            : " このシーンでは隊列外・非表示"}
+        </p>
       </div>
-      <p className="muted-text">
-        現在の追加先:
-        {isVisibleTab
-          ? " このシーンでステージに表示"
-          : " このシーンでは隊列外・非表示"}
-      </p>
 
       <section className="object-visibility-list" aria-label="メンバー表示切替リスト">
         <div className="object-visibility-list__header">

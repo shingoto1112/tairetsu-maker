@@ -2429,6 +2429,10 @@ h2 {
   color: var(--accent);
 }
 
+.panel-visibility-summary {
+  display: contents;
+}
+
 .empty-state {
   background: #ffffff;
   border: 1px dashed var(--border);
@@ -6961,7 +6965,7 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 
   html[data-app-runtime="capacitor-ios"] .workspace {
-    grid-template-rows: clamp(230px, 24dvh, 290px) minmax(0, 1fr);
+    grid-template-rows: clamp(214px, 18dvh, 236px) minmax(0, 1fr);
   }
 
   html[data-app-runtime="capacitor-ios"] .tab-panel,
@@ -6970,12 +6974,151 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 
   html[data-app-runtime="capacitor-ios"] .tab-panel__content {
+    padding: 7px;
     scroll-padding-inline: 8px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .panel-tabs {
+    gap: 4px;
+    min-height: 52px;
+    padding: 4px 6px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .panel-tab,
+  html[data-app-runtime="capacitor-ios"] .panel-collapse-button {
+    border-radius: 7px;
+    gap: 6px;
+    min-height: 44px;
+    padding: 7px 9px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .panel-tab svg {
+    height: 17px;
+    width: 17px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .toolbar .mini-button,
+  html[data-app-runtime="capacitor-ios"] .toolbar .icon-button,
+  html[data-app-runtime="capacitor-ios"] .toolbar-menu-button,
+  html[data-app-runtime="capacitor-ios"] .toolbar__title {
+    min-height: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .toolbar-menu-button {
+    height: 44px;
+    width: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .panel-section,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .assignment-tab,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .details-panel,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline {
+    align-items: stretch;
+    background: transparent;
+    border: 0;
+    display: flex;
+    gap: 8px;
+    height: 100%;
+    min-width: max-content;
+    padding: 0;
+    width: max-content;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .panel-section > *,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .assignment-tab > *,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .details-panel > * {
+    align-self: stretch;
+    box-sizing: border-box;
+    flex: 0 0 clamp(252px, 27vw, 306px);
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    overflow: auto;
+    scroll-snap-align: start;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content .panel-sticky-header {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: none;
+    margin: 0;
+    padding: 9px 10px;
+    position: static;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .panel-visibility-summary {
+    align-content: start;
+    background: #fbfdff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: grid;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .panel-visibility-summary .muted-text {
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content .object-visibility-list,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content .stack {
+    margin-top: 0;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content .mini-button,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content .icon-button,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content button,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content input,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content select {
+    min-height: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content .color-palette-trigger {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .panel-sticky-header,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .timeline-save-status,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .notice {
+    align-self: stretch;
+    box-sizing: border-box;
+    flex: 0 0 clamp(252px, 27vw, 306px);
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    overflow: auto;
+    scroll-snap-align: start;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .timeline__rail {
+    align-items: stretch;
+    display: flex;
+    gap: 8px;
+    height: 100%;
+    padding: 0;
+    width: max-content;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .timeline__rail > .timeline-item,
+  html[data-app-runtime="capacitor-ios"] .timeline__rail > .empty-state {
+    box-sizing: border-box;
+    flex: 0 0 clamp(252px, 27vw, 306px);
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    overflow: auto;
+    scroll-snap-align: start;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .timeline-card {
+    min-height: 100%;
   }
 
   html[data-app-runtime="capacitor-ios"] .stage-workspace,
   html[data-app-runtime="capacitor-ios"] .center-column.is-thumbnail-collapsed .stage-workspace {
-    grid-template-rows: 112px minmax(0, 1fr);
+    grid-template-rows: 96px minmax(0, 1fr);
   }
 
   html[data-app-runtime="capacitor-ios"] .center-column.is-thumbnail-collapsed .stage-workspace {
@@ -6983,14 +7126,29 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 
   html[data-app-runtime="capacitor-ios"] .scene-thumbnail-card {
-    flex-basis: 100px;
-    height: 98px;
-    max-height: 98px;
-    min-height: 98px;
+    flex-basis: 88px;
+    height: 82px;
+    max-height: 82px;
+    min-height: 82px;
   }
 
   html[data-app-runtime="capacitor-ios"] .scene-thumbnail-preview {
-    height: 46px;
+    height: 34px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-rail {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-rail__toggle {
+    min-width: 70px;
+    padding: 6px;
+    width: 70px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-list {
+    gap: 6px;
+    padding: 6px;
   }
 
   html[data-app-runtime="capacitor-ios"] .stage-frame {
@@ -7000,11 +7158,19 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 
   html[data-app-runtime="capacitor-ios"] .stage-export-header {
     flex-wrap: nowrap;
-    min-height: 54px;
+    min-height: 58px;
     overflow-x: auto;
     overflow-y: hidden;
     padding: 7px;
     scrollbar-width: thin;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .stage-export-header button {
+    min-height: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .stage-export-header .icon-button {
+    min-width: 44px;
   }
 
   html[data-app-runtime="capacitor-ios"] .stage-primary-controls,
@@ -7020,12 +7186,13 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 
   html[data-app-runtime="capacitor-ios"] .parade-canvas-shell {
-    grid-template-rows: 138px minmax(0, 1fr);
+    grid-template-rows: 124px minmax(0, 1fr);
   }
 
   html[data-app-runtime="capacitor-ios"] .parade-control-panel {
     align-items: center;
-    padding: 7px;
+    gap: 7px;
+    padding: 6px;
   }
 
   html[data-app-runtime="capacitor-ios"] .parade-control-panel__header,
@@ -7037,13 +7204,15 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 
   html[data-app-runtime="capacitor-ios"] .parade-control-panel__header {
-    min-width: 220px;
+    min-width: 186px;
   }
 
   html[data-app-runtime="capacitor-ios"] .parade-control-section {
     align-items: center;
     display: flex;
-    min-height: 104px;
+    gap: 7px;
+    min-height: 110px;
+    padding: 7px;
     width: max-content;
   }
 
@@ -7055,6 +7224,21 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 
   html[data-app-runtime="capacitor-ios"] .parade-control-section > label {
-    min-width: 118px;
+    min-width: 110px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .parade-control-panel button,
+  html[data-app-runtime="capacitor-ios"] .parade-control-panel input,
+  html[data-app-runtime="capacitor-ios"] .parade-control-panel select {
+    min-height: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .parade-control-panel .icon-button,
+  html[data-app-runtime="capacitor-ios"] .parade-control-panel .mini-button.icon-only {
+    min-width: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"] .parade-control-panel .checkbox-row input {
+    min-height: 24px;
   }
 }
