@@ -100,6 +100,14 @@ const shapes: StageObjectShape[] = [
   "custom",
 ];
 
+const shapeLabel: Record<StageObjectShape, string> = {
+  rectangle: "四角形",
+  circle: "円",
+  line: "線",
+  curtain: "幕",
+  custom: "カスタム",
+};
+
 const typeLabel: Record<StageObjectType, string> = {
   prop: "道具",
   setPiece: "大道具",
@@ -506,7 +514,7 @@ export const ObjectPanel = ({
             >
               {shapes.map((shape) => (
                 <option key={shape} value={shape}>
-                  {shape}
+                  {shapeLabel[shape]}
                 </option>
               ))}
             </select>
@@ -896,7 +904,7 @@ export const ObjectPanel = ({
                 >
                   {shapes.map((shape) => (
                     <option key={shape} value={shape}>
-                      {shape}
+                      {shapeLabel[shape]}
                     </option>
                   ))}
                 </select>

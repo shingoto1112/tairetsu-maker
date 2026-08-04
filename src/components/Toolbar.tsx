@@ -1,6 +1,4 @@
 import {
-  Eye,
-  Grid3X3,
   Menu,
   PanelsTopLeft,
   Save,
@@ -11,13 +9,6 @@ import { useEffect, useRef, useState } from "react";
 
 type ToolbarProps = {
   title: string;
-  showGrid: boolean;
-  showCenterLine: boolean;
-  showCenterMarker: boolean;
-  showMeterRulers: boolean;
-  focusMode: boolean;
-  showSnapGuides: boolean;
-  snapToGuides: boolean;
   canEditProject?: boolean;
   canEditScene?: boolean;
   canSaveProject?: boolean;
@@ -30,13 +21,6 @@ type ToolbarProps = {
   onBackToLibrary: () => void;
   onSaveProject: () => void;
   onOpenShareExport: () => void;
-  onToggleGrid: () => void;
-  onToggleCenterLine: () => void;
-  onToggleCenterMarker: () => void;
-  onToggleMeterRulers: () => void;
-  onToggleFocusMode: () => void;
-  onToggleSnapGuides: () => void;
-  onToggleSnapToGuides: () => void;
   onClearSelection: () => void;
   onCreateGroup: () => void;
   onMirrorSelection: () => void;
@@ -46,13 +30,6 @@ type ToolbarProps = {
 
 export const Toolbar = ({
   title,
-  showGrid,
-  showCenterLine,
-  showCenterMarker,
-  showMeterRulers,
-  focusMode,
-  showSnapGuides,
-  snapToGuides,
   canEditProject = true,
   canEditScene = true,
   canSaveProject = true,
@@ -65,13 +42,6 @@ export const Toolbar = ({
   onBackToLibrary,
   onSaveProject,
   onOpenShareExport,
-  onToggleGrid,
-  onToggleCenterLine,
-  onToggleCenterMarker,
-  onToggleMeterRulers,
-  onToggleFocusMode,
-  onToggleSnapGuides,
-  onToggleSnapToGuides,
   onClearSelection,
   onCreateGroup,
   onMirrorSelection,
@@ -173,64 +143,6 @@ export const Toolbar = ({
                 >
                   <Share2 size={16} />
                   共有と書き出し
-                </button>
-              </section>
-
-              <section className="menu-section">
-                <h3>表示設定</h3>
-                <button
-                  onClick={() => runMenuAction(onToggleGrid)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  <Grid3X3 size={16} />
-                  グリッド{showGrid ? "OFF" : "ON"}
-                </button>
-                <button
-                  onClick={() => runMenuAction(onToggleCenterLine)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  <Eye size={16} />
-                  中央線{showCenterLine ? "OFF" : "ON"}
-                </button>
-                <button
-                  onClick={() => runMenuAction(onToggleCenterMarker)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  センターマーカー{showCenterMarker ? "OFF" : "ON"}
-                </button>
-                <button
-                  onClick={() => runMenuAction(onToggleMeterRulers)}
-                  type="button"
-                >
-                  メートル目盛り{showMeterRulers ? "OFF" : "ON"}
-                </button>
-                <button
-                  onClick={() => runMenuAction(onToggleFocusMode)}
-                  type="button"
-                >
-                  推しカメ{focusMode ? "OFF" : "ON"}
-                </button>
-                <button
-                  onClick={() => runMenuAction(onToggleSnapGuides)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  ガイド線{showSnapGuides ? "OFF" : "ON"}
-                </button>
-                <button
-                  onClick={() => runMenuAction(onToggleSnapToGuides)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  ガイド吸着{snapToGuides ? "OFF" : "ON"}
                 </button>
               </section>
 

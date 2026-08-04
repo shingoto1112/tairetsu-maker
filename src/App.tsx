@@ -12745,11 +12745,27 @@ function App() {
           useGlobalStageSize={
             project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true
           }
+          showMeterRulers={showMeterRulers}
+          focusMode={focusMode}
+          showSnapGuides={project.guideSettings?.snapGuideEnabled ?? true}
+          snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
           disabled={!canEditCloudSettings}
           disabledMessage={cloudSettingsReadOnlyMessage}
           onChange={updateStage}
           onParadeSettingsChange={updateParadeSettings}
           onUseGlobalStageSizeChange={updateUseGlobalStageSize}
+          onToggleMeterRulers={() => setShowMeterRulers((previous) => !previous)}
+          onToggleFocusMode={() => setFocusMode((previous) => !previous)}
+          onToggleSnapGuides={() =>
+            updateGuideSettings({
+              snapGuideEnabled: !(project.guideSettings?.snapGuideEnabled ?? true),
+            })
+          }
+          onToggleSnapToGuides={() =>
+            updateGuideSettings({
+              snapToGuideEnabled: !(project.guideSettings?.snapToGuideEnabled ?? false),
+            })
+          }
         />
       );
     }
@@ -12883,14 +12899,33 @@ function App() {
 
     return (
       <StageSettingsPanel
+        mode={project.mode ?? "stage"}
         stage={project.stage}
+        paradeSettings={project.paradeSettings}
         useGlobalStageSize={
           project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true
         }
+        showMeterRulers={showMeterRulers}
+        focusMode={focusMode}
+        showSnapGuides={project.guideSettings?.snapGuideEnabled ?? true}
+        snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
         disabled={!canEditCloudSettings}
         disabledMessage={cloudSettingsReadOnlyMessage}
         onChange={updateStage}
+        onParadeSettingsChange={updateParadeSettings}
         onUseGlobalStageSizeChange={updateUseGlobalStageSize}
+        onToggleMeterRulers={() => setShowMeterRulers((previous) => !previous)}
+        onToggleFocusMode={() => setFocusMode((previous) => !previous)}
+        onToggleSnapGuides={() =>
+          updateGuideSettings({
+            snapGuideEnabled: !(project.guideSettings?.snapGuideEnabled ?? true),
+          })
+        }
+        onToggleSnapToGuides={() =>
+          updateGuideSettings({
+            snapToGuideEnabled: !(project.guideSettings?.snapToGuideEnabled ?? false),
+          })
+        }
       />
     );
   })();
@@ -12960,13 +12995,6 @@ function App() {
       <div className="app-top-region">
       <Toolbar
         title={project.title}
-        showGrid={project.stage.showGrid}
-        showCenterLine={project.stage.showCenterLine ?? true}
-        showCenterMarker={project.stage.showCenterMarker ?? true}
-        showMeterRulers={showMeterRulers}
-        focusMode={focusMode}
-        showSnapGuides={project.guideSettings?.snapGuideEnabled ?? true}
-        snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
         canEditProject={canEditProjectChrome}
         canEditScene={canEditCurrentScene}
         canSaveProject={
@@ -12982,31 +13010,6 @@ function App() {
         onBackToLibrary={() => void returnToLibrary()}
         onSaveProject={() => void saveProjectManually()}
         onOpenShareExport={() => setIsShareExportOpen(true)}
-        onToggleGrid={() => updateStage({ showGrid: !project.stage.showGrid })}
-        onToggleCenterLine={() =>
-          updateStage({
-            showCenterLine: !(project.stage.showCenterLine ?? true),
-          })
-        }
-        onToggleCenterMarker={() =>
-          updateStage({
-            showCenterMarker: !(project.stage.showCenterMarker ?? true),
-          })
-        }
-        onToggleMeterRulers={() =>
-          setShowMeterRulers((previous) => !previous)
-        }
-        onToggleFocusMode={() => setFocusMode((previous) => !previous)}
-        onToggleSnapGuides={() =>
-          updateGuideSettings({
-            snapGuideEnabled: !(project.guideSettings?.snapGuideEnabled ?? true),
-          })
-        }
-        onToggleSnapToGuides={() =>
-          updateGuideSettings({
-            snapToGuideEnabled: !(project.guideSettings?.snapToGuideEnabled ?? false),
-          })
-        }
         onClearSelection={() => {
           setSelected(null);
           setSelectedMemberIds([]);

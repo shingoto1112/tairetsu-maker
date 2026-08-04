@@ -19,11 +19,19 @@ type StageSettingsPanelProps = {
   stage: StageConfig;
   paradeSettings?: ParadeSettings;
   useGlobalStageSize: boolean;
+  showMeterRulers?: boolean;
+  focusMode?: boolean;
+  showSnapGuides?: boolean;
+  snapToGuides?: boolean;
   disabled?: boolean;
   disabledMessage?: string;
   onChange: (patch: Partial<StageConfig>) => void;
   onParadeSettingsChange?: (patch: Partial<ParadeSettings>) => void;
   onUseGlobalStageSizeChange: (enabled: boolean) => void;
+  onToggleMeterRulers?: () => void;
+  onToggleFocusMode?: () => void;
+  onToggleSnapGuides?: () => void;
+  onToggleSnapToGuides?: () => void;
 };
 
 export const StageSettingsPanel = ({
@@ -31,11 +39,19 @@ export const StageSettingsPanel = ({
   stage,
   paradeSettings,
   useGlobalStageSize,
+  showMeterRulers = true,
+  focusMode = false,
+  showSnapGuides = true,
+  snapToGuides = false,
   disabled = false,
   disabledMessage,
   onChange,
   onParadeSettingsChange,
   onUseGlobalStageSizeChange,
+  onToggleMeterRulers,
+  onToggleFocusMode,
+  onToggleSnapGuides,
+  onToggleSnapToGuides,
 }: StageSettingsPanelProps) => {
   const effectiveParadeSettings: ParadeSettings = {
     totalDistance: paradeSettings?.totalDistance ?? stage.depthMeters,
@@ -55,6 +71,93 @@ export const StageSettingsPanel = ({
   const readOnlyNotice =
     disabledMessage ??
     "クラウドプロジェクトの全体設定は初期実装では編集できません。ローカルへ複製すると編集できます。";
+  const displaySettings = (
+    <div className="stage-display-settings">
+      <h3>表示設定</h3>
+      <div className="toggle-list">
+        {mode === "stage" && (
+          <>
+            <label>
+              <input
+                type="checkbox"
+                checked={stage.showGrid}
+                disabled={disabled}
+                onChange={(event) => onChange({ showGrid: event.target.checked })}
+              />
+              グリッド表示
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={stage.showCenterLine ?? true}
+                disabled={disabled}
+                onChange={(event) =>
+                  onChange({ showCenterLine: event.target.checked })
+                }
+              />
+              中央線表示
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={stage.showCenterMarker ?? true}
+                disabled={disabled}
+                onChange={(event) =>
+                  onChange({ showCenterMarker: event.target.checked })
+                }
+              />
+              センターマーカー表示
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={stage.showStageLabels}
+                disabled={disabled}
+                onChange={(event) =>
+                  onChange({ showStageLabels: event.target.checked })
+                }
+              />
+              上手 / 下手ラベル
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={showMeterRulers}
+                onChange={onToggleMeterRulers}
+              />
+              メートル目盛り
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={showSnapGuides}
+                disabled={disabled}
+                onChange={onToggleSnapGuides}
+              />
+              ガイド線
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={snapToGuides}
+                disabled={disabled}
+                onChange={onToggleSnapToGuides}
+              />
+              ガイド吸着
+            </label>
+          </>
+        )}
+        <label>
+          <input
+            type="checkbox"
+            checked={focusMode}
+            onChange={onToggleFocusMode}
+          />
+          推しカメ
+        </label>
+      </div>
+    </div>
+  );
 
   if (mode === "parade") {
     return (
@@ -182,6 +285,7 @@ export const StageSettingsPanel = ({
             10mごとのライン強調
           </label>
         </div>
+        {displaySettings}
         {disabled && <p className="notice warning">{readOnlyNotice}</p>}
         <p className="notice muted">
           後方表示距離を増やすと、0mラインより後ろに -1m、-2m... の範囲を追加できます。横方向表示方式は表示だけを切り替えます。
@@ -321,51 +425,8 @@ export const StageSettingsPanel = ({
           </select>
         </label>
       </div>
-      <div className="toggle-list">
-        <label>
-          <input
-            type="checkbox"
-            checked={stage.showGrid}
-            disabled={disabled}
-            onChange={(event) => onChange({ showGrid: event.target.checked })}
-          />
-          グリッド表示
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={stage.showCenterLine ?? true}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({ showCenterLine: event.target.checked })
-            }
-          />
-          中央線表示
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={stage.showCenterMarker ?? true}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({ showCenterMarker: event.target.checked })
-            }
-          />
-          センターマーカー表示
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={stage.showStageLabels}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({ showStageLabels: event.target.checked })
-            }
-          />
-          上手 / 下手ラベル
-        </label>
-      </div>
     </details>
+    {displaySettings}
     {disabled && <p className="notice warning">{readOnlyNotice}</p>}
     </section>
   );

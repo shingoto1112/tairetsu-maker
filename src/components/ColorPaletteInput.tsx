@@ -1,18 +1,14 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_COLOR_PALETTE = [
-  "#fca5a5", "#f87171", "#ef4444", "#ff6b35", "#fb923c",
-  "#fdba74", "#fbbf24", "#facc15", "#fde047", "#ffd54f",
-  "#fda4af", "#fb7185", "#f43f5e", "#f9a8d4", "#f472b6",
-  "#ec4899", "#ff4db8", "#e879f9", "#d946ef", "#c084fc",
-  "#d8b4fe", "#b388ff", "#a855f7", "#ab47bc", "#8b5cf6",
-  "#818cf8", "#6366f1", "#60a5fa", "#3b82f6", "#42a5f5",
-  "#93c5fd", "#7dd3fc", "#38bdf8", "#29b6f6", "#0ea5e9",
-  "#67e8f9", "#22d3ee", "#06b6d4", "#00bcd4", "#00e5c0",
-  "#5eead4", "#2dd4bf", "#20c997", "#14b8a6", "#34d399",
-  "#10b981", "#86efac", "#4ade80", "#22c55e", "#76ff03",
-  "#a3e635", "#84cc16", "#bef264", "#16a34a", "#f59e0b",
-  "#f97316", "#ff7f50", "#ff8a80", "#64748b", "#111827",
+  "#1c1c1c", "#6b120a", "#6c310f", "#6e4414", "#705d1b", "#737522", "#587420", "#31721e", "#265d72", "#173a72", "#00026f", "#3d066e", "#671043",
+  "#393939", "#961d14", "#984519", "#995f1f", "#9c8128", "#a3a333", "#7ca130", "#48a12d", "#3881a1", "#22549d", "#00009e", "#580d9b", "#931b62",
+  "#555555", "#c1271b", "#c35a23", "#c67a2c", "#cba536", "#d1d344", "#9dd140", "#5fcf3d", "#4aa6cd", "#2e6acc", "#0100cc", "#7214ca", "#bd2781",
+  "#717171", "#e93423", "#ee6a2c", "#ef9535", "#f6cc44", "#ffff55", "#c2fc50", "#75fb4c", "#5ccbf9", "#3982f5", "#0000f6", "#8d1cf4", "#e7329d",
+  "#8e8e8e", "#ea4333", "#ed8637", "#f2a940", "#f8d448", "#feff5c", "#cbfd4e", "#7bfb4c", "#65d5fa", "#4d99f7", "#2d36f7", "#9e29f4", "#e83dad",
+  "#aaaaaa", "#ec665d", "#f39f61", "#f5bb67", "#f8de6d", "#fffe6e", "#d7fc6e", "#90fb6d", "#7fdefe", "#6faff9", "#5c66f9", "#b15bf2", "#ea63bf",
+  "#c6c6c6", "#ef908c", "#f4bb8e", "#f7cf91", "#fbe791", "#ffff95", "#e2fd94", "#abfc93", "#9fe7fd", "#97c6fa", "#8b93f6", "#c88af9", "#f18bd4",
+  "#e3e3e3", "#f3bcb9", "#f9d5bb", "#fae2bc", "#fcf0bc", "#feffbd", "#eefebd", "#cafdbb", "#c2f0fd", "#bfdcfa", "#babefb", "#ddb8fb", "#f4bce3",
 ];
 
 const normalizeColor = (color: string) => color.trim().toLowerCase();
@@ -41,16 +37,19 @@ export function ColorPaletteInput({
   const paletteId = useId();
   const currentColor = value || DEFAULT_COLOR_PALETTE[0];
   const normalizedCurrent = normalizeColor(currentColor);
+  const colorInputValue = /^#[0-9a-f]{6}$/i.test(currentColor)
+    ? currentColor
+    : "#0f766e";
   const colors = useMemo(() => {
     const uniqueColors = palette.filter(
       (color, index, source) =>
         source.findIndex((item) => normalizeColor(item) === normalizeColor(color)) === index,
     );
-    if (uniqueColors.some((color) => normalizeColor(color) === normalizedCurrent)) {
-      return uniqueColors;
-    }
-    return [currentColor, ...uniqueColors];
-  }, [currentColor, normalizedCurrent, palette]);
+    return uniqueColors;
+  }, [palette]);
+  const isPaletteColor = colors.some(
+    (color) => normalizeColor(color) === normalizedCurrent,
+  );
 
   useEffect(() => {
     if (disabled) {
@@ -139,24 +138,35 @@ export function ColorPaletteInput({
           aria-label={label}
           style={popoverPosition}
         >
-          {colors.map((color) => {
-            const isSelected = normalizeColor(color) === normalizedCurrent;
-            return (
-              <button
-                key={color}
-                type="button"
-                className={`color-palette-swatch${isSelected ? " is-selected" : ""}`}
-                style={{ backgroundColor: color }}
-                onClick={() => {
-                  onChange(color);
-                  setOpen(false);
-                }}
-                aria-label={`${label}: ${color}`}
-                aria-selected={isSelected}
-                role="option"
-              />
-            );
-          })}
+          <div className="color-palette-grid">
+            {colors.map((color, index) => {
+              const isSelected = normalizeColor(color) === normalizedCurrent;
+              return (
+                <button
+                  key={color}
+                  type="button"
+                  className={`color-palette-swatch${isSelected ? " is-selected" : ""}`}
+                  style={{ backgroundColor: color }}
+                  onClick={() => {
+                    onChange(color);
+                    setOpen(false);
+                  }}
+                  aria-label={`${label}: ${Math.floor(index / 13) + 1}段目 ${index % 13 + 1}列目`}
+                  aria-selected={isSelected}
+                  role="option"
+                />
+              );
+            })}
+          </div>
+          <label className="color-palette-custom">
+            <span>{isPaletteColor ? "その他の色" : "現在の色"}</span>
+            <input
+              type="color"
+              value={colorInputValue}
+              onChange={(event) => onChange(event.target.value)}
+              aria-label={`${label}を自由に選ぶ`}
+            />
+          </label>
         </div>
       )}
     </div>

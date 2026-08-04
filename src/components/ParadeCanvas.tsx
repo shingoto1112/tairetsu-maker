@@ -175,6 +175,8 @@ type PinchZoomState = {
   pointerIds: [number, number];
   startDistance: number;
   startZoom: number;
+  anchorWithinLayout: { x: number; y: number } | null;
+  lastAnchor: { clientX: number; clientY: number };
 };
 
 type TouchContextMenuState = {
@@ -418,18 +420,19 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const exportElementRef = useRef<HTMLDivElement | null>(null);
+    const zoomLayoutRef = useRef<HTMLDivElement | null>(null);
     const memberElementRefs = useRef(new Map<string, HTMLElement>());
     const objectElementRefs = useRef(new Map<string, HTMLElement>());
     const memberDragClearFrameRef = useRef<number | null>(null);
     const objectDragClearFrameRef = useRef<number | null>(null);
     const zoomRef = useRef(zoom);
+    const renderedZoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
     const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
     const pendingZoomRef = useRef<{
       zoom: number;
       anchor?: { clientX: number; clientY: number };
-      persist: boolean;
     } | null>(null);
     const zoomFrameRef = useRef<number | null>(null);
     const isPinchLockedRef = useRef(false);
@@ -451,6 +454,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       settings.rulerPosition === "both" || settings.rulerPosition === "left";
     const rightRulerVisible =
       settings.rulerPosition === "both" || settings.rulerPosition === "right";
+    const paradeLayoutWidthPx =
+      canvasWidthPx +
+      (leftRulerVisible ? RULER_WIDTH : 0) +
+      (rightRulerVisible ? RULER_WIDTH : 0);
+    const paradeLayoutHeightPx = canvasHeightPx + horizontalRulerHeight;
     const assignedMemberIds = useMemo(
       () =>
         new Set(
@@ -739,8 +747,21 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     }, [currentFrame?.id, currentFrame?.sceneViewState?.zoom]);
 
     useEffect(() => {
+      renderedZoomRef.current = zoom;
       zoomRef.current = zoom;
     }, [zoom]);
+
+    const clearTransientZoom = () => {
+      if (exportElementRef.current) {
+        exportElementRef.current.style.removeProperty("transform");
+        exportElementRef.current.style.removeProperty("transform-origin");
+        exportElementRef.current.style.removeProperty("will-change");
+      }
+      if (zoomLayoutRef.current) {
+        zoomLayoutRef.current.style.removeProperty("width");
+        zoomLayoutRef.current.style.removeProperty("height");
+      }
+    };
 
     const cancelPendingZoom = () => {
       pendingZoomRef.current = null;
@@ -752,6 +773,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
 
     const clearPinch = () => {
       cancelTouchContextMenu();
+      clearTransientZoom();
       pinchTouchPointsRef.current.clear();
       pinchZoomRef.current = null;
       setIsPinching(false);
@@ -1316,7 +1338,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const applyZoom = (
       nextZoom: number,
       anchor?: { clientX: number; clientY: number },
-      options?: { persist?: boolean },
+      options?: {
+        persist?: boolean;
+        layoutAnchor?: { x: number; y: number } | null;
+        sourceZoom?: number;
+      },
     ) => {
       const clampedZoom = clampZoom(nextZoom);
       const shouldPersist = options?.persist ?? true;
@@ -1362,6 +1388,23 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (!nextContainer) {
           return;
         }
+        if (options?.layoutAnchor && zoomLayoutRef.current) {
+          const nextLayout = zoomLayoutRef.current;
+          const scaleFromSource =
+            clampedZoom / Math.max(MIN_ZOOM, options.sourceZoom ?? renderedZoomRef.current);
+          nextContainer.scrollLeft = Math.max(
+            0,
+            nextLayout.offsetLeft + options.layoutAnchor.x * scaleFromSource - anchorX,
+          );
+          nextContainer.scrollTop = Math.max(
+            0,
+            nextLayout.offsetTop + options.layoutAnchor.y * scaleFromSource - anchorY,
+          );
+          if (shouldPersist) {
+            saveViewState(clampedZoom);
+          }
+          return;
+        }
         if (anchorStageRatio && stageRef.current) {
           const nextContainerRect = nextContainer.getBoundingClientRect();
           const nextStageRect = stageRef.current.getBoundingClientRect();
@@ -1403,14 +1446,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const scheduleZoom = (
       nextZoom: number,
       anchor?: { clientX: number; clientY: number },
-      options?: { persist?: boolean },
     ) => {
       const clampedZoom = clampZoom(nextZoom);
       zoomRef.current = clampedZoom;
       pendingZoomRef.current = {
         zoom: clampedZoom,
         anchor,
-        persist: options?.persist ?? true,
       };
       if (zoomFrameRef.current !== null) {
         return;
@@ -1422,9 +1463,32 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (!pending) {
           return;
         }
-        applyZoom(pending.zoom, pending.anchor, {
-          persist: pending.persist,
-        });
+        const container = scrollRef.current;
+        const layout = zoomLayoutRef.current;
+        const exportElement = exportElementRef.current;
+        const pinch = pinchZoomRef.current;
+        if (!container || !layout || !exportElement || !pinch || !pending.anchor) {
+          return;
+        }
+        const scale = pending.zoom / Math.max(MIN_ZOOM, renderedZoomRef.current);
+        const containerRect = container.getBoundingClientRect();
+        const anchorX = pending.anchor.clientX - containerRect.left;
+        const anchorY = pending.anchor.clientY - containerRect.top;
+        exportElement.style.transformOrigin = "0 0";
+        exportElement.style.willChange = "transform";
+        exportElement.style.transform = `scale(${scale})`;
+        layout.style.width = `${paradeLayoutWidthPx * scale}px`;
+        layout.style.height = `${paradeLayoutHeightPx * scale}px`;
+        if (pinch.anchorWithinLayout) {
+          container.scrollLeft = Math.max(
+            0,
+            layout.offsetLeft + pinch.anchorWithinLayout.x * scale - anchorX,
+          );
+          container.scrollTop = Math.max(
+            0,
+            layout.offsetTop + pinch.anchorWithinLayout.y * scale - anchorY,
+          );
+        }
       });
     };
 
@@ -1461,6 +1525,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       const [firstEntry, secondEntry] = touchEntries;
+      const midpoint = getPinchMidpoint(firstEntry[1], secondEntry[1]);
+      const container = scrollRef.current;
+      const layout = zoomLayoutRef.current;
+      const containerRect = container?.getBoundingClientRect();
       pinchZoomRef.current = {
         pointerIds: [firstEntry[0], secondEntry[0]],
         startDistance: Math.max(
@@ -1468,6 +1536,18 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           getPinchDistance(firstEntry[1], secondEntry[1]),
         ),
         startZoom: zoomRef.current,
+        anchorWithinLayout:
+          container && layout && containerRect
+            ? {
+                x:
+                  container.scrollLeft + midpoint.clientX - containerRect.left -
+                  layout.offsetLeft,
+                y:
+                  container.scrollTop + midpoint.clientY - containerRect.top -
+                  layout.offsetTop,
+              }
+            : null,
+        lastAnchor: midpoint,
       };
       if (dragState) {
         const shouldEndEdit = dragState.hasMoved;
@@ -1523,10 +1603,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       const distance = Math.max(1, getPinchDistance(first, second));
+      const midpoint = getPinchMidpoint(first, second);
+      pinch.lastAnchor = midpoint;
       scheduleZoom(
         pinch.startZoom * (distance / pinch.startDistance),
-        getPinchMidpoint(first, second),
-        { persist: false },
+        midpoint,
       );
       event.preventDefault();
       event.stopPropagation();
@@ -1541,9 +1622,18 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       stopTouchContextMenu(event);
       pinchTouchPointsRef.current.delete(event.pointerId);
       if (pinchTouchPointsRef.current.size < 2) {
+        const completedPinch = pinchZoomRef.current;
+        cancelPendingZoom();
+        const finalZoom = zoomRef.current;
+        const finalAnchor = completedPinch?.lastAnchor;
+        clearTransientZoom();
         pinchZoomRef.current = null;
         setIsPinching(false);
-        window.requestAnimationFrame(() => saveViewState(zoomRef.current));
+        applyZoom(finalZoom, finalAnchor, {
+          persist: true,
+          layoutAnchor: completedPinch?.anchorWithinLayout,
+          sourceZoom: completedPinch?.startZoom,
+        });
         return;
       }
       beginPinchIfReady();
@@ -1993,13 +2083,21 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           onPointerCancelCapture={handleViewportPointerEndCapture}
         >
           <div
-            className="parade-stage-wrap"
+            className="parade-zoom-layout"
+            ref={zoomLayoutRef}
             style={{
-              gridTemplateColumns: `${leftRulerVisible ? RULER_WIDTH : 0}px ${canvasWidthPx}px ${rightRulerVisible ? RULER_WIDTH : 0}px`,
-              gridTemplateRows: `${horizontalRulerHeight}px ${canvasHeightPx}px`,
+              height: paradeLayoutHeightPx,
+              width: paradeLayoutWidthPx,
             }}
-            ref={exportElementRef}
           >
+            <div
+              className="parade-stage-wrap"
+              style={{
+                gridTemplateColumns: `${leftRulerVisible ? RULER_WIDTH : 0}px ${canvasWidthPx}px ${rightRulerVisible ? RULER_WIDTH : 0}px`,
+                gridTemplateRows: `${horizontalRulerHeight}px ${canvasHeightPx}px`,
+              }}
+              ref={exportElementRef}
+            >
             <div className="parade-ruler-spacer" />
             <div
               className="parade-horizontal-ruler"
@@ -2266,6 +2364,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 })}
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

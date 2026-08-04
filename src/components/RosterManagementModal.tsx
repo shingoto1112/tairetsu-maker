@@ -1,7 +1,8 @@
-import { X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { Member, MemberGroup, ObjectGroup, StageObject } from "../types";
+import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type RosterMode = "members" | "objects";
 
@@ -39,9 +40,6 @@ type RosterColumn<T> = {
 
 const getCellKey = (mode: RosterMode, columnId: string, rowIndex: number) =>
   `${mode}:${columnId}:${rowIndex}`;
-
-const toColorInputValue = (color?: string) =>
-  /^#[0-9a-fA-F]{6}$/.test(color ?? "") ? color ?? "#0f766e" : "#0f766e";
 
 const collectGroupedItems = <T extends { id: string }>(
   items: T[],
@@ -279,30 +277,21 @@ export const RosterManagementModal = ({
     }
     const drafts = mode === "members" ? memberGroupDrafts : objectGroupDrafts;
     const setDrafts = mode === "members" ? setMemberGroupDrafts : setObjectGroupDrafts;
-    const colorValue = toColorInputValue(column.color);
+    const colorValue = column.color ?? "#0f766e";
     return (
       <div className="roster-table__group-heading">
-        <label
-          className="roster-table__group-color"
-          style={{ backgroundColor: colorValue }}
-          title={`${column.label}の色を変更`}
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <span className="sr-only">{column.label}の色を変更</span>
-          <input
-            aria-label={`${column.label}の色を変更`}
-            type="color"
-            value={colorValue}
-            onChange={(event) => {
-              if (mode === "members") {
-                onUpdateMemberGroupColor(column.id, event.target.value);
-              } else {
-                onUpdateObjectGroupColor(column.id, event.target.value);
-              }
-            }}
-          />
-        </label>
+        <ColorPaletteInput
+          compact
+          label={`${column.label}の色`}
+          value={colorValue}
+          onChange={(color) => {
+            if (mode === "members") {
+              onUpdateMemberGroupColor(column.id, color);
+            } else {
+              onUpdateObjectGroupColor(column.id, color);
+            }
+          }}
+        />
         <input
           aria-label={`${column.label}のグループ名`}
           value={drafts[column.id] ?? column.label}
@@ -326,14 +315,7 @@ export const RosterManagementModal = ({
   };
 
   return (
-    <div
-      className="roster-manager-backdrop"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
+    <div className="roster-manager-backdrop">
       <section
         className="roster-manager-modal"
         aria-modal="true"
@@ -341,18 +323,18 @@ export const RosterManagementModal = ({
         aria-labelledby="roster-manager-title"
       >
         <header className="roster-manager-header">
+          <button
+            className="roster-manager-back"
+            onClick={onClose}
+            type="button"
+          >
+            <ArrowLeft size={20} />
+            隊列表へ戻る
+          </button>
           <div>
             <p>全体名簿</p>
             <h2 id="roster-manager-title">メンバー/道具の管理</h2>
           </div>
-          <button
-            className="roster-manager-close"
-            onClick={onClose}
-            type="button"
-            aria-label="閉じる"
-          >
-            <X size={20} />
-          </button>
         </header>
 
         <div className="roster-manager-topbar">
