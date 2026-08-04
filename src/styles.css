@@ -608,19 +608,19 @@ h2 {
     --desktop-app-zoom: 0.8;
   }
 
-  #root {
+  html:not([data-app-runtime="capacitor-ios"]) #root {
     height: calc(100vh / var(--desktop-app-zoom));
     height: calc(100dvh / var(--desktop-app-zoom));
     width: calc(100vw / var(--desktop-app-zoom));
     zoom: var(--desktop-app-zoom);
   }
 
-  .app-shell {
+  html:not([data-app-runtime="capacitor-ios"]) .app-shell {
     height: calc(100vh / var(--desktop-app-zoom));
     height: calc(100dvh / var(--desktop-app-zoom));
   }
 
-  .library-shell {
+  html:not([data-app-runtime="capacitor-ios"]) .library-shell {
     min-height: calc(100vh / var(--desktop-app-zoom));
     min-height: calc(100dvh / var(--desktop-app-zoom));
   }
@@ -2859,7 +2859,7 @@ h2 {
   padding: 10px;
   position: fixed;
   width: max-content;
-  z-index: 400;
+  z-index: 4000;
 }
 
 .color-palette-input.is-compact .color-palette-popover {
@@ -6785,7 +6785,7 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   padding-top: max(12px, env(safe-area-inset-top));
 }
 
-@media (orientation: portrait) and (max-width: 1100px) {
+@media (orientation: portrait) and (max-width: 1400px) {
   .app-shell {
     overflow: hidden;
   }

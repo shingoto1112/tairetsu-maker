@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const DEFAULT_COLOR_PALETTE = [
   "#1c1c1c", "#6b120a", "#6c310f", "#6e4414", "#705d1b", "#737522", "#587420", "#31721e", "#265d72", "#173a72", "#00026f", "#3d066e", "#671043",
@@ -61,7 +62,11 @@ export function ColorPaletteInput({
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !popoverRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -129,46 +134,48 @@ export function ColorPaletteInput({
         aria-expanded={open}
         title={`${label}を選ぶ`}
       />
-      {open && (
-        <div
-          className="color-palette-popover"
-          id={paletteId}
-          ref={popoverRef}
-          role="listbox"
-          aria-label={label}
-          style={popoverPosition}
-        >
-          <div className="color-palette-grid">
-            {colors.map((color, index) => {
-              const isSelected = normalizeColor(color) === normalizedCurrent;
-              return (
-                <button
-                  key={color}
-                  type="button"
-                  className={`color-palette-swatch${isSelected ? " is-selected" : ""}`}
-                  style={{ backgroundColor: color }}
-                  onClick={() => {
-                    onChange(color);
-                    setOpen(false);
-                  }}
-                  aria-label={`${label}: ${Math.floor(index / 13) + 1}段目 ${index % 13 + 1}列目`}
-                  aria-selected={isSelected}
-                  role="option"
-                />
-              );
-            })}
-          </div>
-          <label className="color-palette-custom">
-            <span>{isPaletteColor ? "その他の色" : "現在の色"}</span>
-            <input
-              type="color"
-              value={colorInputValue}
-              onChange={(event) => onChange(event.target.value)}
-              aria-label={`${label}を自由に選ぶ`}
-            />
-          </label>
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            className="color-palette-popover"
+            id={paletteId}
+            ref={popoverRef}
+            role="listbox"
+            aria-label={label}
+            style={popoverPosition}
+          >
+            <div className="color-palette-grid">
+              {colors.map((color, index) => {
+                const isSelected = normalizeColor(color) === normalizedCurrent;
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`color-palette-swatch${isSelected ? " is-selected" : ""}`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => {
+                      onChange(color);
+                      setOpen(false);
+                    }}
+                    aria-label={`${label}: ${Math.floor(index / 13) + 1}段目 ${index % 13 + 1}列目`}
+                    aria-selected={isSelected}
+                    role="option"
+                  />
+                );
+              })}
+            </div>
+            <label className="color-palette-custom">
+              <span>{isPaletteColor ? "その他の色" : "現在の色"}</span>
+              <input
+                type="color"
+                value={colorInputValue}
+                onChange={(event) => onChange(event.target.value)}
+                aria-label={`${label}を自由に選ぶ`}
+              />
+            </label>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
