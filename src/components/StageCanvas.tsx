@@ -422,6 +422,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     } | null>(null);
     const stageZoomFrameRef = useRef<number | null>(null);
     const stageZoomRef = useRef(STAGE_ZOOM_DEFAULT);
+    const stageHorizontalViewInitializedRef = useRef(false);
     const isStagePinchLockedRef = useRef(false);
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
@@ -533,18 +534,34 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         );
       };
 
+      const rect = element.getBoundingClientRect();
       let resizeFrame = 0;
+      let previousWidth = rect.width;
       const scheduleMeasuredSize = (width: number, height: number) => {
         if (resizeFrame) {
           window.cancelAnimationFrame(resizeFrame);
         }
         resizeFrame = window.requestAnimationFrame(() => {
           resizeFrame = 0;
+          if (
+            element.classList.contains("is-stage-zoomed") &&
+            Math.abs(previousWidth - width) >= 1
+          ) {
+            const centeredScrollLeft =
+              element.scrollLeft + (previousWidth - width) / 2;
+            element.scrollLeft = Math.min(
+              Math.max(0, centeredScrollLeft),
+              Math.max(0, element.scrollWidth - element.clientWidth),
+            );
+            if (Math.abs(previousWidth - width) >= 16) {
+              stageHorizontalViewInitializedRef.current = false;
+            }
+          }
+          previousWidth = width;
           setMeasuredSize(width, height);
         });
       };
 
-      const rect = element.getBoundingClientRect();
       setMeasuredSize(rect.width, rect.height);
 
       const observer = new ResizeObserver((entries) => {
@@ -755,6 +772,41 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     ]);
 
     const isStageZoomed = stageZoom > STAGE_ZOOM_MIN + 0.001;
+
+    useEffect(() => {
+      const container = fitAreaRef.current;
+      if (!container) return undefined;
+      if (!isStageZoomed) {
+        stageHorizontalViewInitializedRef.current = false;
+        return undefined;
+      }
+      if (stageHorizontalViewInitializedRef.current) return undefined;
+
+      let correctionFrame = 0;
+      const frame = window.requestAnimationFrame(() => {
+        const nextContainer = fitAreaRef.current;
+        if (!nextContainer) return;
+        nextContainer.scrollLeft = Math.max(
+          0,
+          (nextContainer.scrollWidth - nextContainer.clientWidth) / 2,
+        );
+        correctionFrame = window.requestAnimationFrame(() => {
+          const settledContainer = fitAreaRef.current;
+          const canvas = exportElementRef.current;
+          if (!settledContainer || !canvas) return;
+          const containerRect = settledContainer.getBoundingClientRect();
+          const canvasRect = canvas.getBoundingClientRect();
+          settledContainer.scrollLeft +=
+            canvasRect.left + canvasRect.width / 2 -
+            (containerRect.left + containerRect.width / 2);
+          stageHorizontalViewInitializedRef.current = true;
+        });
+      });
+      return () => {
+        window.cancelAnimationFrame(frame);
+        window.cancelAnimationFrame(correctionFrame);
+      };
+    }, [fitAreaSize.width, isStageZoomed, visibleStageSize.widthPx]);
 
     const clampStageZoom = (nextZoom: number) =>
       Math.round(

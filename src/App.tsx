@@ -998,6 +998,8 @@ const normalizeProject = (project: Project): Project => {
             scrollTop: frame.sceneViewState?.scrollTop ?? 0,
             scrollLeft: frame.sceneViewState?.scrollLeft ?? 0,
             zoom: positiveNumber(frame.sceneViewState?.zoom, 1, 0.2),
+            viewportHeight: frame.sceneViewState?.viewportHeight,
+            viewportWidth: frame.sceneViewState?.viewportWidth,
           }
         : frame.sceneViewState,
     stageWidthMeters:
@@ -13259,7 +13261,7 @@ function App() {
       />
       </div>
 
-      <div className="workspace">
+      <div className={isPanelOpen ? "workspace" : "workspace is-editor-collapsed"}>
         <PanelTabs
           activeTab={activePanelTab}
           isOpen={isPanelOpen}

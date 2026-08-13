@@ -435,6 +435,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       anchor?: { clientX: number; clientY: number };
     } | null>(null);
     const zoomFrameRef = useRef<number | null>(null);
+    const viewportWidthRef = useRef<number | null>(null);
+    const horizontalScrollRangeRef = useRef<number | null>(null);
+    const stableHorizontalViewRef = useRef<{
+      scrollLeft: number;
+      scrollRange: number;
+    } | null>(null);
     const isPinchLockedRef = useRef(false);
     const saveViewTimerRef = useRef<number | null>(null);
     const [isPinching, setIsPinching] = useState(false);
@@ -585,6 +591,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (!currentFrame?.id || !scrollRef.current) {
         return;
       }
+      stableHorizontalViewRef.current = {
+        scrollLeft: scrollRef.current.scrollLeft,
+        scrollRange: Math.max(
+          0,
+          scrollRef.current.scrollWidth - scrollRef.current.clientWidth,
+        ),
+      };
       onFrameViewStateChange(currentFrame.id, {
         scrollTop: scrollRef.current.scrollTop,
         scrollLeft: scrollRef.current.scrollLeft,
@@ -1019,11 +1032,40 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const raf = window.requestAnimationFrame(() => {
         if (frameViewState) {
           container.scrollTop = frameViewState.scrollTop;
-          container.scrollLeft = frameViewState.scrollLeft;
+          const savedViewportWidth =
+            frameViewState.viewportWidth ?? container.clientWidth;
+          const wasCenteredWithoutHorizontalScroll =
+            frameViewState.scrollLeft <= 1 &&
+            paradeLayoutWidthPx <= savedViewportWidth + 1;
+          const centeredScrollLeft = wasCenteredWithoutHorizontalScroll
+            ? (container.scrollWidth - container.clientWidth) / 2
+            : frameViewState.scrollLeft +
+              (savedViewportWidth - container.clientWidth) / 2;
+          container.scrollLeft = Math.min(
+            Math.max(0, centeredScrollLeft),
+            Math.max(0, container.scrollWidth - container.clientWidth),
+          );
+          viewportWidthRef.current = container.clientWidth;
+          horizontalScrollRangeRef.current = Math.max(
+            0,
+            container.scrollWidth - container.clientWidth,
+          );
+          stableHorizontalViewRef.current = {
+            scrollLeft: container.scrollLeft,
+            scrollRange: horizontalScrollRangeRef.current,
+          };
           return;
         }
         container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
         container.scrollLeft = Math.max(0, (container.scrollWidth - container.clientWidth) / 2);
+        horizontalScrollRangeRef.current = Math.max(
+          0,
+          container.scrollWidth - container.clientWidth,
+        );
+        stableHorizontalViewRef.current = {
+          scrollLeft: container.scrollLeft,
+          scrollRange: horizontalScrollRangeRef.current,
+        };
         if (frameId) {
           onFrameViewStateChange(frameId, {
             scrollTop: container.scrollTop,
@@ -1033,7 +1075,66 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         }
       });
       return () => window.cancelAnimationFrame(raf);
-    }, [currentFrame?.id, onFrameViewStateChange]);
+    }, [currentFrame?.id]);
+
+    useEffect(() => {
+      const container = scrollRef.current;
+      if (!container) {
+        return undefined;
+      }
+      viewportWidthRef.current = container.clientWidth;
+      horizontalScrollRangeRef.current = Math.max(
+        0,
+        container.scrollWidth - container.clientWidth,
+      );
+      let resizeFrame = 0;
+      const observer = new ResizeObserver(() => {
+        if (resizeFrame) {
+          window.cancelAnimationFrame(resizeFrame);
+        }
+        resizeFrame = window.requestAnimationFrame(() => {
+          resizeFrame = 0;
+          const previousWidth = viewportWidthRef.current ?? container.clientWidth;
+          const nextWidth = container.clientWidth;
+          if (Math.abs(previousWidth - nextWidth) < 1) {
+            return;
+          }
+          const previousRange = horizontalScrollRangeRef.current ?? Math.max(
+            0,
+            container.scrollWidth - previousWidth,
+          );
+          const nextRange = Math.max(0, container.scrollWidth - nextWidth);
+          const stableView = stableHorizontalViewRef.current;
+          const wasHorizontallyCentered =
+            stableView
+              ? stableView.scrollRange <= 1
+                ? stableView.scrollLeft <= 1
+                : Math.abs(
+                    stableView.scrollLeft - stableView.scrollRange / 2,
+                  ) <= 12
+              : previousRange <= 1
+                ? container.scrollLeft <= 1
+                : Math.abs(container.scrollLeft - previousRange / 2) <= 12;
+          const centeredScrollLeft = wasHorizontallyCentered
+            ? nextRange / 2
+            : container.scrollLeft + (previousWidth - nextWidth) / 2;
+          container.scrollLeft = Math.min(
+            Math.max(0, centeredScrollLeft),
+            nextRange,
+          );
+          viewportWidthRef.current = nextWidth;
+          horizontalScrollRangeRef.current = nextRange;
+          scheduleSaveViewState();
+        });
+      });
+      observer.observe(container);
+      return () => {
+        if (resizeFrame) {
+          window.cancelAnimationFrame(resizeFrame);
+        }
+        observer.disconnect();
+      };
+    }, [currentFrame?.id]);
 
     useEffect(
       () => () => {
@@ -1497,7 +1598,27 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       anchor?: { clientX: number; clientY: number },
     ) => {
       cancelPendingZoom();
+      const container = scrollRef.current;
+      if (!anchor && container) {
+        const rect = container.getBoundingClientRect();
+        applyZoom(nextZoom, {
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        });
+        return;
+      }
       applyZoom(nextZoom, anchor);
+    };
+
+    const handleViewportScroll = () => {
+      const container = scrollRef.current;
+      if (container) {
+        horizontalScrollRangeRef.current = Math.max(
+          0,
+          container.scrollWidth - container.clientWidth,
+        );
+      }
+      scheduleSaveViewState();
     };
 
     const getPinchDistance = (first: PinchTouchPoint, second: PinchTouchPoint) =>
@@ -2076,7 +2197,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             isPinchLocked ? "is-parade-pinch-locked" : "",
           ].join(" ")}
           ref={scrollRef}
-          onScroll={scheduleSaveViewState}
+          onScroll={handleViewportScroll}
           onPointerDownCapture={handleViewportPointerDownCapture}
           onPointerMoveCapture={handleViewportPointerMoveCapture}
           onPointerUpCapture={handleViewportPointerEndCapture}
