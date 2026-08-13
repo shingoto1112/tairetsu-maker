@@ -14,6 +14,8 @@
 
 ## App Store Connectの入力手順
 
+App PrivacyのURL、4データタイプ、追跡なし回答は2026-08-14に公開済み。
+
 ### App Privacy
 
 1. App Store Connectで「マイApp」から「隊列メーカー」を開く。

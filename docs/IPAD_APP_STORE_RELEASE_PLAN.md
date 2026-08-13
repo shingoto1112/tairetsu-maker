@@ -47,13 +47,14 @@
 
 ### ユーザー操作
 
-- Vercel上のプライバシーポリシーとサポートページが公開されていることを確認する。
+- Vercel上のプライバシーポリシーとサポートページが公開されていることを確認する。（確認済み）
 - 公開する運営者名と専用サポートメールを決め、一般公開前にページへ反映する。
 - Supabase Authへ本番用custom SMTPを設定し、送信元ドメインを認証する。
-- Supabase AuthのRedirect URLsに次の2件があることを確認する。
+- Supabase AuthのRedirect URLsに次の2件があることを確認する。（確認済み）
   - `jp.tairetsu.maker://auth/callback`
   - `https://tairetsu-maker.vercel.app/`
-- App Store ConnectのApp Privacy、年齢区分、サポートURLを入力する。
+- App Store ConnectのApp Privacyを入力・公開する。（完了）
+- App Store Connectの年齢区分、サポートURLを入力する。
 
 ## Release Gate 2: データ消失・ファイル安全性
 

@@ -64,6 +64,7 @@
 - 対象iPad: Apple DeveloperのiPad端末として登録済み
 - TestFlight upload: GitHub Actions run 31713131224でビルド12のアップロードに成功
 - App Store Connect: バージョン1.0の内部テストを継続中
+- App Store Connect: Privacy Policy / Privacy Choices URLと4データタイプを公開済み
 - 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 
 ## TestFlight実機で必ず確認する項目
