@@ -8,7 +8,7 @@ import { CloudAccountModal } from "./CloudAccountModal";
 describe("CloudAccountModal", () => {
   afterEach(() => cleanup());
 
-  it("requires the current password and an explicit Japanese confirmation", async () => {
+  it("requires the current password and a final confirmation dialog", async () => {
     const user = userEvent.setup();
     const onDeleteAccount = vi.fn().mockResolvedValue({
       message: "削除しました。",
@@ -32,10 +32,16 @@ describe("CloudAccountModal", () => {
     expect(screen.getByText(/ローカル隊列表は削除されません/)).toBeTruthy();
 
     await user.type(screen.getByLabelText("現在のパスワード"), "password123");
-    await user.type(screen.getByLabelText("確認のため「削除」と入力"), "削除");
     expect(deleteButton).toHaveProperty("disabled", false);
 
     await user.click(deleteButton);
+    expect(onDeleteAccount).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: "アカウント削除の確認" }),
+    ).toBeTruthy();
+    expect(screen.getByText("本当に削除しますか？")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "削除する" }));
     expect(onDeleteAccount).toHaveBeenCalledWith("password123");
   });
 });
