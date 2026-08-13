@@ -32,11 +32,15 @@ jobs:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
         run: |
           test -n "$APPLE_TEAM_ID"
           test -n "$APP_STORE_CONNECT_API_ISSUER_ID"
           test -n "$APP_STORE_CONNECT_API_KEY_ID"
           test -n "$APP_STORE_CONNECT_API_KEY_BASE64"
+          test -n "$VITE_SUPABASE_URL"
+          test -n "$VITE_SUPABASE_ANON_KEY"
 
       - name: Install dependencies
         run: npm ci
@@ -45,6 +49,9 @@ jobs:
         run: npm test
 
       - name: Build web assets
+        env:
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
         run: npm run build
 
       - name: Sync Capacitor iOS project

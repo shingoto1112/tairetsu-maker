@@ -5,6 +5,30 @@
 
 最終更新: 2026-08-13
 
+## 最新作業メモ: iPad本人専用クラウドとアカウント削除
+
+2026-08-13時点で、App Store公開に向けた本人専用クラウド経路とアカウント削除を
+追加しました。
+
+実装済みの中心:
+
+- iPadではowner本人のクラウド隊列表だけを扱い、招待・連絡先・Realtime・ロック共同編集を
+  引き続き無効化しています。
+- TestFlight workflowへ、Web版と同じSupabase URL / publishable keyをGitHub
+  Environmentから渡す設定を追加しました。
+- ログイン中のクラウド欄へ「アカウント」画面を追加し、現在のパスワード再確認と
+  「削除」入力後だけアカウントを削除できます。
+- `20260813000000_cloud_account_deletion.sql` を追加しました。唯一所有するクラウド
+  隊列表は完全削除し、共同所有は別ownerへ引き継いでから本人の認証・参加情報・連絡先を
+  削除します。ローカル隊列表は削除しません。
+- 公開までの担当分担とRelease Gateを `docs/IPAD_APP_STORE_RELEASE_PLAN.md` にまとめました。
+
+外部作業待ち:
+
+- 現在設定されているSupabase URLはDNS解決できません。Dashboardでprojectを復旧するか、
+  新規projectのURL / publishable keyへWeb・GitHub双方を更新する必要があります。
+- 復旧後に最新migrationをSQL Editorへ適用し、`npm run cloud:check`を再実行してください。
+
 ## 最新作業メモ: iPad縦向きの横展開とキャンバス中央維持
 
 2026-08-13時点で、上下分割の基本方針を維持しつつ、縦向きの編集カード内部とキャンバス位置を追加調整しました。

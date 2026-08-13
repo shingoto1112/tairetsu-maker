@@ -1,12 +1,12 @@
 # iPad版 リリース監査
 
-最終更新: 2026-08-03
+最終更新: 2026-08-13
 
 ## 判定
 
-アプリ実装、署名付きarchive、TestFlightアップロード、内部テスターへの配信準備は
-完了している。対象iPadでのインストールと実機確認が未完了のため、iPad初期版はまだ
-リリース完了扱いにしない。
+署名付きarchive、TestFlightアップロード、内部テストは実施済み。ただし現在の
+Supabase接続先がDNS解決できず、一般公開に必要なアカウント削除migrationと本番運用準備も
+未適用のため、App Store公開可能とは判定しない。
 
 ## 自動検証済み
 
@@ -14,10 +14,10 @@
 | --- | --- | --- |
 | TypeScript | `npm run typecheck` | 成功 |
 | Web production build | `npm run build` | 成功 |
-| iPad・互換性ユニットテスト | `npm test`、8 files / 31 tests | 成功 |
+| iPad・互換性ユニットテスト | `npm test`、11 files / 34 tests | 成功 |
 | Capacitor同期 | `npx cap sync ios` | 成功 |
 | Windows/Tauri build | `npm run desktop:build` | 成功 |
-| production依存脆弱性 | `npm audit --omit=dev` | 0件 |
+| production依存脆弱性 | `npm audit --omit=dev` | 0件（DOMPurify 3.4.13へ更新） |
 | macOS iOS Simulator build | GitHub Actions run 30767209452 | 成功 |
 
 ユニットテストは、Web/Tauri/iPad機能フラグ、iOS Auth callback、ローカルプロジェクト
@@ -37,6 +37,10 @@
 - 横向き編集サイドバーと縦向き上部編集トレイ
 - GitHub Actionsの署名なしbuildとTestFlight upload workflow
 - Supabase Redirect URL `jp.tairetsu.maker://auth/callback`
+- パスワード再確認付きのアプリ内アカウント削除UIと削除RPC migration
+
+開発依存にはCapacitor CLI内部の`xcode -> uuid`にmoderate警告が残る。`npm audit fix
+--force`はCapacitor CLIのダウングレードを提示するため適用せず、Capacitor公式更新で解消する。
 
 ## Apple側の状態
 

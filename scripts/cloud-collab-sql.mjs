@@ -14,6 +14,7 @@ const migrationFiles = [
   "20260515000000_cloud_contacts.sql",
   "20260515001000_cloud_scene_cell_locks.sql",
   "20260515002000_cloud_live_preview_foundation.sql",
+  "20260813000000_cloud_account_deletion.sql",
 ];
 
 const now = new Date().toISOString();
@@ -40,6 +41,7 @@ const chunks = [
   "drop function if exists public.save_scene_cell_patch_with_lock(uuid, text, text, text, jsonb, text, integer, text, bigint, uuid, uuid, text);",
   "drop function if exists public.save_scene_cell_patch_with_lock(uuid, text, text, text, jsonb, text, integer, text);",
   "drop function if exists public.list_scene_cell_versions(uuid);",
+  "drop function if exists public.delete_current_account(text);",
   "drop function if exists public.cloud_collab_scene_cell_scene_id(text);",
   "drop function if exists public.cloud_collab_scene_cell_target_id(text, text, text);",
   "",

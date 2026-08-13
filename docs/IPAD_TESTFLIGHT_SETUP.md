@@ -58,8 +58,15 @@ GitHub repositoryの `ios-testflight` Environmentは作成済み。必要なら�
 | `APP_STORE_CONNECT_API_ISSUER_ID` | API keyのIssuer ID |
 | `APP_STORE_CONNECT_API_KEY_ID` | API keyのKey ID |
 | `APP_STORE_CONNECT_API_KEY_BASE64` | `.p8`をBase64化した文字列 |
+| `VITE_SUPABASE_ANON_KEY` | Web版と同じSupabase publishable key |
 
-4項目とも2026-08-03に `ios-testflight` Environmentへ登録済み。秘密鍵のBase64文字列を
+同EnvironmentのVariablesには次を登録する。
+
+| Variable | 内容 |
+| --- | --- |
+| `VITE_SUPABASE_URL` | Web版と同じSupabase Project URL |
+
+Apple署名用の4項目は2026-08-03に `ios-testflight` Environmentへ登録済み。秘密鍵のBase64文字列を
 一時的に置いたWindowsクリップボードも登録確認後に消去済み。
 初回の `App Manager` キーはクラウド署名権限が不足したため無効化し、現在は
 `Admin` のTestFlight専用キーを使用する。
@@ -88,6 +95,10 @@ jp.tairetsu.maker://auth/callback
 新規登録の確認メールをiPadで開いた場合、このURLからアプリへ戻る。アプリは受け取った
 セッションを検証し、iOS Keychainへ保存する。publishable key以外の秘密鍵はアプリへ
 入れない。
+
+TestFlightビルドは、`ios-testflight` Environmentの `VITE_SUPABASE_URL` と
+`VITE_SUPABASE_ANON_KEY` をViteへ渡す。Vercelの環境変数はGitHub Actionsへ自動では
+引き継がれないため、Web版と同じ値をGitHub側にも登録する。
 
 ## 6. TestFlightへ送る
 

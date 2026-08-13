@@ -58,6 +58,7 @@ Bundle ID は App Store Connect のアプリレコード作成前にユーザー
 - 音源の読み込み、端末内保存、オフライン再生
 - 既存 Supabase アカウントでのログイン
 - 本人が owner のクラウドプロジェクトの保存と読み込み
+- パスワード再確認付きのクラウドアカウント削除
 - オフライン時のローカル編集
 
 ### 初期版では隠す
@@ -107,6 +108,8 @@ iPad のSupabaseセッションは `sessionStorage` だけに依存せず、Keyc
 - クラウド同期は既存のowner権限、project import lock、transactional RPCを再利用し、
   service role keyを使用しない。
 - AuthコールバックURLは `jp.tairetsu.maker://auth/callback` とする。
+- アカウント削除では、唯一所有するクラウドプロジェクトを削除し、共同所有は別ownerへ
+  引き継ぐ。ローカルプロジェクトは削除しない。
 
 ## 8. UI の正式名称
 

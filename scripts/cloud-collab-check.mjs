@@ -133,6 +133,14 @@ const expectExistingEmptyListRpc = (result) => {
   return result.ok && Array.isArray(result.json);
 };
 
+const expectRestrictedAuthenticatedRpc = (result) => {
+  if (result.ok) {
+    const row = Array.isArray(result.json) ? result.json[0] : result.json;
+    return row?.success === false && row?.reason === "not_authenticated";
+  }
+  return result.status === 401 || result.status === 403;
+};
+
 const main = async () => {
   const tableResult = await tableProbe();
   printResult(tableResult);
@@ -251,6 +259,16 @@ const main = async () => {
   if (!expectExistingEmptyListRpc(listCellVersionsResult)) {
     throw new Error(
       "rpc:list_scene_cell_versions is not reachable. Check that all SQL migrations were applied.",
+    );
+  }
+
+  const deleteAccountResult = await rpc("delete_current_account", {
+    p_confirmation: "DELETE_MY_ACCOUNT",
+  });
+  printResult(deleteAccountResult);
+  if (!expectRestrictedAuthenticatedRpc(deleteAccountResult)) {
+    throw new Error(
+      "rpc:delete_current_account is not reachable or is exposed incorrectly. Apply the account deletion migration.",
     );
   }
 

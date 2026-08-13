@@ -69,6 +69,13 @@ export type CloudActionResult = {
   success: boolean;
 };
 
+export type CloudAccountDeleteResult = {
+  deleted_project_count: number;
+  reason: string;
+  success: boolean;
+  transferred_project_count: number;
+};
+
 export type CloudProjectCreateResult = {
   project_id: string | null;
   reason: string;
@@ -740,6 +747,11 @@ export const createCloudApiClient = (
     hideCloudProject: (projectId: string) =>
       rpcOne<CloudActionResult>("hide_cloud_project", {
         p_project_id: projectId,
+      }),
+
+    deleteCurrentAccount: () =>
+      rpcOne<CloudAccountDeleteResult>("delete_current_account", {
+        p_confirmation: "DELETE_MY_ACCOUNT",
       }),
 
     removeProjectMember: (projectId: string, userId: string) =>

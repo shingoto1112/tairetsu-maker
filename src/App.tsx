@@ -9790,6 +9790,85 @@ function App() {
     setNotice("クラウドからログアウトしました。");
   };
 
+  const deleteCloudAccount = async (
+    password: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    if (!cloudConfig || !cloudSession?.user.email) {
+      return {
+        message: "ログイン情報を確認できませんでした。再度ログインしてください。",
+        success: false,
+      };
+    }
+
+    setIsCloudBusy(true);
+    try {
+      // A fresh password sign-in prevents an old, unattended session from
+      // deleting the account without the user proving ownership again.
+      const verifiedSession = await createCloudAuthClient(
+        cloudConfig,
+      ).signInWithPassword(cloudSession.user.email, password);
+      saveCloudAuthSession(verifiedSession);
+      cloudSessionRef.current = verifiedSession;
+      setCloudSession(verifiedSession);
+
+      const api = createCloudApiClient(
+        cloudConfig,
+        () => verifiedSession.accessToken,
+      );
+      const result = await api.deleteCurrentAccount();
+      if (!result.success) {
+        const message =
+          result.reason === "confirmation_required"
+            ? "削除確認が完了していません。"
+            : "アカウントを削除できませんでした。時間を置いて再度お試しください。";
+        return { message, success: false };
+      }
+
+      const draftProjectIds = new Set(
+        cloudProjects
+          .filter((item) => item.role === "owner")
+          .map((item) => item.id),
+      );
+      if (activeCloudProjectRef.current?.projectId) {
+        draftProjectIds.add(activeCloudProjectRef.current.projectId);
+      }
+      await Promise.allSettled(
+        [...draftProjectIds].map((projectId) =>
+          deletePersonalCloudDraft(projectId),
+        ),
+      );
+
+      clearCloudAuthSession();
+      cloudSessionRef.current = null;
+      activeCloudProjectRef.current = null;
+      setCloudSession(null);
+      setActiveCloudProject(null);
+      setCloudProjects([]);
+      setCloudContacts([]);
+      setCloudCollaborationItems([]);
+      setCloudError(null);
+      setNotice(
+        `クラウドアカウントを削除しました。ローカル隊列表は端末に残っています。`,
+      );
+      return {
+        message: "クラウドアカウントを削除しました。",
+        success: true,
+      };
+    } catch (error) {
+      const message = getCloudErrorMessage(error);
+      return {
+        message:
+          message.includes("Invalid login credentials") ||
+          message.includes("invalid_credentials")
+            ? "パスワードが正しくありません。"
+            : message,
+        success: false,
+      };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!APP_FEATURES.nativeFileShare || !cloudConfig) {
       return undefined;
@@ -12950,6 +13029,7 @@ function App() {
           userEmail: cloudSession?.user.email,
           onAcceptInvite: acceptCloudInvite,
           onCopyCloudProjectToLocal: copyCloudProjectToLocal,
+          onDeleteAccount: deleteCloudAccount,
           onDeleteCloudProject: deleteCloudProject,
           onHideCloudProject: hideCloudProject,
           onOpenCloudProject: openCloudProject,

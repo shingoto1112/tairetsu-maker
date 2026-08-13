@@ -29,11 +29,15 @@ Supabase の SQL Editor で、以下の順に migration SQL を実行します�
 5. `supabase/migrations/20260514006000_cloud_project_delete_hide.sql`
 6. `supabase/migrations/20260514007000_cloud_owner_takeover_requests.sql`
 7. `supabase/migrations/20260514008000_cloud_display_name_repair.sql`
+8. `supabase/migrations/20260515000000_cloud_contacts.sql`
+9. `supabase/migrations/20260515001000_cloud_scene_cell_locks.sql`
+10. `supabase/migrations/20260515002000_cloud_live_preview_foundation.sql`
+11. `supabase/migrations/20260813000000_cloud_account_deletion.sql`
 
 2つ目の migration では、招待テーブル/RPC と Realtime 用 publication 追加を行います。
 Hosted Supabase では `supabase_realtime` publication が存在するため、`edit_locks` と `audit_logs` の変更通知が使えるようになります。
 3つ目の migration では、owner専用のシーン構成保存とクラウド上書きimport用RPCを追加します。
-4つ目以降の migration では、表示名による参加者表示、クラウド隊列表の削除/非表示、owner の編集引き継ぎ依頼RPC、既存参加者の表示名修復を追加します。
+4つ目以降の migration では、表示名による参加者表示、クラウド隊列表の削除/非表示、owner の編集引き継ぎ依頼、連絡先、セル単位編集基盤、アプリ内アカウント削除RPCを追加します。
 
 初心者向けに、必要なSQLをまとめてコピーするコマンドも用意しています。
 

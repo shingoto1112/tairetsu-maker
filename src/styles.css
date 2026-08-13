@@ -1021,6 +1021,81 @@ h2 {
   width: min(100%, 420px);
 }
 
+.cloud-account-backdrop {
+  z-index: 1400;
+}
+
+.cloud-account-dialog {
+  max-width: 560px;
+  width: min(100%, 560px);
+}
+
+.cloud-account-dialog label {
+  color: #334155;
+  display: grid;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.cloud-account-dialog input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #0f172a;
+  font-size: 16px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.cloud-account-dialog input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid #99f6e4;
+  outline-offset: 1px;
+}
+
+.cloud-account-identity {
+  display: grid;
+  gap: 2px;
+}
+
+.cloud-account-identity strong {
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.cloud-account-identity span {
+  color: #64748b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.cloud-account-danger {
+  background: #fff7f7;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.cloud-account-danger__heading {
+  align-items: center;
+  color: #b91c1c;
+  display: flex;
+  gap: 8px;
+}
+
+.cloud-account-danger h3 {
+  font-size: 15px;
+}
+
+.cloud-account-danger p {
+  color: #7f1d1d;
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0;
+}
+
 .library-context-menu {
   background: #ffffff;
   border: 1px solid var(--border);

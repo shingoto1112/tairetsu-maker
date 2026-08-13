@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Trash2,
   Upload,
+  UserRoundCog,
   X,
 } from "lucide-react";
 import type { CloudProjectSummary } from "../cloud";
@@ -37,6 +38,10 @@ import type {
   Project,
 } from "../types";
 import { CloudCollaborationHelpModal } from "./CloudCollaborationHelpModal";
+import {
+  CloudAccountModal,
+  type CloudAccountDeleteResponse,
+} from "./CloudAccountModal";
 import { NumericInput } from "./NumericInput";
 
 export type NewFormationInput = {
@@ -67,6 +72,7 @@ type FormationLibraryProps = {
     onAcceptInvite: (inviteToken: string) => void | Promise<void>;
     onCopyCloudProjectToLocal: (project: CloudProjectSummary) => void | Promise<void>;
     onDeleteCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
+    onDeleteAccount: (password: string) => Promise<CloudAccountDeleteResponse>;
     onHideCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onOpenCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onRefresh: () => void | Promise<void>;
@@ -190,6 +196,7 @@ export const FormationLibrary = ({
   const [cloudFormError, setCloudFormError] = useState<string | null>(null);
   const [cloudInviteToken, setCloudInviteToken] = useState("");
   const [isCloudHelpOpen, setIsCloudHelpOpen] = useState(false);
+  const [isCloudAccountOpen, setIsCloudAccountOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -519,6 +526,15 @@ export const FormationLibrary = ({
                   <button
                     type="button"
                     className="mini-button"
+                    onClick={() => setIsCloudAccountOpen(true)}
+                    disabled={cloud.isBusy}
+                  >
+                    <UserRoundCog size={14} />
+                    アカウント
+                  </button>
+                  <button
+                    type="button"
+                    className="mini-button"
                     onClick={() => void cloud.onSignOut()}
                     disabled={cloud.isBusy}
                   >
@@ -708,6 +724,16 @@ export const FormationLibrary = ({
 
       {!cloud?.personalMode && isCloudHelpOpen && (
         <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
+      )}
+
+      {cloud?.userEmail && isCloudAccountOpen && (
+        <CloudAccountModal
+          displayName={cloud.userDisplayName}
+          email={cloud.userEmail}
+          isBusy={cloud.isBusy}
+          onClose={() => setIsCloudAccountOpen(false)}
+          onDeleteAccount={cloud.onDeleteAccount}
+        />
       )}
 
       <section className="library-grid" aria-label="隊列表一覧">
