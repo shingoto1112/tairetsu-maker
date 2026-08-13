@@ -62,7 +62,7 @@
 - App Store Connect APIアクセス: 申請・承認済み
 - App Store Connect API key secrets: GitHub `ios-testflight` Environmentへ登録済み
 - 対象iPad: Apple DeveloperのiPad端末として登録済み
-- TestFlight upload: GitHub Actions run 31711350980でビルド11のアップロードに成功
+- TestFlight upload: GitHub Actions run 31713131224でビルド12のアップロードに成功
 - App Store Connect: バージョン1.0の内部テストを継続中
 - 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 
