@@ -42,6 +42,7 @@ import {
   CloudAccountModal,
   type CloudAccountDeleteResponse,
 } from "./CloudAccountModal";
+import type { CloudPasswordChangeResponse } from "./CloudPasswordModal";
 import { NumericInput } from "./NumericInput";
 
 export type NewFormationInput = {
@@ -70,12 +71,22 @@ type FormationLibraryProps = {
     userDisplayName?: string;
     userEmail?: string;
     onAcceptInvite: (inviteToken: string) => void | Promise<void>;
+    onChangePassword: (
+      currentPassword: string,
+      newPassword: string,
+    ) => Promise<CloudPasswordChangeResponse>;
     onCopyCloudProjectToLocal: (project: CloudProjectSummary) => void | Promise<void>;
     onDeleteCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onDeleteAccount: (password: string) => Promise<CloudAccountDeleteResponse>;
     onHideCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onOpenCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
     onRefresh: () => void | Promise<void>;
+    onRequestPasswordReset: (
+      email: string,
+    ) => Promise<CloudPasswordChangeResponse>;
+    onResendConfirmation: (
+      email: string,
+    ) => Promise<CloudPasswordChangeResponse>;
     onSignIn: (email: string, password: string) => void | Promise<void>;
     onSignOut: () => void | Promise<void>;
     onSignUp: (
@@ -194,6 +205,7 @@ export const FormationLibrary = ({
   const [cloudEmail, setCloudEmail] = useState("");
   const [cloudPassword, setCloudPassword] = useState("");
   const [cloudFormError, setCloudFormError] = useState<string | null>(null);
+  const [cloudFormNotice, setCloudFormNotice] = useState<string | null>(null);
   const [cloudInviteToken, setCloudInviteToken] = useState("");
   const [isCloudHelpOpen, setIsCloudHelpOpen] = useState(false);
   const [isCloudAccountOpen, setIsCloudAccountOpen] = useState(false);
@@ -455,10 +467,36 @@ export const FormationLibrary = ({
       return;
     }
     setCloudFormError(null);
+    setCloudFormNotice(null);
     if (mode === "signIn") {
       await cloud.onSignIn(email, cloudPassword);
     } else {
       await cloud.onSignUp(email, cloudPassword, displayName);
+    }
+  };
+
+  const submitCloudEmailAction = async (
+    mode: "passwordReset" | "resendConfirmation",
+  ) => {
+    if (!cloud) {
+      return;
+    }
+    const email = cloudEmail.trim();
+    if (!email) {
+      setCloudFormNotice(null);
+      setCloudFormError("メールアドレスを入力してください。");
+      return;
+    }
+    setCloudFormError(null);
+    setCloudFormNotice(null);
+    const result =
+      mode === "passwordReset"
+        ? await cloud.onRequestPasswordReset(email)
+        : await cloud.onResendConfirmation(email);
+    if (result.success) {
+      setCloudFormNotice(result.message);
+    } else {
+      setCloudFormError(result.message);
     }
   };
 
@@ -699,6 +737,9 @@ export const FormationLibrary = ({
               {(cloudFormError || cloud.error) && (
                 <p className="dialog-error">{cloudFormError ?? cloud.error}</p>
               )}
+              {cloudFormNotice && (
+                <p className="library-cloud-success">{cloudFormNotice}</p>
+              )}
               <div className="library-cloud-actions">
                 <button
                   type="submit"
@@ -717,6 +758,24 @@ export const FormationLibrary = ({
                   新規登録
                 </button>
               </div>
+              <div className="library-cloud-recovery-actions">
+                <button
+                  className="library-link-button"
+                  disabled={cloud.isBusy}
+                  onClick={() => void submitCloudEmailAction("passwordReset")}
+                  type="button"
+                >
+                  パスワードを忘れた場合
+                </button>
+                <button
+                  className="library-link-button"
+                  disabled={cloud.isBusy}
+                  onClick={() => void submitCloudEmailAction("resendConfirmation")}
+                  type="button"
+                >
+                  確認メールを再送
+                </button>
+              </div>
             </form>
           )}
         </section>
@@ -732,6 +791,7 @@ export const FormationLibrary = ({
           email={cloud.userEmail}
           isBusy={cloud.isBusy}
           onClose={() => setIsCloudAccountOpen(false)}
+          onChangePassword={cloud.onChangePassword}
           onDeleteAccount={cloud.onDeleteAccount}
         />
       )}

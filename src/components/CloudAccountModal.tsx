@@ -1,5 +1,9 @@
 import { FormEvent, useState } from "react";
-import { ShieldAlert, X } from "lucide-react";
+import { KeyRound, ShieldAlert, X } from "lucide-react";
+import {
+  CloudPasswordModal,
+  type CloudPasswordChangeResponse,
+} from "./CloudPasswordModal";
 
 export type CloudAccountDeleteResponse = {
   message: string;
@@ -11,6 +15,10 @@ type CloudAccountModalProps = {
   email?: string;
   isBusy: boolean;
   onClose: () => void;
+  onChangePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<CloudPasswordChangeResponse>;
   onDeleteAccount: (password: string) => Promise<CloudAccountDeleteResponse>;
 };
 
@@ -19,10 +27,12 @@ export const CloudAccountModal = ({
   email,
   isBusy,
   onClose,
+  onChangePassword,
   onDeleteAccount,
 }: CloudAccountModalProps) => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitting = isBusy || isSubmitting;
@@ -99,6 +109,24 @@ export const CloudAccountModal = ({
             <strong>{displayName || "名前未設定"}</strong>
             {email && <span>{email}</span>}
           </div>
+
+          <section className="cloud-account-security">
+            <div>
+              <h3>
+                <KeyRound aria-hidden="true" size={18} />
+                パスワード
+              </h3>
+              <p>現在のパスワードを確認して、新しいパスワードへ変更します。</p>
+            </div>
+            <button
+              className="mini-button"
+              disabled={submitting}
+              onClick={() => setIsPasswordModalOpen(true)}
+              type="button"
+            >
+              パスワードを変更
+            </button>
+          </section>
 
           <section
             className="cloud-account-danger"
@@ -188,6 +216,15 @@ export const CloudAccountModal = ({
             </div>
           </section>
         </div>
+      )}
+
+      {isPasswordModalOpen && (
+        <CloudPasswordModal
+          isBusy={isBusy}
+          mode="change"
+          onClose={() => setIsPasswordModalOpen(false)}
+          onSubmit={onChangePassword}
+        />
       )}
     </>
   );

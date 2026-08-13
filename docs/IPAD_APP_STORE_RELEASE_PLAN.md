@@ -17,7 +17,7 @@
 - iPadはWeb版と同じSupabase API/RPCを使用し、ownerの隊列表だけを表示する。
 - Keychainセッション、端末下書き、オフライン保持、競合確認を維持する。
 - TestFlight buildへSupabase URL / publishable keyを渡すworkflowを追加する。
-- パスワード再確認と「削除」入力を伴うアカウント管理画面を追加する。
+- パスワード再確認と最終確認モーダルを伴うアカウント管理画面を追加する。
 - アカウント削除RPCを追加する。唯一所有するクラウド隊列表は完全削除し、共同所有は
   別ownerへ引き継ぎ、参加情報・連絡先・認証ユーザーを削除する。
 - ローカル隊列表は残す。
@@ -37,15 +37,20 @@
 
 ### Codex実装
 
-- パスワード再設定、確認メール再送、パスワード変更、期限切れリンクの画面を追加する。
+- パスワード再設定、確認メール再送、パスワード変更、期限切れリンクの画面を追加する。（実装済み）
+- Web / iPadの回復リンクを判定し、回復中は新しいパスワード設定画面を開く。（実装済み）
+- Supabase Authの主要な英語エラーを利用者向けの日本語へ変換する。（実装済み）
 - アプリ内にプライバシーポリシー、問い合わせ、利用規約への導線を追加する。
 - App Store ConnectのApp Privacy回答とPrivacy Manifestの整合性を検査する。
-- 認証・削除エラーを利用者向けの日本語へ統一する。
+- 残る認証・削除エラーを実機結果に沿って日本語へ補完する。
 
 ### ユーザー操作
 
 - プライバシーポリシーとサポートページを公開URLで用意する。
 - Supabase Authへ本番用custom SMTPを設定し、送信元ドメインを認証する。
+- Supabase AuthのRedirect URLsに次の2件があることを確認する。
+  - `jp.tairetsu.maker://auth/callback`
+  - `https://tairetsu-maker.vercel.app/`
 - App Store ConnectのApp Privacy、年齢区分、サポートURLを入力する。
 
 ## Release Gate 2: データ消失・ファイル安全性

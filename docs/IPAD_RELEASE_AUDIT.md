@@ -4,9 +4,10 @@
 
 ## 判定
 
-署名付きarchive、TestFlightアップロード、内部テストは実施済み。ただし現在の
-Supabase接続先がDNS解決できず、一般公開に必要なアカウント削除migrationと本番運用準備も
-未適用のため、App Store公開可能とは判定しない。
+署名付きarchive、TestFlightアップロード、内部テストは実施済み。Supabase接続と
+アカウント削除migrationは復旧・適用済み。ただしプライバシーポリシー、custom SMTP、
+App Store Connectのメタデータと破損・容量不足時の実機確認が残るため、App Store公開可能とは
+まだ判定しない。
 
 ## 自動検証済み
 
@@ -37,7 +38,9 @@ Supabase接続先がDNS解決できず、一般公開に必要なアカウント
 - 横向き編集サイドバーと縦向き上部編集トレイ
 - GitHub Actionsの署名なしbuildとTestFlight upload workflow
 - Supabase Redirect URL `jp.tairetsu.maker://auth/callback`
-- パスワード再確認付きのアプリ内アカウント削除UIと削除RPC migration
+- パスワード再確認・最終確認モーダル付きのアプリ内アカウント削除UIと削除RPC migration
+- パスワード再設定、確認メール再送、ログイン中のパスワード変更
+- Web / iPadの回復リンク判定と期限切れリンクの日本語案内
 
 開発依存にはCapacitor CLI内部の`xcode -> uuid`にmoderate警告が残る。`npm audit fix
 --force`はCapacitor CLIのダウングレードを提示するため適用せず、Capacitor公式更新で解消する。
@@ -54,8 +57,8 @@ Supabase接続先がDNS解決できず、一般公開に必要なアカウント
 - App Store Connect APIアクセス: 申請・承認済み
 - App Store Connect API key secrets: GitHub `ios-testflight` Environmentへ登録済み
 - 対象iPad: Apple DeveloperのiPad端末として登録済み
-- TestFlight upload: GitHub Actions run 30815777094で成功
-- App Store Connect: バージョン1.0・ビルド4が「提出準備完了」
+- TestFlight upload: GitHub Actions run 31709533972でビルド10のアップロードに成功
+- App Store Connect: バージョン1.0の内部テストを継続中
 - 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 
 ## TestFlight実機で必ず確認する項目

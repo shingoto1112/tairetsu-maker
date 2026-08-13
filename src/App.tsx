@@ -11,6 +11,7 @@ import { CircleHelp } from "lucide-react";
 import { AssignmentPanel } from "./components/AssignmentPanel";
 import { AudioPanel } from "./components/AudioPanel";
 import { CloudCollaborationHelpModal } from "./components/CloudCollaborationHelpModal";
+import { CloudPasswordModal } from "./components/CloudPasswordModal";
 import { CloudShareModal } from "./components/CloudShareModal";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { ExportImportPanel } from "./components/ExportImportPanel";
@@ -54,6 +55,7 @@ import {
   extractCloudProjectResourceData,
   extractCloudSceneData,
   getCloudConfig,
+  getCloudAuthErrorMessage,
   hydrateCloudAuthSessionFromNativeStorage,
   isCloudAuthSessionExpired,
   readCloudAuthSession,
@@ -249,6 +251,10 @@ const FLOATING_MENU_MARGIN_PX = 10;
 const APP_NAME = "隊列メーカー";
 const APP_FEATURES = getAppFeatureFlags();
 const IPAD_AUTH_REDIRECT_URL = "jp.tairetsu.maker://auth/callback";
+const getCloudEmailRedirectUrl = (): string =>
+  APP_FEATURES.nativeFileShare
+    ? IPAD_AUTH_REDIRECT_URL
+    : `${window.location.origin}${window.location.pathname}`;
 const MEMBER_COLOR_PRESETS = [
   { label: "赤 ライト", value: "#fca5a5" },
   { label: "赤 明るめ", value: "#f87171" },
@@ -2025,6 +2031,8 @@ function App() {
   const [cloudProjects, setCloudProjects] = useState<CloudProjectSummary[]>([]);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
+  const [isCloudPasswordRecoveryOpen, setIsCloudPasswordRecoveryOpen] =
+    useState(false);
   const [activeCloudProject, setActiveCloudProject] =
     useState<CloudActiveProjectState | null>(null);
   const [cloudActiveLocks, setCloudActiveLocks] = useState<CloudActiveLockSummary[]>([]);
@@ -7871,7 +7879,7 @@ function App() {
   };
 
   const getCloudErrorMessage = (error: unknown): string =>
-    error instanceof Error ? error.message : "クラウド操作に失敗しました。";
+    getCloudAuthErrorMessage(error);
 
   const getActiveCloudSession = async (
     sessionOverride?: CloudAuthSession | null,
@@ -9773,6 +9781,120 @@ function App() {
     }
   };
 
+  const requestCloudPasswordReset = async (
+    email: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    if (!cloudConfig) {
+      return { message: "Supabase接続が未設定です。", success: false };
+    }
+    setIsCloudBusy(true);
+    try {
+      await createCloudAuthClient(cloudConfig).requestPasswordReset(
+        email,
+        getCloudEmailRedirectUrl(),
+      );
+      setCloudError(null);
+      return {
+        message: "パスワード再設定メールを送信しました。メールをご確認ください。",
+        success: true,
+      };
+    } catch (error) {
+      return { message: getCloudErrorMessage(error), success: false };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const resendCloudSignupConfirmation = async (
+    email: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    if (!cloudConfig) {
+      return { message: "Supabase接続が未設定です。", success: false };
+    }
+    setIsCloudBusy(true);
+    try {
+      await createCloudAuthClient(cloudConfig).resendSignupConfirmation(
+        email,
+        getCloudEmailRedirectUrl(),
+      );
+      setCloudError(null);
+      return {
+        message: "確認メールを再送しました。メールをご確認ください。",
+        success: true,
+      };
+    } catch (error) {
+      return { message: getCloudErrorMessage(error), success: false };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const changeCloudPassword = async (
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    if (!cloudConfig || !cloudSession?.user.email) {
+      return {
+        message: "ログイン情報を確認できませんでした。再度ログインしてください。",
+        success: false,
+      };
+    }
+    setIsCloudBusy(true);
+    try {
+      const auth = createCloudAuthClient(cloudConfig);
+      const verifiedSession = await auth.signInWithPassword(
+        cloudSession.user.email,
+        currentPassword,
+      );
+      await auth.updatePassword(verifiedSession.accessToken, newPassword);
+      saveCloudAuthSession(verifiedSession);
+      cloudSessionRef.current = verifiedSession;
+      setCloudSession(verifiedSession);
+      setCloudError(null);
+      setNotice("パスワードを変更しました。");
+      return { message: "パスワードを変更しました。", success: true };
+    } catch (error) {
+      return { message: getCloudErrorMessage(error), success: false };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const finishCloudPasswordRecovery = async (
+    _currentPassword: string,
+    newPassword: string,
+  ): Promise<{ message: string; success: boolean }> => {
+    if (!cloudConfig) {
+      return { message: "Supabase接続が未設定です。", success: false };
+    }
+    setIsCloudBusy(true);
+    try {
+      const activeSession = await getActiveCloudSession();
+      if (!activeSession) {
+        return {
+          message: "再設定用のログイン情報がありません。もう一度再設定メールを送信してください。",
+          success: false,
+        };
+      }
+      await createCloudAuthClient(cloudConfig).updatePassword(
+        activeSession.accessToken,
+        newPassword,
+      );
+      const completedSession = { ...activeSession, authFlow: undefined };
+      saveCloudAuthSession(completedSession);
+      cloudSessionRef.current = completedSession;
+      setCloudSession(completedSession);
+      setIsCloudPasswordRecoveryOpen(false);
+      setCloudError(null);
+      setNotice("新しいパスワードを設定しました。");
+      return { message: "新しいパスワードを設定しました。", success: true };
+    } catch (error) {
+      return { message: getCloudErrorMessage(error), success: false };
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
   const signOutFromCloud = async () => {
     if (cloudConfig && cloudSession?.accessToken) {
       try {
@@ -9870,14 +9992,20 @@ function App() {
   };
 
   useEffect(() => {
-    if (!APP_FEATURES.nativeFileShare || !cloudConfig) {
+    if (!cloudConfig) {
       return undefined;
     }
     let disposed = false;
+    let removeNativeListener: (() => Promise<void>) | undefined;
 
     const activateSession = async (session: CloudAuthSession) => {
       const activeSession = isCloudAuthSessionExpired(session)
-        ? await createCloudAuthClient(cloudConfig).refreshSession(session.refreshToken)
+        ? {
+            ...(await createCloudAuthClient(cloudConfig).refreshSession(
+              session.refreshToken,
+            )),
+            authFlow: session.authFlow,
+          }
         : session;
       if (disposed) {
         return;
@@ -9886,8 +10014,11 @@ function App() {
       cloudSessionRef.current = activeSession;
       setCloudSession(activeSession);
       const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const projects = await api.listCloudProjects();
       setCloudProjects(
-        (await api.listCloudProjects()).filter((item) => item.role === "owner"),
+        APP_FEATURES.collaboration
+          ? projects
+          : projects.filter((item) => item.role === "owner"),
       );
       setCloudError(null);
     };
@@ -9897,6 +10028,11 @@ function App() {
         const session = await hydrateCloudAuthSessionFromNativeStorage();
         if (session) {
           await activateSession(session);
+          if (session.authFlow === "recovery" && !disposed) {
+            setAppView("library");
+            setIsCloudPasswordRecoveryOpen(true);
+            setNotice("新しいパスワードを設定してください。");
+          }
         }
       } catch (error) {
         if (!disposed) {
@@ -9907,7 +10043,20 @@ function App() {
     };
 
     const handleAuthUrl = async (url: string) => {
-      if (!url.startsWith(IPAD_AUTH_REDIRECT_URL)) {
+      const parsedUrl = new URL(url);
+      const callbackParameters = new URLSearchParams(
+        parsedUrl.hash.startsWith("#") ? parsedUrl.hash.slice(1) : parsedUrl.hash,
+      );
+      for (const [key, value] of parsedUrl.searchParams.entries()) {
+        if (!callbackParameters.has(key)) {
+          callbackParameters.set(key, value);
+        }
+      }
+      if (
+        !callbackParameters.has("access_token") &&
+        !callbackParameters.has("error") &&
+        !callbackParameters.has("error_description")
+      ) {
         return;
       }
       setIsCloudBusy(true);
@@ -9917,7 +10066,16 @@ function App() {
         ).createSessionFromRedirectUrl(url);
         await activateSession(session);
         if (!disposed) {
-          setNotice("メール確認が完了し、クラウドへログインしました。");
+          if (session.authFlow === "recovery") {
+            setAppView("library");
+            setIsCloudPasswordRecoveryOpen(true);
+            setNotice("本人確認が完了しました。新しいパスワードを設定してください。");
+          } else {
+            setNotice("メール確認が完了し、クラウドへログインしました。");
+          }
+          if (!APP_FEATURES.nativeFileShare) {
+            window.history.replaceState(null, "", parsedUrl.pathname || "/");
+          }
         }
       } catch (error) {
         if (!disposed) {
@@ -9930,19 +10088,31 @@ function App() {
       }
     };
 
-    void restoreSession();
-    const listener = CapacitorApp.addListener("appUrlOpen", ({ url }) => {
-      void handleAuthUrl(url);
-    });
-    void CapacitorApp.getLaunchUrl().then((launch) => {
-      if (launch?.url) {
-        void handleAuthUrl(launch.url);
-      }
-    });
+    if (APP_FEATURES.nativeFileShare) {
+      void restoreSession();
+      void CapacitorApp.addListener("appUrlOpen", ({ url }) => {
+        void handleAuthUrl(url);
+      }).then((handle) => {
+        if (disposed) {
+          void handle.remove();
+        } else {
+          removeNativeListener = () => handle.remove();
+        }
+      });
+      void CapacitorApp.getLaunchUrl().then((launch) => {
+        if (launch?.url) {
+          void handleAuthUrl(launch.url);
+        }
+      });
+    } else {
+      void handleAuthUrl(window.location.href);
+    }
 
     return () => {
       disposed = true;
-      void listener.then((handle) => handle.remove());
+      if (removeNativeListener) {
+        void removeNativeListener();
+      }
     };
   }, [cloudConfig]);
 
@@ -13013,40 +13183,53 @@ function App() {
 
   if (appView === "library") {
     return (
-      <FormationLibrary
-        projects={sortStoredProjects(savedProjects)}
-        notice={notice}
-        cloud={{
-          configured: Boolean(cloudConfig),
-          error: cloudError,
-          isBusy: isCloudBusy,
-          personalMode: !APP_FEATURES.collaboration,
-          pendingInviteToken: cloudInviteToken,
-          projects: APP_FEATURES.collaboration
-            ? cloudProjects
-            : cloudProjects.filter((project) => project.role === "owner"),
-          userDisplayName: cloudSession?.user.displayName,
-          userEmail: cloudSession?.user.email,
-          onAcceptInvite: acceptCloudInvite,
-          onCopyCloudProjectToLocal: copyCloudProjectToLocal,
-          onDeleteAccount: deleteCloudAccount,
-          onDeleteCloudProject: deleteCloudProject,
-          onHideCloudProject: hideCloudProject,
-          onOpenCloudProject: openCloudProject,
-          onRefresh: refreshCloudProjects,
-          onSignIn: signInToCloud,
-          onSignOut: signOutFromCloud,
-          onSignUp: signUpToCloud,
-          onUploadProject: uploadProjectToCloud,
-        }}
-        onCreate={createNewFormationProject}
-        onOpenProject={(nextProject) => void openProjectInEditor(nextProject)}
-        onRenameProject={renameStoredProject}
-        onDuplicateProject={duplicateStoredProject}
-        onExportProject={exportTairetsuProject}
-        onImportProjectFile={importTairetsuProjectFile}
-        onDeleteProject={deleteStoredProject}
-      />
+      <>
+        <FormationLibrary
+          projects={sortStoredProjects(savedProjects)}
+          notice={notice}
+          cloud={{
+            configured: Boolean(cloudConfig),
+            error: cloudError,
+            isBusy: isCloudBusy,
+            personalMode: !APP_FEATURES.collaboration,
+            pendingInviteToken: cloudInviteToken,
+            projects: APP_FEATURES.collaboration
+              ? cloudProjects
+              : cloudProjects.filter((project) => project.role === "owner"),
+            userDisplayName: cloudSession?.user.displayName,
+            userEmail: cloudSession?.user.email,
+            onAcceptInvite: acceptCloudInvite,
+            onChangePassword: changeCloudPassword,
+            onCopyCloudProjectToLocal: copyCloudProjectToLocal,
+            onDeleteAccount: deleteCloudAccount,
+            onDeleteCloudProject: deleteCloudProject,
+            onHideCloudProject: hideCloudProject,
+            onOpenCloudProject: openCloudProject,
+            onRefresh: refreshCloudProjects,
+            onRequestPasswordReset: requestCloudPasswordReset,
+            onResendConfirmation: resendCloudSignupConfirmation,
+            onSignIn: signInToCloud,
+            onSignOut: signOutFromCloud,
+            onSignUp: signUpToCloud,
+            onUploadProject: uploadProjectToCloud,
+          }}
+          onCreate={createNewFormationProject}
+          onOpenProject={(nextProject) => void openProjectInEditor(nextProject)}
+          onRenameProject={renameStoredProject}
+          onDuplicateProject={duplicateStoredProject}
+          onExportProject={exportTairetsuProject}
+          onImportProjectFile={importTairetsuProjectFile}
+          onDeleteProject={deleteStoredProject}
+        />
+        {isCloudPasswordRecoveryOpen && (
+          <CloudPasswordModal
+            isBusy={isCloudBusy}
+            mode="recovery"
+            onClose={() => setIsCloudPasswordRecoveryOpen(false)}
+            onSubmit={finishCloudPasswordRecovery}
+          />
+        )}
+      </>
     );
   }
 

@@ -21,6 +21,7 @@ describe("CloudAccountModal", () => {
         email="test@example.com"
         isBusy={false}
         onClose={vi.fn()}
+        onChangePassword={vi.fn()}
         onDeleteAccount={onDeleteAccount}
       />,
     );

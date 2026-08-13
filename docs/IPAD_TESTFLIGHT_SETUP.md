@@ -90,6 +90,13 @@ Supabase DashboardのAuthentication、URL Configurationを開き、Redirect URLs
 jp.tairetsu.maker://auth/callback
 ```
 
+Web版のメール確認・パスワード再設定も同じSupabase projectで使うため、次もRedirect
+URLsへ登録します。
+
+```text
+https://tairetsu-maker.vercel.app/
+```
+
 このRedirect URLは2026-08-03に本番Supabaseへ追加済み。
 
 新規登録の確認メールをiPadで開いた場合、このURLからアプリへ戻る。アプリは受け取った

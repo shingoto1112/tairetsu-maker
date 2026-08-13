@@ -755,6 +755,44 @@ h2 {
   margin-top: 4px;
 }
 
+.library-cloud-success {
+  color: #047857 !important;
+  font-size: 12px;
+  font-weight: 700;
+  grid-column: 1 / -1;
+}
+
+.library-cloud-recovery-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  grid-column: 1 / -1;
+}
+
+.library-link-button {
+  background: transparent;
+  border: 0;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 44px;
+  padding: 8px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  .cloud-account-security {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.library-link-button:disabled {
+  color: #94a3b8;
+}
+
 .library-cloud-actions {
   align-items: center;
   display: flex;
@@ -1069,6 +1107,33 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.cloud-account-security {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #dbe7ef;
+  border-radius: 12px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.cloud-account-security h3 {
+  align-items: center;
+  color: #1e293b;
+  display: flex;
+  font-size: 15px;
+  gap: 7px;
+  margin: 0 0 4px;
+}
+
+.cloud-account-security p {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+}
+
 .cloud-account-danger {
   background: #fff7f7;
   border: 1px solid #fecaca;
@@ -1094,6 +1159,50 @@ h2 {
   font-size: 13px;
   line-height: 1.65;
   margin: 0;
+}
+
+.cloud-password-backdrop {
+  z-index: 1900;
+}
+
+.cloud-password-dialog {
+  max-width: 480px;
+}
+
+.cloud-password-dialog__header {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.cloud-password-dialog__header h2 {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.cloud-password-dialog label {
+  color: #334155;
+  display: grid;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.cloud-password-dialog input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #0f172a;
+  font-size: 16px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.cloud-password-dialog input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid #99f6e4;
+  outline-offset: 1px;
 }
 
 .library-context-menu {
