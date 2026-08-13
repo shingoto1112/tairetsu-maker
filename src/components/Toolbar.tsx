@@ -1,11 +1,15 @@
 import {
+  FileText,
+  LifeBuoy,
   Menu,
   PanelsTopLeft,
   Save,
   Share2,
+  ShieldCheck,
   Table2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PUBLIC_LINKS } from "../config/publicLinks";
 
 type ToolbarProps = {
   title: string;
@@ -175,6 +179,37 @@ export const Toolbar = ({
                 >
                   隊列テンプレート
                 </button>
+              </section>
+
+              <section className="menu-section">
+                <h3>情報・サポート</h3>
+                <a
+                  href={PUBLIC_LINKS.privacy}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <ShieldCheck size={16} />
+                  プライバシー
+                </a>
+                <a
+                  href={PUBLIC_LINKS.terms}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <FileText size={16} />
+                  利用規約
+                </a>
+                <a
+                  href={PUBLIC_LINKS.support}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <LifeBuoy size={16} />
+                  サポート
+                </a>
               </section>
             </div>
           )}

@@ -1,12 +1,13 @@
 # iPad版 リリース監査
 
-最終更新: 2026-08-13
+最終更新: 2026-08-14
 
 ## 判定
 
 署名付きarchive、TestFlightアップロード、内部テストは実施済み。Supabase接続と
-アカウント削除migrationは復旧・適用済み。ただしプライバシーポリシー、custom SMTP、
-App Store Connectのメタデータと破損・容量不足時の実機確認が残るため、App Store公開可能とは
+アカウント削除migrationは復旧・適用済み。公開用プライバシー・利用規約・サポートページと
+アプリ内導線も実装済み。ただし専用サポートメール、custom SMTP、App Store Connectの
+メタデータと破損・容量不足時の実機確認が残るため、App Store公開可能とは
 まだ判定しない。
 
 ## 自動検証済み
@@ -15,7 +16,7 @@ App Store Connectのメタデータと破損・容量不足時の実機確認が
 | --- | --- | --- |
 | TypeScript | `npm run typecheck` | 成功 |
 | Web production build | `npm run build` | 成功 |
-| iPad・互換性ユニットテスト | `npm test`、11 files / 34 tests | 成功 |
+| iPad・互換性ユニットテスト | `npm test`、13 files / 44 tests | 成功 |
 | Capacitor同期 | `npx cap sync ios` | 成功 |
 | Windows/Tauri build | `npm run desktop:build` | 成功 |
 | production依存脆弱性 | `npm audit --omit=dev` | 0件（DOMPurify 3.4.13へ更新） |
@@ -41,6 +42,10 @@ App Store Connectのメタデータと破損・容量不足時の実機確認が
 - パスワード再確認・最終確認モーダル付きのアプリ内アカウント削除UIと削除RPC migration
 - パスワード再設定、確認メール再送、ログイン中のパスワード変更
 - Web / iPadの回復リンク判定と期限切れリンクの日本語案内
+- 公開用プライバシーポリシー、利用規約、サポートページ
+- 隊列一覧と編集画面から公開ページを開く導線
+- App Store Privacy回答とPrivacy Manifestの対応表
+- 公開ページの相互リンク、アカウント削除、追跡なし表記の自動テスト
 
 開発依存にはCapacitor CLI内部の`xcode -> uuid`にmoderate警告が残る。`npm audit fix
 --force`はCapacitor CLIのダウングレードを提示するため適用せず、Capacitor公式更新で解消する。
@@ -57,7 +62,7 @@ App Store Connectのメタデータと破損・容量不足時の実機確認が
 - App Store Connect APIアクセス: 申請・承認済み
 - App Store Connect API key secrets: GitHub `ios-testflight` Environmentへ登録済み
 - 対象iPad: Apple DeveloperのiPad端末として登録済み
-- TestFlight upload: GitHub Actions run 31709533972でビルド10のアップロードに成功
+- TestFlight upload: GitHub Actions run 31711350980でビルド11のアップロードに成功
 - App Store Connect: バージョン1.0の内部テストを継続中
 - 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 

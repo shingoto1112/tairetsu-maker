@@ -43,6 +43,7 @@ import {
   type CloudAccountDeleteResponse,
 } from "./CloudAccountModal";
 import type { CloudPasswordChangeResponse } from "./CloudPasswordModal";
+import { LegalLinks } from "./LegalLinks";
 import { NumericInput } from "./NumericInput";
 
 export type NewFormationInput = {
@@ -851,6 +852,8 @@ export const FormationLibrary = ({
           まだ保存済みの隊列表はありません。左上の新規作成から始めてください。
         </p>
       )}
+
+      <LegalLinks className="library-legal-links" />
 
       {libraryMenu && menuProject && (
         <div
