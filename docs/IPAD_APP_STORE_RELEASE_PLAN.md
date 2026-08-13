@@ -54,7 +54,7 @@
   - `jp.tairetsu.maker://auth/callback`
   - `https://tairetsu-maker.vercel.app/`
 - App Store ConnectのApp Privacyを入力・公開する。（完了）
-- App Store Connectの年齢区分、サポートURLを入力する。
+- App Store Connectの年齢区分、サポートURLを入力する。（完了）
 
 ## Release Gate 2: データ消失・ファイル安全性
 

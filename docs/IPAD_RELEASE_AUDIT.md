@@ -66,6 +66,7 @@
 - App Store Connect: バージョン1.0の内部テストを継続中
 - App Store Connect: Privacy Policy / Privacy Choices URLと4データタイプを公開済み
 - App Store Connect: Support URLと著作権情報を設定済み（個人情報は監査文書に記録しない）
+- App Store Connect: 年齢制限指定アンケートを最低区分向けの回答で完了
 - 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 
 ## TestFlight実機で必ず確認する項目
