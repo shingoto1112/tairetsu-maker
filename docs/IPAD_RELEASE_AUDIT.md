@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | TypeScript | `npm run typecheck` | 成功 |
 | Web production build | `npm run build` | 成功 |
-| iPad・互換性ユニットテスト | `npm test`、17 files / 56 tests | 成功 |
+| iPad・互換性ユニットテスト | `npm test`、17 files / 57 tests | 成功 |
 | Capacitor同期 | `npx cap sync ios` | 成功 |
 | Windows/Tauri build | `npm run desktop:build` | 成功 |
 | production依存脆弱性 | `npm audit --omit=dev` | 0件（DOMPurify 3.4.13へ更新） |
@@ -67,10 +67,14 @@
 - TestFlight upload: GitHub Actions run 32518204864で修正版build 13のアップロードに成功
 - 最新TestFlight upload: CI由来Development証明書12件による上限到達を確認。既存証明書の
   整理と、各CI終了時に当該runが作成した1件だけを失効する仕組みの接続待ち
+- build 12の審査クラッシュログ3件: すべて `NSCameraUsageDescription`不足によるTCC終了。
+  現行buildではカメラ経路を除去済み
 - App Store Connect: バージョン1.0の内部テストを継続中
 - App Store Connect: Privacy Policy / Privacy Choices URLと4データタイプを公開済み
 - App Store Connect: Support URLと著作権情報を設定済み（個人情報は監査文書に記録しない）
 - App Store Connect: 年齢制限指定アンケートを最低区分向けの回答で完了
+- App Store Connect: iPad 13インチ用スクリーンショット1枚を登録済み
+- App Store Connect: 再提出対象は旧build 12のまま。新build選択とApp Review連絡先入力が必要
 - 内部テスト: 「チーム内テスト」グループを作成し、本人をテスターへ追加済み
 
 ## TestFlight実機で必ず確認する項目

@@ -27,11 +27,13 @@
 - 修正版TestFlight build 13をrun `32518204864`でアップロード済み。
 - 日本語ローカリゼーション宣言後のRelease Simulator buildをrun `32520142293`で検証済み。
 - CIが新規作成したDevelopment証明書1件だけを判定・失効する安全スクリプトと4テストを追加。
+- App Store Connectから旧build 12のクラッシュログ3件を取得。すべて
+  `NSCameraUsageDescription`不足によるTCC終了で、旧 `Take Video` 経路が原因と確定。
 
 検証済み:
 
 - `npm run typecheck` 成功。
-- `npm test` 成功、17 files / 56 tests。
+- `npm test` 成功、17 files / 57 tests。
 - `npm run build` 成功、chunk size警告なし。
 - `npm audit --omit=dev` 0 vulnerabilities。
 - `npm run cloud:check` 成功。
@@ -43,8 +45,8 @@
 - Apple Developerに残ったCI由来Development証明書12件を、ユーザー確認後に失効する。
 - TestFlight workflowへ、そのrunが作成した証明書1件だけを終了時に失効する処理を接続する。
 - 日本語ローカリゼーション宣言を含む新しいTestFlight buildを作成し、iPad Air第5世代相当の実機で音源選択を確認する。
-- App Store Connectから旧build 12のクラッシュログを取得してsymbolicateする。
 - GitHubアカウント不要のサポート用メールアドレスを決める。
+- App Review Informationの連絡先電話番号・メールアドレスを入力する。
 - 審査用アカウントを設定し、App Reviewへ返信して新buildを再提出する。
 
 ## 最新作業メモ: iPad本人専用クラウドとアカウント削除

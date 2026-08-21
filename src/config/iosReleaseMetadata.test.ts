@@ -11,6 +11,10 @@ describe("iPad App Store release metadata", () => {
     rootPath("ios", "App", "App.xcodeproj", "project.pbxproj"),
     "utf8",
   );
+  const audioDocumentPicker = readFileSync(
+    rootPath("ios", "App", "App", "AudioDocumentPickerPlugin.swift"),
+    "utf8",
+  );
 
   it("declares the Japanese-only iPad app accurately", () => {
     expect(infoPlist).toMatch(
@@ -33,6 +37,13 @@ describe("iPad App Store release metadata", () => {
     expect(infoPlist).not.toContain("NSCameraUsageDescription");
     expect(infoPlist).not.toContain("NSMicrophoneUsageDescription");
     expect(infoPlist).not.toContain("NSPhotoLibraryUsageDescription");
+  });
+
+  it("uses an audio-only document picker without a camera capture path", () => {
+    expect(audioDocumentPicker).toContain("UIDocumentPickerViewController");
+    expect(audioDocumentPicker).toMatch(/forOpeningContentTypes:\s*\[\.audio\]/);
+    expect(audioDocumentPicker).not.toContain("UIImagePickerController");
+    expect(audioDocumentPicker).not.toContain("AVCapture");
   });
 
   it("ships a final opaque 1024px App Store icon", () => {
