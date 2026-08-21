@@ -96,6 +96,13 @@ jobs:
             CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             archive
 
+      - name: Package debug symbols
+        run: |
+          ditto \
+            -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/TairetsuMaker.xcarchive/dSYMs" \
+            "$RUNNER_TEMP/TairetsuMaker-dSYMs.zip"
+
       - name: Create App Store export options
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -142,8 +149,10 @@ jobs:
         with:
           name: ios-distribution-logs-${{ github.run_number }}
           path: |
+            ${{ runner.temp }}/TairetsuMaker-dSYMs.zip
+            ${{ runner.temp }}/TairetsuMaker.xcarchive/Info.plist
             ${{ runner.temp }}/TestFlightExport/DistributionSummary.plist
             ${{ runner.temp }}/TestFlightExport/ExportOptions.plist
             ${{ runner.temp }}/TestFlightExport/Packaging.log
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 30

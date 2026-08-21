@@ -1,4 +1,11 @@
-import JSZip from "jszip";
+import type JSZipType from "jszip";
+import {
+  MAX_AUDIO_FILE_BYTES,
+  MAX_PROJECT_JSON_BYTES,
+  MAX_TAIRETSU_FILE_BYTES,
+  MAX_ZIP_ENTRY_COUNT,
+  MAX_ZIP_UNCOMPRESSED_BYTES,
+} from "../config/fileLimits";
 import type { Project } from "../types";
 
 const TAIRETSU_APP_NAME = "隊列メーカー";
@@ -14,6 +21,30 @@ type TairetsuManifest = {
 };
 
 const ZIP_SIGNATURE = "PK";
+
+type JSZip = JSZipType;
+type JSZipObject = JSZipType.JSZipObject;
+type JSZipConstructor = {
+  new (): JSZip;
+  loadAsync(data: ArrayBuffer): Promise<JSZip>;
+};
+
+let jsZipPromise: Promise<JSZipConstructor> | null = null;
+
+const loadJsZip = () =>
+  (jsZipPromise ??= import("jszip").then((module) => {
+    const imported = module as unknown as {
+      default?: JSZipConstructor;
+    } & JSZipConstructor;
+    return imported.default ?? imported;
+  }));
+
+type ZipEntryWithSize = JSZipObject & {
+  _data?: {
+    compressedSize?: number;
+    uncompressedSize?: number;
+  };
+};
 
 export type TairetsuImportResult = {
   audioBlob: Blob | null;
@@ -34,6 +65,36 @@ const safeJsonParse = <T>(text: string, errorMessage: string): T => {
   } catch {
     throw new Error(errorMessage);
   }
+};
+
+const assertSafeZip = (zip: JSZip): void => {
+  const files = Object.values(zip.files).filter((entry) => !entry.dir);
+  if (files.length > MAX_ZIP_ENTRY_COUNT) {
+    throw new Error(`共有ファイル内のファイル数は${MAX_ZIP_ENTRY_COUNT}件以下にしてください。`);
+  }
+  const totalUncompressedBytes = files.reduce((total, entry) => {
+    const size = (entry as ZipEntryWithSize)._data?.uncompressedSize;
+    return total + (typeof size === "number" && Number.isFinite(size) ? size : 0);
+  }, 0);
+  if (totalUncompressedBytes > MAX_ZIP_UNCOMPRESSED_BYTES) {
+    throw new Error("共有ファイルの展開後サイズが大きすぎます。音源を外して再度お試しください。");
+  }
+};
+
+const readZipText = async (
+  entry: JSZipObject,
+  maxBytes: number,
+  errorMessage: string,
+): Promise<string> => {
+  const knownSize = (entry as ZipEntryWithSize)._data?.uncompressedSize;
+  if (typeof knownSize === "number" && knownSize > maxBytes) {
+    throw new Error(errorMessage);
+  }
+  const text = await entry.async("string");
+  if (new TextEncoder().encode(text).byteLength > maxBytes) {
+    throw new Error(errorMessage);
+  }
+  return text;
 };
 
 export const sanitizeTairetsuFileName = (name: string): string => {
@@ -102,7 +163,7 @@ const getParentPath = (path: string): string => {
 
 const findProjectFilePair = (
   zip: JSZip,
-): { basePath: string; manifestFile: JSZip.JSZipObject; projectFile: JSZip.JSZipObject } | null => {
+): { basePath: string; manifestFile: JSZipObject; projectFile: JSZipObject } | null => {
   const files = Object.values(zip.files).filter((entry) => !entry.dir);
   const manifestCandidates = files.filter((entry) =>
     normalizeZipPath(entry.name).endsWith("manifest.json"),
@@ -127,6 +188,9 @@ const findProjectFilePair = (
 };
 
 const readProjectFromJsonBuffer = (buffer: ArrayBuffer): Project => {
+  if (buffer.byteLength > MAX_PROJECT_JSON_BYTES) {
+    throw new Error("JSONファイルが大きすぎます。24MB以下のファイルを選択してください。");
+  }
   const text = new TextDecoder().decode(buffer);
   const parsed = safeJsonParse<unknown>(
     text,
@@ -159,7 +223,11 @@ const readPayloadFromZip = async (
   }
 
   const manifest = safeJsonParse<TairetsuManifest>(
-    await pair.manifestFile.async("string"),
+    await readZipText(
+      pair.manifestFile,
+      1024 * 1024,
+      "共有ファイルの情報が大きすぎます。",
+    ),
     "共有ファイルの情報を読み込めませんでした。",
   );
   console.info("[tairetsu import] manifest", manifest, { sourceName });
@@ -171,7 +239,11 @@ const readPayloadFromZip = async (
   }
 
   const project = safeJsonParse<unknown>(
-    await pair.projectFile.async("string"),
+    await readZipText(
+      pair.projectFile,
+      MAX_PROJECT_JSON_BYTES,
+      "隊列表データが大きすぎます。24MB以下にしてください。",
+    ),
     "隊列表データが壊れている可能性があります。",
   );
   if (!isProjectLike(project)) {
@@ -191,6 +263,9 @@ const readPayloadFromZip = async (
       })
     : null;
   const audioBlob = audioZipFile ? await audioZipFile.async("blob") : null;
+  if (audioBlob && audioBlob.size > MAX_AUDIO_FILE_BYTES) {
+    throw new Error("共有ファイル内の音源は200MB以下にしてください。");
+  }
 
   return {
     audioBlob,
@@ -200,7 +275,7 @@ const readPayloadFromZip = async (
   };
 };
 
-const findNestedArchive = (zip: JSZip): JSZip.JSZipObject | null => {
+const findNestedArchive = (zip: JSZip): JSZipObject | null => {
   const files = Object.values(zip.files).filter((entry) => !entry.dir);
   const namedArchive = files.find((entry) => {
     if (entry.dir) {
@@ -221,6 +296,7 @@ export const createTairetsuArchive = async (
     audioBlob?: Blob | null;
   } = {},
 ): Promise<Blob> => {
+  const JSZip = await loadJsZip();
   const zip = new JSZip();
   const includesAudio = Boolean(options.audioBlob && project.audio);
   const manifest: TairetsuManifest = {
@@ -264,6 +340,12 @@ export const readTairetsuArchive = async (
     size: file.size,
     type: file.type || "(empty)",
   });
+  if (file.size <= 0) {
+    throw new Error("選択したファイルが空です。");
+  }
+  if (file.size > MAX_TAIRETSU_FILE_BYTES) {
+    throw new Error("隊列表ファイルは256MB以下にしてください。");
+  }
   const buffer = await file.arrayBuffer();
   const signature = String.fromCharCode(
     ...new Uint8Array(buffer.slice(0, 2)),
@@ -288,10 +370,12 @@ export const readTairetsuArchive = async (
 
   let zip: JSZip;
   try {
+    const JSZip = await loadJsZip();
     zip = await JSZip.loadAsync(buffer);
   } catch {
     throw new Error("ZIPファイルとして展開できませんでした。");
   }
+  assertSafeZip(zip);
 
   let payload = await readPayloadFromZip(zip, file.name);
   if (!payload) {
@@ -299,8 +383,13 @@ export const readTairetsuArchive = async (
     if (nestedArchive) {
       console.info("[tairetsu import] trying nested archive", nestedArchive.name);
       try {
+        const JSZip = await loadJsZip();
         const nestedBuffer = await nestedArchive.async("arraybuffer");
+        if (nestedBuffer.byteLength > MAX_TAIRETSU_FILE_BYTES) {
+          throw new Error("内包された隊列表ファイルが大きすぎます。");
+        }
         const nestedZip = await JSZip.loadAsync(nestedBuffer);
+        assertSafeZip(nestedZip);
         payload = await readPayloadFromZip(nestedZip, nestedArchive.name);
       } catch (error) {
         console.warn("[tairetsu import] nested archive failed", error);

@@ -46,12 +46,12 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Build without signing
+      - name: Build release configuration without signing
         run: >-
           xcodebuild
           -project ios/App/App.xcodeproj
           -scheme App
-          -configuration Debug
+          -configuration Release
           -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator'
           -derivedDataPath ios/DerivedData

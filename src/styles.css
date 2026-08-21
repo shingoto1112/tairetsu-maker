@@ -537,6 +537,55 @@ body {
   min-height: 100vh;
 }
 
+.fatal-error-screen {
+  align-items: center;
+  background: #f8fafc;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+
+.fatal-error-panel {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #1e293b;
+  display: grid;
+  gap: 14px;
+  max-width: 560px;
+  padding: 24px;
+  width: 100%;
+}
+
+.fatal-error-panel > svg {
+  color: #b45309;
+}
+
+.fatal-error-panel h1,
+.fatal-error-panel p {
+  margin: 0;
+}
+
+.fatal-error-panel h1 {
+  font-size: 22px;
+}
+
+.fatal-error-panel p {
+  line-height: 1.7;
+}
+
+.fatal-error-panel small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.fatal-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 button,
 input,
 select {
@@ -1764,6 +1813,48 @@ h2 {
 .new-formation-dialog h2,
 .new-formation-dialog h3 {
   margin: 0;
+}
+
+.new-formation-field {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+  line-height: 1.25;
+}
+
+.audio-file-picker-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 8px;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 12px;
+  width: 100%;
+}
+
+.audio-file-picker-button:hover,
+.audio-file-picker-button:focus-within,
+.audio-file-picker-button:focus-visible {
+  border-color: rgba(13, 139, 120, 0.55);
+  box-shadow: 0 0 0 3px rgba(13, 139, 120, 0.12);
+  outline: none;
+}
+
+.audio-file-picker-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.audio-file-picker-button input {
+  display: none;
 }
 
 .new-formation-size {

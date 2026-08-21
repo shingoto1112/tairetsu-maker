@@ -1,8 +1,10 @@
 # iPad版 リリース監査
 
-最終更新: 2026-08-14
+最終更新: 2026-08-22
 
 ## 判定
+
+初回審査build 12は、仮アイコンと音源選択後のクラッシュにより却下された。完成版アイコン、音源専用のネイティブDocument Picker、Error Boundary、異常ファイル制限、dSYM保管、Supabase定期監視を実装済み。新しいTestFlight buildでの実機確認と再提出は未完了。詳細は `docs/APP_STORE_REVIEW_REMEDIATION_2026-08-22.md` を参照。
 
 署名付きarchive、TestFlightアップロード、内部テストは実施済み。Supabase接続と
 アカウント削除migrationは復旧・適用済み。公開用プライバシー・利用規約・サポートページと

@@ -3,7 +3,45 @@
 このファイルは、長くなったCodexチャットから新しいチャットへ作業を引き継ぐためのメモです。
 新しいチャットでは、まず `AGENTS.md`、`docs/SPEC.md`、このファイルを読んでから作業してください。
 
-最終更新: 2026-08-13
+最終更新: 2026-08-22
+
+## 最新作業メモ: App Store初回審査の修正
+
+初回審査build 12は、仮アイコンに見えるApp Iconと、「新しいステージ隊列を作成」で
+`Take Video`を選んだ後のクラッシュにより却下された。
+
+実装済み:
+
+- iPadの音源選択をHTML `audio/*`入力から、`UIDocumentPickerViewController` /
+  `UTType.audio`を使うネイティブ音源ファイル専用ピッカーへ変更。
+- Web/Windows版も対応音声拡張子だけを指定し、撮影導線を除去。
+- 方眼、センターライン、5つのメンバーセルで構成する完成版App Iconへ変更し、
+  faviconと起動画面も同じ意匠へ統一。
+- 音源200MB、隊列表ファイル256MB、JSON 24MB、ZIP 64ファイル・展開後224MBの
+  安全上限を追加。
+- React Error Boundaryと、個人情報・隊列表内容を含めない診断情報を追加。
+- PDF、画像、ZIP処理を遅延読み込みし、初回JSを約1.15MBから約482KBへ削減。
+- TestFlight workflowでdSYMと配布ログを30日保管。
+- GitHub ActionsとCodex heartbeatでSupabaseを3日ごとに確認。
+- 詳細とAppleへの返信案を `docs/APP_STORE_REVIEW_REMEDIATION_2026-08-22.md` に記録。
+
+検証済み:
+
+- `npm run typecheck` 成功。
+- `npm test` 成功、15 files / 49 tests。
+- `npm run build` 成功、chunk size警告なし。
+- `npm audit --omit=dev` 0 vulnerabilities。
+- `npm run cloud:check` 成功。
+- `npx cap sync ios` 成功、新規SwiftファイルのXcode登録を維持。
+- ローカル実ブラウザで作成ダイアログ、音源拡張子限定、サポートページを確認。
+
+残作業:
+
+- GitHub ActionsのmacOS Release Simulator buildでSwiftプラグインをコンパイルする。
+- 新しいTestFlight buildを作成し、iPad Air第5世代相当の実機で音源選択を確認する。
+- App Store Connectから旧build 12のクラッシュログを取得してsymbolicateする。
+- GitHubアカウント不要のサポート用メールアドレスを決める。
+- 審査用アカウントを設定し、App Reviewへ返信して新buildを再提出する。
 
 ## 最新作業メモ: iPad本人専用クラウドとアカウント削除
 

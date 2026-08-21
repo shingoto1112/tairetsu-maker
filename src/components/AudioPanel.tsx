@@ -1,6 +1,6 @@
 import { Music, Pause, Play } from "lucide-react";
-import { ChangeEvent } from "react";
 import { formatTime } from "../utils/time";
+import { AudioFilePickerButton } from "./AudioFilePickerButton";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
@@ -18,6 +18,7 @@ type AudioPanelProps = {
   cloudAudioNotice?: boolean;
   audioReadOnlyMessage?: string;
   onLoadAudio: (file: File) => void;
+  onLoadAudioError?: (message: string) => void;
   onTogglePlayback: () => void;
   onSeek: (time: number) => void;
   onPlaybackRateChange: (rate: number) => void;
@@ -42,19 +43,12 @@ export const AudioPanel = ({
   cloudAudioNotice = false,
   audioReadOnlyMessage = "音源設定を編集するには、ownerが音源設定の編集ロックを取得してください。",
   onLoadAudio,
+  onLoadAudioError = () => undefined,
   onTogglePlayback,
   onSeek,
   onPlaybackRateChange,
   onLoopChange,
 }: AudioPanelProps) => {
-  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onLoadAudio(file);
-      event.target.value = "";
-    }
-  };
-
   return (
     <section className="panel-section audio-panel">
       <PanelStickyHeader
@@ -62,16 +56,15 @@ export const AudioPanel = ({
         meta={`${audioName ?? "未読み込み"} / ${formatTime(currentTime)} / ${formatTime(duration)}`}
         actions={
           <>
-            <label className="mini-button file-picker-inline">
-              <input
-                type="file"
-                accept="audio/*,.mp3,.wav,.m4a"
-                disabled={!canEditAudio}
-                onChange={handleFile}
-              />
+            <AudioFilePickerButton
+              className="mini-button file-picker-inline"
+              disabled={!canEditAudio}
+              onError={onLoadAudioError}
+              onFileSelected={onLoadAudio}
+            >
               <Music size={15} />
               読み込み
-            </label>
+            </AudioFilePickerButton>
             <button className="mini-button primary" onClick={onTogglePlayback} type="button">
               {isPlaying ? <Pause size={15} /> : <Play size={15} />}
               {isPlaying ? "停止" : "再生"}

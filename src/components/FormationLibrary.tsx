@@ -38,6 +38,7 @@ import type {
   Project,
 } from "../types";
 import { CloudCollaborationHelpModal } from "./CloudCollaborationHelpModal";
+import { AudioFilePickerButton } from "./AudioFilePickerButton";
 import {
   CloudAccountModal,
   type CloudAccountDeleteResponse,
@@ -294,10 +295,6 @@ export const FormationLibrary = ({
     setFormationMode(nextMode);
     setIsTypeDialogOpen(false);
     setIsDialogOpen(true);
-  };
-
-  const handleAudioFile = (event: ChangeEvent<HTMLInputElement>) => {
-    setAudioFile(event.target.files?.[0] ?? null);
   };
 
   const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1069,11 +1066,21 @@ export const FormationLibrary = ({
               />
             </label>
 
-            <label>
-              音源
-              <input type="file" accept="audio/*,.mp3,.wav,.m4a" onChange={handleAudioFile} />
+            <div className="new-formation-field">
+              <span>音源</span>
+              <AudioFilePickerButton
+                className="audio-file-picker-button"
+                onError={setError}
+                onFileSelected={(file) => {
+                  setAudioFile(file);
+                  setError(null);
+                }}
+              >
+                <Upload size={16} />
+                音源ファイルを選択
+              </AudioFilePickerButton>
               <small>{audioFile ? audioFile.name : "任意です。音源なしでも作成できます。"}</small>
-            </label>
+            </div>
 
             {formationMode === "stage" ? (
               <section className="new-formation-size">

@@ -1,49 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="隊列メーカー">
-  <defs>
-    <filter id="cardShadow" x="-12%" y="-12%" width="124%" height="124%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#0f172a" flood-opacity=".18"/>
-    </filter>
-    <filter id="pinShadow" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#0f172a" flood-opacity=".24"/>
-    </filter>
-    <linearGradient id="cardFill" x1="190" y1="140" x2="830" y2="880" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#f8fafc"/>
-    </linearGradient>
-    <radialGradient id="teal" cx="35%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#22d3ee"/>
-      <stop offset="1" stop-color="#06b6d4"/>
-    </radialGradient>
-    <radialGradient id="pink" cx="35%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#fb7185"/>
-      <stop offset="1" stop-color="#f43f5e"/>
-    </radialGradient>
-    <radialGradient id="green" cx="35%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#84cc16"/>
-      <stop offset="1" stop-color="#4ade0c"/>
-    </radialGradient>
-    <radialGradient id="amber" cx="35%" cy="30%" r="80%">
-      <stop offset="0" stop-color="#fbbf24"/>
-      <stop offset="1" stop-color="#f59e0b"/>
-    </radialGradient>
-  </defs>
-
-  <rect x="92" y="72" width="840" height="840" rx="178" fill="url(#cardFill)" filter="url(#cardShadow)"/>
-  <path d="M340 102v800M660 102v800M102 270h820M102 520h820M102 740h820" stroke="#d1d5db" stroke-width="8" opacity=".74"/>
-  <g filter="url(#pinShadow)">
-    <circle cx="340" cy="270" r="64" fill="#ffffff"/>
-    <circle cx="340" cy="270" r="52" fill="url(#teal)"/>
+  <rect width="1024" height="1024" fill="#0f766e"/>
+  <g fill="none" stroke="#99f6e4" stroke-width="6" opacity=".28">
+    <path d="M128 0v1024M320 0v1024M512 0v1024M704 0v1024M896 0v1024"/>
+    <path d="M0 128h1024M0 320h1024M0 512h1024M0 704h1024M0 896h1024"/>
   </g>
-  <g filter="url(#pinShadow)">
-    <circle cx="672" cy="386" r="64" fill="#ffffff"/>
-    <circle cx="672" cy="386" r="52" fill="url(#pink)"/>
+  <path d="M512 0v1024M0 512h1024" fill="none" stroke="#ffffff" stroke-width="12" opacity=".72"/>
+  <g stroke="#ffffff" stroke-width="18">
+    <circle cx="310" cy="306" r="86" fill="#2563eb"/>
+    <circle cx="714" cy="306" r="86" fill="#ec4899"/>
+    <circle cx="404" cy="522" r="86" fill="#65a30d"/>
+    <circle cx="620" cy="522" r="86" fill="#f59e0b"/>
+    <circle cx="512" cy="752" r="86" fill="#ffffff"/>
   </g>
-  <g filter="url(#pinShadow)">
-    <circle cx="450" cy="568" r="64" fill="#ffffff"/>
-    <circle cx="450" cy="568" r="52" fill="url(#green)"/>
-  </g>
-  <g filter="url(#pinShadow)">
-    <circle cx="665" cy="742" r="64" fill="#ffffff"/>
-    <circle cx="665" cy="742" r="52" fill="url(#amber)"/>
-  </g>
+  <circle cx="512" cy="752" r="42" fill="#0f766e"/>
 </svg>

@@ -102,4 +102,26 @@ describe("tairetsu file compatibility", () => {
       readTairetsuArchive(await toFile(invalidArchive, "invalid.zip")),
     ).rejects.toThrow("manifest.json または project.json");
   });
+
+  it("rejects empty, oversized, and excessive-entry imports before extraction", async () => {
+    await expect(
+      readTairetsuArchive(new File([], "empty.tairetsu")),
+    ).rejects.toThrow("空です");
+
+    const oversized = new File(["PK"], "oversized.tairetsu");
+    Object.defineProperty(oversized, "size", {
+      configurable: true,
+      value: 256 * 1024 * 1024 + 1,
+    });
+    await expect(readTairetsuArchive(oversized)).rejects.toThrow("256MB以下");
+
+    const crowdedZip = new JSZip();
+    for (let index = 0; index < 65; index += 1) {
+      crowdedZip.file(`entry-${index}.txt`, "x");
+    }
+    const crowdedArchive = await crowdedZip.generateAsync({ type: "blob" });
+    await expect(
+      readTairetsuArchive(await toFile(crowdedArchive, "crowded.zip")),
+    ).rejects.toThrow("64件以下");
+  });
 });

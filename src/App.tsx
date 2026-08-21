@@ -13074,6 +13074,7 @@ function App() {
               : "音源設定の編集はownerのみ可能です。"
           }
           onLoadAudio={loadAudio}
+          onLoadAudioError={setNotice}
           onTogglePlayback={togglePlayback}
           onSeek={seek}
           onPlaybackRateChange={setPlaybackRate}

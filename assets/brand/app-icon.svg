@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#042f2e" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="#0f766e"/>
+  <g fill="none" stroke="#99f6e4" stroke-width="6" opacity=".28">
+    <path d="M128 0v1024M320 0v1024M512 0v1024M704 0v1024M896 0v1024"/>
+    <path d="M0 128h1024M0 320h1024M0 512h1024M0 704h1024M0 896h1024"/>
+  </g>
+  <path d="M512 0v1024M0 512h1024" fill="none" stroke="#ffffff" stroke-width="12" opacity=".72"/>
+  <g filter="url(#shadow)" stroke="#ffffff" stroke-width="18">
+    <circle cx="310" cy="306" r="86" fill="#2563eb"/>
+    <circle cx="714" cy="306" r="86" fill="#ec4899"/>
+    <circle cx="404" cy="522" r="86" fill="#65a30d"/>
+    <circle cx="620" cy="522" r="86" fill="#f59e0b"/>
+    <circle cx="512" cy="752" r="86" fill="#ffffff"/>
+  </g>
+  <circle cx="512" cy="752" r="42" fill="#0f766e"/>
+</svg>

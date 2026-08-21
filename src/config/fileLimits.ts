@@ -1,0 +1,5 @@
+export const MAX_AUDIO_FILE_BYTES = 200 * 1024 * 1024;
+export const MAX_TAIRETSU_FILE_BYTES = 256 * 1024 * 1024;
+export const MAX_PROJECT_JSON_BYTES = 24 * 1024 * 1024;
+export const MAX_ZIP_ENTRY_COUNT = 64;
+export const MAX_ZIP_UNCOMPRESSED_BYTES = 224 * 1024 * 1024;

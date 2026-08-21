@@ -1,4 +1,5 @@
 import { AudioMeta } from "../types";
+import { MAX_AUDIO_FILE_BYTES } from "../config/fileLimits";
 import {
   deleteNativeAudioBlob,
   getAppRuntime,
@@ -94,6 +95,12 @@ export const saveAudioBlobToIndexedDb = async (
     type?: string;
   },
 ): Promise<AudioMeta> => {
+  if (blob.size <= 0) {
+    throw new Error("音源ファイルが空です。");
+  }
+  if (blob.size > MAX_AUDIO_FILE_BYTES) {
+    throw new Error("音源ファイルは200MB以下にしてください。");
+  }
   const id = createAudioId();
   const type = meta.type || blob.type || "audio/mpeg";
   const file =

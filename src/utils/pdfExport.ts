@@ -1,4 +1,6 @@
-import { jsPDF } from "jspdf";
+let jsPdfPromise: Promise<typeof import("jspdf")> | null = null;
+
+const loadJsPdf = () => (jsPdfPromise ??= import("jspdf"));
 
 type JpegPage = {
   dataUrl: string;
@@ -27,6 +29,7 @@ const buildPdf = async (
   title = "隊列メーカー 印刷用",
   orientation: PdfOrientation = "landscape",
 ): Promise<Blob> => {
+  const { jsPDF } = await loadJsPdf();
   const pdf = new jsPDF({
     compress: true,
     format: "a4",

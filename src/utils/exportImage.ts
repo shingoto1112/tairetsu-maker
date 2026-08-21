@@ -1,4 +1,7 @@
-import { toJpeg, toPng } from "html-to-image";
+let htmlToImagePromise: Promise<typeof import("html-to-image")> | null = null;
+
+const loadHtmlToImage = () =>
+  (htmlToImagePromise ??= import("html-to-image"));
 
 const waitForFonts = async (): Promise<void> => {
   const fontSet = document.fonts;
@@ -67,6 +70,7 @@ export const elementToPngBlob = async (
   element: HTMLElement,
   options: { backgroundColor?: string; pixelRatio?: number } = {},
 ): Promise<Blob> => {
+  const { toPng } = await loadHtmlToImage();
   const dataUrl = await withExportClone(element, (clone, size) =>
     toPng(clone, {
       backgroundColor: options.backgroundColor ?? "#ffffff",
@@ -84,6 +88,7 @@ export const visibleElementToPngBlob = async (
   element: HTMLElement,
   options: { backgroundColor?: string; pixelRatio?: number } = {},
 ): Promise<Blob> => {
+  const { toPng } = await loadHtmlToImage();
   const size = getElementPixelSize(element);
   if (size.width <= 0 || size.height <= 0) {
     throw new Error("画像化する範囲のサイズを取得できませんでした。");
@@ -103,8 +108,9 @@ export const visibleElementToPngBlob = async (
 
 export const elementToJpegDataUrl = async (
   element: HTMLElement,
-): Promise<string> =>
-  withExportClone(element, (clone, size) =>
+): Promise<string> => {
+  const { toJpeg } = await loadHtmlToImage();
+  return withExportClone(element, (clone, size) =>
     toJpeg(clone, {
       backgroundColor: "#ffffff",
       cacheBust: true,
@@ -114,6 +120,7 @@ export const elementToJpegDataUrl = async (
       width: size.width,
     }),
   );
+};
 
 export const downloadBlob = (blob: Blob, filename: string): void => {
   const url = URL.createObjectURL(blob);
