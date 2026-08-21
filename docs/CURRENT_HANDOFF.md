@@ -22,13 +22,16 @@
 - React Error Boundaryと、個人情報・隊列表内容を含めない診断情報を追加。
 - PDF、画像、ZIP処理を遅延読み込みし、初回JSを約1.15MBから約482KBへ削減。
 - TestFlight workflowでdSYMと配布ログを30日保管。
-- GitHub ActionsとCodex heartbeatでSupabaseを3日ごとに確認。
+- GitHub Actionsでは3日ごと、Codex heartbeatでは毎日9時にSupabaseと公開ページを確認。
 - 詳細とAppleへの返信案を `docs/APP_STORE_REVIEW_REMEDIATION_2026-08-22.md` に記録。
+- 修正版TestFlight build 13をrun `32518204864`でアップロード済み。
+- 日本語ローカリゼーション宣言後のRelease Simulator buildをrun `32520142293`で検証済み。
+- CIが新規作成したDevelopment証明書1件だけを判定・失効する安全スクリプトと4テストを追加。
 
 検証済み:
 
 - `npm run typecheck` 成功。
-- `npm test` 成功、15 files / 49 tests。
+- `npm test` 成功、17 files / 56 tests。
 - `npm run build` 成功、chunk size警告なし。
 - `npm audit --omit=dev` 0 vulnerabilities。
 - `npm run cloud:check` 成功。
@@ -37,8 +40,9 @@
 
 残作業:
 
-- GitHub ActionsのmacOS Release Simulator buildでSwiftプラグインをコンパイルする。
-- 新しいTestFlight buildを作成し、iPad Air第5世代相当の実機で音源選択を確認する。
+- Apple Developerに残ったCI由来Development証明書12件を、ユーザー確認後に失効する。
+- TestFlight workflowへ、そのrunが作成した証明書1件だけを終了時に失効する処理を接続する。
+- 日本語ローカリゼーション宣言を含む新しいTestFlight buildを作成し、iPad Air第5世代相当の実機で音源選択を確認する。
 - App Store Connectから旧build 12のクラッシュログを取得してsymbolicateする。
 - GitHubアカウント不要のサポート用メールアドレスを決める。
 - 審査用アカウントを設定し、App Reviewへ返信して新buildを再提出する。
@@ -55,17 +59,17 @@
 - TestFlight workflowへ、Web版と同じSupabase URL / publishable keyをGitHub
   Environmentから渡す設定を追加しました。
 - ログイン中のクラウド欄へ「アカウント」画面を追加し、現在のパスワード再確認と
-  「削除」入力後だけアカウントを削除できます。
+  アプリ内の最終確認モーダル後だけアカウントを削除できます。
 - `20260813000000_cloud_account_deletion.sql` を追加しました。唯一所有するクラウド
   隊列表は完全削除し、共同所有は別ownerへ引き継いでから本人の認証・参加情報・連絡先を
   削除します。ローカル隊列表は削除しません。
 - 公開までの担当分担とRelease Gateを `docs/IPAD_APP_STORE_RELEASE_PLAN.md` にまとめました。
 
-外部作業待ち:
+現在の本番状態:
 
-- 現在設定されているSupabase URLはDNS解決できません。Dashboardでprojectを復旧するか、
-  新規projectのURL / publishable keyへWeb・GitHub双方を更新する必要があります。
-- 復旧後に最新migrationをSQL Editorへ適用し、`npm run cloud:check`を再実行してください。
+- Supabase projectは復旧済み。
+- Web版とGitHub Environmentに本番URL / publishable keyを設定済み。
+- アカウント削除RPCを含む必要migrationを適用済みで、`npm run cloud:check`は成功。
 
 ## 最新作業メモ: iPad縦向きの横展開とキャンバス中央維持
 

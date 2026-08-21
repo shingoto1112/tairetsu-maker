@@ -44,12 +44,24 @@
 - ZIP / `.tairetsu` / JSON / 音源の容量、ファイル数、展開後サイズ上限。
 - 画像、PDF、ZIPライブラリの遅延読み込みによる起動負荷削減。
 - TestFlight workflowでdSYMと配布ログを30日保管。
-- GitHub ActionsとCodexによる3日ごとのSupabase到達確認。
+- GitHub Actionsによる3日ごとの確認と、Codexによる毎日のSupabase・公開ページ到達確認。
 - サポートページから公開前の仮文言を削除。
+
+## TestFlightと署名の現在地
+
+- 修正版のTestFlight build 13はGitHub Actions run `32518204864`でアップロード済み。
+- 日本語を開発言語として宣言した最新commitのRelease Simulator buildはrun
+  `32520142293`で成功済み。
+- 新しいTestFlight uploadは、短命なGitHub macOS runnerが作成したDevelopment証明書が
+  Apple Developer側へ残り、証明書上限に達したため停止中。
+- 開始前の証明書一覧との差分から、そのCIで新規作成された `Created via API` の
+  Development証明書1件だけを失効する安全スクリプトとテストを追加済み。
+- 既存の12件を整理するまでは自動失効をworkflowへ接続しない。`Distribution Managed`
+  証明書は失効対象外とする。
 
 ## 再提出前のRelease Gate
 
-- [ ] GitHub ActionsのiOS Simulator Release相当buildが成功。
+- [x] GitHub ActionsのiOS Simulator Release相当buildが成功。
 - [ ] 新しいTestFlight buildをiPad Air (第5世代相当を優先)へインストール。
 - [ ] 「新しいステージ隊列を作成」から音源選択を開き、「Take Video」が表示されない。
 - [ ] MP3、M4A、WAVの選択、再生、再起動後の復元が成功。
