@@ -22,6 +22,8 @@ describe("iPad App Store release metadata", () => {
     expect(project).toContain("developmentRegion = ja;");
     expect(project).toMatch(/knownRegions = \(\s*ja,\s*Base,/);
     expect(project.match(/TARGETED_DEVICE_FAMILY = 2;/g)).toHaveLength(2);
+    expect(project).toContain('CODE_SIGN_IDENTITY = "Apple Distribution";');
+    expect(project.match(/CODE_SIGN_IDENTITY = "iPhone Developer";/g)).toHaveLength(1);
   });
 
   it("does not request capture permissions and declares exempt encryption", () => {
