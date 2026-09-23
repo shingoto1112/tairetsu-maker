@@ -55,6 +55,13 @@ App Store Connectに添付された3件の `.ips` を取得して確認した。
 
 ## TestFlightと署名の現在地
 
+2026-09-23更新: ユーザー承認済みのDevelopment証明書12件を固定ID・属性照合後に失効し、
+run `35866099145`でbuild 17をアップロードした。17 files / 61 tests、Web build、archive、
+uploadすべて成功。今回作成したDevelopment証明書1件もrunnerの署名identityと照合して
+自動失効済み。Distribution証明書は対象外。Apple処理完了・実機QA・再提出はまだ未確認。
+
+以下は8月時点の履歴:
+
 - 修正版のTestFlight build 13はGitHub Actions run `32518204864`でアップロード済み。
 - build 13はバイナリ検証済み、シンボルあり、iPad専用、内部テスト可能。ただし
   Store情報のローカリゼーションが英語のため、日本語宣言を含む次buildを使用する。
