@@ -91,6 +91,9 @@ uploadすべて成功。今回作成したDevelopment証明書1件もrunnerの�
 
 ## App Reviewへの返信案
 
+以下は未送信の下書き。最終ビルド番号と実機確認結果を追記してから使用する。
+未実施のテストを実施済みと記載しない。現在の残件は `IPAD_RESUBMISSION_STATUS.md` を参照。
+
 ```text
 Hello App Review Team,
 
@@ -101,8 +104,6 @@ We replaced the placeholder-like icon with the finalized formation-grid icon and
 
 2. Guideline 2.1(a)
 All three attached crash reports show the same TCC termination caused by opening the camera without an NSCameraUsageDescription. The previous audio input could expose that system media-capture option on iPadOS. We replaced it with a native audio-document picker limited to audio files. Camera and video capture are no longer presented or used. We also added file validation, double-selection protection, and error recovery.
-
-We tested the new TestFlight release build in portrait and landscape, including creating a new stage formation with and without an audio file.
 
 Review path:
 Launch the app > Add > New stage formation > Audio > Select audio file.

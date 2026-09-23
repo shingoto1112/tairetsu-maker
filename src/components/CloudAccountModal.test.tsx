@@ -1,12 +1,34 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudAccountModal } from "./CloudAccountModal";
 
 describe("CloudAccountModal", () => {
   afterEach(() => cleanup());
+
+  it("cancels final confirmation without deleting or closing the account screen", async () => {
+    const user = userEvent.setup();
+    const onDeleteAccount = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <CloudAccountModal
+        isBusy={false}
+        onClose={onClose}
+        onChangePassword={vi.fn()}
+        onDeleteAccount={onDeleteAccount}
+      />,
+    );
+    await user.type(screen.getByLabelText("現在のパスワード"), "test-password");
+    await user.click(screen.getByRole("button", { name: "アカウントを削除" }));
+    const confirmation = screen.getByRole("dialog", { name: "アカウント削除の確認" });
+    await user.click(within(confirmation).getByRole("button", { name: "キャンセル" }));
+    expect(screen.queryByRole("dialog", { name: "アカウント削除の確認" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "クラウドアカウント管理" })).toBeTruthy();
+    expect(onDeleteAccount).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 
   it("requires the current password and a final confirmation dialog", async () => {
     const user = userEvent.setup();

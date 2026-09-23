@@ -3,7 +3,17 @@
 このファイルは、長くなったCodexチャットから新しいチャットへ作業を引き継ぐためのメモです。
 新しいチャットでは、まず `AGENTS.md`、`docs/SPEC.md`、このファイルを読んでから作業してください。
 
-最終更新: 2026-09-23
+最終更新: 2026-09-24
+
+## 2026-09-24: 再審査準備ゴール再設定
+
+- 新ゴールはactive。最新残件は `docs/IPAD_RESUBMISSION_STATUS.md`、実機手順は `docs/IPAD_RESUBMISSION_DEVICE_CHECKLIST.md` を参照。
+- 音源読み込みの事前検証・一時ファイル回収修正を引き継いだ。
+- 保存復元で、localStorage読み書きやミラー修復の失敗が復元一覧表示を妨げる問題を4件の失敗テストで再現し修正。
+- 全17 files / 75 tests、typecheck、build、cap sync、cloud:check成功。公開3ページHTTP200。
+- 専用ブランチcodex/ipad-resubmission-20260924で作業し、そのブランチのVercel自動デプロイを抑止。mainへのpush/mergeはしない。
+- 次TestFlightの証明書後始末への承認、サポートメール、実機確認、審査情報が必要。今回まだ新しい配信workflowを起動していない。
+- 旧文書の「証明書12件の整理待ち」は解消済み。過去の一般公開計画をすべて新ゴールへ追加しない。
 
 ## 2026-09-23: 署名上限解消とTestFlight build 17
 
