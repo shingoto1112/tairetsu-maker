@@ -14,8 +14,10 @@
 - commit 1621322を専用ブランチへpush。Simulator Release run 35920235183成功（Xcode26.6 / Simulator SDK26.5）。iPadOS27実機確認は未実施。
 - 専用ブランチcodex/ipad-resubmission-20260924で作業し、そのブランチのVercel自動デプロイを抑止。mainへのpush/mergeはしない。
 - 新規Development証明書1件だけの後始末をユーザーが承認。commit f6c639cでTestFlight run 35922139370 / build18をアップロード済み。76 tests、build、archive/upload成功。新規1件の失効を確認、旧12件整理はfalseでスキップ。
-- build18はXcode26.6 / iPhoneOS SDK26.5。Apple側処理完了、テスター提供、iPadOS27を含む実機確認、審査情報は未確認。App Store Connectはログイン待ち。
-- サポートメールはtairetsu.maker@gmail.comに決定しsupport.htmlへ設定済み。公開ページのみの反映は別途許可待ち、受信未確認。本体Web版の公開はしない。
+- build18はXcode26.6 / iPhoneOS SDK26.5。Apple側処理完了、内部チーム内テスト1名への提供を画面で確認。iPadOS27を含む実機確認は未実施。審査選択buildは旧12のまま。
+- サポートメールはtairetsu.maker@gmail.com。追加許可後、mainのd8484f6を土台にページ+テストだけの4c2a34fをpush、Vercel Production 6625245500成功。公開ページとmailtoを確認、Web本体JS/CSSのアセット名は公開前後一致。メール受信未確認。
+- 審査電話番号・メールが空欄、審査用アカウント未設定。合格後自動公開とMac/Vision Pro配信がON。「手動公開・iPadのみ」へ変更する許可を質問中。価格1500円、カテゴリ・4+・iPad画像1枚・App Privacy4種類の公開を確認。審査送信なし。
+- npm auditは現在全依存9件、本番依存fflateのmoderate1件。jspdfはzlibSyncのみ利用し、指摘対象unzipSyncの呼び出しはsrcにない。詳細は残件文書参照。ページ公開へ依存更新は混ぜていない。
 - 旧文書の「証明書12件の整理待ち」は解消済み。過去の一般公開計画をすべて新ゴールへ追加しない。
 
 ## 2026-09-23: 署名上限解消とTestFlight build 17
