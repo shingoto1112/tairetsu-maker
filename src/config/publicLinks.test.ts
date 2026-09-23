@@ -32,4 +32,11 @@ describe("public app information links", () => {
     expect(privacy).toContain("広告目的のトラッキング");
     expect(privacy).toContain('id="data-controls"');
   });
+
+  it("provides a support address without requiring a GitHub account", () => {
+    const support = readFileSync(resolve(process.cwd(), "public", "support.html"), "utf8");
+    expect(support).toContain('href="mailto:tairetsu.maker@gmail.com"');
+    expect(support).toContain(">tairetsu.maker@gmail.com</a>");
+    expect(support).not.toContain("issues/new");
+  });
 });
