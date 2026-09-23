@@ -2,6 +2,9 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   createAppStoreConnectToken,
+  certificateFingerprint,
+  APPROVED_STALE_CERTIFICATE_IDS,
+  revokeApprovedStaleCertificates,
   findCertificatesCreatedSince,
   revokeCertificatesCreatedSince,
 } from "./apple-signing-certificates.mjs";
@@ -9,6 +12,7 @@ import {
 const certificate = (id, overrides = {}) => ({
   attributes: {
     activated: true,
+    certificateContent: Buffer.from(id).toString("base64"),
     certificateType: "DEVELOPMENT",
     displayName: "Apple Development: Created via API",
     name: "Created via API",
@@ -70,6 +74,7 @@ describe("App Store Connect signing certificate lifecycle", () => {
       revokeCertificatesCreatedSince({
         apply: true,
         beforeIds: ["old"],
+        ownedFingerprints: [certificateFingerprint(certificate("new"))],
         fetchImpl,
         token: "token",
       }),
@@ -97,6 +102,39 @@ describe("App Store Connect signing certificate lifecycle", () => {
         token: "token",
       }),
     ).rejects.toThrow("Refusing to revoke 2 certificates");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("never revokes a new certificate owned by another runner", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [certificate("other-runner")] })));
+    await expect(revokeCertificatesCreatedSince({ apply: true, beforeIds: [], ownedFingerprints: [], fetchImpl, token: "token" })).rejects.toThrow("not owned by this runner");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("revokes only approved IDs and verifies removal", async () => {
+    const id = APPROVED_STALE_CERTIFICATE_IDS[0];
+    let removed = false;
+    const fetchImpl = vi.fn(async (url, options = {}) => {
+      if (options.method === "DELETE") {
+        expect(url).toBe(`https://api.appstoreconnect.apple.com/v1/certificates/${id}`);
+        removed = true;
+        return new Response(null, { status: 204 });
+      }
+      return new Response(JSON.stringify({ data: [certificate("unapproved"), certificate("distribution", { certificateType: "DISTRIBUTION" }), ...(!removed ? [certificate(id)] : [])] }));
+    });
+    await expect(revokeApprovedStaleCertificates({ apply: true, fetchImpl, token: "token" })).resolves.toEqual([id]);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("refuses changed certificate types before any deletion", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [certificate(APPROVED_STALE_CERTIFICATE_IDS[0]), certificate(APPROVED_STALE_CERTIFICATE_IDS[1], { certificateType: "DISTRIBUTION" })] })));
+    await expect(revokeApprovedStaleCertificates({ apply: true, fetchImpl, token: "token" })).rejects.toThrow("attributes changed");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses incomplete inventories", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [], links: { next: "next-page" } })));
+    await expect(revokeApprovedStaleCertificates({ apply: true, fetchImpl, token: "token" })).rejects.toThrow("Incomplete certificate inventory");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

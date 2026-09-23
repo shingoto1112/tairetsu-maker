@@ -1,4 +1,4 @@
-import { sign } from "node:crypto";
+import { createHash, sign } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +7,12 @@ const API_BASE_URL = "https://api.appstoreconnect.apple.com/v1";
 const DEFAULT_MAX_REVOKE_COUNT = 1;
 const TOKEN_AUDIENCE = "appstoreconnect-v1";
 const TOKEN_LIFETIME_SECONDS = 15 * 60;
+// Explicitly approved on 2026-09-23; never broaden this list automatically.
+export const APPROVED_STALE_CERTIFICATE_IDS = [
+  "W2TR6SY4CJ", "27P6A242W9", "52W8995FCT", "4YT7LRBFS8",
+  "4X6ZAU4U89", "QX5C7MJAV3", "Y5YS34MGFP", "3BVM38TQ7B",
+  "L97GGWSF69", "8D76HZ9U7P", "4478SDL44T", "RJN4WM89JZ",
+];
 
 const encodeJson = (value) =>
   Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
@@ -55,7 +61,7 @@ const requestAppStoreConnect = async (
 export const listDevelopmentCertificates = async ({ fetchImpl, token }) => {
   const query = new URLSearchParams({
     "fields[certificates]":
-      "name,displayName,certificateType,platform,expirationDate,activated",
+      "name,displayName,certificateType,platform,expirationDate,activated,certificateContent",
     "filter[certificateType]": "DEVELOPMENT",
     limit: "200",
   });
@@ -63,7 +69,33 @@ export const listDevelopmentCertificates = async ({ fetchImpl, token }) => {
     fetchImpl,
     token,
   });
-  return Array.isArray(response?.data) ? response.data : [];
+  if (!Array.isArray(response?.data) || response.links?.next) {
+    throw new Error("Incomplete certificate inventory; refusing cleanup.");
+  }
+  return response.data;
+};
+
+export const certificateFingerprint = (certificate) => {
+  const content = certificate.attributes?.certificateContent;
+  return content ? createHash("sha1").update(Buffer.from(content, "base64")).digest("hex").toUpperCase() : null;
+};
+
+export const revokeApprovedStaleCertificates = async ({ apply = false, fetchImpl, token }) => {
+  const certificates = await listDevelopmentCertificates({ fetchImpl, token });
+  const approved = certificates.filter(({ id }) => APPROVED_STALE_CERTIFICATE_IDS.includes(id));
+  if (approved.some((certificate) => !isEphemeralApiDevelopmentCertificate(certificate))) {
+    throw new Error("Approved certificate attributes changed; refusing cleanup.");
+  }
+  for (const certificate of approved) {
+    if (apply) await requestAppStoreConnect(`/certificates/${encodeURIComponent(certificate.id)}`, { fetchImpl, method: "DELETE", token });
+  }
+  if (apply) {
+    const remaining = await listDevelopmentCertificates({ fetchImpl, token });
+    if (remaining.some(({ id }) => APPROVED_STALE_CERTIFICATE_IDS.includes(id))) {
+      throw new Error("Approved certificate cleanup was not confirmed.");
+    }
+  }
+  return approved.map(({ id }) => id);
 };
 
 export const isEphemeralApiDevelopmentCertificate = (certificate) => {
@@ -91,6 +123,7 @@ export const revokeCertificatesCreatedSince = async ({
   beforeIds,
   fetchImpl,
   maxRevokeCount = DEFAULT_MAX_REVOKE_COUNT,
+  ownedFingerprints = [],
   token,
 }) => {
   const certificates = await listDevelopmentCertificates({ fetchImpl, token });
@@ -101,6 +134,9 @@ export const revokeCertificatesCreatedSince = async ({
     );
   }
   if (apply) {
+    if (created.some((certificate) => !ownedFingerprints.includes(certificateFingerprint(certificate)))) {
+      throw new Error("New certificate is not owned by this runner; refusing cleanup.");
+    }
     for (const certificate of created) {
       await requestAppStoreConnect(
         `/certificates/${encodeURIComponent(certificate.id)}`,
@@ -163,14 +199,28 @@ const runCli = async () => {
     }
     const before = JSON.parse(await readFile(beforePath, "utf8"));
     const apply = args.includes("--apply");
+    if (!Array.isArray(before.ids) || before.ids.some((id) => typeof id !== "string")) {
+      throw new Error("Invalid certificate snapshot; refusing cleanup.");
+    }
+    const identitiesPath = readOption(args, "--identities");
+    const identities = identitiesPath ? await readFile(identitiesPath, "utf8") : "";
+    const ownedFingerprints = [...identities.matchAll(/\b[A-Fa-f0-9]{40}\b/g)].map(([value]) => value.toUpperCase());
     const ids = await revokeCertificatesCreatedSince({
       apply,
-      beforeIds: Array.isArray(before.ids) ? before.ids : [],
+      beforeIds: before.ids,
+      ownedFingerprints,
       token,
     });
     console.log(
       `${apply ? "Revoked" : "Would revoke"} ${ids.length} certificate(s) created by this run.`,
     );
+    return;
+  }
+
+  if (command === "cleanup-approved") {
+    const apply = args.includes("--apply");
+    const ids = await revokeApprovedStaleCertificates({ apply, token });
+    console.log(`${apply ? "Revoked" : "Would revoke"} ${ids.length} explicitly approved stale certificate(s): ${ids.join(", ")}`);
     return;
   }
 
