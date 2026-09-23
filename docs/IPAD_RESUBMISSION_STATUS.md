@@ -23,12 +23,15 @@
 
 ## Codexが続けること
 
-- [ ] 専用ブランチの署名なしSimulator Releaseビルドを確認。
+- [x] 専用ブランチの署名なしSimulator Releaseビルドを確認。commit 1621322、run [35920235183](https://github.com/shingoto1112/tairetsu-maker/actions/runs/35920235183)成功。
 - [ ] 既存TestFlight手順で最終候補をarchive/upload。実行からbuild番号を確認。
 - [ ] 使用Xcode/SDKをログで確認。iPadOS27対応をビルドだけで判定しない。
 - [ ] Apple処理完了・内部テスターへの提供を確認。
 - [ ] 実機チェック結果で見つかった重大問題を修正・再検証。
 - [ ] 確認済み事実だけでApple返信文を確定。
+
+Simulator runのログ: Xcode 26.6 (17F113)、iPhoneSimulator26.5.sdk、BUILD SUCCEEDED。
+iPadOS 27ランタイムでの起動・操作確認ではない。最終TestFlight archiveのSDKは配信後に別途記録する。
 
 ## ユーザー確認待ち
 
@@ -49,6 +52,7 @@
 - 根拠: https://vercel.com/docs/project-configuration/git-configuration
 - GitHub Environment ios-testflightには確認時点でブランチ制限なし。
 - push後は対象commitのdeploymentsも確認する。PR・mainマージ・Web公開は行わない。
+- commit 1621322をpush後、Simulator build完了時にも当該SHAのdeploymentsは空。Webデプロイなし。TestFlightの新runはまだ起動していない。
 
 ## 完了条件
 

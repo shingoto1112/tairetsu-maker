@@ -11,6 +11,7 @@
 - 音源読み込みの事前検証・一時ファイル回収修正を引き継いだ。
 - 保存復元で、localStorage読み書きやミラー修復の失敗が復元一覧表示を妨げる問題を4件の失敗テストで再現し修正。
 - 全17 files / 75 tests、typecheck、build、cap sync、cloud:check成功。公開3ページHTTP200。
+- commit 1621322を専用ブランチへpush。Simulator Release run 35920235183成功（Xcode26.6 / Simulator SDK26.5）。iPadOS27実機確認は未実施。
 - 専用ブランチcodex/ipad-resubmission-20260924で作業し、そのブランチのVercel自動デプロイを抑止。mainへのpush/mergeはしない。
 - 次TestFlightの証明書後始末への承認、サポートメール、実機確認、審査情報が必要。今回まだ新しい配信workflowを起動していない。
 - 旧文書の「証明書12件の整理待ち」は解消済み。過去の一般公開計画をすべて新ゴールへ追加しない。
