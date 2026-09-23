@@ -18,6 +18,7 @@
 - サポートメールはtairetsu.maker@gmail.com。追加許可後、mainのd8484f6を土台にページ+テストだけの4c2a34fをpush、Vercel Production 6625245500成功。公開ページとmailtoを確認、Web本体JS/CSSのアセット名は公開前後一致。メール受信未確認。
 - 審査電話番号・メールが空欄、審査用アカウント未設定。合格後自動公開とMac/Vision Pro配信がON。「手動公開・iPadのみ」へ変更する許可を質問中。価格1500円、カテゴリ・4+・iPad画像1枚・App Privacy4種類の公開を確認。審査送信なし。
 - npm auditは現在全依存9件、本番依存fflateのmoderate1件。jspdfはzlibSyncのみ利用し、指摘対象unzipSyncの呼び出しはsrcにない。詳細は残件文書参照。ページ公開へ依存更新は混ぜていない。
+- build18向けApple返信・審査メモの未送信下書きをAPP_STORE_REVIEW_REMEDIATION_2026-08-22.mdに整備。実際のUIに合わせ「追加 > 新しく作る > ステージ隊列 > 音源ファイルを選択」を併記。実機合格や審査用アカウントの有効性は未確認で、送信可能とはまだ扱わない。
 - 旧文書の「証明書12件の整理待ち」は解消済み。過去の一般公開計画をすべて新ゴールへ追加しない。
 
 ## 2026-09-23: 署名上限解消とTestFlight build 17

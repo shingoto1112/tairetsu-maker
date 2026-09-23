@@ -29,7 +29,8 @@
 - [x] 使用Xcode/SDKをログで確認。Xcode26.6 (17F113) / iPhoneOS26.5.sdk。iPadOS27対応をビルドだけで判定しない。
 - [x] Apple処理完了・内部テスターへの提供を確認。build18の詳細画面で内部グループ1件（1名）を確認。外部testグループには追加していない。
 - [ ] 実機チェック結果で見つかった重大問題を修正・再検証。
-- [ ] 確認済み事実だけでApple返信文を確定。
+- [x] build18の却下理由別返信と日本語UIラベル付き審査操作説明の下書きを準備（APP_STORE_REVIEW_REMEDIATION_2026-08-22.md）。
+- [ ] 実機結果と審査用アカウントを確認してApple返信文を送信可能な最終版として確定。
 
 Simulator runのログ: Xcode 26.6 (17F113)、iPhoneSimulator26.5.sdk、BUILD SUCCEEDED。
 iPadOS 27ランタイムでの起動・操作確認ではない。最終TestFlight archiveもXcode26.6 / iPhoneOS26.5.sdkを使用。
