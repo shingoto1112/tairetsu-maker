@@ -1,7 +1,7 @@
 # iPad再審査準備の現在地
 
 更新: 2026-10-02。ユーザーの承認回答を受けて作業再開。一般公開・審査送信・Web本体公開は対象外。別途許可を得たサポートページだけ公開済み。
-旧記録の残件よりこの一覧を優先する。最終TestFlight実機確認までは準備完了としない。
+旧記録の残件よりこの一覧を優先する。ユーザーは2026-10-02に「実機確認が終了しました。問題なしです」と報告。確認したbuild番号・正確なOSと審査情報の照合までは、提出準備完了としない。
 
 ## 完了済みと証拠
 
@@ -10,7 +10,7 @@
 | 却下原因の修正 | AudioDocumentPickerPlugin.swiftは.audio専用。iosReleaseMetadata.test.tsでカメラ経路不使用を検査 | 実機の選択UIは最終buildで要確認 |
 | 完成アイコン | AppIcon.appiconsetの1024px画像と参照設定。テストでサイズ・不透明度を確認 | 最終buildのホーム画面と起動画面は要確認 |
 | build 17 | run 35866099145をAPIで再照合。archive/upload/署名後始末がsuccess | Apple処理・現在のテスター提供状態は未確認 |
-| 最終候補build 18 | commit f6c639c、run 35922139370でarchive/upload成功。新規Development証明書1件のみ失効。App Store Connectで処理完了・チーム内テスト（内部1名）への登録を確認 | 端末へのインストール・実機結果は未確認 |
+| 最終候補build 18 | commit f6c639c、run 35922139370でarchive/upload成功。新規Development証明書1件のみ失効。App Store Connectで処理完了・チーム内テスト（内部1名）への登録を確認 | 実機確認終了・問題なしの報告は受領。確認した番号が18であることの照合待ち |
 | 旧証明書整理 | 同runの承認済み12件整理stepがsuccess、9/23の記録と一致 | 今回再実行しない |
 | 音源読み込み | audioPicker.ts: 事前検証とfinally回収。異常・キャンセル・回収失敗テスト | Swiftのコピー前制限や実機メモリ測定ではない |
 | 保存復元の追加修正 | storage.test.tsで4失敗を再現し修正後成功。書き戻し失敗でも復元データを返す | 容量不足の根本解消や新規保存成功を保証しない |
@@ -22,6 +22,7 @@
 | 公開ページ | サポートメールをmainの4c2a34fで公開。Production deployment 6625245500成功。/と/support.htmlのHTTP200・mailto・旧GitHubフォーム除去を確認。Web本体のJS/CSSアセット名は公開前後一致 | 実際のメール受信は未確認 |
 | 監視 | supabase heartbeatはACTIVE、毎日9時。GitHub workflowにも定期チェック | 一時停止防止や24時間稼働の保証ではない |
 | 公開方法・配信対象 | 2026-10-02の承認後、App Store Connectで手動リリースを保存。Mac・Apple Vision Proの配信チェックを外し「保存済み」を確認 | 審査への再提出・一般公開は行っていない |
+| ユーザーによる実機確認 | 2026-10-02に実機確認終了・問題なしの報告を受領 | build番号・正確なOS・個別項目の結果は未提示。別機種の合格や実際のアカウント削除成功は推定しない |
 
 ## Codexが続けること
 
@@ -29,7 +30,8 @@
 - [x] 既存TestFlight手順で最終候補build18をarchive/upload。run [35922139370](https://github.com/shingoto1112/tairetsu-maker/actions/runs/35922139370)成功。
 - [x] 使用Xcode/SDKをログで確認。Xcode26.6 (17F113) / iPhoneOS26.5.sdk。iPadOS27対応をビルドだけで判定しない。
 - [x] Apple処理完了・内部テスターへの提供を確認。build18の詳細画面で内部グループ1件（1名）を確認。外部testグループには追加していない。
-- [ ] 実機チェック結果で見つかった重大問題を修正・再検証。
+- [x] 実機結果を受領。ユーザーから問題なしの報告があり、この報告に起因する修正は不要。
+- [ ] 実機確認したbuild番号と正確なiPadOSを照合。
 - [x] build18の却下理由別返信と日本語UIラベル付き審査操作説明の下書きを準備（APP_STORE_REVIEW_REMEDIATION_2026-08-22.md）。
 - [ ] 実機結果と審査用アカウントを確認してApple返信文を送信可能な最終版として確定。
 
@@ -41,7 +43,7 @@ build18のアップロード完了は2026-09-24 06:27 JST。ログは「Uploaded
 
 1. 今回生成したDevelopment証明書1件だけの後始末はユーザー承認済みで完了。旧12件整理はfalseでスキップ。既存証明書・Distribution証明書は対象外。
 2. サポートメールはユーザー指定の tairetsu.maker@gmail.com に決定。追加承認を受け公開ページへ反映済み。受信確認は未実施。
-3. 最終候補buildで `IPAD_RESUBMISSION_DEVICE_CHECKLIST.md` を実施。
+3. 実機確認は終了・問題なしとの報告を受領。確認したTestFlight build番号と正確なiPadOSを質問済み。個別チェック未実施があれば補足してもらう。
 4. App Store Connectの審査連絡先、審査用アカウント、現在のメタデータ・価格・カテゴリ・画像・App Privacyを確認。認証情報をGitやこの文書に書かない。
 5. 本番SMTPと確認/回復メールが一般利用者へ届くことを確認。送信テストは本人が管理するアドレスで実施。
 6. 本番アカウント削除の実行試験は専用アカウントで、削除直前の別承認が必要。キャンセル検証と混同しない。
