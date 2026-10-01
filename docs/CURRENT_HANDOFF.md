@@ -3,7 +3,14 @@
 このファイルは、長くなったCodexチャットから新しいチャットへ作業を引き継ぐためのメモです。
 新しいチャットでは、まず `AGENTS.md`、`docs/SPEC.md`、このファイルを読んでから作業してください。
 
-最終更新: 2026-09-23
+最終更新: 2026-10-02
+
+## 2026-10-02: 検証済み安全対策のWeb反映
+
+- ユーザー承認後、mainの4c2a34fを土台に音源読み込み・保存復元の安全対策と回帰テストを取り込んだ。詳細は `docs/WEB_RELEASE_2026-10-02.md` を参照。
+- 17 files / 80 tests、typecheck、build、diff --check成功。両モードの作成・メンバー追加・保存・再読み込みをローカルChromeで確認。
+- Web共同編集は維持。DB migration、iPad新UI、TestFlight/App Storeの変更は含まない。
+- iPad再審査準備の最新状況はcodex/ipad-resubmission-20260924の文書を優先。以下のbuild17記録は履歴であり、現在の候補を17へ戻さない。
 
 ## 2026-09-23: 署名上限解消とTestFlight build 17
 

@@ -62,17 +62,26 @@ export const pickNativeAudioFile = async (): Promise<File | null> => {
   if (result.cancelled) {
     return null;
   }
-  if (!result.uri || !result.name) {
+  if (!result.uri) {
     throw new Error("音源ファイルを読み込めませんでした。もう一度お試しください。");
-  }
-  if (typeof result.size === "number" && result.size > MAX_AUDIO_FILE_BYTES) {
-    await nativeAudioPicker
-      .removeTemporaryFile({ uri: result.uri })
-      .catch(() => undefined);
-    throw new Error("音源ファイルは200MB以下にしてください。");
   }
 
   try {
+    if (!result.name) {
+      throw new Error("音源ファイルを読み込めませんでした。もう一度お試しください。");
+    }
+    // Reject known-invalid documents before allocating the complete audio blob.
+    if (!AUDIO_FILE_EXTENSIONS.has(getFileExtension(result.name))) {
+      throw new Error("MP3、M4A、WAV、AAC、AIFF、CAF形式の音源を選択してください。");
+    }
+    if (typeof result.size === "number") {
+      if (!Number.isFinite(result.size) || result.size <= 0) {
+        throw new Error("選択した音源ファイルが空か、サイズを取得できませんでした。");
+      }
+      if (result.size > MAX_AUDIO_FILE_BYTES) {
+        throw new Error("音源ファイルは200MB以下にしてください。");
+      }
+    }
     const response = await fetch(Capacitor.convertFileSrc(result.uri));
     if (!response.ok) {
       throw new Error(`音源ファイルの読み込みに失敗しました (${response.status})。`);

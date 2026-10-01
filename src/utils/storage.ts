@@ -121,7 +121,20 @@ export const hydrateProjectsFromNativeStorage = async (): Promise<
     return null;
   }
   const nativeMirror = await loadNativeProjectsMirror();
-  const browserRaw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
+  let browserRaw: string | null;
+  let browserSavedAt: string | null;
+  try {
+    browserRaw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
+    browserSavedAt = parseSavedAt(
+      window.localStorage.getItem(PROJECTS_STORAGE_UPDATED_AT_KEY),
+    );
+  } catch {
+    // An unreadable library is not an intentionally empty library.
+    console.warn("iPadのブラウザ保存領域を読み込めないため、端末バックアップを使用します。");
+    return nativeMirror
+      ? sortStoredProjects(nativeMirror.projects.map(ensureProjectIdentity))
+      : null;
+  }
   let browserProjects: Project[] | null = null;
   if (browserRaw !== null) {
     const parsedProjects = parseProjectsSnapshot(browserRaw);
@@ -136,30 +149,30 @@ export const hydrateProjectsFromNativeStorage = async (): Promise<
       ? [ensureProjectIdentity(legacyProject)]
       : null;
   }
-  const browserSavedAt = parseSavedAt(
-    window.localStorage.getItem(PROJECTS_STORAGE_UPDATED_AT_KEY),
-  );
   const nativeIsNewer =
     nativeMirror &&
     browserProjects &&
     nativeMirror.savedAt &&
     browserSavedAt &&
     getSavedAtTime(nativeMirror.savedAt) > getSavedAtTime(browserSavedAt);
-  if (nativeMirror && (!browserProjects || nativeIsNewer)) {
-    const projects = sortStoredProjects(
-      nativeMirror.projects.map(ensureProjectIdentity),
-    );
-    const savedAt = nativeMirror.savedAt ?? new Date().toISOString();
+  const useNative = nativeMirror && (!browserProjects || nativeIsNewer);
+  const projects = useNative
+    ? sortStoredProjects(nativeMirror.projects.map(ensureProjectIdentity))
+    : browserProjects ?? [];
+  const savedAt = (useNative ? nativeMirror.savedAt : browserSavedAt)
+    ?? new Date().toISOString();
+  // Repair failures must not hide data that was successfully recovered.
+  try {
     window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
     window.localStorage.setItem(PROJECTS_STORAGE_UPDATED_AT_KEY, savedAt);
-    await saveNativeProjectsMirror(projects, savedAt);
-    return projects;
+  } catch {
+    console.warn("復元した隊列表をブラウザ保存領域へ書き戻せませんでした。");
   }
-  const projects = browserProjects ?? [];
-  const savedAt = browserSavedAt ?? new Date().toISOString();
-  window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
-  window.localStorage.setItem(PROJECTS_STORAGE_UPDATED_AT_KEY, savedAt);
-  await saveNativeProjectsMirror(projects, savedAt);
+  try {
+    await saveNativeProjectsMirror(projects, savedAt);
+  } catch {
+    console.warn("復元した隊列表の端末バックアップを更新できませんでした。");
+  }
   return projects;
 };
 

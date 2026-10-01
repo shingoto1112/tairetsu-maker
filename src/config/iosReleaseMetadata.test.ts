@@ -39,6 +39,19 @@ describe("iPad App Store release metadata", () => {
     expect(infoPlist).not.toContain("NSPhotoLibraryUsageDescription");
   });
 
+  it("keeps scene lifecycle wiring and the iOS 15 minimum deployment target", () => {
+    const sceneDelegate = readFileSync(rootPath("ios", "App", "App", "SceneDelegate.swift"), "utf8");
+    expect(infoPlist).toContain("UIApplicationSceneManifest");
+    expect(infoPlist).toContain("$(PRODUCT_MODULE_NAME).SceneDelegate");
+    expect(sceneDelegate).toContain("UIWindowSceneDelegate");
+    expect(sceneDelegate).toContain("TairetsuBridgeViewController()");
+    expect(sceneDelegate).toContain("SceneDelegateProxy.shared.scene");
+    expect(project).toContain("SceneDelegate.swift in Sources");
+    const targets = [...project.matchAll(/IPHONEOS_DEPLOYMENT_TARGET = ([\d.]+);/g)];
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets.every((match) => match[1] === "15.0")).toBe(true);
+  });
+
   it("uses an audio-only document picker without a camera capture path", () => {
     expect(audioDocumentPicker).toContain("UIDocumentPickerViewController");
     expect(audioDocumentPicker).toMatch(/forOpeningContentTypes:\s*\[\.audio\]/);
