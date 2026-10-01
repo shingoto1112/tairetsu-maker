@@ -1,14 +1,20 @@
 import {
+  ExternalLink,
   FileText,
+  FlipHorizontal2,
+  Group,
+  LayoutTemplate,
   LifeBuoy,
   Menu,
   PanelsTopLeft,
   Save,
   Share2,
   ShieldCheck,
+  SquareDashedMousePointer,
   Table2,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { PUBLIC_LINKS } from "../config/publicLinks";
 
 type ToolbarProps = {
@@ -32,6 +38,64 @@ type ToolbarProps = {
   onOpenRosterManager: () => void;
 };
 
+type AppMenuItemProps = {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+};
+
+type AppMenuLinkProps = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+};
+
+const AppMenuItem = ({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+  title,
+}: AppMenuItemProps) => (
+  <button
+    className="app-menu-item"
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    type="button"
+  >
+    <span className="app-menu-item__icon" aria-hidden="true">
+      <Icon size={17} />
+    </span>
+    <span className="app-menu-item__label">{label}</span>
+  </button>
+);
+
+const AppMenuLink = ({
+  href,
+  icon: Icon,
+  label,
+  onClick,
+}: AppMenuLinkProps) => (
+  <a
+    className="app-menu-link"
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    onClick={onClick}
+    aria-label={`${label}（新しいタブで開く）`}
+  >
+    <span className="app-menu-item__icon" aria-hidden="true">
+      <Icon size={16} />
+    </span>
+    <span className="app-menu-item__label">{label}</span>
+    <ExternalLink className="app-menu-link__external" size={14} aria-hidden="true" />
+  </a>
+);
+
 export const Toolbar = ({
   title,
   canEditProject = true,
@@ -54,6 +118,8 @@ export const Toolbar = ({
 }: ToolbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const menuId = useId();
   const projectEditMessage =
     projectReadOnlyMessage ??
     readOnlyMessage ??
@@ -69,26 +135,31 @@ export const Toolbar = ({
       : "隊列表を保存"
     : sceneEditMessage;
 
+  const closeMenuAndReturnFocus = () => {
+    setMenuOpen(false);
+    window.setTimeout(() => menuButtonRef.current?.focus(), 0);
+  };
+
   useEffect(() => {
     if (!menuOpen) {
       return undefined;
     }
 
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
+    const focusTimeoutId = window.setTimeout(() => {
+      menuRef.current
+        ?.querySelector<HTMLButtonElement>(".app-menu-popover button:not(:disabled)")
+        ?.focus();
+    }, 0);
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setMenuOpen(false);
+        closeMenuAndReturnFocus();
       }
     };
 
-    window.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
+      window.clearTimeout(focusTimeoutId);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [menuOpen]);
@@ -99,119 +170,105 @@ export const Toolbar = ({
   };
 
   return (
-    <header className="toolbar">
+    <header className={`toolbar${menuOpen ? " toolbar--menu-open" : ""}`}>
       <div className="toolbar__brand">
         <div className="app-menu" ref={menuRef}>
           <button
+            ref={menuButtonRef}
             className="toolbar-menu-button"
             onClick={() => setMenuOpen((previous) => !previous)}
             type="button"
             aria-expanded={menuOpen}
+            aria-controls={menuId}
             aria-label="メニューを開く"
           >
             <Menu size={22} />
           </button>
           {menuOpen && (
-            <div className="app-menu-popover" role="menu">
-              <section className="menu-section">
-                <h3>管理</h3>
-                <button
-                  onClick={() => runMenuAction(onOpenRosterManager)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  <Table2 size={16} />
-                  メンバー/道具の管理
-                </button>
-              </section>
+            <>
+              <div
+                className="app-menu-backdrop"
+                aria-hidden="true"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={closeMenuAndReturnFocus}
+              />
+              <div id={menuId} className="app-menu-popover" aria-label="メニュー">
+                <section className="app-menu-section">
+                  <h3>よく使う</h3>
+                  <AppMenuItem
+                    icon={Table2}
+                    label="メンバー/道具の管理"
+                    onClick={() => runMenuAction(onOpenRosterManager)}
+                    disabled={!canEditProject}
+                    title={!canEditProject ? projectEditMessage : undefined}
+                  />
+                  <AppMenuItem
+                    icon={Save}
+                    label="隊列表を保存"
+                    onClick={() => runMenuAction(onSaveProject)}
+                    disabled={saveDisabled}
+                    title={saveTitle}
+                  />
+                  <AppMenuItem
+                    icon={Share2}
+                    label="共有と書き出し"
+                    onClick={() => runMenuAction(onOpenShareExport)}
+                  />
+                </section>
 
-              <section className="menu-section">
-                <h3>ファイル</h3>
-                <button
-                  onClick={() => runMenuAction(onSaveProject)}
-                  disabled={saveDisabled}
-                  title={saveTitle}
-                  type="button"
-                >
-                  <Save size={16} />
-                  隊列表を保存
-                </button>
-              </section>
+                <section className="app-menu-section">
+                  <h3>編集補助</h3>
+                  <AppMenuItem
+                    icon={SquareDashedMousePointer}
+                    label="選択解除"
+                    onClick={() => runMenuAction(onClearSelection)}
+                  />
+                  <AppMenuItem
+                    icon={FlipHorizontal2}
+                    label="左右反転"
+                    onClick={() => runMenuAction(onMirrorSelection)}
+                    disabled={!canEditScene}
+                    title={!canEditScene ? sceneEditMessage : undefined}
+                  />
+                  <AppMenuItem
+                    icon={Group}
+                    label="グループ作成"
+                    onClick={() => runMenuAction(onCreateGroup)}
+                    disabled={!canEditProject}
+                    title={!canEditProject ? projectEditMessage : undefined}
+                  />
+                  <AppMenuItem
+                    icon={LayoutTemplate}
+                    label="隊列テンプレート"
+                    onClick={() => runMenuAction(onOpenMemberTools)}
+                    disabled={!canEditScene}
+                    title={!canEditScene ? sceneEditMessage : undefined}
+                  />
+                </section>
 
-              <section className="menu-section">
-                <h3>共有・出力</h3>
-                <button
-                  onClick={() => runMenuAction(onOpenShareExport)}
-                  type="button"
-                >
-                  <Share2 size={16} />
-                  共有と書き出し
-                </button>
-              </section>
-
-              <section className="menu-section">
-                <h3>編集補助</h3>
-                <button onClick={() => runMenuAction(onClearSelection)} type="button">
-                  選択解除
-                </button>
-                <button
-                  onClick={() => runMenuAction(onMirrorSelection)}
-                  disabled={!canEditScene}
-                  title={!canEditScene ? sceneEditMessage : undefined}
-                  type="button"
-                >
-                  左右反転
-                </button>
-                <button
-                  onClick={() => runMenuAction(onCreateGroup)}
-                  disabled={!canEditProject}
-                  title={!canEditProject ? projectEditMessage : undefined}
-                  type="button"
-                >
-                  グループ作成
-                </button>
-                <button
-                  onClick={() => runMenuAction(onOpenMemberTools)}
-                  disabled={!canEditScene}
-                  title={!canEditScene ? sceneEditMessage : undefined}
-                  type="button"
-                >
-                  隊列テンプレート
-                </button>
-              </section>
-
-              <section className="menu-section">
-                <h3>情報・サポート</h3>
-                <a
-                  href={PUBLIC_LINKS.privacy}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <ShieldCheck size={16} />
-                  プライバシー
-                </a>
-                <a
-                  href={PUBLIC_LINKS.terms}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <FileText size={16} />
-                  利用規約
-                </a>
-                <a
-                  href={PUBLIC_LINKS.support}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <LifeBuoy size={16} />
-                  サポート
-                </a>
-              </section>
-            </div>
+                <section className="app-menu-section app-menu-section--footer">
+                  <h3>情報・サポート</h3>
+                  <AppMenuLink
+                    href={PUBLIC_LINKS.privacy}
+                    icon={ShieldCheck}
+                    label="プライバシー"
+                    onClick={() => setMenuOpen(false)}
+                  />
+                  <AppMenuLink
+                    href={PUBLIC_LINKS.terms}
+                    icon={FileText}
+                    label="利用規約"
+                    onClick={() => setMenuOpen(false)}
+                  />
+                  <AppMenuLink
+                    href={PUBLIC_LINKS.support}
+                    icon={LifeBuoy}
+                    label="サポート"
+                    onClick={() => setMenuOpen(false)}
+                  />
+                </section>
+              </div>
+            </>
           )}
         </div>
 
@@ -244,7 +301,6 @@ export const Toolbar = ({
           aria-label="隊列表名"
         />
       </div>
-
     </header>
   );
 };
