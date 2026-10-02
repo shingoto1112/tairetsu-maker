@@ -8291,7 +8291,8 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
 }
 
-@media screen {
+/* The card strip is the iPad portrait (top) layout only; landscape keeps the vertical sidebar list. */
+@media (orientation: portrait) {
 
   html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) {
     display: flex;
@@ -8347,5 +8348,41 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
     max-height: 100%;
     min-width: 0;
     overflow: auto;
+  }
+}
+
+/* Portrait card strip: keep the fixed card to two rows (title + visibility tabs, then one row of
+   actions) so the actions are never squeezed below the 44px touch height. */
+@media (orientation: portrait) and (max-width: 1400px) {
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header {
+    align-content: start;
+    display: grid;
+    flex: 0 0 min(400px, 52vw);
+    gap: 6px 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-title,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-title {
+    align-self: center;
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary {
+    align-self: center;
+    grid-column: 2;
+    grid-row: 1;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions,
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions {
+    flex-wrap: nowrap;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 44px;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 }
