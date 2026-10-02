@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { PrintPreview } from "../components/PrintPreview";
-import { getFramePrintVerticalRange, getPrintMetrics, getEffectiveSize, defaultPrintOptions } from "../components/PrintStagePreview";
 import { StaticStagePreview } from "../components/StaticStagePreview";
 import { formationExportFixture } from "./formationExportFixture";
 import { createFormationSnapshot, formationVerticalRange, planFormationPages } from "./formationExportLayout";
@@ -11,7 +9,7 @@ import { resolveExportFrames } from "./exportFrames";
 import type { ExportSource } from "./mobileExportTypes";
 
 describe("exported scene state matches the screen", () => {
-  it.each(["stage", "parade"] as const)("resolves sparse %s scenes before current/all filtering, including details and A4", (mode) => {
+  it.each(["stage", "parade"] as const)("resolves sparse %s scenes before current/all filtering, including details (A4 keeps its original renderer)", (mode) => {
     const project = formationExportFixture();
     project.mode = mode;
     project.paradeSettings = { totalDistance: 100, width: 12, cellSizeMeters: 1, direction: "up", rulerPosition: "both", emphasizeEvery5m: true, emphasizeEvery10m: true };
@@ -45,15 +43,6 @@ describe("exported scene state matches the screen", () => {
       const html = renderToStaticMarkup(<StaticStagePreview project={snapshot.project} frame={frame} stageWidth={block.stageWidth} range={block.range} outputWidth={500} />);
       expect(html).toContain("名前1");
     }
-    const expectedProject = { ...project, frames: resolveExportFrames(project) };
-    for (const variant of ["document", "stage-only"] as const) {
-      expect(renderToStaticMarkup(<PrintPreview project={project} scope="current" selectedFrameId="s1" variant={variant} />))
-        .toBe(renderToStaticMarkup(<PrintPreview project={expectedProject} scope="current" selectedFrameId="s1" variant={variant} />));
-    }
-    const frame = expectedProject.frames[1];
-    const metrics = getPrintMetrics(project, [frame], defaultPrintOptions);
-    const a4Range = getFramePrintVerticalRange(project, frame, getEffectiveSize(project, frame), metrics);
-    if (mode === "parade") expect(a4Range.bottomMeters).toBeGreaterThanOrEqual(50);
     expect(project).toEqual(before);
   });
 });

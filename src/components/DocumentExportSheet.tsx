@@ -10,7 +10,7 @@ export const EXPORT_TARGET_LABELS: Record<ExportTarget, string> = {
 type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; supportsFormation?: boolean; viewport?: boolean; getSource: () => ExportSource; onClose: () => void };
 
 export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supportsFormation = false, viewport = false, getSource, onClose }: Props) => {
-  const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: "mobile", format: initialFormat, includeDetails: false });
+  const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "members" || initialTarget === "objects" ? "a4" : "mobile", format: initialFormat, includeDetails: false });
   const [estimate, setEstimate] = useState("");
   const [result, setResult] = useState<GeneratedExport | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -40,7 +40,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
     };
   }, []);
   useEffect(() => {
-    setRequest((previous) => ({ ...previous, target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: "mobile", format: initialFormat }));
+    setRequest((previous) => ({ ...previous, target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "members" || initialTarget === "objects" ? "a4" : "mobile", format: initialFormat }));
   }, [initialTarget, initialFormat]);
   useEffect(() => {
     if (request.target !== "formation") { setEstimate(""); return; }
@@ -93,7 +93,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
       <header><h2 id="document-export-title">書き出し</h2><button className="share-export-close" type="button" disabled={locked} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
       <fieldset disabled={locked}><legend>対象</legend><div className="document-export-options">
         {Object.entries(EXPORT_TARGET_LABELS).filter(([target]) => target !== "formation" || supportsFormation || initialTarget === "formation").map(([target, label]) => <button type="button" key={target} aria-pressed={request.target === target}
-          onClick={() => update({ target: target as ExportTarget, ...(target === "assignments" || target === "formation" ? { purpose: "mobile" } : {}), ...(target === "formation" ? { scope: "all" } : {}) })}>{label}</button>)}
+          onClick={() => update({ target: target as ExportTarget, purpose: target === "assignments" || target === "formation" ? "mobile" : "a4", ...(target === "formation" ? { scope: "all" } : {}) })}>{label}</button>)}
       </div></fieldset>
       {(request.target === "assignments" || request.target === "formation") && <fieldset disabled={locked}><legend>範囲</legend><div className="document-export-options">
         <button type="button" aria-pressed={request.scope === "current"} onClick={() => update({ scope: "current" })}>このシーン</button>
@@ -105,8 +105,8 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         <p role="status">{estimate}</p>
       </fieldset>}
       <fieldset disabled={locked}><legend>用途</legend><div className="document-export-options">
-        <button type="button" aria-pressed={request.purpose === "mobile"} onClick={() => update({ purpose: "mobile" })}>スマホで見る（LINE向け）</button>
         {request.target !== "assignments" && request.target !== "formation" && <button type="button" aria-pressed={request.purpose === "a4"} onClick={() => update({ purpose: "a4" })}>印刷向け（A4）</button>}
+        <button type="button" aria-pressed={request.purpose === "mobile"} onClick={() => update({ purpose: "mobile" })}>スマホで見る（LINE向け）</button>
       </div></fieldset>
       <fieldset disabled={locked}><legend>形式</legend><div className="document-export-options">
         <button type="button" aria-pressed={request.format === "png"} onClick={() => update({ format: "png" })}>画像</button>

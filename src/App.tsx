@@ -140,6 +140,7 @@ import {
   snapToGrid,
 } from "./utils/coordinates";
 import {
+  elementToJpegDataUrl,
   elementToPngBlob,
 } from "./utils/exportImage";
 import type { CompletedExport } from "./utils/mobileExportTypes";
@@ -10806,14 +10807,13 @@ function App() {
       if (pages.length === 0) {
         throw new Error("PDF用ページが見つかりません。");
       }
-      const [{ elementToPngPage }, { imagePagesToPdfBlob }] = await Promise.all([
-        import("./utils/exportRaster"), import("./utils/pdfExport"),
-      ]);
-      const imagePages = [];
-      for (const page of pages) imagePages.push(await elementToPngPage(page));
-      const blob = await imagePagesToPdfBlob(imagePages, { title, orientation: getPrintOrientation(project) });
-      const preview = await (await fetch(imagePages[0].dataUrl)).blob();
-      return { blob, preview, pageCount: imagePages.length };
+      // The A4 sheets keep the original rendering: one JPEG (q0.95, 2x) per page, as users rely on it.
+      const { jpegDataUrlsToPdfBlob } = await import("./utils/pdfExport");
+      const pageDataUrls: string[] = [];
+      for (const page of pages) pageDataUrls.push(await elementToJpegDataUrl(page));
+      const blob = await jpegDataUrlsToPdfBlob(pageDataUrls, title, getPrintOrientation(project));
+      const preview = await (await fetch(pageDataUrls[0])).blob();
+      return { blob, preview, pageCount: pageDataUrls.length };
     } finally {
       cleanupPrintExportElement();
     }
@@ -13814,11 +13814,6 @@ function App() {
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
       onExportZip={handleShareExportZip}
-      getMobileExportSource={() => structuredClone({
-        project, projectTitle: project.title, members: project.members, memberGroups: project.memberGroups ?? [],
-        objects: project.stageObjects, objectGroups: project.objectGroups ?? [], frames: project.frames,
-        currentFrame: selectedFrame ?? null, objectStates: selectedFrame?.objectStates ?? {},
-      })}
     />
     {APP_FEATURES.collaboration && activeCloudProject?.role === "owner" && isCloudShareOpen && (
       <CloudShareModal

@@ -222,7 +222,7 @@ export const ShareExportModal = ({
               </button>
             </section>}
             <section className="share-export-section">
-              <h3>印刷・PDF（A4）</h3>
+              <h3>印刷・PDF</h3>
               <button
                 className="share-export-row"
                 onClick={() => startExport("current")}

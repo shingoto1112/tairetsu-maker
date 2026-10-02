@@ -29,7 +29,7 @@
 
 - gpt-6.1-sol の提出前レビュー（結論「修正後に提出可」、P0なし・P1 3件）を全件採用し `0c2af96` で修正: 書き出しで前シーンからの継承状態を解決（スマホ向け・A4）、モーダル表示中の背景ショートカット停止、Web共同編集の割当保存失敗を成功扱いしない。46 files / 298 tests、typecheck、build（メインJS 484.41kB）成功。
 - iPad（capacitor-ios）横向きでメンバー/道具パネルが空白になる回帰を発見・修正（`d9d9c06`）。基準版 `76aa6b1` と Playwright で比較済み。
-- **TestFlight run #19（[36970279355](https://github.com/shingoto1112/tairetsu-maker/actions/runs/36970279355)）は失敗。** 原因はコードではなく App Store Connect API の `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED`（必要な契約が未同意または期限切れ）。アカウント所有者が App Store Connect の「ビジネス（契約／税金／口座情報）」で契約に同意した後、同じブランチで `Upload iPad App to TestFlight` を再実行する。ビルド番号は再実行時の run 番号になる。
+- **TestFlight build 19 配信完了（2026-10-02）。** run [36970279355](https://github.com/shingoto1112/tairetsu-maker/actions/runs/36970279355)、source `0c2af965c5c6e42d85cfc03ef161326f8167eb19`。初回と再実行2回目は契約APIエラーで停止。ユーザーによる更新契約同意（同意日2026-10-02）と反映待ち後、attempt 3が成功。同じrunの再実行なのでbuild番号19を維持。46 files / 298 tests、Web build、Capacitor sync、iOS archive/uploadが成功（Xcode26.6 / iPhoneOS26.5.sdk）。アップロード完了17:51 JST、今回runnerが作ったDevelopment証明書1件のみ後始末済み。Apple側の処理完了と「チーム内テスト」内部1名への登録を画面で確認。外部テスト・App Store審査提出・一般公開は行っていない。最新Web `4414317` との `src` / `public` / package / Capacitor設定差分はテスト2ファイルだけで、アプリ実装は一致。build19の実機確認はこれからであり、旧buildの実機合格を引き継がない。
 - Web本番へ反映済み: `main` を `c64343d` → `4414317` に fast-forward（同じ変更を main 上へ cherry-pick、302 tests・build 成功）。Vercel Production deployment 6802197243 success。本番URLで新UI（名簿ボタン、スマホ向け書き出し）とページエラー0を確認。
 
 ### 提出までの手順と受入条件
