@@ -25,6 +25,13 @@
 | Swift のコンパイル | `Build iPad App` run [36961449931](https://github.com/shingoto1112/tairetsu-maker/actions/runs/36961449931) 成功（Xcode 26.6、`ExportSharePlugin.swift` を含む） | Simulator ビルド。共有シートの実挙動は実機で要確認 |
 | 書き出しの軽量化 | 24人・3シーンの fixture で A4 隊列表PDF 1,010,627 → 346,836 bytes。スマホ向け名簿・割当表・隊列表は数百KB | LINE 経由の再圧縮後の画質は未確認 |
 
+### 2026-10-02 夕方の進捗
+
+- gpt-6.1-sol の提出前レビュー（結論「修正後に提出可」、P0なし・P1 3件）を全件採用し `0c2af96` で修正: 書き出しで前シーンからの継承状態を解決（スマホ向け・A4）、モーダル表示中の背景ショートカット停止、Web共同編集の割当保存失敗を成功扱いしない。46 files / 298 tests、typecheck、build（メインJS 484.41kB）成功。
+- iPad（capacitor-ios）横向きでメンバー/道具パネルが空白になる回帰を発見・修正（`d9d9c06`）。基準版 `76aa6b1` と Playwright で比較済み。
+- **TestFlight run #19（[36970279355](https://github.com/shingoto1112/tairetsu-maker/actions/runs/36970279355)）は失敗。** 原因はコードではなく App Store Connect API の `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED`（必要な契約が未同意または期限切れ）。アカウント所有者が App Store Connect の「ビジネス（契約／税金／口座情報）」で契約に同意した後、同じブランチで `Upload iPad App to TestFlight` を再実行する。ビルド番号は再実行時の run 番号になる。
+- Web本番へ反映済み: `main` を `c64343d` → `4414317` に fast-forward（同じ変更を main 上へ cherry-pick、302 tests・build 成功）。Vercel Production deployment 6802197243 success。本番URLで新UI（名簿ボタン、スマホ向け書き出し）とページエラー0を確認。
+
 ### 提出までの手順と受入条件
 
 1. **仕上げ（Claude/Codex）**: iPad（capacitor-ios）でメンバー/道具タブが空白・重なる回帰の修正、全パネルの見出し重なり、書き出し・共有ダイアログの統一。受入: Playwright で iPad 横/縦・Web を確認、テスト・ビルド成功。
