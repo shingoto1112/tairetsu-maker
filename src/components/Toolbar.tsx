@@ -20,6 +20,7 @@ import { PUBLIC_LINKS } from "../config/publicLinks";
 type ToolbarProps = {
   title: string;
   canEditProject?: boolean;
+  canOpenRosterManager?: boolean;
   canEditScene?: boolean;
   canSaveProject?: boolean;
   isDirty?: boolean;
@@ -99,6 +100,7 @@ const AppMenuLink = ({
 export const Toolbar = ({
   title,
   canEditProject = true,
+  canOpenRosterManager = true,
   canEditScene = true,
   canSaveProject = true,
   isDirty = false,
@@ -199,8 +201,8 @@ export const Toolbar = ({
                     icon={Table2}
                     label="メンバー/道具の管理"
                     onClick={() => runMenuAction(onOpenRosterManager)}
-                    disabled={!canEditProject}
-                    title={!canEditProject ? projectEditMessage : undefined}
+                    disabled={!canOpenRosterManager}
+                    title={!canOpenRosterManager ? "名簿の編集はownerのみ可能です。" : undefined}
                   />
                   <AppMenuItem
                     icon={Save}

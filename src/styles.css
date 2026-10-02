@@ -2799,8 +2799,10 @@ h2 {
 }
 
 .panel-visibility-summary {
-  display: contents;
+  min-width: 0;
 }
+
+.assignment-chip__dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
 
 .empty-state {
   background: #ffffff;
@@ -6797,7 +6799,207 @@ h2 {
   align-items: center;
   display: grid;
   gap: 16px;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+}
+
+.object-assignment-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.object-assignment-editor .assignment-chip button {
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.object-assignment-editor .assignment-picker > button {
+  min-height: 44px;
+}
+
+.roster-manager-mode-controls {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.roster-assignment-switch {
+  background: #f1f5f9;
+  border: 1px solid #dbe7ee;
+  border-radius: 10px;
+  display: inline-flex;
+  padding: 3px;
+}
+
+.roster-assignment-switch button {
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: #475569;
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.roster-assignment-switch button[aria-pressed="true"] {
+  background: #ffffff;
+  color: #0f766e;
+  font-weight: 700;
+}
+
+/* Grid auto tracks must not absorb the normal Web panel's spare height.
+   Native workspace and portrait flex layouts retain their own sizing rules. */
+html:not([data-app-runtime="capacitor-ios"]):not([data-native-workspace="true"]) .tab-panel__content > .member-manager {
+  align-content: start;
+  align-items: start;
+}
+
+.roster-assignment-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px;
+}
+.roster-assignment-view button,
+.roster-assignment-view select,
+.roster-assignment-view input { min-height: 44px; }
+.roster-assignment-view button:focus-visible { outline: 3px solid #5eead4; outline-offset: 2px; }
+.roster-assignment-view [hidden] { display: none !important; }
+.roster-assignment-toolbar { display: grid; gap: 10px; min-width: 0; background: #fff; }
+.roster-assignment-scenes { display: grid; grid-template-columns: auto minmax(140px, 1fr) auto auto; align-items: center; gap: 8px; }
+.roster-assignment-scenes select { min-width: 0; width: 100%; }
+.roster-assignment-scene-count { color: #64748b; font-size: 13px; font-variant-numeric: tabular-nums; }
+.roster-assignment-toolbar button,
+.roster-assignment-back { background: #fff; color: #334155; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; }
+.roster-assignment-secondary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.roster-assignment-secondary > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.roster-assignment-summary, .roster-assignment-help { color: #64748b; font-size: 13px; margin: 0; overflow-wrap: anywhere; }
+.roster-assignment-readonly { background: #f1f5f9; border-radius: 10px; color: #475569; font-size: 14px; margin: 0; padding: 10px 12px; }
+.roster-assignment-body { display: grid; gap: 16px; grid-template-columns: minmax(280px, 2fr) minmax(400px, 3fr); min-width: 0; min-height: 0; }
+.roster-assignment-list { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 3px 6px; }
+.roster-assignment-list__controls { background: #fff; display: grid; gap: 8px; position: sticky; top: 0; z-index: 1; padding: 0 0 12px; }
+.roster-assignment-list__controls input, .member-toggle-list input { box-sizing: border-box; width: 100%; min-width: 0; }
+.roster-assignment-group { margin-bottom: 16px; }
+.roster-assignment-group h3 { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-left: 4px solid; font-size: 14px; margin: 0 0 8px; padding: 4px 8px; overflow-wrap: anywhere; }
+.roster-assignment-group h3 small { color: #64748b; font-size: 12px; font-weight: 500; flex-shrink: 0; }
+.roster-assignment-row { align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; color: #334155; display: flex; gap: 10px; margin-top: 6px; min-height: 72px; padding: 10px 12px; text-align: left; width: 100%; }
+.roster-assignment-row__text { flex: 1; min-width: 0; }
+.roster-assignment-row__text strong { display: block; overflow-wrap: anywhere; margin-bottom: 4px; }
+.roster-assignment-row__names { display: block; color: #475569; font-size: 13px; }
+.roster-assignment-row__names > span { display: flex; min-width: 0; }
+.roster-assignment-row__person { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roster-assignment-row__names small { margin-left: 6px; color: #64748b; font-size: 12px; flex-shrink: 0; }
+.roster-assignment-row__names.is-empty { color: #64748b; }
+.roster-assignment-row.is-hidden { background: #f8fafc; }
+.roster-assignment-row[aria-pressed="true"] { background: #f0fdfa; border-color: #0f766e; box-shadow: inset 0 0 0 1px #0f766e; }
+.roster-assignment-count { background: #f1f5f9; color: #475569; border-radius: 999px; flex-shrink: 0; font-size: 12px; padding: 4px 8px; }
+.roster-assignment-hidden { border-top: 1px solid #e2e8f0; padding-top: 8px; }
+.roster-assignment-hidden__toggle { background: none; border: 0; color: #475569; padding: 8px 0; text-align: left; width: 100%; }
+.roster-assignment-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px; overflow: auto; gap: 14px; }
+.roster-assignment-detail__header { display: flex; align-items: center; gap: 10px; }
+.roster-assignment-detail__header h3 { font-size: 19px; margin: 0 0 3px; overflow-wrap: anywhere; }
+.roster-assignment-detail__header small { color: #64748b; }
+.roster-assignment-assignees { flex: 0 0 auto; max-height: 30%; overflow: auto; }
+.roster-assignment-assignees h4 { font-size: 14px; margin: 0 0 8px; }
+.roster-assignment-detail .assignment-chip { background: #f8fafc; color: #334155; min-height: 44px; max-width: 100%; overflow-wrap: anywhere; padding-left: 10px; }
+.roster-assignment-detail .assignment-chip button { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+.member-toggle-list { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; min-height: 150px; flex: 1 1 auto; }
+.member-toggle-list__controls { display: grid; gap: 8px; }
+.member-toggle-list__rows { overflow: auto; overscroll-behavior: contain; padding: 2px; }
+.member-toggle-list__heading { border-left: 4px solid; background: #f8fafc; color: #475569; font-size: 13px; padding: 8px; margin: 8px 0 4px; }
+.member-toggle-list__row { display: flex; align-items: center; gap: 10px; width: 100%; background: #fff; color: #334155; border: 1px solid transparent; border-bottom-color: #f1f5f9; padding: 8px; text-align: left; min-height: 48px; border-radius: 8px; }
+.member-toggle-list__row[aria-pressed="true"] { background: #f0fdfa; }
+.member-toggle-list__check { display: flex; align-items: center; justify-content: center; flex: 0 0 20px; height: 20px; box-sizing: border-box; border: 1px solid #94a3b8; border-radius: 5px; }
+.member-toggle-list__row[aria-pressed="true"] .member-toggle-list__check { background: #0f766e; color: white; border-color: #0f766e; }
+.member-toggle-list__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.member-toggle-list__name small { display: block; color: #64748b; font-size: 12px; }
+.member-toggle-list__other { color: #64748b; font-size: 12px; max-width: 42%; overflow-wrap: anywhere; }
+.roster-assignment-footnote { border-top: 1px solid #e2e8f0; padding: 6px 2px 0; flex-shrink: 0; font-size: 12px; }
+
+@media (min-width: 960px) and (orientation: landscape) {
+  .roster-manager-modal.is-assignments .roster-manager-mode-controls { display: flex; align-items: center; gap: 16px; }
+  .roster-manager-modal.is-assignments .roster-manager-topbar { padding-top: 8px; padding-bottom: 8px; }
+}
+.roster-assignment-view.is-narrow .roster-assignment-body { grid-template-columns: minmax(0, 1fr); }
+.roster-assignment-back { align-self: start; flex-shrink: 0; }
+@media (max-width: 520px) {
+  .roster-assignment-scenes { grid-template-columns: minmax(0, 1fr) auto; }
+  .roster-assignment-scenes select { grid-column: 1; grid-row: 1; }
+  .roster-assignment-scenes .roster-assignment-scene-count { grid-column: 2; grid-row: 1; }
+  .roster-assignment-detail { padding: 12px; }
+}
+.roster-manager-export {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.document-export-backdrop { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, .24); padding: 20px; }
+.document-export-sheet { box-sizing: border-box; width: min(650px, 100%); max-height: 100%; overflow: auto; overscroll-behavior: contain; padding: 24px; border: 1px solid #e2e8f0; border-radius: 20px; background: #fff; color: #0f172a; box-shadow: 0 16px 48px rgba(15, 23, 42, .14); }
+.document-export-sheet header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.document-export-sheet h2 { margin: 0; font-size: 22px; }
+.document-export-sheet fieldset { border: 0; padding: 0; margin: 18px 0; min-width: 0; }
+.document-export-sheet legend { font-weight: 700; margin-bottom: 8px; }
+.document-export-sheet button { min-height: 44px; padding: 10px 14px; border-radius: 10px; }
+.document-export-options { display: flex; gap: 8px; flex-wrap: wrap; }
+.document-export-options button { background: #f8fafc; border: 1px solid #dbe7ee; color: #334155; }
+.document-export-options button[aria-pressed="true"] { background: #f0fdfa; border-color: #0f766e; color: #0f766e; font-weight: 700; }
+.document-export-progress { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.document-export-result { margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+.document-export-result h3 { overflow-wrap: anywhere; }
+.document-export-result img { display: block; width: auto; max-width: 100%; max-height: 230px; border: 1px solid #e2e8f0; }
+
+/* Scoped to mobile exports: the A4 print rules retain their original dimensions. */
+.formation-mobile-page { box-sizing: border-box; background: #fff; color: #0f172a; font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; overflow: hidden; }
+.static-stage-preview .print-stage { overflow: hidden; box-shadow: none; }
+.static-stage-preview .print-stage-guides { overflow: hidden; }
+.static-stage-preview .print-ruler-y--right { left: calc(var(--print-ruler-left-mm) + var(--print-stage-width-mm)); width: var(--print-ruler-right-mm); }
+.static-stage-preview .print-ruler-y--left span { left: 4px; right: 4px; }
+.static-stage-preview .print-ruler-y--right span { left: 4px; right: 4px; }
+.static-stage-preview .print-ruler-y span { font-size: 10px; font-family: monospace; }
+.static-stage-preview .print-ruler-y span.minor { font-size: 10px; opacity: 1; }
+.static-stage-preview .print-ruler-y span.medium { font-size: 10px; }
+.static-stage-preview .print-ruler-y span.major { font-size: 10px; }
+.static-stage-preview .print-object { font-size: 16px; }
+.formation-locator { display: flex; align-items: center; gap: 16px; font-size: 15px; line-height: 22px; color: #64748b; }
+.document-export-backdrop--viewport { position: fixed; z-index: 1200; }
+
+.roster-manager-export button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dbe7ee;
+  border-radius: 8px;
+  color: #0f766e;
+  display: inline-flex;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 72px;
+  padding: 8px 12px;
+  font-weight: 700;
+}
+
+.roster-manager-export button:disabled {
+  opacity: 0.5;
+}
+
+.roster-manager-export span,
+.roster-manager-export-notice {
+  color: #0f766e;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .roster-manager-header {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+  .roster-manager-export {
+    grid-column: 1 / -1;
+  }
 }
 
 .roster-manager-header p {
@@ -7010,8 +7212,8 @@ h2 {
 
 .roster-table__add-group,
 .roster-table__add-group-cell {
-  min-width: 96px !important;
-  width: 96px;
+  min-width: 140px !important;
+  width: 140px;
 }
 
 .roster-table__add-group button {
@@ -7033,7 +7235,7 @@ h2 {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr) 44px;
 }
 
 .roster-table__group-color {
@@ -7084,6 +7286,184 @@ h2 {
   color: #94a3b8;
 }
 
+.roster-table__column-heading {
+  display: grid;
+  gap: 8px;
+}
+
+.roster-table__quick-add {
+  background: #ffffff;
+  border: 1px solid #dbe7ee;
+  border-radius: 8px;
+  color: #0f766e;
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  padding: 6px 10px;
+}
+
+.roster-table__add-group button {
+  font-size: 13px;
+  min-height: 44px;
+  width: auto;
+  height: auto;
+  padding: 8px;
+  white-space: nowrap;
+}
+
+.roster-table td .roster-table__cell-input {
+  box-shadow: inset 4px 0 0 var(--roster-group-color, #94a3b8);
+  min-height: 44px;
+}
+
+.roster-table td .roster-table__cell-input:focus {
+  box-shadow: inset 4px 0 0 var(--roster-group-color, #94a3b8), 0 0 0 3px rgba(20, 184, 166, 0.14);
+}
+
+:is(.member-manager, .object-manager, .assignment-tab) > .panel-sticky-header .panel-sticky-actions .mini-button {
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.member-picker {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.assignment-picker > .member-picker {
+  display: contents;
+}
+
+.assignment-picker > .member-picker > .member-picker__trigger {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+}
+
+.assignment-picker > .mini-button {
+  align-self: stretch;
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.assignment-picker > .member-picker > .member-picker__panel {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin-top: 0;
+  order: 1;
+}
+
+.member-picker__trigger {
+  background: #ffffff;
+  border: 2px solid #dbe7ee;
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.member-picker__panel {
+  background: #ffffff;
+  border: 1px solid #dbe7ee;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px;
+}
+
+.member-picker__panel input {
+  min-width: 0;
+  min-height: 44px;
+  width: 100%;
+}
+
+.member-picker__orders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.member-picker__orders button {
+  background: #ffffff;
+  border: 1px solid #dbe7ee;
+  border-radius: 6px;
+  font-size: 12px;
+  min-height: 44px;
+  padding: 4px 2px;
+  white-space: nowrap;
+}
+
+.member-picker__orders button[aria-pressed="true"] {
+  background: #ecfdf5;
+  border-color: #14b8a6;
+  color: #0f766e;
+}
+
+.member-picker__list {
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.member-picker__heading {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  padding: 8px 4px;
+  overflow-wrap: anywhere;
+}
+
+.member-picker__heading .color-dot {
+  flex-shrink: 0;
+}
+
+.member-picker__heading small {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.member-picker__candidate {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.member-picker__candidate + .member-picker__candidate {
+  margin-top: 4px;
+}
+
+.member-picker__candidate span,
+.member-picker__candidate small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.member-picker__candidate span {
+  flex: 1;
+}
+
+.member-picker__candidate small {
+  color: #64748b;
+  font-size: 11px;
+  max-width: 40%;
+}
+
+.member-picker button:focus-visible,
+.roster-table__quick-add:focus-visible {
+  outline: 2px solid #14b8a6;
+  outline-offset: 2px;
+}
+
 @media (max-width: 720px) {
   .roster-manager-backdrop {
     padding: 0;
@@ -7120,12 +7500,6 @@ h2 {
   .roster-table__number {
     min-width: 64px !important;
     width: 64px;
-  }
-
-  .roster-table__add-group,
-  .roster-table__add-group-cell {
-    min-width: 84px !important;
-    width: 84px;
   }
 }
 
@@ -7788,5 +8162,187 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 
   html[data-app-runtime="capacitor-ios"] .parade-control-panel .checkbox-row input {
     min-height: 24px;
+  }
+}
+
+/* Roster controls share one sticky region; only the body becomes a card strip. */
+.panel-manager-body { display: contents; }
+.panel-group-form { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.panel-group-form > button { margin-top: 10px; }
+:is(.member-manager, .object-manager) > .panel-sticky-header .panel-visibility-summary {
+  display: block;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+  width: auto;
+}
+.roster-table__name-cell {
+  align-items: start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+.roster-table__name-cell > input { min-width: 0; width: 100%; }
+.roster-table__group-heading > input { min-width: 0; }
+.roster-table__delete {
+  align-self: start;
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  flex: 0 0 44px;
+  font-size: 16px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0;
+  width: 44px;
+}
+.roster-table__delete:hover { background: #fff1f2; color: #be123c; }
+.roster-manager-edit-notice { color: #9a3412; grid-column: 1 / -1; margin: 0; }
+.roster-loading { background: white; inset: 0; padding: 24px; position: fixed; z-index: 1200; }
+
+/* Sidebar content must not inherit the iPad top layout's horizontal lists. */
+@media screen {
+  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.member-management-block, .object-group-manager, .object-placement-tools, .object-visibility-list) {
+    display: block;
+    min-width: 0;
+    overflow: visible;
+    width: auto;
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.stack, .object-group-list, .object-group-items, .object-visibility-list__items, .settings-grid, .field-grid) {
+    display: grid;
+    min-width: 0;
+    overflow: visible;
+    width: auto;
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.settings-grid, .field-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.object-visibility-list__header, .panel-section__header) {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .object-visibility-item {
+    min-width: 0;
+    width: auto;
+  }
+}
+
+@media (orientation: portrait) and (max-width: 1400px) {
+
+  html .tab-panel__content > :is(.member-manager, .object-manager) {
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    padding: 0;
+    width: 100%;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header {
+    align-self: stretch;
+    display: flex;
+    flex: 0 0 min(300px, 42vw);
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    overflow: hidden;
+    padding: 8px;
+    position: static;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header .panel-sticky-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions {
+    align-content: start;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary {
+    border: 0;
+    flex: 0 0 auto;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body {
+    align-self: stretch;
+    display: flex;
+    flex: 1 1 0;
+    gap: 8px;
+    height: 100%;
+    max-height: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body > * {
+    box-sizing: border-box;
+    flex: 0 0 min(300px, 76vw);
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    min-width: 0;
+    overflow: auto;
+  }
+}
+
+@media screen {
+
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) {
+    display: flex;
+    height: 100%;
+    min-width: 0;
+    padding: 0;
+    width: 100%;
+  }
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header {
+    align-self: stretch;
+    display: flex;
+    flex: 0 0 min(300px, 42vw);
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    overflow: hidden;
+    padding: 8px;
+    position: static;
+  }
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header .panel-sticky-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions {
+    align-content: start;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary {
+    border: 0;
+    flex: 0 0 auto;
+  }
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body {
+    align-self: stretch;
+    display: flex;
+    flex: 1 1 0;
+    gap: 8px;
+    height: 100%;
+    max-height: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body > * {
+    box-sizing: border-box;
+    flex: 0 0 min(300px, 76vw);
+    height: 100%;
+    margin: 0;
+    max-height: 100%;
+    min-width: 0;
+    overflow: auto;
   }
 }

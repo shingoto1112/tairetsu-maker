@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`unchanged default A4 structure > parade document 1`] = `"4356829015e3c02778b3aa61ef8ea5ff30203004e6fbd7a293d02191c3283bd3"`;
+
+exports[`unchanged default A4 structure > parade stage-only 1`] = `"48c47e6486f6e9a69c803b3b7edde033c016f4c0b4ecf2fbab024caee0938a4b"`;
+
+exports[`unchanged default A4 structure > stage document 1`] = `"4f2b3f2fd8bfd2e7906e17e4a3f8b11a22918625fdf5d9698eccb692c1882057"`;
+
+exports[`unchanged default A4 structure > stage stage-only 1`] = `"4ad4fb5037354cdeb99c35608b5517cf42555ab0c078b50c17e5e4cf6e96fdd0"`;

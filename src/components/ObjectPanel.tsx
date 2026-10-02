@@ -6,8 +6,6 @@ import {
   Layers,
   Lock,
   Plus,
-  UserPlus,
-  X,
   SendToBack,
   Trash2,
   Unlock,
@@ -15,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Member,
+  MemberGroup,
   ObjectState,
   ObjectGroup,
   Selection,
@@ -25,9 +24,16 @@ import {
 } from "../types";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
+import { RosterManagerButton } from "./RosterManagerButton";
+import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
+import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type ObjectPanelProps = {
+  currentFrameId?: string;
+  onOpenRosterManager?: () => void;
+  canOpenRosterManager?: boolean;
+  memberGroups: MemberGroup[];
   objects: StageObject[];
   objectStates: Record<string, ObjectState>;
   members: Member[];
@@ -47,8 +53,6 @@ type ObjectPanelProps = {
   onDelete: (id: string) => void;
   onNudgeZ: (id: string, delta: number) => void;
   onAddObject: (visibleInCurrentFrame?: boolean) => void;
-  onAddCurtain: (visibleInCurrentFrame?: boolean) => void;
-  onAddMark: (visibleInCurrentFrame?: boolean) => void;
   onCreateObjectGroup: (draft?: {
     name?: string;
     color?: string;
@@ -66,7 +70,7 @@ type ObjectPanelProps = {
   onCopySelected: () => void;
   onPasteObject: (visibleInCurrentFrame?: boolean) => void;
   canPasteObject: boolean;
-  onAssignMember: (objectId: string, memberId: string) => void;
+  onAssignMember: AssignMember;
   onRemoveAssignment: (
     objectId: string,
     memberId: string,
@@ -76,9 +80,6 @@ type ObjectPanelProps = {
 };
 
 type VisibilityTab = "visible" | "hidden";
-
-const compareMembersByName = (a: Member, b: Member): number =>
-  a.name.localeCompare(b.name, "ja", { numeric: true });
 
 const objectTypes: StageObjectType[] = [
   "prop",
@@ -121,6 +122,10 @@ const typeLabel: Record<StageObjectType, string> = {
 };
 
 export const ObjectPanel = ({
+  currentFrameId,
+  onOpenRosterManager,
+  canOpenRosterManager = true,
+  memberGroups,
   objects,
   objectStates,
   members,
@@ -140,8 +145,6 @@ export const ObjectPanel = ({
   onDelete,
   onNudgeZ,
   onAddObject,
-  onAddCurtain,
-  onAddMark,
   onCreateObjectGroup,
   onUpdateObjectGroup,
   onDeleteObjectGroup,
@@ -155,10 +158,13 @@ export const ObjectPanel = ({
   onRemoveAssignment,
   onPlaceSelectedObject,
 }: ObjectPanelProps) => {
-  const panelRef = useRef<HTMLElement | null>(null);
-  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, string>>(
-    {},
+  const memberGroupIndex = useMemo(
+    () => buildMemberGroupIndex(memberGroups),
+    [memberGroups],
   );
+  const [openPickerObjectId, setOpenPickerObjectId] = useState<string | null>(null);
+  const [isGroupFormOpen, setIsGroupFormOpen] = useState(false);
+  const panelRef = useRef<HTMLElement | null>(null);
   const [groupDraftName, setGroupDraftName] = useState("");
   const [groupDraftColor, setGroupDraftColor] = useState("#0d8b78");
   const [groupDraftType, setGroupDraftType] =
@@ -170,13 +176,13 @@ export const ObjectPanel = ({
   >([]);
   const isVisibleTab = visibilityTab === "visible";
   const projectDisabled = !canEditProject;
+  useEffect(() => { setOpenPickerObjectId(null); }, [currentFrameId, visibilityTab]);
   const sceneDisabled = !canEditScene;
   const isObjectVisible = (object: StageObject): boolean =>
     objectStates[object.id]?.visible ?? object.visible ?? true;
   const visibleObjects = objects.filter(isObjectVisible);
   const hiddenObjects = objects.filter((object) => !isObjectVisible(object));
   const activeObjects = isVisibleTab ? visibleObjects : hiddenObjects;
-  const membersById = new Map(members.map((member) => [member.id, member]));
   const objectsById = useMemo(
     () => new Map(objects.map((object) => [object.id, object])),
     [objects],
@@ -305,7 +311,7 @@ export const ObjectPanel = ({
   }, [scrollTarget]);
 
   return (
-    <section className="panel-section" ref={panelRef}>
+    <section className="panel-section object-manager" ref={panelRef}>
       <PanelStickyHeader
         title="道具"
         meta={
@@ -318,6 +324,12 @@ export const ObjectPanel = ({
         }
         actions={
           <>
+            {onOpenRosterManager && (
+              <RosterManagerButton
+                onClick={onOpenRosterManager}
+                disabled={!canOpenRosterManager}
+              />
+            )}
             <button
               className="mini-button primary"
               onClick={() => onAddObject(isVisibleTab)}
@@ -328,26 +340,7 @@ export const ObjectPanel = ({
               <Plus size={15} />
               道具
             </button>
-            <button
-              className="mini-button"
-              onClick={() => onAddCurtain(isVisibleTab)}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              type="button"
-            >
-              <Plus size={15} />
-              幕
-            </button>
-            <button
-              className="mini-button"
-              onClick={() => onAddMark(isVisibleTab)}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              type="button"
-            >
-              <Plus size={15} />
-              マーク
-            </button>
+
             <button className="mini-button" onClick={onCopySelected} type="button">
               コピー
             </button>
@@ -362,40 +355,41 @@ export const ObjectPanel = ({
             </button>
           </>
         }
-      />
-      {projectDisabled && (
-        <p className="notice warning">{projectReadOnlyMessage}</p>
-      )}
-      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
-
-      <div className="panel-visibility-summary">
-        <div className="member-visibility-tabs" role="tablist" aria-label="道具の表示状態">
-          <button
-            className={visibilityTab === "visible" ? "is-active" : ""}
-            onClick={() => onVisibilityTabChange("visible")}
-            type="button"
-          >
-            表示 {visibleObjects.length}
-          </button>
-          <button
-            className={visibilityTab === "hidden" ? "is-active" : ""}
-            onClick={() => onVisibilityTabChange("hidden")}
-            type="button"
-          >
-            非表示 {hiddenObjects.length}
-          </button>
+      >
+        <div className="panel-visibility-summary">
+          <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
+            <button
+              className={visibilityTab === "visible" ? "is-active" : ""}
+              onClick={() => onVisibilityTabChange("visible")}
+              type="button"
+            >
+              表示 {visibleObjects.length}
+            </button>
+            <button
+              className={visibilityTab === "hidden" ? "is-active" : ""}
+              onClick={() => onVisibilityTabChange("hidden")}
+              type="button"
+            >
+              非表示 {hiddenObjects.length}
+            </button>
+          </div>
         </div>
+      </PanelStickyHeader>
+      <div className="panel-manager-body">
         <p className="muted-text">
           現在の追加先:
           {isVisibleTab
             ? " このシーンでステージに表示"
             : " このシーンではステージ外・非表示"}
         </p>
-      </div>
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
-      <section className="object-visibility-list" aria-label="道具の表示切替リスト">
+      <section className="object-visibility-list" aria-label="このシーンの表示">
         <div className="object-visibility-list__header">
-          <strong>表示切替リスト</strong>
+          <strong>このシーンの表示</strong>
           <span>現在のシーンだけに反映</span>
         </div>
         <div className="visibility-checklist__actions">
@@ -462,83 +456,89 @@ export const ObjectPanel = ({
         </div>
       </section>
 
-      <section className="object-group-manager" aria-label="道具グループ作成">
+      <section className="object-group-manager" aria-label="グループ一覧">
         <div className="object-visibility-list__header">
-          <strong>道具グループ作成</strong>
-          <span>グループ内追加は名前と色を引き継ぎます</span>
+          <strong>グループ一覧</strong>
+          <span>{objectGroupCards.length}グループ · {isVisibleTab ? "表示中" : "非表示"}</span>
+          <button className="mini-button" type="button" disabled={projectDisabled}
+            title={projectDisabled ? projectReadOnlyMessage : undefined}
+            aria-expanded={isGroupFormOpen} aria-controls="object-group-form"
+            onClick={() => setIsGroupFormOpen((open) => !open)}>＋グループ</button>
         </div>
-        <div className="field-grid two">
-          <label>
-            グループ名
-            <input
-              value={groupDraftName}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              onChange={(event) => setGroupDraftName(event.target.value)}
-              placeholder="例：中旗"
-            />
-          </label>
-          <div className="palette-field">
-            <span>色</span>
-            <ColorPaletteInput
-              value={groupDraftColor}
-              disabled={projectDisabled}
-              onChange={setGroupDraftColor}
-              label="道具グループの色"
-            />
-          </div>
-          <label>
-            種類
-            <select
-              value={groupDraftType}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              onChange={(event) =>
-                setGroupDraftType(event.target.value as StageObjectType)
-              }
-            >
-              {objectTypes.map((type) => (
-                <option key={type} value={type}>
-                  {typeLabel[type]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            形
-            <select
-              value={groupDraftShape}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              onChange={(event) =>
-                setGroupDraftShape(event.target.value as StageObjectShape)
-              }
-            >
-              {shapes.map((shape) => (
-                <option key={shape} value={shape}>
-                  {shapeLabel[shape]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <button
-          className="mini-button primary"
-          onClick={handleCreateObjectGroup}
-          disabled={projectDisabled}
-          title={projectDisabled ? projectReadOnlyMessage : undefined}
-          type="button"
-        >
-          <Plus size={15} />
-          道具グループ作成
-        </button>
-      </section>
+        {isGroupFormOpen && <div id="object-group-form">
+            <section className="panel-group-form" aria-label="グループ作成">
+              <div className="object-visibility-list__header">
+                <strong>グループ作成</strong>
+                <span>グループ内追加は名前と色を引き継ぎます</span>
+              </div>
+              <div className="field-grid two">
+                <label>
+                  グループ名
+                  <input
+                    value={groupDraftName}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
+                    onChange={(event) => setGroupDraftName(event.target.value)}
+                    placeholder="例：中旗"
+                  />
+                </label>
+                <div className="palette-field">
+                  <span>グループの色</span>
+                  <ColorPaletteInput
+                    value={groupDraftColor}
+                    disabled={projectDisabled}
+                    onChange={setGroupDraftColor}
+                    label="グループの色"
+                  />
+                </div>
+                <label>
+                  種類
+                  <select
+                    value={groupDraftType}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
+                    onChange={(event) =>
+                      setGroupDraftType(event.target.value as StageObjectType)
+                    }
+                  >
+                    {objectTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {typeLabel[type]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  形
+                  <select
+                    value={groupDraftShape}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
+                    onChange={(event) =>
+                      setGroupDraftShape(event.target.value as StageObjectShape)
+                    }
+                  >
+                    {shapes.map((shape) => (
+                      <option key={shape} value={shape}>
+                        {shapeLabel[shape]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <button
+                className="mini-button primary"
+                onClick={handleCreateObjectGroup}
+                disabled={projectDisabled}
+                title={projectDisabled ? projectReadOnlyMessage : undefined}
+                type="button"
+              >
+                <Plus size={15} />
+                グループ作成
+              </button>
+            </section>
 
-      <section className="object-group-manager" aria-label="道具グループ一覧">
-        <div className="object-visibility-list__header">
-          <strong>道具グループ一覧</strong>
-          <span>{objectGroups.length}グループ</span>
-        </div>
+        </div>}
         {objectGroupCards.length === 0 ? (
           <p className="empty-state compact">
             道具グループはまだありません。既存道具は未所属として扱います。
@@ -596,7 +596,7 @@ export const ObjectPanel = ({
                             color,
                           })
                         }
-                        label={`${group.name} の色`}
+                        label={`${group.name}のグループの色`}
                       />
                       <select
                         className="compact-select"
@@ -739,91 +739,19 @@ export const ObjectPanel = ({
         )}
       </section>
 
-      <section className="object-placement-tools">
-        <div className="object-visibility-list__header">
-          <strong>配置</strong>
-          <span>選択中の道具だけに反映</span>
-        </div>
-        <div className="template-grid">
-          <button
-            className="mini-button"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectLeft")}
-            type="button"
-          >
-            左端
-          </button>
-          <button
-            className="mini-button"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectCenterX")}
-            type="button"
-          >
-            横中央
-          </button>
-          <button
-            className="mini-button"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectRight")}
-            type="button"
-          >
-            右端
-          </button>
-          <button
-            className="mini-button"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectTop")}
-            type="button"
-          >
-            上端
-          </button>
-          <button
-            className="mini-button"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectCenterY")}
-            type="button"
-          >
-            縦中央
-          </button>
-          <button
-            className="mini-button"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectBottom")}
-            type="button"
-          >
-            下端
-          </button>
-          <button
-            className="mini-button primary"
-            disabled={sceneDisabled || selected?.type !== "object"}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            onClick={() => onPlaceSelectedObject("objectStageCenter")}
-            type="button"
-          >
-            ステージ中央
-          </button>
-        </div>
-      </section>
-
       <div className="stack">
         <section className="object-visibility-list" aria-label="未所属道具">
           <div className="object-visibility-list__header">
             <strong>
-              {isVisibleTab ? "未所属の表示道具" : "未所属の非表示道具"}
+              未所属道具
             </strong>
             <span>{ungroupedActiveObjects.length}個</span>
           </div>
           {ungroupedActiveObjects.length === 0 && (
             <p className="empty-state compact">
               {isVisibleTab
-                ? "未所属の表示道具はありません。"
-                : "未所属の非表示道具はありません。"}
+                ? "このシーンで表示中の未所属道具はありません。"
+                : "このシーンで非表示の未所属道具はありません。"}
             </p>
           )}
         </section>
@@ -839,16 +767,6 @@ export const ObjectPanel = ({
         const isVisible = isObjectVisible(object);
         const isSelected = selected?.type === "object" && selected.id === object.id;
         const assignedMemberIds = objectAssignments[object.id] ?? [];
-        const assignableMembers = members
-          .filter((member) => !assignedMemberIds.includes(member.id))
-          .sort(compareMembersByName);
-        const sortedAssignedMemberIds = [...assignedMemberIds].sort((a, b) => {
-          const memberA = membersById.get(a);
-          const memberB = membersById.get(b);
-          if (!memberA || !memberB) return 0;
-          return compareMembersByName(memberA, memberB);
-        });
-        const draftMemberId = assignmentDrafts[object.id] ?? "";
         return (
           <article
             key={object.id}
@@ -1002,83 +920,19 @@ export const ObjectPanel = ({
                 <strong>割当メンバー</strong>
                 <span>{assignedMemberIds.length}人</span>
               </div>
-              <div className="assignment-chip-list">
-                {assignedMemberIds.length === 0 ? (
-                  <span className="muted-text">割当なし</span>
-                ) : (
-                  sortedAssignedMemberIds.map((memberId) => {
-                    const member = membersById.get(memberId);
-                    if (!member) {
-                      return null;
-                    }
-                    return (
-                      <span className="assignment-chip" key={memberId}>
-                        {member.name}
-                        <button
-                          type="button"
-                          disabled={sceneDisabled}
-                          title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onRemoveAssignment(object.id, memberId, false);
-                          }}
-                          aria-label={`${member.name} の割当を解除`}
-                        >
-                          <X size={12} />
-                        </button>
-                      </span>
-                    );
-                  })
-                )}
-              </div>
-              <div className="assignment-picker">
-                <select
-                  value={draftMemberId}
-                  onChange={(event) =>
-                    setAssignmentDrafts((previous) => ({
-                      ...previous,
-                      [object.id]: event.target.value,
-                    }))
-                  }
-                  onClick={(event) => event.stopPropagation()}
-                  disabled={sceneDisabled || assignableMembers.length === 0}
-                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                >
-                  <option value="">
-                    {assignableMembers.length === 0
-                      ? "割当できるメンバーなし"
-                      : "メンバーを選択"}
-                  </option>
-                  {assignableMembers.length === 0 ? (
-                    null
-                  ) : (
-                    assignableMembers.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))
-                  )}
-                </select>
-                <button
-                  className="mini-button"
-                  disabled={sceneDisabled || !draftMemberId}
-                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (draftMemberId) {
-                      onAssignMember(object.id, draftMemberId);
-                      setAssignmentDrafts((previous) => ({
-                        ...previous,
-                        [object.id]: "",
-                      }));
-                    }
-                  }}
-                  type="button"
-                >
-                  <UserPlus size={15} />
-                  割当
-                </button>
-              </div>
+                <ObjectAssignmentEditor
+                  key={`${currentFrameId ?? ""}:${visibilityTab}:${object.id}`}
+                  objectId={object.id}
+                  members={members}
+                  assignedMemberIds={assignedMemberIds}
+                  groupIndex={memberGroupIndex}
+                  isPickerOpen={openPickerObjectId === object.id}
+                  onPickerOpenChange={(isOpen) => setOpenPickerObjectId(isOpen ? object.id : null)}
+                  disabled={sceneDisabled}
+                  readOnlyMessage={sceneReadOnlyMessage}
+                  onAssignMember={onAssignMember}
+                  onRemoveAssignment={onRemoveAssignment}
+                />
             </div>
             <div className="card-actions wrap">
               <button
@@ -1150,12 +1004,85 @@ export const ObjectPanel = ({
                 type="button"
               >
                 <Trash2 size={15} />
-                削除
+                名簿から削除
               </button>
             </div>
           </article>
         );
       })}
+      </div>
+      <section className="object-placement-tools">
+        <div className="object-visibility-list__header">
+          <strong>整列・配置</strong>
+          <span>選択中の道具だけに反映</span>
+        </div>
+        <div className="template-grid">
+          <button
+            className="mini-button"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectLeft")}
+            type="button"
+          >
+            左端
+          </button>
+          <button
+            className="mini-button"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectCenterX")}
+            type="button"
+          >
+            横中央
+          </button>
+          <button
+            className="mini-button"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectRight")}
+            type="button"
+          >
+            右端
+          </button>
+          <button
+            className="mini-button"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectTop")}
+            type="button"
+          >
+            上端
+          </button>
+          <button
+            className="mini-button"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectCenterY")}
+            type="button"
+          >
+            縦中央
+          </button>
+          <button
+            className="mini-button"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectBottom")}
+            type="button"
+          >
+            下端
+          </button>
+          <button
+            className="mini-button primary"
+            disabled={sceneDisabled || selected?.type !== "object"}
+            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
+            onClick={() => onPlaceSelectedObject("objectStageCenter")}
+            type="button"
+          >
+            ステージ中央
+          </button>
+        </div>
+      </section>
+
       </div>
     </section>
   );

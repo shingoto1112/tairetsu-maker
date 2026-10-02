@@ -7,6 +7,7 @@ import { PUBLIC_LINKS } from "../config/publicLinks";
 import { Toolbar } from "./Toolbar";
 
 type ToolbarRenderOptions = {
+  canOpenRosterManager?: boolean;
   canEditProject?: boolean;
   canEditScene?: boolean;
   canSaveProject?: boolean;
@@ -32,6 +33,7 @@ const renderToolbar = (options: ToolbarRenderOptions = {}) => {
   render(
     <Toolbar
       title="テスト隊列"
+      canOpenRosterManager={options.canOpenRosterManager}
       canEditProject={options.canEditProject}
       canEditScene={options.canEditScene}
       canSaveProject={options.canSaveProject}
@@ -118,6 +120,7 @@ describe("Toolbar", () => {
   it("disables edit and save items when permissions are false", async () => {
     const user = userEvent.setup();
     renderToolbar({
+      canOpenRosterManager: false,
       canEditProject: false,
       canEditScene: false,
       canSaveProject: false,
@@ -132,10 +135,21 @@ describe("Toolbar", () => {
     const templateButton = screen.getByRole("button", { name: "隊列テンプレート" });
 
     expect((rosterButton as HTMLButtonElement).disabled).toBe(true);
+    expect(rosterButton.title).toBe("名簿の編集はownerのみ可能です。");
     expect((saveButton as HTMLButtonElement).disabled).toBe(true);
     expect((mirrorButton as HTMLButtonElement).disabled).toBe(true);
     expect((groupButton as HTMLButtonElement).disabled).toBe(true);
     expect((templateButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("allows roster access independently of other project editing permissions", async () => {
+    const user = userEvent.setup();
+    const handlers = renderToolbar({ canEditProject: false });
+    await openMenu(user);
+    const rosterButton = screen.getByRole("button", { name: "メンバー/道具の管理" });
+    expect((rosterButton as HTMLButtonElement).disabled).toBe(false);
+    await user.click(rosterButton);
+    expect(handlers.onOpenRosterManager).toHaveBeenCalledTimes(1);
   });
 
   it("renders external support links with safe new-tab attributes", async () => {
