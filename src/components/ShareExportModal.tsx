@@ -1,4 +1,4 @@
-import { Download, FileText, X } from "lucide-react";
+import { Download, FileText, Image as ImageIcon, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ExportSource } from "../utils/mobileExportTypes";
 
@@ -200,11 +200,20 @@ export const ShareExportModal = ({
           <div className="share-export-home">
             {getMobileExportSource && <section className="share-export-section">
               <h3>スマホで見る（LINE向け）</h3>
-              <p>隊列表を縦持ちのスマホで見やすくまとめます。</p>
-              <div className="document-export-options">
-                <button type="button" onClick={() => setMobileFormat("png")}>隊列表の画像</button>
-                <button type="button" onClick={() => setMobileFormat("pdf")}>隊列表のPDF</button>
-              </div>
+              <button className="share-export-row" type="button" onClick={() => setMobileFormat("png")}>
+                <ImageIcon size={26} aria-hidden="true" />
+                <span>
+                  <strong>隊列表の画像</strong>
+                  <small>縦持ちのスマホで見やすい画像。LINEで共有できます</small>
+                </span>
+              </button>
+              <button className="share-export-row" type="button" onClick={() => setMobileFormat("pdf")}>
+                <FileText size={26} aria-hidden="true" />
+                <span>
+                  <strong>隊列表のPDF</strong>
+                  <small>全シーンを1つのファイルにまとめます</small>
+                </span>
+              </button>
             </section>}
             <section className="share-export-section">
               <h3>印刷・PDF（A4）</h3>

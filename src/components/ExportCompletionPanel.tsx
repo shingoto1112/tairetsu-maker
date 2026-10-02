@@ -1,4 +1,4 @@
-import { Share2 } from "lucide-react";
+import { Share, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CompletedExport } from "../utils/mobileExportTypes";
 import { canShareExportFiles, isAppleTouchDevice, saveExportFile, shareExportFiles } from "../utils/exportDelivery";
@@ -53,12 +53,12 @@ export const ExportCompletionPanel = ({ result, disabled = false, onBusyChange, 
     <h3>{result.targetLabel}・{result.scopeLabel}</h3>
     <p>{pdf ? `PDF・${result.pageCount}ページ` : images ? `${result.files.length}枚の画像` : `${result.files.length}個のファイル`}・合計 {sizeLabel(result.files.reduce((sum, file) => sum + file.size, 0))}</p>
     {previewUrl && <img src={previewUrl} alt={`${result.targetLabel}の先頭ページ`} />}
-    {sharePrimary && <p className="muted-text">{images ? "LINE・AirDrop・写真への保存など" : "LINE・AirDrop・ファイルへの保存など"}</p>}
+    {sharePrimary && <p className="muted-text export-completion-hint">{images ? "LINE・AirDrop・写真への保存など" : "LINE・AirDrop・ファイルへの保存など"}</p>}
     {native && !isNativeExportShareAvailable() && <p role="alert">共有機能が見つかりません。アプリを更新してから再試行してください。</p>}
     {images && result.files.length > 4 && <p>画像が多い場合は、PDFにまとめると共有・保存しやすくなります。</p>}
     <div className="document-export-options">
       <button type="button" className="primary export-completion-primary" disabled={locked || (native && !shareAvailable)} onClick={sharePrimary ? share : save}>
-        {sharePrimary && <Share2 size={20} aria-hidden="true" />}{sharePrimary ? "共有・保存" : "保存する"}
+        {sharePrimary && <Share size={20} aria-hidden="true" />}{sharePrimary ? "共有・保存" : "保存する"}
       </button>
       {!native && sharePrimary && <button type="button" disabled={locked} onClick={save}>ファイルに保存</button>}
       {!sharePrimary && shareAvailable && <button type="button" disabled={locked} onClick={share}>共有する</button>}
@@ -93,7 +93,7 @@ export const ExportCompletionDialog = ({ result, onClose, onCopyImage }: { resul
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}>
-      <header><h2>書き出し完了</h2><button type="button" disabled={busy} onClick={onClose}>閉じる</button></header>
+      <header><h2>書き出し完了</h2><button className="share-export-close" type="button" disabled={busy} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
       <ExportCompletionPanel result={result} onBusyChange={setBusy} onCopyImage={onCopyImage} />
     </section>
   </div>;

@@ -20,6 +20,9 @@ vi.mock("./components/StageCanvas", () => ({
 
 import App from "./App";
 
+// Full App renders plus the lazily loaded roster exceed the 5s default when the whole suite runs in parallel.
+const INTEGRATION_TIMEOUT_MS = 20_000;
+
 describe("App roster confirmation integration", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -67,7 +70,7 @@ describe("App roster confirmation integration", () => {
     await user.click(within(view).getByRole("button", { name: "元に戻す" }));
     await waitFor(() => expect(canvas.project!.frames[frameIndex]).toEqual(before));
     expect(within(view).getByRole("button", { name: action === "previous" ? "Anna 未所属" : "Ben 未所属" }).getAttribute("aria-pressed")).toBe("true");
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it.each(["members", "objects"] as const)("cancels then confirms × deletion and removes %s from every scene", async (mode) => {
     const user = userEvent.setup();
@@ -101,5 +104,5 @@ describe("App roster confirmation integration", () => {
       }
     }
     expect(canvas.project!.focusMemberId).toBe("m_anna");
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 });

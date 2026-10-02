@@ -8386,3 +8386,32 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
     overflow-y: hidden;
   }
 }
+
+/* Export sheets share the modal language of 共有と書き出し: icon close, one clear primary action. */
+.document-export-sheet header { margin-bottom: 4px; }
+.document-export-sheet header .share-export-close { flex: 0 0 44px; min-height: 44px; width: 44px; }
+.document-export-sheet .document-export-create {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #ffffff;
+  font-weight: 800;
+  margin-top: 6px;
+  min-height: 48px;
+  width: 100%;
+}
+.document-export-sheet .document-export-create:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+.document-export-result { display: grid; gap: 10px; }
+.document-export-result h3,
+.document-export-result > p { margin: 0; }
+.document-export-result .export-completion-hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.document-export-result > .document-export-options { margin-top: 4px; }
+.document-export-options .export-completion-primary { min-height: 48px; }
+.document-export-sheet .document-export-check { align-items: center; display: flex; font-weight: 700; gap: 10px; min-height: 44px; }
+.document-export-sheet .document-export-check input { flex: 0 0 auto; height: 22px; margin: 0; min-height: 0; width: 22px; }
+.document-export-sheet fieldset > .muted-text { font-size: 13px; margin: 2px 0 0 32px; }
+.document-export-sheet fieldset > p[role="status"] { color: var(--muted); font-size: 13px; margin: 6px 0 0 32px; }
+
+/* Sticky panel headers sit flush with the scroll edge (the content box starts 12px lower) and
+   scrollIntoView targets stop below them instead of hiding under the header. */
+.tab-panel__content { scroll-padding-top: calc(var(--panel-sticky-height, 0px) + 8px); }
+.tab-panel__content .panel-sticky-header { top: -12px; }

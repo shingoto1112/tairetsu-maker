@@ -14,10 +14,10 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
       getMobileExportSource={() => ({ project, projectTitle: project.title, members: [], memberGroups: [], objects: [], objectGroups: [], frames: [], currentFrame: project.frames[0], objectStates: {} })} />);
     expect(screen.getByText("スマホで見る（LINE向け）")).toBeTruthy();
     expect(screen.getByText("印刷・PDF（A4）")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "隊列表の画像" }));
+    fireEvent.click(screen.getByRole("button", { name: /^隊列表の画像/ }));
     expect(await screen.findByText("formation:png")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
-    fireEvent.click(screen.getByRole("button", { name: "隊列表のPDF" }));
+    fireEvent.click(screen.getByRole("button", { name: /^隊列表のPDF/ }));
     expect(await screen.findByText("formation:pdf")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
