@@ -13052,16 +13052,6 @@ function App() {
         onBackToLibrary={() => void returnToLibrary()}
         onSaveProject={() => void saveProjectManually()}
         onOpenShareExport={() => setIsShareExportOpen(true)}
-        onClearSelection={() => {
-          setSelected(null);
-          setSelectedMemberIds([]);
-        }}
-        onCreateGroup={createGroupFromSelection}
-        onMirrorSelection={mirrorSelection}
-        onOpenMemberTools={() => {
-          setActivePanelTab("members");
-          setIsPanelOpen(true);
-        }}
         canOpenRosterManager={canOpenRosterManager}
         onOpenRosterManager={() => openRosterManager()}
       />
@@ -13814,6 +13804,11 @@ function App() {
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
       onExportZip={handleShareExportZip}
+      getMobileExportSource={() => structuredClone({
+        project, projectTitle: project.title, members: project.members, memberGroups: project.memberGroups ?? [],
+        objects: project.stageObjects, objectGroups: project.objectGroups ?? [], frames: project.frames,
+        currentFrame: selectedFrame ?? null, objectStates: selectedFrame?.objectStates ?? {},
+      })}
     />
     {APP_FEATURES.collaboration && activeCloudProject?.role === "owner" && isCloudShareOpen && (
       <CloudShareModal

@@ -1,16 +1,12 @@
 import {
   ExternalLink,
   FileText,
-  FlipHorizontal2,
-  Group,
-  LayoutTemplate,
+  Home,
   LifeBuoy,
   Menu,
-  PanelsTopLeft,
   Save,
-  Share2,
+  Share,
   ShieldCheck,
-  SquareDashedMousePointer,
   Table2,
   type LucideIcon,
 } from "lucide-react";
@@ -32,10 +28,6 @@ type ToolbarProps = {
   onBackToLibrary: () => void;
   onSaveProject: () => void;
   onOpenShareExport: () => void;
-  onClearSelection: () => void;
-  onCreateGroup: () => void;
-  onMirrorSelection: () => void;
-  onOpenMemberTools: () => void;
   onOpenRosterManager: () => void;
 };
 
@@ -112,10 +104,6 @@ export const Toolbar = ({
   onBackToLibrary,
   onSaveProject,
   onOpenShareExport,
-  onClearSelection,
-  onCreateGroup,
-  onMirrorSelection,
-  onOpenMemberTools,
   onOpenRosterManager,
 }: ToolbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -212,39 +200,9 @@ export const Toolbar = ({
                     title={saveTitle}
                   />
                   <AppMenuItem
-                    icon={Share2}
+                    icon={Share}
                     label="共有と書き出し"
                     onClick={() => runMenuAction(onOpenShareExport)}
-                  />
-                </section>
-
-                <section className="app-menu-section">
-                  <h3>編集補助</h3>
-                  <AppMenuItem
-                    icon={SquareDashedMousePointer}
-                    label="選択解除"
-                    onClick={() => runMenuAction(onClearSelection)}
-                  />
-                  <AppMenuItem
-                    icon={FlipHorizontal2}
-                    label="左右反転"
-                    onClick={() => runMenuAction(onMirrorSelection)}
-                    disabled={!canEditScene}
-                    title={!canEditScene ? sceneEditMessage : undefined}
-                  />
-                  <AppMenuItem
-                    icon={Group}
-                    label="グループ作成"
-                    onClick={() => runMenuAction(onCreateGroup)}
-                    disabled={!canEditProject}
-                    title={!canEditProject ? projectEditMessage : undefined}
-                  />
-                  <AppMenuItem
-                    icon={LayoutTemplate}
-                    label="隊列テンプレート"
-                    onClick={() => runMenuAction(onOpenMemberTools)}
-                    disabled={!canEditScene}
-                    title={!canEditScene ? sceneEditMessage : undefined}
                   />
                 </section>
 
@@ -275,13 +233,13 @@ export const Toolbar = ({
         </div>
 
         <button
-          className="mini-button"
+          className="mini-button toolbar-icon-button"
           onClick={onBackToLibrary}
           type="button"
           title="隊列一覧へ戻る"
+          aria-label="隊列一覧へ戻る"
         >
-          <PanelsTopLeft size={15} />
-          一覧
+          <Home size={18} aria-hidden="true" />
         </button>
         <button
           className={`mini-button toolbar-save-button${isDirty ? " is-dirty" : ""}`}
@@ -292,6 +250,15 @@ export const Toolbar = ({
         >
           <Save size={15} />
           {isSaving ? "保存中" : "保存"}
+        </button>
+        <button
+          className="mini-button toolbar-icon-button"
+          onClick={onOpenShareExport}
+          type="button"
+          title="共有と書き出し"
+          aria-label="共有と書き出し"
+        >
+          <Share size={18} aria-hidden="true" />
         </button>
         <span className="toolbar__logo">隊列メーカー</span>
         <input

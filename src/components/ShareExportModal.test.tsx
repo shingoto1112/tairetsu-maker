@@ -30,18 +30,17 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     rerender(<><button>開く</button><ShareExportModal {...props} isOpen={false} /></>);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "開く" }));
   });
-  it("opens the common sheet for images and PDF and retains the A4 export", async () => {
+  it("opens roster and assignment sheets from the share dialog and keeps the original A4 export", async () => {
     const project = formationExportFixture(), onExport = vi.fn();
     render(<ShareExportModal isOpen projectTitle="練習用" currentSceneLabel="シーン1" onClose={vi.fn()} onExport={onExport}
       getMobileExportSource={() => ({ project, projectTitle: project.title, members: [], memberGroups: [], objects: [], objectGroups: [], frames: [], currentFrame: project.frames[0], objectStates: {} })} />);
-    expect(screen.getByText("スマホで見る（LINE向け）")).toBeTruthy();
+    expect(screen.queryByText("スマホで見る（LINE向け）")).toBeNull();
     expect(screen.getByText("印刷・PDF")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^隊列表の画像/ }));
-    expect(await screen.findByText("formation:png")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "戻る" }));
-    fireEvent.click(screen.getByRole("button", { name: /^隊列表のPDF/ }));
-    expect(await screen.findByText("formation:pdf")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "戻る" }));
+    for (const [label, target] of [["メンバー名簿", "members"], ["道具名簿", "objects"], ["道具割当表", "assignments"]] as const) {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
+      expect(await screen.findByText(`${target}:pdf`)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "戻る" }));
+    }
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
     fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ scope: "current", format: "pdf", options: expect.objectContaining({ includeAssignments: false, includeSceneTime: false }) }));

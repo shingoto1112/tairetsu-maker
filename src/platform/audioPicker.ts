@@ -82,11 +82,22 @@ export const pickNativeAudioFile = async (): Promise<File | null> => {
         throw new Error("音源ファイルは200MB以下にしてください。");
       }
     }
-    const response = await fetch(Capacitor.convertFileSrc(result.uri));
-    if (!response.ok) {
+    // Capacitor's asset handler answers audio/video files with a non-HTTP response unless a
+    // byte range is requested, and WebKit's fetch reports that as status 0 (not ok). Asking for
+    // the whole file as a range yields a normal 206; a complete status-0 body is still accepted.
+    const response = await fetch(Capacitor.convertFileSrc(result.uri), {
+      headers: { Range: "bytes=0-" },
+    });
+    if (!response.ok && response.status !== 0) {
       throw new Error(`音源ファイルの読み込みに失敗しました (${response.status})。`);
     }
     const blob = await response.blob();
+    if (
+      blob.size <= 0 ||
+      (typeof result.size === "number" && result.size > 0 && blob.size !== result.size)
+    ) {
+      throw new Error("音源ファイルを最後まで読み込めませんでした。もう一度お試しください。");
+    }
     const file = new File([blob], result.name, {
       type: result.mimeType || blob.type || "audio/mpeg",
     });

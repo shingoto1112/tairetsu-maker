@@ -79,6 +79,31 @@ describe("native audio import lifecycle", () => {
     expect(native.removeTemporaryFile).toHaveBeenCalledExactlyOnceWith({ uri });
   });
 
+  it("requests the whole file as a byte range so Capacitor answers media with HTTP 206", async () => {
+    native.pickAudioFile.mockResolvedValue({ uri, name: "song.wav", size: 5, mimeType: "audio/wav" });
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 206, blob: async () => new Blob(["audio"]) } as Response);
+    const file = await pickNativeAudioFile();
+    expect(file?.size).toBe(5);
+    expect(fetch).toHaveBeenCalledWith(uri, { headers: { Range: "bytes=0-" } });
+  });
+
+  it("accepts a complete status-0 media response from the WebView asset handler", async () => {
+    native.pickAudioFile.mockResolvedValue({ uri, name: "おどり.wav", size: 5, mimeType: "audio/wav" });
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 0, blob: async () => new Blob(["audio"]) } as Response);
+    const file = await pickNativeAudioFile();
+    expect(file?.name).toBe("おどり.wav");
+    expect(native.removeTemporaryFile).toHaveBeenCalledExactlyOnceWith({ uri });
+  });
+
+  it("rejects HTTP errors and truncated bodies and still removes the temporary file", async () => {
+    native.pickAudioFile.mockResolvedValue({ uri, name: "song.mp3", size: 10 });
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404, blob: async () => new Blob([]) } as Response);
+    await expect(pickNativeAudioFile()).rejects.toThrow("(404)");
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 0, blob: async () => new Blob(["short"]) } as Response);
+    await expect(pickNativeAudioFile()).rejects.toThrow("最後まで読み込めません");
+    expect(native.removeTemporaryFile).toHaveBeenCalledTimes(2);
+  });
+
   it("does not read files when selection is cancelled", async () => {
     native.pickAudioFile.mockResolvedValue({ cancelled: true });
     await expect(pickNativeAudioFile()).resolves.toBeNull();

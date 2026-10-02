@@ -1,4 +1,4 @@
-import { Download, FileText, Image as ImageIcon, X } from "lucide-react";
+import { Box, ClipboardList, Download, FileText, Users, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
 import type { ExportSource } from "../utils/mobileExportTypes";
@@ -85,12 +85,12 @@ export const ShareExportModal = ({
   const [fileName, setFileName] = useState("");
   const [includeAssignments, setIncludeAssignments] = useState(false);
   const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
-  const [mobileFormat, setMobileFormat] = useState<"png" | "pdf" | null>(null);
+  const [rosterTarget, setRosterTarget] = useState<"members" | "objects" | "assignments" | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  const handleModalTab = useModalFocus(dialogRef, isOpen && !mobileFormat);
+  const handleModalTab = useModalFocus(dialogRef, isOpen && !rosterTarget);
 
   useEffect(() => {
-    if (!isOpen || mobileFormat) {
+    if (!isOpen || rosterTarget) {
       return undefined;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -100,7 +100,7 @@ export const ShareExportModal = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, mobileFormat]);
+  }, [isOpen, onClose, rosterTarget]);
 
   useEffect(() => {
     if (scope) {
@@ -114,7 +114,7 @@ export const ShareExportModal = ({
       setFileName("");
       setIncludeAssignments(false);
       setIncludeAudioInZip(false);
-      setMobileFormat(null);
+      setRosterTarget(null);
     }
   }, [isOpen]);
 
@@ -127,9 +127,9 @@ export const ShareExportModal = ({
   if (!isOpen) {
     return null;
   }
-  if (mobileFormat && getMobileExportSource) return <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="書き出しを準備中"><p role="status">書き出しを準備中…</p></div>}>
-    <DocumentExportSheet initialTarget="formation" initialFormat={mobileFormat} supportsFormation viewport
-      getSource={getMobileExportSource} onClose={() => setMobileFormat(null)} />
+  if (rosterTarget && getMobileExportSource) return <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="書き出しを準備中"><p role="status">書き出しを準備中…</p></div>}>
+    <DocumentExportSheet initialTarget={rosterTarget} initialFormat="pdf" viewport
+      getSource={getMobileExportSource} onClose={() => setRosterTarget(null)} />
   </Suspense>;
 
   const startExport = (nextScope: ShareExportScope) => {
@@ -204,23 +204,6 @@ export const ShareExportModal = ({
 
         {!scope ? (
           <div className="share-export-home">
-            {getMobileExportSource && <section className="share-export-section">
-              <h3>スマホで見る（LINE向け）</h3>
-              <button className="share-export-row" type="button" onClick={() => setMobileFormat("png")}>
-                <ImageIcon size={26} aria-hidden="true" />
-                <span>
-                  <strong>隊列表の画像</strong>
-                  <small>縦持ちのスマホで見やすい画像。LINEで共有できます</small>
-                </span>
-              </button>
-              <button className="share-export-row" type="button" onClick={() => setMobileFormat("pdf")}>
-                <FileText size={26} aria-hidden="true" />
-                <span>
-                  <strong>隊列表のPDF</strong>
-                  <small>全シーンを1つのファイルにまとめます</small>
-                </span>
-              </button>
-            </section>}
             <section className="share-export-section">
               <h3>印刷・PDF</h3>
               <button
@@ -259,6 +242,33 @@ export const ShareExportModal = ({
                 </span>
               </label>
             </section>
+
+            {getMobileExportSource && (
+              <section className="share-export-section">
+                <h3>名簿・割当表</h3>
+                <button className="share-export-row" type="button" onClick={() => setRosterTarget("members")}>
+                  <Users size={26} aria-hidden="true" />
+                  <span>
+                    <strong>メンバー名簿</strong>
+                    <small>グループごとのメンバー一覧を書き出します</small>
+                  </span>
+                </button>
+                <button className="share-export-row" type="button" onClick={() => setRosterTarget("objects")}>
+                  <Box size={26} aria-hidden="true" />
+                  <span>
+                    <strong>道具名簿</strong>
+                    <small>グループごとの道具一覧を書き出します</small>
+                  </span>
+                </button>
+                <button className="share-export-row" type="button" onClick={() => setRosterTarget("assignments")}>
+                  <ClipboardList size={26} aria-hidden="true" />
+                  <span>
+                    <strong>道具割当表</strong>
+                    <small>道具ごとの担当メンバーを書き出します</small>
+                  </span>
+                </button>
+              </section>
+            )}
 
             {onExportZip && (
               <section className="share-export-section">

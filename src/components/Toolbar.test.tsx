@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PUBLIC_LINKS } from "../config/publicLinks";
@@ -17,10 +17,6 @@ type ToolbarRenderOptions = {
 
 const createHandlers = () => ({
   onBackToLibrary: vi.fn(),
-  onClearSelection: vi.fn(),
-  onCreateGroup: vi.fn(),
-  onMirrorSelection: vi.fn(),
-  onOpenMemberTools: vi.fn(),
   onOpenRosterManager: vi.fn(),
   onOpenShareExport: vi.fn(),
   onSaveProject: vi.fn(),
@@ -102,15 +98,11 @@ describe("Toolbar", () => {
       ["メンバー/道具の管理", handlers.onOpenRosterManager],
       ["隊列表を保存", handlers.onSaveProject],
       ["共有と書き出し", handlers.onOpenShareExport],
-      ["選択解除", handlers.onClearSelection],
-      ["左右反転", handlers.onMirrorSelection],
-      ["グループ作成", handlers.onCreateGroup],
-      ["隊列テンプレート", handlers.onOpenMemberTools],
     ] as const;
 
     for (const [label, handler] of items) {
       await openMenu(user);
-      await user.click(screen.getByRole("button", { name: label }));
+      await user.click(within(screen.getByLabelText("メニュー")).getByRole("button", { name: label }));
 
       expect(handler).toHaveBeenCalledTimes(1);
       await waitFor(() => expect(screen.queryByLabelText("メニュー")).toBeNull());
@@ -130,16 +122,26 @@ describe("Toolbar", () => {
 
     const rosterButton = screen.getByRole("button", { name: "メンバー/道具の管理" });
     const saveButton = screen.getAllByRole("button", { name: "隊列表を保存" })[0];
-    const mirrorButton = screen.getByRole("button", { name: "左右反転" });
-    const groupButton = screen.getByRole("button", { name: "グループ作成" });
-    const templateButton = screen.getByRole("button", { name: "隊列テンプレート" });
 
     expect((rosterButton as HTMLButtonElement).disabled).toBe(true);
     expect(rosterButton.title).toBe("名簿の編集はownerのみ可能です。");
     expect((saveButton as HTMLButtonElement).disabled).toBe(true);
-    expect((mirrorButton as HTMLButtonElement).disabled).toBe(true);
-    expect((groupButton as HTMLButtonElement).disabled).toBe(true);
-    expect((templateButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("offers home and share as toolbar buttons and drops the editing-aid menu", async () => {
+    const user = userEvent.setup();
+    const handlers = renderToolbar();
+    await user.click(screen.getByRole("button", { name: "隊列一覧へ戻る" }));
+    expect(handlers.onBackToLibrary).toHaveBeenCalledTimes(1);
+    const shareButtons = screen.getAllByRole("button", { name: "共有と書き出し" });
+    expect(shareButtons).toHaveLength(1);
+    await user.click(shareButtons[0]);
+    expect(handlers.onOpenShareExport).toHaveBeenCalledTimes(1);
+    await openMenu(user);
+    const menu = screen.getByLabelText("メニュー");
+    for (const removed of ["編集補助", "選択解除", "左右反転", "グループ作成", "隊列テンプレート"]) {
+      expect(within(menu).queryByText(removed)).toBeNull();
+    }
   });
 
   it("allows roster access independently of other project editing permissions", async () => {

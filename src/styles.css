@@ -8427,3 +8427,11 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 /* Fixed preview height keeps the layout stable while the image decodes, so the scroll to the
    share/save buttons lands correctly. */
 .document-export-result img { height: 230px; max-height: 230px; object-fit: contain; object-position: left top; width: auto; }
+
+/* Home and share are icon-only toolbar actions; keep them square and the same height as 保存. */
+.toolbar .toolbar-icon-button {
+  aspect-ratio: 1 / 1;
+  justify-content: center;
+  padding: 0;
+}
+.toolbar .toolbar-icon-button svg { color: var(--accent); }
