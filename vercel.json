@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "codex/ipad-resubmission-20260924": false,
+      "codex/ipad-release-20261002": false
+    }
+  }
+}

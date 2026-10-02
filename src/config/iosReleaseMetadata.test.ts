@@ -39,6 +39,25 @@ describe("iPad App Store release metadata", () => {
     expect(infoPlist).not.toContain("NSPhotoLibraryUsageDescription");
   });
 
+  it("describes only adding exported images to Photos in Japanese", () => {
+    const description = infoPlist.match(/<key>NSPhotoLibraryAddUsageDescription<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+    expect(description).toBe("書き出した隊列表や名簿などの画像を写真アプリに保存するために使用します。");
+    expect(description).toMatch(/[ぁ-んァ-ン一-龯]/);
+    expect(infoPlist.match(/<key>NSPhotoLibraryAddUsageDescription<\/key>/g)).toHaveLength(1);
+  });
+
+  it("registers the export share plugin in the bridge and Xcode Sources", () => {
+    const bridge = readFileSync(rootPath("ios", "App", "App", "TairetsuBridgeViewController.swift"), "utf8");
+    const plugin = readFileSync(rootPath("ios", "App", "App", "ExportSharePlugin.swift"), "utf8");
+    expect(bridge).toContain("registerPluginInstance(ExportSharePlugin())");
+    expect(project).toContain("path = ExportSharePlugin.swift;");
+    expect(project).toContain("A7A130012FE9D1A100000001 /* ExportSharePlugin.swift in Sources */,");
+    expect(plugin).toContain('let jsName = "ExportShare"');
+    expect(plugin).toContain("popover.sourceView = view");
+    expect(plugin).toContain("popover.sourceRect = CGRect");
+    expect(plugin).not.toContain("requestAuthorization");
+  });
+
   it("keeps scene lifecycle wiring and the iOS 15 minimum deployment target", () => {
     const sceneDelegate = readFileSync(rootPath("ios", "App", "App", "SceneDelegate.swift"), "utf8");
     expect(infoPlist).toContain("UIApplicationSceneManifest");

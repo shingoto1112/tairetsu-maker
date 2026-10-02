@@ -21,7 +21,7 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     expect(await screen.findByText("formation:pdf")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
-    fireEvent.click(screen.getByRole("button", { name: "PDFとして保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ scope: "current", format: "pdf", options: expect.objectContaining({ includeAssignments: false, includeSceneTime: false }) }));
   });
 });

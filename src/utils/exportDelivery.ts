@@ -1,16 +1,19 @@
-import { getAppFeatureFlags } from "../platform/runtime";
-import { shareBlobsWithNativeSheet } from "../platform/files";
+import { isNativeExportRuntime, isNativeExportShareAvailable, shareBlobsWithNativeSheet } from "../platform/files";
 import { saveGeneratedBlob } from "./fileSave";
+import { downloadBlob } from "./exportImage";
+
+export const isAppleTouchDevice = (): boolean => /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 export const canShareExportFiles = (files: File[]): boolean => {
-  if (getAppFeatureFlags().nativeFileShare) return true;
+  if (isNativeExportRuntime()) return isNativeExportShareAvailable();
   try { return !!navigator.share && !!navigator.canShare?.({ files }); }
   catch { return false; }
 };
 
 /** Files and modules are ready before the tap; invoke navigator.share before any await. */
 export const shareExportFiles = (files: File[], title: string): Promise<"shared" | "cancelled" | "unsupported"> => {
-  if (getAppFeatureFlags().nativeFileShare) return shareBlobsWithNativeSheet({ files: files.map((file) => ({ blob: file, fileName: file.name })), title });
+  if (isNativeExportRuntime()) return shareBlobsWithNativeSheet({ files: files.map((file) => ({ blob: file, fileName: file.name })), title });
   if (!canShareExportFiles(files)) return Promise.resolve("unsupported");
   return navigator.share({ files, title }).then(() => "shared" as const).catch((error: unknown) => {
     if (error instanceof DOMException && error.name === "AbortError") return "cancelled" as const;
@@ -18,7 +21,11 @@ export const shareExportFiles = (files: File[], title: string): Promise<"shared"
   });
 };
 
-export const saveExportFile = (file: File) => saveGeneratedBlob({
+export const saveExportFile = (file: File) => {
+  if (isNativeExportRuntime()) return shareExportFiles([file], file.name);
+  if (isAppleTouchDevice()) { downloadBlob(file, file.name); return Promise.resolve("downloaded" as const); }
+  return saveGeneratedBlob({
   fallbackFileName: file.name, generateBlob: () => Promise.resolve(file),
-  pickerTypes: [{ description: file.type === "application/pdf" ? "PDFファイル" : "PNG画像", accept: { [file.type]: [file.type === "application/pdf" ? ".pdf" : ".png"] } }],
+  pickerTypes: [{ description: "書き出しファイル", accept: { [file.type]: [`.${file.name.split(".").pop()}`] } }],
 });
+};

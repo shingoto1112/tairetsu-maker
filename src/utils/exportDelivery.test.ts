@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("../platform/runtime", () => ({ getAppFeatureFlags: () => ({ nativeFileShare: false }) }));
-vi.mock("../platform/files", () => ({ shareBlobsWithNativeSheet: vi.fn() }));
+vi.mock("../platform/files", () => ({ isNativeExportRuntime: () => false, isNativeExportShareAvailable: () => false, shareBlobsWithNativeSheet: vi.fn() }));
 vi.mock("./fileSave", () => ({ saveGeneratedBlob: vi.fn() }));
 import { canShareExportFiles, shareExportFiles } from "./exportDelivery";
 import { saveGeneratedBlob } from "./fileSave";

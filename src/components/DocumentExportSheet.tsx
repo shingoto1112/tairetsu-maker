@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { ExportRequest, ExportSource, ExportTarget, GeneratedExport } from "../utils/mobileExportTypes";
-import { canShareExportFiles, saveExportFile, shareExportFiles } from "../utils/exportDelivery";
+import { ExportCompletionPanel } from "./ExportCompletionPanel";
 
 export const EXPORT_TARGET_LABELS: Record<ExportTarget, string> = {
   formation: "隊列表", members: "メンバー名簿", objects: "道具名簿", assignments: "道具割当表",
 };
 type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; supportsFormation?: boolean; viewport?: boolean; getSource: () => ExportSource; onClose: () => void };
-const sizeLabel = (size: number) => size >= 1_000_000 ? `${(size / 1_000_000).toFixed(2)}MB` : `${Math.ceil(size / 1000)}KB`;
 
 export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supportsFormation = false, viewport = false, getSource, onClose }: Props) => {
   const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: "mobile", format: initialFormat, includeDetails: false });
@@ -16,10 +15,9 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
   const [delivering, setDelivering] = useState(false);
   const [progress, setProgress] = useState("");
   const [notice, setNotice] = useState("");
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [saveList, setSaveList] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const deliveryPending = useRef(false);
+  const handleDeliveryBusy = (pending: boolean) => { deliveryPending.current = pending; setDelivering(pending); };
   const mounted = useRef(true);
   const dialog = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -31,11 +29,6 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  useEffect(() => {
-    if (!result) return;
-    const url = URL.createObjectURL(result.preview); setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [result]);
   useEffect(() => {
     setRequest((previous) => ({ ...previous, target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: "mobile", format: initialFormat }));
   }, [initialTarget, initialFormat]);
@@ -71,26 +64,13 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
       const completed = await generateDocumentExport(snapshot, request, {
         signal: abort.signal, onProgress: (message) => { if (mounted.current) setProgress(message); },
       });
-      if (!abort.signal.aborted && mounted.current) { setResult(completed); setSaveList(false); }
+      if (!abort.signal.aborted && mounted.current) { setResult(completed); }
     } catch (error) {
       if (mounted.current) setNotice(abort.signal.aborted ? "作成を取り消しました。" : error instanceof Error ? error.message : "書き出しに失敗しました。もう一度お試しください。");
     } finally {
       controller.current = null;
       if (mounted.current) { setBusy(false); setProgress(""); }
     }
-  };
-  const deliver = async (action: () => Promise<string>, sharing: boolean) => {
-    if (deliveryPending.current) return;
-    deliveryPending.current = true; setDelivering(true); setNotice("");
-    try {
-      // action invokes Web Share synchronously in the click stack with prepared Files.
-      const status = await action();
-      if (mounted.current) setNotice(status === "cancelled" ? "取り消しました。作成済みファイルからもう一度試せます。"
-        : status === "unsupported" ? "この環境ではファイル共有に対応していません。保存するをご利用ください。"
-          : sharing ? "共有先への受け渡しが完了しました。" : status === "shared" ? "保存・共有先への受け渡しが完了しました。" : "保存しました。");
-    } catch (error) {
-      if (mounted.current) setNotice(`受け渡しに失敗しました。作成済みファイルから再試行できます。${error instanceof Error ? ` ${error.message}` : ""}`);
-    } finally { deliveryPending.current = false; if (mounted.current) setDelivering(false); }
   };
   const update = (patch: Partial<ExportRequest>) => setRequest((previous) => ({ ...previous, ...patch }));
   const locked = busy || delivering;
@@ -129,23 +109,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
       </div></fieldset>
       <button type="button" className="primary" disabled={locked} onClick={() => void create()}>{EXPORT_TARGET_LABELS[request.target]}の{request.format === "png" ? "画像" : "PDF"}を作成</button>
       {busy && <div className="document-export-progress"><p role="status">{progress}</p><button type="button" onClick={() => { controller.current?.abort(); setProgress("作成を取り消しています…"); }}>作成を取り消す</button></div>}
-      {result && <section className="document-export-result" aria-label="作成済みファイル">
-        <h3>{result.targetLabel}・{result.scopeLabel}</h3>
-        <p>{result.files[0].type === "application/pdf" ? `PDF・${result.pageCount}ページ` : `${result.files.length}枚の画像`}・合計 {sizeLabel(result.files.reduce((sum, file) => sum + file.size, 0))}</p>
-        {previewUrl && <img src={previewUrl} alt={`${result.targetLabel}の先頭ページ`} />}
-        <p className="muted-text">共有先でLINEを選んでください。</p>
-        {!canShareExportFiles(result.files) && <p>この環境では共有できません。保存するをご利用ください。</p>}
-        {result.files.length > 4 && <p>画像が多い場合は、PDFにまとめると共有・保存しやすくなります。</p>}
-        <div className="document-export-options">
-          <button type="button" disabled={locked || !canShareExportFiles(result.files)} onClick={() => void deliver(() => shareExportFiles(result.files, result.targetLabel), true)}>共有する</button>
-          <button type="button" disabled={locked} onClick={() => {
-            if (result.files.length === 1) void deliver(() => saveExportFile(result.files[0]), false);
-            else setSaveList(true);
-          }}>保存する</button>
-        </div>
-        {saveList && <div><p>画像は1枚ずつ保存してください。</p>{result.files.map((file, index) =>
-          <button type="button" key={file.name} disabled={locked} onClick={() => void deliver(() => saveExportFile(file), false)}>{index + 1}枚目を保存</button>)}</div>}
-      </section>}
+      {result && <ExportCompletionPanel result={result} disabled={busy} onBusyChange={handleDeliveryBusy} />}
       {notice && <p role="status">{notice}</p>}
     </section>
   </div>;

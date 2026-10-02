@@ -5,16 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fileMocks = vi.hoisted(() => ({
   deleteFile: vi.fn(),
   nativeFileShare: true,
+  pluginAvailable: true,
   share: vi.fn(),
   writeFile: vi.fn(),
 }));
 
-vi.mock("./runtime", () => ({
-  getAppFeatureFlags: () => ({
-    collaboration: false,
-    nativeFileShare: fileMocks.nativeFileShare,
-    personalCloud: true,
-  }),
+vi.mock("@capacitor/core", () => ({
+  Capacitor: { isNativePlatform: () => fileMocks.nativeFileShare, getPlatform: () => "ios", isPluginAvailable: () => fileMocks.pluginAvailable },
+  registerPlugin: () => ({ shareFiles: fileMocks.share }),
 }));
 
 vi.mock("@capacitor/filesystem", () => ({
@@ -23,10 +21,6 @@ vi.mock("@capacitor/filesystem", () => ({
     deleteFile: fileMocks.deleteFile,
     writeFile: fileMocks.writeFile,
   },
-}));
-
-vi.mock("@capacitor/share", () => ({
-  Share: { share: fileMocks.share },
 }));
 
 import { shareBlobWithNativeSheet, shareBlobsWithNativeSheet } from "./files";
@@ -38,8 +32,9 @@ describe("native file sharing", () => {
 
   beforeEach(() => {
     fileMocks.nativeFileShare = true;
+    fileMocks.pluginAvailable = true;
     fileMocks.deleteFile.mockReset().mockResolvedValue(undefined);
-    fileMocks.share.mockReset().mockResolvedValue(undefined);
+    fileMocks.share.mockReset().mockResolvedValue({ status: "shared" });
     fileMocks.writeFile.mockReset().mockResolvedValue({
       uri: "file://cache/export.pdf",
     });
@@ -60,7 +55,7 @@ describe("native file sharing", () => {
     );
     expect(fileMocks.share).toHaveBeenCalledWith(
       expect.objectContaining({
-        files: ["file://cache/export.pdf"],
+        files: [{ path: "file://cache/export.pdf", mimeType: "application/pdf", fileName: "犬山_2026_隊列_.pdf" }],
       }),
     );
     expect(fileMocks.deleteFile).toHaveBeenCalledWith(
@@ -71,7 +66,7 @@ describe("native file sharing", () => {
   });
 
   it("treats user cancellation as a normal result and still cleans up", async () => {
-    fileMocks.share.mockRejectedValue(new DOMException("cancelled", "AbortError"));
+    fileMocks.share.mockResolvedValue({ status: "cancelled" });
 
     await expect(
       shareBlobWithNativeSheet({
@@ -96,17 +91,41 @@ describe("native file sharing", () => {
 
   it.each(["success", "cancel", "failure"])("cleans up every file after multi-file %s", async (scenario) => {
     fileMocks.writeFile.mockResolvedValueOnce({ uri: "file://one" }).mockResolvedValueOnce({ uri: "file://two" });
-    if (scenario === "cancel") fileMocks.share.mockRejectedValue(new DOMException("cancel", "AbortError"));
+    if (scenario === "cancel") fileMocks.share.mockResolvedValue({ status: "cancelled" });
     if (scenario === "failure") fileMocks.share.mockRejectedValue(new Error("failed"));
-    const result = shareBlobsWithNativeSheet({ files: [{ blob: new Blob(["one"]), fileName: "one.png" }, { blob: new Blob(["two"]), fileName: "two.png" }] });
+    const result = shareBlobsWithNativeSheet({ files: [{ blob: new Blob(["one"], { type: "image/png" }), fileName: "one.png" }, { blob: new Blob(["two"], { type: "image/png" }), fileName: "two.png" }] });
     if (scenario === "failure") await expect(result).rejects.toThrow("failed");
     else await expect(result).resolves.toBe(scenario === "cancel" ? "cancelled" : "shared");
-    expect(fileMocks.share).toHaveBeenCalledWith(expect.objectContaining({ files: ["file://one", "file://two"] }));
+    expect(fileMocks.share).toHaveBeenCalledWith(expect.objectContaining({ files: [
+      { path: "file://one", mimeType: "image/png", fileName: "one.png" },
+      { path: "file://two", mimeType: "image/png", fileName: "two.png" },
+    ] }));
     expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
   });
   it("cleans up earlier and partially written files when writing fails midway", async () => {
     fileMocks.writeFile.mockResolvedValueOnce({ uri: "file://one" }).mockRejectedValueOnce(new Error("write failed"));
     await expect(shareBlobsWithNativeSheet({ files: [{ blob: new Blob(["one"]), fileName: "one.png" }, { blob: new Blob(["two"]), fileName: "two.png" }] })).rejects.toThrow("write failed");
     expect(fileMocks.share).not.toHaveBeenCalled(); expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
+  });
+  it("rejects a missing plugin without writing or falling back to file-URL sharing", async () => {
+    fileMocks.pluginAvailable = false;
+    await expect(shareBlobWithNativeSheet({ blob: new Blob(["image"]), fileName: "one.png" })).rejects.toThrow("共有機能が見つかりません");
+    expect(fileMocks.writeFile).not.toHaveBeenCalled(); expect(fileMocks.share).not.toHaveBeenCalled();
+  });
+  it("blocks concurrent calls until completion and cleanup, then permits retry", async () => {
+    let finish!: (value: { status: "shared" }) => void;
+    fileMocks.share.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const request = { blob: new Blob(["image"], { type: "image/png" }), fileName: "one.png" };
+    const first = shareBlobWithNativeSheet(request);
+    await expect(shareBlobWithNativeSheet(request)).rejects.toThrow("進行中");
+    await vi.waitFor(() => expect(fileMocks.share).toHaveBeenCalledTimes(1));
+    finish({ status: "shared" }); await first;
+    await expect(shareBlobWithNativeSheet(request)).resolves.toBe("shared");
+    expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
+  });
+  it("rejects an invalid native result and still removes its files", async () => {
+    fileMocks.share.mockResolvedValue({ status: "unknown" });
+    await expect(shareBlobWithNativeSheet({ blob: new Blob(["pdf"]), fileName: "one.pdf" })).rejects.toThrow("共有結果");
+    expect(fileMocks.deleteFile).toHaveBeenCalledTimes(1);
   });
 });

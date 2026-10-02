@@ -19,4 +19,5 @@ export type ExportSnapshot = { target: "members" | "objects"; data: RosterExport
 export type GeneratedExport = {
   files: File[]; preview: Blob; targetLabel: string; scopeLabel: string; pageCount: number;
 };
+export type CompletedExport = Omit<GeneratedExport, "preview"> & { preview: Blob | null };
 export type GenerationOptions = { signal: AbortSignal; onProgress: (message: string) => void };

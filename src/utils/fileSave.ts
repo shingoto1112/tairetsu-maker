@@ -1,5 +1,5 @@
 import { downloadBlob } from "./exportImage";
-import { getAppFeatureFlags, shareBlobWithNativeSheet } from "../platform";
+import { isNativeExportRuntime, shareBlobWithNativeSheet } from "../platform/files";
 
 type FilePickerAcceptType = {
   accept: Record<string, string[]>;
@@ -50,7 +50,7 @@ export const saveGeneratedBlob = async ({
     throw new Error("保存するファイルの作成に失敗しました。");
   }
 
-  if (getAppFeatureFlags().nativeFileShare) {
+  if (isNativeExportRuntime()) {
     return shareBlobWithNativeSheet({
       blob,
       fileName: fallbackFileName,
