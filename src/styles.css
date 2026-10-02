@@ -2927,7 +2927,7 @@ h2 {
 .center-column {
   display: grid;
   gap: 10px;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -3313,8 +3313,7 @@ h2 {
   width: auto;
 }
 
-.panel-section,
-.status-panel {
+.panel-section {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -3706,10 +3705,52 @@ h2 {
   margin-top: 0;
 }
 
-.status-panel {
-  display: grid;
+.status-overlay {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  left: max(8px, env(safe-area-inset-left));
+  max-height: max(0px, calc(var(--status-height, 100%) - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: max(8px, env(safe-area-inset-right));
+  top: calc(var(--status-top, 0px) + max(8px, env(safe-area-inset-top)));
+  z-index: 35;
 }
+
+.status-toast.is-visible,
+.status-warnings {
+  background: #e6fffb;
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+  color: #115e59;
+  flex-shrink: 0;
+  font-size: 13px;
+  max-width: min(100%, 480px);
+}
+
+.status-toast { display: flex; align-items: center; }
+.status-toast__message { margin: 0; overflow-wrap: anywhere; }
+.status-toast.is-visible .status-toast__message { padding: 8px 12px; }
+.status-warnings { background: #fff7ed; border-color: #fed7aa; color: var(--warning); flex-shrink: 1; min-height: 46px; overflow: auto; }
+.status-warnings__controls { display: flex; justify-content: space-between; }
+.status-overlay__button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  flex-shrink: 0;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.status-overlay__button:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.status-warnings__list { margin: 0; padding: 0 16px 12px 28px; pointer-events: auto; }
+.status-warnings__list li + li { margin-top: 6px; }
 
 .notice {
   background: #e6fffb;
@@ -4155,6 +4196,7 @@ h2 {
 .stage-fullscreen-host {
   height: 100%;
   min-height: 0;
+  position: relative;
 }
 
 .stage-fullscreen-host.is-stage-fullscreen {

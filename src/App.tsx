@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
+import { useNotice, type NoticeKind } from "./hooks/useNotice";
 import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
 import { AssignmentPanel } from "./components/AssignmentPanel";
@@ -2101,7 +2102,7 @@ function App() {
   const [previewUseActualDuration, setPreviewUseActualDuration] =
     useState(false);
   const [transitionPreviewSpeed, setTransitionPreviewSpeed] = useState(1);
-  const [notice, setNotice] = useState<string | null>(initial.error);
+  const { notice, notification, setNotice, dismissNotice } = useNotice(initial.error);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [sharedAudioNotice, setSharedAudioNotice] = useState(initial.shared);
@@ -2393,20 +2394,21 @@ function App() {
       if (!meta?.id) {
         setAudioSource(null, null);
         setSharedAudioNotice(false);
-        return;
+        return true;
       }
       const blob = await loadAudioBlobFromIndexedDb(meta.id);
       if (!blob) {
         setAudioSource(null, meta.name);
         setSharedAudioNotice(true);
         setNotice("保存済み音源が見つかりませんでした。必要なら音源を読み込み直してください。");
-        return;
+        return false;
       }
       const url = URL.createObjectURL(blob);
       setAudioSource(url, meta.name);
       setSharedAudioNotice(false);
+      return true;
     },
-    [setAudioSource],
+    [setAudioSource, setNotice],
   );
 
   const refreshHistoryCounts = useCallback(() => {
@@ -2617,7 +2619,7 @@ function App() {
     setProject(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
-    setNotice(entry.label ? `${entry.label}を元に戻しました。` : "元に戻しました。");
+    setNotice(entry.label ? `${entry.label}を元に戻しました。` : "元に戻しました。", "success");
   }, [allowCloudLockedSceneChange, refreshHistoryCounts]);
 
   const redoProject = useCallback(() => {
@@ -2641,7 +2643,7 @@ function App() {
     setProject(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
-    setNotice(entry.label ? `${entry.label}をやり直しました。` : "やり直しました。");
+    setNotice(entry.label ? `${entry.label}をやり直しました。` : "やり直しました。", "success");
   }, [allowCloudLockedSceneChange, refreshHistoryCounts]);
 
   const clearPendingAutoSave = useCallback(() => {
@@ -3976,6 +3978,7 @@ function App() {
             isMoveOperation
               ? "現在シーンを基準に隊列を移動しました。"
               : "前シーンの隊列を反映しました。",
+            "success",
           );
         }
         return {
@@ -4470,6 +4473,7 @@ function App() {
       group
         ? `${group.name} に ${member.name} を追加しました。`
         : "メンバーを追加しました。",
+      "success",
     );
   };
 
@@ -4576,6 +4580,7 @@ function App() {
       group
         ? `${group.name} に ${object.name} を追加しました。`
         : `${effectiveDraft.name}を追加しました。`,
+      "success",
     );
   };
 
@@ -4644,7 +4649,7 @@ function App() {
           };
         }),
       }));
-      setNotice(noticeText);
+      setNotice(noticeText, "success");
     };
     if (activeCloudProjectRef.current && !activeCloudProjectRef.current.activeSceneLock) {
       const targets: SceneElementEditTarget[] = targetIds.flatMap((id) => [
@@ -4709,7 +4714,7 @@ function App() {
           };
         }),
       }));
-      setNotice(noticeText);
+      setNotice(noticeText, "success");
     };
     if (isCloudScenePatch) {
       const assignmentObjectIds = visible
@@ -4820,7 +4825,7 @@ function App() {
         before,
         projectRef.current.frames.find((frame) => frame.id === activeFrameId),
         expected,
-        () => { if (!requiresCellSave) setNotice(notice); },
+        () => { if (!requiresCellSave) setNotice(notice, "success"); },
       );
     };
     if (requiresCellSave) {
@@ -4828,7 +4833,7 @@ function App() {
         () => runCloudSceneCellPatchEditMany("道具割当編集", cloudTargets, applyChange),
         () => applied,
       );
-      if (savedAndApplied) setNotice(notice);
+      if (savedAndApplied) setNotice(notice, "success");
       return savedAndApplied;
     }
     applyChange();
@@ -5209,7 +5214,7 @@ function App() {
       return false;
     }
     if (!deleteMember(id)) return false;
-    setNotice(`${member.name} を名簿から削除しました。`);
+    setNotice(`${member.name} を名簿から削除しました。`, "success");
     return true;
   };
 
@@ -5229,7 +5234,7 @@ function App() {
       return false;
     }
     if (!deleteObject(id)) return false;
-    setNotice(`${object.name} を名簿から削除しました。`);
+    setNotice(`${object.name} を名簿から削除しました。`, "success");
     return true;
   };
 
@@ -5326,7 +5331,7 @@ function App() {
           };
         }),
       }));
-      setNotice(noticeText);
+      setNotice(noticeText, "success");
     };
     if (activeCloudProjectRef.current && !activeCloudProjectRef.current.activeSceneLock) {
       const targets: SceneElementEditTarget[] = project.stageObjects.map((object) => ({
@@ -5467,6 +5472,7 @@ function App() {
       includeVisible
         ? `${targetSummary}を直前シーンから反映しました。`
         : `${targetSummary}を直前シーンから反映しました。表示/非表示は維持しています。`,
+      "success",
     );
   };
 
@@ -5873,7 +5879,7 @@ function App() {
       await saveCloudCurrentScene(nextProject, activeFrameId);
       return;
     }
-    setNotice(`「${selectedFrame.label}」に現在の隊形を保存しました。`);
+    setNotice(`「${selectedFrame.label}」に現在の隊形を保存しました。`, "success");
   };
 
   const savePersonalCloudProject = async (
@@ -6054,7 +6060,7 @@ function App() {
       setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
       setIsDirty(false);
       if (options.showNotice ?? true) {
-        setNotice("隊列表を保存しました。");
+        setNotice("隊列表を保存しました。", "success");
       }
       return true;
     } catch {
@@ -6184,7 +6190,7 @@ function App() {
       frames: [...previous.frames, frame],
     }));
     setSelectedFrameId(frame.id);
-    setNotice("シーンを追加しました。");
+    setNotice("シーンを追加しました。", "success");
   };
 
   async function flushCloudSceneOrderAutoSave(summary: string): Promise<void> {
@@ -6426,6 +6432,7 @@ function App() {
       changed
         ? "シーンを時刻順に並び替えました。"
         : "シーンはすでに時刻順です。",
+      "success",
     );
   };
 
@@ -6449,7 +6456,7 @@ function App() {
       {},
     );
     setClipboard({ type: "member", member, positionsByFrame });
-    setNotice(`${member.name} をコピーしました。`);
+    setNotice(`${member.name} をコピーしました。`, "success");
   };
 
   const pasteMemberFromClipboard = (visibleInCurrentFrame = true) => {
@@ -6499,6 +6506,7 @@ function App() {
       requestPanelScroll("member", existingMember.id);
       setNotice(
         `${existingMember.name} をこのシーンのステージ上に表示しました。`,
+        "success",
       );
       return;
     }
@@ -6571,7 +6579,7 @@ function App() {
     setIsPanelOpen(true);
     setMode("members");
     requestPanelScroll("member", id);
-    setNotice(`${member.name} を新しいメンバーとして追加しました。`);
+    setNotice(`${member.name} を新しいメンバーとして追加しました。`, "success");
   };
 
   const copyObjectToClipboard = (objectId?: string) => {
@@ -6592,7 +6600,7 @@ function App() {
       {},
     );
     setClipboard({ type: "object", object, objectStatesByFrame });
-    setNotice(`${object.name} をコピーしました。`);
+    setNotice(`${object.name} をコピーしました。`, "success");
   };
 
   const pasteObjectFromClipboard = (visibleInCurrentFrame = true) => {
@@ -6664,7 +6672,7 @@ function App() {
       setIsPanelOpen(true);
       setMode("objects");
       requestPanelScroll("object", existingObject.id);
-      setNotice(`${existingObject.name} をこのシーンのステージ上に表示しました。`);
+      setNotice(`${existingObject.name} をこのシーンのステージ上に表示しました。`, "success");
       return;
     }
 
@@ -6745,7 +6753,7 @@ function App() {
     setIsPanelOpen(true);
     setMode("objects");
     requestPanelScroll("object", id);
-    setNotice(`${object.name} を新しい道具として追加しました。`);
+    setNotice(`${object.name} を新しい道具として追加しました。`, "success");
   };
 
   const copyFrameToClipboard = (frameId?: string) => {
@@ -6760,7 +6768,7 @@ function App() {
       type: "frame",
       frame: cloneFrame(frame),
     });
-    setNotice(`「${frame.label}」をコピーしました。`);
+    setNotice(`「${frame.label}」をコピーしました。`, "success");
   };
 
   const pasteFrameFromClipboard = () => {
@@ -6786,7 +6794,7 @@ function App() {
     setSelectedFrameId(id);
     setActivePanelTab("timeline");
     setMode("preview");
-    setNotice(`「${frame.label}」を貼り付けました。`);
+    setNotice(`「${frame.label}」を貼り付けました。`, "success");
     if (
       APP_FEATURES.collaboration &&
       activeCloudProjectRef.current?.role === "owner"
@@ -6829,7 +6837,7 @@ function App() {
     setSelectedFrameId(targetFrame.id);
     setActivePanelTab("timeline");
     setMode("preview");
-    setNotice(`「${targetFrame.label}」へシーン内容を貼り付けました。`);
+    setNotice(`「${targetFrame.label}」へシーン内容を貼り付けました。`, "success");
     if (
       APP_FEATURES.collaboration &&
       activeCloudProjectRef.current?.role === "owner"
@@ -6976,6 +6984,7 @@ function App() {
       scope === "following"
         ? "このシーン以降のメンバー色を変更しました。"
         : "このシーンだけメンバー色を変更しました。",
+      "success",
     );
   };
 
@@ -7028,6 +7037,7 @@ function App() {
       scope === "following"
         ? "このシーン以降のメンバー色変更を解除しました。"
         : "このシーンだけメンバー色変更を解除しました。",
+      "success",
     );
   };
 
@@ -7071,7 +7081,7 @@ function App() {
     setActivePanelTab("members");
     setMode("members");
     setMemberVisibilityTab("visible");
-    setNotice(`${visibleMemberIds.length}人を選択しました。`);
+    setNotice(`${visibleMemberIds.length}人を選択しました。`, "success");
   };
 
   const focusSelectedNameInput = () => {
@@ -7158,7 +7168,7 @@ function App() {
     if (selected?.type === "object") {
       updateObjectState(selected.id, { visible: false });
       setSelected(null);
-      setNotice("選択中の道具をこのシーンで非表示にしました。");
+      setNotice("選択中の道具をこのシーンで非表示にしました。", "success");
       return;
     }
 
@@ -7192,7 +7202,7 @@ function App() {
       changed = true;
     }
     if (changed) {
-      setNotice("選択を解除しました。");
+      setNotice("選択を解除しました。", "success");
     }
   };
 
@@ -7236,7 +7246,7 @@ function App() {
           : "hidden",
       );
       requestPanelScroll("member", member.id);
-      setNotice(`「${member.name}」を見つけました。`);
+      setNotice(`「${member.name}」を見つけました。`, "success");
       return;
     }
 
@@ -7255,7 +7265,7 @@ function App() {
           : "hidden",
       );
       requestPanelScroll("object", object.id);
-      setNotice(`「${object.name}」を見つけました。`);
+      setNotice(`「${object.name}」を見つけました。`, "success");
       return;
     }
 
@@ -7267,7 +7277,7 @@ function App() {
       setIsPanelOpen(true);
       setActivePanelTab("timeline");
       setMode("preview");
-      setNotice(`「${frame.label}」を見つけました。`);
+      setNotice(`「${frame.label}」を見つけました。`, "success");
       return;
     }
 
@@ -7413,6 +7423,7 @@ function App() {
         cloudState
           ? "音源を読み込みました。クラウド保存すると音源メタ情報だけ共有されます。"
           : "音源を読み込みました。次回から再選択なしで再生できます。",
+        "success",
       );
     } catch {
       setNotice("音源を読み込みました。音源本体の保存には失敗したため、次回は読み込み直してください。");
@@ -7421,10 +7432,11 @@ function App() {
 
   const openProjectInEditor = async (
     rawProject: Project,
-    message = "隊列表を開きました。",
+    message?: string,
     options: {
       cloudProject?: CloudActiveProjectState | null;
       persistLocal?: boolean;
+      noticeKind?: NoticeKind;
     } = {},
   ) => {
     const now = new Date().toISOString();
@@ -7461,8 +7473,10 @@ function App() {
       setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
     }
     restoredAudioKeyRef.current = `${nextProject.id ?? "project"}:${nextProject.audio?.id ?? "no-audio"}`;
-    await restoreAudioForProject(nextProject);
-    setNotice(message);
+    const audioRestored = await restoreAudioForProject(nextProject);
+    if (audioRestored) {
+      setNotice(message ?? "隊列表を開きました。", options.noticeKind ?? (message === undefined ? "success" : "persistent"));
+    }
   };
 
   const createNewFormationProject = async (input: NewFormationInput) => {
@@ -7485,6 +7499,7 @@ function App() {
     await openProjectInEditor(
       nextProject,
       audioNotice ?? "新しい隊列表を作成しました。",
+      { noticeKind: audioNotice ? "persistent" : "success" },
     );
   };
 
@@ -7565,7 +7580,7 @@ function App() {
       setProject(nextProject);
       setIsDirty(false);
     }
-    setNotice("隊列表名を変更しました。");
+    setNotice("隊列表名を変更しました。", "success");
   };
 
   const duplicateStoredProject = async (source: Project) => {
@@ -7581,7 +7596,7 @@ function App() {
     const nextProjects = sortStoredProjects([duplicated, ...savedProjects]);
     saveProjectsToStorage(nextProjects);
     setSavedProjects(nextProjects);
-    setNotice("隊列表を複製しました。");
+    setNotice("隊列表を複製しました。", "success");
   };
 
   const deleteStoredProject = async (target: Project) => {
@@ -7594,7 +7609,7 @@ function App() {
     ) {
       await deleteAudioBlobFromIndexedDb(target.audio.id);
     }
-    setNotice("隊列表を削除しました。");
+    setNotice("隊列表を削除しました。", "success");
   };
 
   const exportTairetsuProject = async (source: Project, includeAudio: boolean) => {
@@ -7655,6 +7670,7 @@ function App() {
           (audio
             ? "隊列表と音源を読み込みました。"
             : "音源なしで隊列表を読み込みました。"),
+        { noticeKind: audioNotice ? "persistent" : "success" },
       );
     } catch (error) {
       setNotice(
@@ -11236,7 +11252,7 @@ function App() {
       return;
     }
     updateSelectedDestination(selectedTargetDetails.startPosition);
-    setNotice("現在位置を次シーンの到着位置にしました。");
+    setNotice("現在位置を次シーンの到着位置にしました。", "success");
   };
 
   const jumpToStartFrame = () => {
@@ -11272,7 +11288,7 @@ function App() {
           ),
       ),
     }));
-    setNotice("全メンバーの経路を直線に戻しました。");
+    setNotice("全メンバーの経路を直線に戻しました。", "success");
   };
 
   const startTransitionPreview = () => {
@@ -11306,7 +11322,7 @@ function App() {
 
   const seekToFrame = (timeSec: number) => {
     seek(timeSec);
-    setNotice(`音源位置を ${timeSec.toFixed(1)} 秒へ移動しました。`);
+    setNotice(`音源位置を ${timeSec.toFixed(1)} 秒へ移動しました。`, "success");
   };
 
   const toggleMemberSelection = (id: string) => {
@@ -11360,7 +11376,7 @@ function App() {
         ),
       }), options.label);
       if (options.notice) {
-        setNotice(options.notice);
+        setNotice(options.notice, "success");
       }
     };
     const memberIds = [...new Set(options.memberIds ?? selectedMemberIds)];
@@ -11453,6 +11469,7 @@ function App() {
       memberIds.length > 0
         ? "選択メンバーからグループを作成しました。"
         : `${group.name} を作成しました。`,
+      "success",
     );
   };
 
@@ -11490,12 +11507,12 @@ function App() {
         };
       }),
     }));
-    setNotice(groupId ? "所属グループを変更しました。" : "所属グループを解除しました。");
+    setNotice(groupId ? "所属グループを変更しました。" : "所属グループを解除しました。", "success");
   };
 
   const selectGroup = (group: MemberGroup) => {
     setSelectedMemberIds(group.memberIds);
-    setNotice(`${group.name} を選択しました。`);
+    setNotice(`${group.name} を選択しました。`, "success");
   };
 
   const deleteGroup = (id: string) => {
@@ -11542,7 +11559,7 @@ function App() {
       ...previous,
       objectGroups: [...(previous.objectGroups ?? []), group],
     }), "道具グループ作成");
-    setNotice(`${group.name} を作成しました。`);
+    setNotice(`${group.name} を作成しました。`, "success");
   };
 
   const updateObjectGroup = (id: string, patch: Partial<ObjectGroup>) => {
@@ -11562,7 +11579,7 @@ function App() {
       ),
     }), "道具グループ削除");
     if ((projectRef.current.objectGroups ?? []).some((item) => item.id === id)) return false;
-    setNotice("道具グループを削除しました。道具本体は残ります。");
+    setNotice("道具グループを削除しました。道具本体は残ります。", "success");
     return true;
   };
 
@@ -11589,7 +11606,7 @@ function App() {
       return false;
     }
     if (!deleteGroup(id)) return false;
-    setNotice(`${group.name} を削除しました。メンバー本体は残ります。`);
+    setNotice(`${group.name} を削除しました。メンバー本体は残ります。`, "success");
     return true;
   };
 
@@ -11616,7 +11633,7 @@ function App() {
       return false;
     }
     if (!deleteObjectGroup(id)) return false;
-    setNotice(`${group.name} を削除しました。道具本体は残ります。`);
+    setNotice(`${group.name} を削除しました。道具本体は残ります。`, "success");
     return true;
   };
 
@@ -11771,7 +11788,7 @@ function App() {
       };
     }, "名簿メンバー追加");
     const added = projectRef.current.members.find((member) => member.id === id);
-    if (added) setNotice(`${added.name} を名簿に追加しました。`);
+    if (added) setNotice(`${added.name} を名簿に追加しました。`, "success");
   };
 
   const addRosterObject = (groupId: string | null, name?: string) => {
@@ -11883,7 +11900,7 @@ function App() {
       };
     }, "名簿道具追加");
     const added = projectRef.current.stageObjects.find((object) => object.id === id);
-    if (added) setNotice(`${added.name} を名簿に追加しました。`);
+    if (added) setNotice(`${added.name} を名簿に追加しました。`, "success");
   };
 
   const createRosterMemberGroup = () => {
@@ -11900,7 +11917,7 @@ function App() {
       ...previous,
       memberGroups: [...(previous.memberGroups ?? []), group],
     }), "名簿グループ作成");
-    setNotice(`${group.name} を作成しました。`);
+    setNotice(`${group.name} を作成しました。`, "success");
   };
 
   const createRosterObjectGroup = () => {
@@ -11919,7 +11936,7 @@ function App() {
       ...previous,
       objectGroups: [...(previous.objectGroups ?? []), group],
     }), "名簿道具グループ作成");
-    setNotice(`${group.name} を作成しました。`);
+    setNotice(`${group.name} を作成しました。`, "success");
   };
 
   const updateObjectGroupMembership = (
@@ -11944,6 +11961,7 @@ function App() {
     }), "道具グループ所属変更");
     setNotice(
       groupId ? "道具の所属グループを変更しました。" : "道具の所属を解除しました。",
+      "success",
     );
   };
 
@@ -12157,7 +12175,7 @@ function App() {
           return { ...frame, positions: nextPositions };
         }),
       }), "整列・均等配置");
-      setNotice("選択メンバーを整列しました。");
+      setNotice("選択メンバーを整列しました。", "success");
     };
     if (activeCloudProjectRef.current && !activeCloudProjectRef.current.activeSceneLock) {
       void runCloudSceneCellPatchEditMany(
@@ -12206,7 +12224,7 @@ function App() {
       effectiveStage,
     );
     updateObjectState(object.id, constrained);
-    setNotice(`${object.name} を配置しました。`);
+    setNotice(`${object.name} を配置しました。`, "success");
   };
 
   async function enterStageFullscreen() {
@@ -13302,10 +13320,6 @@ function App() {
               : "center-column has-thumbnail-rail"
           }
         >
-          <ExportImportPanel
-            notices={notice ? [notice] : []}
-            warnings={warnings}
-          />
           <div className={`stage-workspace stage-workspace--${project.mode === "parade" ? "parade" : "stage"}`}>
             <SceneThumbnailRail
               project={project}
@@ -13454,6 +13468,7 @@ function App() {
                   onLockedElementEditAttempt={notifyCloudCellLockedEdit}
                 />
               )}
+              <ExportImportPanel key={project.mode} notice={notification} warnings={warnings} onDismissNotice={dismissNotice} />
             </div>
           </div>
         </div>

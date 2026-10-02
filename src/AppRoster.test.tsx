@@ -1,11 +1,12 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "./types";
 import { createSampleProject } from "./sampleProject";
+import * as audioStorage from "./utils/audioStorage";
 
 const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
 vi.mock("./components/StageCanvas", () => ({
@@ -16,7 +17,7 @@ vi.mock("./components/StageCanvas", () => ({
     canvas.movementPathMode = props.movementPathMode;
     canvas.selectedFrameId = props.selectedFrameId;
     canvas.selectedMemberIds = props.selectedMemberIds;
-    return <div ref={ref} />;
+    return <div ref={ref} data-testid="stage-export-dom" />;
   }),
 }));
 
@@ -66,7 +67,32 @@ describe("App roster confirmation integration", () => {
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
   });
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each([false, true])("opens the project with an overlay; missing audio=%s preserves the error instead of a success", async (missingAudio) => {
+    vi.useFakeTimers();
+    if (missingAudio) {
+      const project = { ...createSampleProject(), id: "missing-audio", title: "削除検証",
+        audio: { id: "missing", name: "曲.mp3", type: "audio/mpeg", size: 100 } };
+      localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+      vi.spyOn(audioStorage, "loadAudioBlobFromIndexedDb").mockResolvedValue(null);
+    }
+    render(<App />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "削除検証を開く" })); });
+    const overlay = screen.getByRole("region", { name: "お知らせ" });
+    const message = missingAudio
+      ? "保存済み音源が見つかりませんでした。必要なら音源を読み込み直してください。"
+      : "隊列表を開きました。";
+    expect(within(overlay).getByText(message)).toBeTruthy();
+    expect(overlay.parentElement?.classList.contains("stage-fullscreen-host")).toBe(true);
+    expect(screen.getByTestId("stage-export-dom").contains(overlay)).toBe(false);
+    act(() => vi.advanceTimersByTime(3000));
+    expect(Boolean(within(overlay).queryByText(message))).toBe(missingAudio);
+    if (missingAudio) {
+      fireEvent.click(within(overlay).getByRole("button", { name: "お知らせを閉じる" }));
+      expect(within(overlay).queryByText(message)).toBeNull();
+    }
+  }, INTEGRATION_TIMEOUT_MS);
 
   it.each(["add", "remove", "previous"] as const)("undoes %s assignments with the original scene visibility and positions", async (action) => {
     const project = { ...createSampleProject(), id: "undo-roster", title: "割当Undo検証" };
