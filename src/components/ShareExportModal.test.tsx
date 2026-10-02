@@ -35,7 +35,7 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     render(<ShareExportModal isOpen projectTitle="練習用" currentSceneLabel="シーン1" onClose={vi.fn()} onExport={onExport}
       getMobileExportSource={() => ({ project, projectTitle: project.title, members: [], memberGroups: [], objects: [], objectGroups: [], frames: [], currentFrame: project.frames[0], objectStates: {} })} />);
     expect(screen.getByText("スマホで見る（LINE向け）")).toBeTruthy();
-    expect(screen.getByText("印刷・PDF（A4）")).toBeTruthy();
+    expect(screen.getByText("印刷・PDF")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^隊列表の画像/ }));
     expect(await screen.findByText("formation:png")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "戻る" }));

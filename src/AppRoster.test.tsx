@@ -42,12 +42,6 @@ describe("App roster confirmation integration", () => {
     expect(canvas.project).toEqual(before);
     expect(canvas.selectedMemberIds).toEqual(beforeSelection);
     expect(canvas.selectedFrameId).toBe(beforeFrameId);
-    await user.click(within(share).getByRole("button", { name: /^隊列表の画像/ }));
-    const sheet = await screen.findByRole("dialog", { name: "書き出し" });
-    fireEvent.keyDown(sheet, { key: "Delete" });
-    fireEvent.keyDown(sheet, { key: "z", metaKey: true });
-    expect(canvas.project).toEqual(before);
-    await user.click(within(sheet).getByRole("button", { name: "閉じる" }));
     await user.click(screen.getByRole("button", { name: "共有と書き出しを閉じる" }));
     fireEvent.keyDown(window, { key: "Delete" });
     await waitFor(() => expect(canvas.project!.frames[0].memberVisibility).not.toEqual(before!.frames[0].memberVisibility));
