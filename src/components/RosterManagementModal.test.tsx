@@ -53,6 +53,21 @@ const createProps = (): ComponentProps<typeof RosterManagementModal> => ({
 
 describe("RosterManagementModal", () => {
   afterEach(() => cleanup());
+  it("focuses the back button, cycles Tab and returns focus when closed", () => {
+    const props = createProps();
+    const { rerender } = render(<><button>名簿を開く</button><RosterManagementModal {...props} isOpen={false} /></>);
+    const opener = screen.getByRole("button", { name: "名簿を開く" }); opener.focus();
+    rerender(<><button>名簿を開く</button><RosterManagementModal {...props} /></>);
+    const back = screen.getByRole("button", { name: "隊列表へ戻る" });
+    expect(document.activeElement).toBe(back);
+    const controls = screen.getByRole("dialog").querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
+    const last = controls[controls.length - 1];
+    fireEvent.keyDown(back, { key: "Tab", shiftKey: true }); expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last, { key: "Tab" }); expect(document.activeElement).toBe(back);
+    fireEvent.keyDown(back, { key: "Escape" }); expect(props.onClose).toHaveBeenCalledOnce();
+    rerender(<><button>名簿を開く</button><RosterManagementModal {...props} isOpen={false} /></>);
+    expect(document.activeElement).toBe(opener);
+  });
 
   const member = { id: "m", name: "太郎", color: "#000" };
   const object = { id: "tool", name: "旗1", color: "#000", type: "prop", shape: "rectangle", widthMeters: 1, heightMeters: 1, defaultX: 0, defaultY: 0, defaultRotation: 0, visible: true, locked: false, zIndex: 1 } as const;

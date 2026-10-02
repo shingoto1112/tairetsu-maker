@@ -7,6 +7,7 @@ import { ColorPaletteInput } from "./ColorPaletteInput";
 import { collectGroupedItems, type RosterColumn, type RosterMode } from "../utils/rosterColumns";
 import type { ExportSource } from "../utils/mobileExportTypes";
 import type { RosterAssignmentViewProps } from "./RosterAssignmentView";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 const RosterAssignmentView = lazy(() => import("./RosterAssignmentView").then((module) => ({ default: module.RosterAssignmentView })));
 
@@ -99,6 +100,7 @@ export const RosterManagementModal = ({
   const [editNotice, setEditNotice] = useState("");
   const wasOpen = useRef(false);
   const dialogRef = useRef<HTMLElement>(null);
+  const handleModalTab = useModalFocus(dialogRef, isOpen);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const composing = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -375,6 +377,8 @@ export const RosterManagementModal = ({
     <div className="roster-manager-backdrop">
       <section
         ref={dialogRef}
+        onKeyDown={handleModalTab}
+        tabIndex={-1}
         className={`roster-manager-modal${mode === "objects" && objectView === "assignments" ? " is-assignments" : ""}`}
         onCompositionStartCapture={() => { composing.current = true; }}
         onCompositionEndCapture={() => { composing.current = false; }}

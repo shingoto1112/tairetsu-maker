@@ -1593,7 +1593,7 @@ h2 {
   border-radius: 10px;
   font-size: 14px;
   font-weight: 800;
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 16px;
 }
 
@@ -5727,8 +5727,17 @@ h2 {
 
 .share-export-close {
   color: #334155;
+  min-height: 44px;
+  min-width: 44px;
   padding: 0;
-  width: 42px;
+  width: 44px;
+}
+
+[aria-modal="true"] button[aria-label*="閉じ"],
+[aria-modal="true"] footer button,
+.roster-manager-back {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .share-export-text-button {
@@ -7027,7 +7036,7 @@ html:not([data-app-runtime="capacitor-ios"]):not([data-native-workspace="true"])
   display: inline-flex;
   font-weight: 700;
   gap: 7px;
-  min-height: 42px;
+  min-height: 44px;
   justify-content: center;
   padding: 8px 12px;
 }
@@ -8415,3 +8424,6 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
    scrollIntoView targets stop below them instead of hiding under the header. */
 .tab-panel__content { scroll-padding-top: calc(var(--panel-sticky-height, 0px) + 8px); }
 .tab-panel__content .panel-sticky-header { top: -12px; }
+/* Fixed preview height keeps the layout stable while the image decodes, so the scroll to the
+   share/save buttons lands correctly. */
+.document-export-result img { height: 230px; max-height: 230px; object-fit: contain; object-position: left top; width: auto; }

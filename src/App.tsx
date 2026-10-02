@@ -25,7 +25,8 @@ import { PanelTabId, PanelTabs } from "./components/PanelTabs";
 import { getPrintOrientation, PrintPreview } from "./components/PrintPreview";
 import { nextNumberedName } from "./utils/numberedName";
 import { nextRosterItemName } from "./utils/rosterColumns";
-import { confirmAssignmentUpdate } from "./utils/assignmentUpdate";
+import { confirmAssignmentUpdate, runSavedAssignmentUpdate } from "./utils/assignmentUpdate";
+import { isModalOpen } from "./utils/modal";
 import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName";
 const ExportCompletionDialog = lazy(() => import("./components/ExportCompletionPanel").then((module) => ({ default: module.ExportCompletionDialog })));
 import { SceneNotesPanel } from "./components/SceneNotesPanel";
@@ -3467,6 +3468,7 @@ function App() {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       if (event.key === "Escape") {
         void exitStageFullscreen();
       }
@@ -3477,7 +3479,7 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTextEditingTarget(event.target)) {
+      if (isModalOpen() || isTextEditingTarget(event.target)) {
         return;
       }
       if (nudgeSelectionByKeyboard(event)) {
@@ -3505,6 +3507,7 @@ function App() {
 
   useEffect(() => {
     const handleUndoRedoShortcut = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       if (isTextEditingTarget(event.target)) {
         return;
       }
@@ -3550,6 +3553,7 @@ function App() {
       setContextMenuPosition(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       if (event.key === "Escape") {
         close();
       }
@@ -3593,6 +3597,7 @@ function App() {
       setSceneContextMenuPosition(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       if (event.key === "Escape") {
         close();
       }
@@ -3636,6 +3641,7 @@ function App() {
       setMemberColorEditorPosition(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       if (event.key === "Escape") {
         close();
       }
@@ -4784,6 +4790,10 @@ function App() {
       return false;
     }
     const activeFrameId = selectedFrame.id;
+    const requiresCellSave = Boolean(
+      APP_FEATURES.collaboration && activeCloudProjectRef.current &&
+      !activeCloudProjectRef.current.activeSceneLock && cloudTargets.length > 0,
+    );
     let applied = false;
     const applyChange = () => {
       const before = projectRef.current.frames.find((frame) => frame.id === activeFrameId);
@@ -4806,16 +4816,16 @@ function App() {
         before,
         projectRef.current.frames.find((frame) => frame.id === activeFrameId),
         expected,
-        () => setNotice(notice),
+        () => { if (!requiresCellSave) setNotice(notice); },
       );
     };
-    if (
-      activeCloudProjectRef.current &&
-      !activeCloudProjectRef.current.activeSceneLock &&
-      cloudTargets.length > 0
-    ) {
-      await runCloudSceneCellPatchEditMany("道具割当編集", cloudTargets, applyChange);
-      return applied;
+    if (requiresCellSave) {
+      const savedAndApplied = await runSavedAssignmentUpdate(
+        () => runCloudSceneCellPatchEditMany("道具割当編集", cloudTargets, applyChange),
+        () => applied,
+      );
+      if (savedAndApplied) setNotice(notice);
+      return savedAndApplied;
     }
     applyChange();
     return applied;
@@ -7267,6 +7277,7 @@ function App() {
 
   useEffect(() => {
     const handleClipboardShortcut = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       if (isTextEditingTarget(event.target)) {
         return;
       }
@@ -7289,6 +7300,7 @@ function App() {
 
   useEffect(() => {
     const handleAppShortcuts = (event: KeyboardEvent) => {
+      if (isModalOpen()) return;
       const key = event.key.toLowerCase();
       const isCommand = event.ctrlKey || event.metaKey;
       const isEditingText = isTextEditingTarget(event.target);

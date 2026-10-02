@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FormationFrame } from "../types";
-import { confirmAssignmentUpdate } from "./assignmentUpdate";
+import { confirmAssignmentUpdate, runSavedAssignmentUpdate } from "./assignmentUpdate";
 
 const before: FormationFrame = { id: "f", label: "1", timeSec: 0, objectStates: {}, positions: {}, objectAssignments: {} };
 const patch = { objectAssignments: { o: ["m"] }, memberVisibility: { m: false }, positions: before.positions };
 
 describe("assignment update confirmation", () => {
+  it.each([false, true])("requires both cloud save and local application (saved=%s)", async (saved) => {
+    for (const applied of [false, true]) {
+      expect(await runSavedAssignmentUpdate(vi.fn().mockResolvedValue(saved), () => applied)).toBe(saved && applied);
+    }
+  });
+  it("returns false on save exceptions and on lock rejection before application", async () => {
+    expect(await runSavedAssignmentUpdate(vi.fn().mockRejectedValue(new Error("failed")), () => true)).toBe(false);
+    expect(await runSavedAssignmentUpdate(vi.fn().mockResolvedValue(false), () => false)).toBe(false);
+  });
   it("does not emit a success notice when updateProject rejects the recipe", () => {
     const notice = vi.fn();
     expect(confirmAssignmentUpdate(before, before, patch, notice)).toBe(false);

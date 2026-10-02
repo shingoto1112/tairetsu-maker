@@ -1,5 +1,6 @@
 import { Download, FileText, Image as ImageIcon, X } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useModalFocus } from "../hooks/useModalFocus";
 import type { ExportSource } from "../utils/mobileExportTypes";
 
 const DocumentExportSheet = lazy(() => import("./DocumentExportSheet").then((module) => ({ default: module.DocumentExportSheet })));
@@ -85,6 +86,8 @@ export const ShareExportModal = ({
   const [includeAssignments, setIncludeAssignments] = useState(false);
   const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
   const [mobileFormat, setMobileFormat] = useState<"png" | "pdf" | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const handleModalTab = useModalFocus(dialogRef, isOpen && !mobileFormat);
 
   useEffect(() => {
     if (!isOpen || mobileFormat) {
@@ -124,7 +127,7 @@ export const ShareExportModal = ({
   if (!isOpen) {
     return null;
   }
-  if (mobileFormat && getMobileExportSource) return <Suspense fallback={<div role="status">書き出しを準備中…</div>}>
+  if (mobileFormat && getMobileExportSource) return <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="書き出しを準備中"><p role="status">書き出しを準備中…</p></div>}>
     <DocumentExportSheet initialTarget="formation" initialFormat={mobileFormat} supportsFormation viewport
       getSource={getMobileExportSource} onClose={() => setMobileFormat(null)} />
   </Suspense>;
@@ -161,6 +164,9 @@ export const ShareExportModal = ({
       role="presentation"
     >
       <section
+        ref={dialogRef}
+        onKeyDown={handleModalTab}
+        tabIndex={-1}
         className="share-export-modal"
         role="dialog"
         aria-modal="true"

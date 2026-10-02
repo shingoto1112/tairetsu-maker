@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ExportRequest, ExportSource, ExportTarget, GeneratedExport } from "../utils/mobileExportTypes";
 import { ExportCompletionPanel } from "./ExportCompletionPanel";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 export const EXPORT_TARGET_LABELS: Record<ExportTarget, string> = {
   formation: "隊列表", members: "メンバー名簿", objects: "道具名簿", assignments: "道具割当表",
@@ -14,8 +15,13 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
   const [result, setResult] = useState<GeneratedExport | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // The finished file appears below the options; bring it into view so the share action is found.
-    if (result) resultRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    // The finished file appears below the options; scroll so its share/save buttons are in view.
+    // The preview image is inserted a moment later, so scroll again once it has taken its space.
+    if (!result) return undefined;
+    const reveal = () => resultRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+    reveal();
+    const timer = window.setTimeout(reveal, 200);
+    return () => window.clearTimeout(timer);
   }, [result]);
   const [busy, setBusy] = useState(false);
   const [delivering, setDelivering] = useState(false);
@@ -26,13 +32,11 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
   const handleDeliveryBusy = (pending: boolean) => { deliveryPending.current = pending; setDelivering(pending); };
   const mounted = useRef(true);
   const dialog = useRef<HTMLElement>(null);
+  const handleModalTab = useModalFocus(dialog);
   useEffect(() => {
     mounted.current = true;
-    const previous = document.activeElement;
-    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => {
       mounted.current = false; controller.current?.abort();
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
   useEffect(() => {
@@ -81,15 +85,10 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
   const update = (patch: Partial<ExportRequest>) => setRequest((previous) => ({ ...previous, ...patch }));
   const locked = busy || delivering;
   return <div className={`document-export-backdrop${viewport ? " document-export-backdrop--viewport" : ""}`}>
-    <section ref={dialog} className="document-export-sheet" role="dialog" aria-modal="true" aria-labelledby="document-export-title"
+    <section ref={dialog} tabIndex={-1} className="document-export-sheet" role="dialog" aria-modal="true" aria-labelledby="document-export-title"
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.stopPropagation(); if (busy) controller.current?.abort(); else if (!delivering) onClose(); }
-        if (event.key === "Tab") {
-          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled)') ?? []);
-          const first = controls[0], last = controls[controls.length - 1];
-          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-        }
+        handleModalTab(event);
       }}>
       <header><h2 id="document-export-title">書き出し</h2><button className="share-export-close" type="button" disabled={locked} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
       <fieldset disabled={locked}><legend>対象</legend><div className="document-export-options">

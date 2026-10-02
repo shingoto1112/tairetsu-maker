@@ -12,7 +12,7 @@ const useStickyHeightOnPanel = (headerRef: RefObject<HTMLDivElement | null>) => 
   useEffect(() => {
     const header = headerRef.current;
     const panel = header?.closest<HTMLElement>(".tab-panel__content");
-    if (!header || !panel || typeof ResizeObserver === "undefined") return undefined;
+    if (!header || !panel) return undefined;
     const update = () => {
       const sticky = getComputedStyle(header).position === "sticky";
       // Sticky offsets start at the panel's content box; pull the header up by the panel padding
@@ -22,11 +22,17 @@ const useStickyHeightOnPanel = (headerRef: RefObject<HTMLDivElement | null>) => 
       panel.style.setProperty("--panel-sticky-height", sticky ? `${header.offsetHeight}px` : "0px");
     };
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(header);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(header);
+    observer?.observe(panel);
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
     return () => {
-      observer.disconnect();
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
       panel.style.removeProperty("--panel-sticky-height");
+      header.style.top = "";
     };
   }, [headerRef]);
 };
