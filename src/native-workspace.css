@@ -1,0 +1,134 @@
+/* Layout handoff to the real SwiftUI host, enabled only after the native plugin acknowledges readiness. */
+@media screen {
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .toolbar,
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .panel-tabs {
+    display: none;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .tab-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    width: 300px;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .tab-panel.is-collapsed {
+    display: none;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .workspace.is-editor-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Touch controls in the interim web editing panes; no glass styling is implemented in CSS. */
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] :is(.tab-panel__content, .stage-export-header, .parade-control-panel) :is(button, summary, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"])) {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] :is(.undo-redo-button, .stage-zoom-button, .icon-button, .stage-timebar__skip) {
+    flex-basis: 44px;
+    height: 44px;
+    min-height: 44px;
+    min-width: 44px;
+    max-width: none;
+    width: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .stage-action-menu--icon summary {
+    min-width: 44px;
+    width: 44px;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] .stage-export-header {
+    flex-shrink: 0;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"] :is(.tab-panel__content, .parade-control-panel) :is(label, .muted-text, .mini-button) {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+}
+
+@media screen {
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="top"] .tab-panel {
+    width: 100%;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="top"] .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: clamp(162px, 16dvh, 190px) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="top"] .workspace.is-editor-collapsed {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="top"] .tab-panel__content {
+    display: block;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="top"] .tab-panel__content > :is(.panel-section, .assignment-tab, .details-panel, .timeline):not(.member-manager):not(.object-manager) {
+    align-items: stretch;
+    display: flex;
+    gap: 8px;
+    height: 100%;
+    min-width: max-content;
+    width: max-content;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="top"] .tab-panel__content > :is(.panel-section, .assignment-tab, .details-panel, .timeline):not(.member-manager):not(.object-manager) > * {
+    flex: 0 0 280px;
+    height: 100%;
+    max-height: 100%;
+    overflow: auto;
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] .workspace {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] .workspace.is-editor-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] .tab-panel {
+    width: 300px;
+    height: 100%;
+  }
+}
+
+/* Roster sidebar keeps the shared title/tabs sticky during vertical scrolling. */
+@media screen {
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] .tab-panel__content:has(> :is(.member-manager, .object-manager)) {
+    display: block;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] .tab-panel__content > :is(.member-manager, .object-manager) {
+    display: block;
+    height: auto;
+    padding: 12px;
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) > .panel-sticky-header {
+    display: grid;
+    height: auto;
+    margin: -12px -12px 12px;
+    overflow: visible;
+    position: sticky;
+    top: 0;
+  }
+  html[data-app-runtime="capacitor-ios"][data-native-workspace="true"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) > .panel-manager-body {
+    display: contents;
+  }
+}

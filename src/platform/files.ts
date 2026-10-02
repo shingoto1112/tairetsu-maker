@@ -21,38 +21,37 @@ const isCancelledShareError = (error: unknown): boolean => {
   return /cancel|canceled|cancelled/i.test(error.message);
 };
 
-export const shareBlobWithNativeSheet = async ({
-  blob,
-  fileName,
+export const shareBlobsWithNativeSheet = async ({
+  files,
   title,
 }: {
-  blob: Blob;
-  fileName: string;
+  files: readonly { blob: Blob; fileName: string }[];
   title?: string;
 }): Promise<NativeShareStatus> => {
   if (!getAppFeatureFlags().nativeFileShare) {
     throw new Error("ネイティブ共有はiPadアプリでのみ利用できます。");
   }
+  if (!files.length) throw new Error("共有するファイルがありません。");
 
   const [{ Directory, Filesystem }, { Share }] = await Promise.all([
     import("@capacitor/filesystem"),
     import("@capacitor/share"),
   ]);
-  const safeFileName = sanitizeNativeFileName(fileName);
-  const path = `exports/${Date.now()}-${safeFileName}`;
-  const data = await blobToBase64(blob);
-  const result = await Filesystem.writeFile({
-    data,
-    directory: Directory.Cache,
-    path,
-    recursive: true,
-  });
-
+  const paths: string[] = [];
+  const uris: string[] = [];
+  const timestamp = Date.now();
   try {
+    for (const [index, file] of files.entries()) {
+      const path = `exports/${timestamp}-${index ? `${index}-` : ""}${sanitizeNativeFileName(file.fileName)}`;
+      const data = await blobToBase64(file.blob);
+      paths.push(path); // Also attempt cleanup if writeFile rejects after partially writing.
+      const result = await Filesystem.writeFile({ data, directory: Directory.Cache, path, recursive: true });
+      uris.push(result.uri);
+    }
     await Share.share({
       dialogTitle: "保存または共有",
-      files: [result.uri],
-      title: title ?? safeFileName,
+      files: uris,
+      title: title ?? sanitizeNativeFileName(files[0].fileName),
     });
     return "shared";
   } catch (error) {
@@ -61,13 +60,12 @@ export const shareBlobWithNativeSheet = async ({
     }
     throw error;
   } finally {
-    try {
-      await Filesystem.deleteFile({
-        directory: Directory.Cache,
-        path,
-      });
-    } catch {
-      // Cache cleanup is best effort and must not turn a successful share into an error.
+    for (const path of paths) {
+      try { await Filesystem.deleteFile({ directory: Directory.Cache, path }); }
+      catch { /* Cache cleanup is best effort, including cancellation and partial failure. */ }
     }
   }
 };
+
+export const shareBlobWithNativeSheet = (file: { blob: Blob; fileName: string; title?: string }): Promise<NativeShareStatus> =>
+  shareBlobsWithNativeSheet({ files: [file], title: file.title });

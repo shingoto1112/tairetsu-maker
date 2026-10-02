@@ -1727,13 +1727,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     );
     const pathMemberIds = useMemo(() => {
       if (!toSnapshot) return [];
-      if (movementPathMode === "focus" && focusMemberId) {
-        const focusMember = project.members.find((member) => member.id === focusMemberId);
-        return (focusMember?.visible ?? true) &&
-          isSnapshotMemberVisible(fromSnapshot, focusMemberId)
-          ? [focusMemberId]
-          : [];
-      }
       if (movementPathMode === "selected" && selectedMemberIds.length > 0) {
         return selectedMemberIds.filter((memberId) => {
           const member = project.members.find((item) => item.id === memberId);
@@ -1751,7 +1744,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         )
         .map((member) => member.id);
     }, [
-      focusMemberId,
       fromSnapshot,
       movementPathMode,
       project.members,
@@ -1759,7 +1751,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       toSnapshot,
     ]);
     const pathObjectIds = useMemo(() => {
-      if (!toSnapshot || movementPathMode === "focus") return [];
+      if (!toSnapshot) return [];
       if (movementPathMode === "selected" && selected?.type === "object") {
         return [selected.id];
       }

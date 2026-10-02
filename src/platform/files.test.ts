@@ -29,7 +29,7 @@ vi.mock("@capacitor/share", () => ({
   Share: { share: fileMocks.share },
 }));
 
-import { shareBlobWithNativeSheet } from "./files";
+import { shareBlobWithNativeSheet, shareBlobsWithNativeSheet } from "./files";
 
 describe("native file sharing", () => {
   afterEach(() => {
@@ -92,5 +92,21 @@ describe("native file sharing", () => {
         fileName: "data.bin",
       }),
     ).rejects.toThrow("iPadアプリでのみ");
+  });
+
+  it.each(["success", "cancel", "failure"])("cleans up every file after multi-file %s", async (scenario) => {
+    fileMocks.writeFile.mockResolvedValueOnce({ uri: "file://one" }).mockResolvedValueOnce({ uri: "file://two" });
+    if (scenario === "cancel") fileMocks.share.mockRejectedValue(new DOMException("cancel", "AbortError"));
+    if (scenario === "failure") fileMocks.share.mockRejectedValue(new Error("failed"));
+    const result = shareBlobsWithNativeSheet({ files: [{ blob: new Blob(["one"]), fileName: "one.png" }, { blob: new Blob(["two"]), fileName: "two.png" }] });
+    if (scenario === "failure") await expect(result).rejects.toThrow("failed");
+    else await expect(result).resolves.toBe(scenario === "cancel" ? "cancelled" : "shared");
+    expect(fileMocks.share).toHaveBeenCalledWith(expect.objectContaining({ files: ["file://one", "file://two"] }));
+    expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
+  });
+  it("cleans up earlier and partially written files when writing fails midway", async () => {
+    fileMocks.writeFile.mockResolvedValueOnce({ uri: "file://one" }).mockRejectedValueOnce(new Error("write failed"));
+    await expect(shareBlobsWithNativeSheet({ files: [{ blob: new Blob(["one"]), fileName: "one.png" }, { blob: new Blob(["two"]), fileName: "two.png" }] })).rejects.toThrow("write failed");
+    expect(fileMocks.share).not.toHaveBeenCalled(); expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
   });
 });

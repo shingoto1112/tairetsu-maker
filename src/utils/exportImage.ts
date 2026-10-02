@@ -1,6 +1,6 @@
 let htmlToImagePromise: Promise<typeof import("html-to-image")> | null = null;
 
-const loadHtmlToImage = () =>
+export const loadHtmlToImage = () =>
   (htmlToImagePromise ??= import("html-to-image"));
 
 const waitForFonts = async (): Promise<void> => {
@@ -22,7 +22,7 @@ const getElementPixelSize = (element: HTMLElement): { height: number; width: num
   return { height, width };
 };
 
-const withExportClone = async <T>(
+export const withExportClone = async <T>(
   element: HTMLElement,
   callback: (clone: HTMLElement, size: { height: number; width: number }) => Promise<T>,
 ): Promise<T> => {

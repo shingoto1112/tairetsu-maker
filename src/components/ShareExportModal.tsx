@@ -1,5 +1,8 @@
 import { Download, FileText, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import type { ExportSource } from "../utils/mobileExportTypes";
+
+const DocumentExportSheet = lazy(() => import("./DocumentExportSheet").then((module) => ({ default: module.DocumentExportSheet })));
 
 export type ShareExportScope = "current" | "all";
 
@@ -33,6 +36,7 @@ type ShareExportModalProps = {
   onClose: () => void;
   onExport: (request: ShareExportRequest) => void | Promise<void>;
   onExportZip?: (includeAudio: boolean) => void | Promise<void>;
+  getMobileExportSource?: () => ExportSource;
 };
 
 const fixedExportOptions: ShareExportOptions = {
@@ -74,14 +78,16 @@ export const ShareExportModal = ({
   onClose,
   onExport,
   onExportZip,
+  getMobileExportSource,
 }: ShareExportModalProps) => {
   const [scope, setScope] = useState<ShareExportScope | null>(null);
   const [fileName, setFileName] = useState("");
   const [includeAssignments, setIncludeAssignments] = useState(false);
   const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
+  const [mobileFormat, setMobileFormat] = useState<"png" | "pdf" | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || mobileFormat) {
       return undefined;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -91,7 +97,7 @@ export const ShareExportModal = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, mobileFormat]);
 
   useEffect(() => {
     if (scope) {
@@ -105,6 +111,7 @@ export const ShareExportModal = ({
       setFileName("");
       setIncludeAssignments(false);
       setIncludeAudioInZip(false);
+      setMobileFormat(null);
     }
   }, [isOpen]);
 
@@ -117,6 +124,10 @@ export const ShareExportModal = ({
   if (!isOpen) {
     return null;
   }
+  if (mobileFormat && getMobileExportSource) return <Suspense fallback={<div role="status">書き出しを準備中…</div>}>
+    <DocumentExportSheet initialTarget="formation" initialFormat={mobileFormat} supportsFormation viewport
+      getSource={getMobileExportSource} onClose={() => setMobileFormat(null)} />
+  </Suspense>;
 
   const startExport = (nextScope: ShareExportScope) => {
     setScope(nextScope);
@@ -187,8 +198,16 @@ export const ShareExportModal = ({
 
         {!scope ? (
           <div className="share-export-home">
+            {getMobileExportSource && <section className="share-export-section">
+              <h3>スマホで見る（LINE向け）</h3>
+              <p>隊列表を縦持ちのスマホで見やすくまとめます。</p>
+              <div className="document-export-options">
+                <button type="button" onClick={() => setMobileFormat("png")}>隊列表の画像</button>
+                <button type="button" onClick={() => setMobileFormat("pdf")}>隊列表のPDF</button>
+              </div>
+            </section>}
             <section className="share-export-section">
-              <h3>印刷・PDF</h3>
+              <h3>印刷・PDF（A4）</h3>
               <button
                 className="share-export-row"
                 onClick={() => startExport("current")}

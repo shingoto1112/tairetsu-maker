@@ -28,6 +28,8 @@ describe("tairetsu file compatibility", () => {
 
     expect(imported.audioBlob).toBeNull();
     expect(imported.project).toEqual({ ...source, audio: null });
+    expect(source.focusMemberId).toBeTruthy();
+    expect(imported.project.focusMemberId).toBe(source.focusMemberId);
   });
 
   it("preserves an included audio file and its project metadata", async () => {

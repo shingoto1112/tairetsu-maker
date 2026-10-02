@@ -76,7 +76,7 @@ export const GroupToolsPanel = ({
       }
     >
       <PanelStickyHeader
-        title="隊列操作"
+        title="整列・配置"
         meta={`${selectedCount}人選択`}
       />
 

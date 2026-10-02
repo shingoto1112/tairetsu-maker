@@ -1,0 +1,182 @@
+/* @vitest-environment jsdom */
+
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FormationFrame, Member, MemberGroup, StageObject } from "../types";
+import { AssignmentPanel } from "./AssignmentPanel";
+import { MemberPanel } from "./MemberPanel";
+import { ObjectPanel } from "./ObjectPanel";
+
+const members: Member[] = [
+  { id: "m1", name: "太郎", color: "#000000" },
+  { id: "m2", name: "花子", color: "#000000" },
+];
+const memberGroups: MemberGroup[] = [
+  { id: "g", name: "赤組", color: "#ef476f", memberIds: ["m1", "m2"] },
+];
+const objects: StageObject[] = ["o1", "o2"].map((id) => ({
+  id, name: id === "o1" ? "旗" : "椅子", color: "#118ab2",
+  type: "prop", shape: "rectangle", widthMeters: 1, heightMeters: 1,
+  defaultX: 0, defaultY: 0, defaultRotation: 0, visible: true, locked: false, zIndex: 10,
+}));
+const frame: FormationFrame = {
+  id: "f", label: "シーン1", timeSec: 0, positions: {}, objectStates: {},
+  objectAssignments: { o1: ["m1"] },
+};
+
+const assignmentProps = (): ComponentProps<typeof AssignmentPanel> => ({
+  members, memberGroups, objects, objectGroups: [], frames: [frame],
+  currentFrame: frame, previousFrame: null, objectStates: {}, previousObjectStates: {},
+  onOpenRosterManager: vi.fn(), onAssignMember: vi.fn().mockReturnValue(true),
+  onApplyPreviousAssignments: vi.fn(), onRemoveAssignment: vi.fn(), onSelectFrame: vi.fn(),
+});
+const objectProps = (): ComponentProps<typeof ObjectPanel> => ({
+  members, memberGroups, objects, objectGroups: [], objectStates: {},
+  objectAssignments: frame.objectAssignments, selected: null,
+  visibilityTab: "visible", scrollTarget: null, canPasteObject: false,
+  onOpenRosterManager: vi.fn(), onVisibilityTabChange: vi.fn(), onSelect: vi.fn(),
+  onUpdateObject: vi.fn(), onUpdateObjectState: vi.fn(), onDelete: vi.fn(),
+  onNudgeZ: vi.fn(), onAddObject: vi.fn(),
+  onCreateObjectGroup: vi.fn(), onUpdateObjectGroup: vi.fn(), onDeleteObjectGroup: vi.fn(),
+  onAddObjectToGroup: vi.fn(), onChangeObjectGroup: vi.fn(), onSetAllObjectsFrameVisibility: vi.fn(),
+  onCopySelected: vi.fn(), onPasteObject: vi.fn(), onAssignMember: vi.fn().mockReturnValue(true),
+  onRemoveAssignment: vi.fn(), onPlaceSelectedObject: vi.fn(),
+});
+const memberProps = (): ComponentProps<typeof MemberPanel> => ({
+  members: [], groups: [],
+  selected: null, selectedMemberIds: [],
+  objectAssignmentLabelsByMemberId: {}, visibilityTab: "visible", scrollTarget: null,
+  canPasteMember: false, onOpenRosterManager: vi.fn(), onVisibilityTabChange: vi.fn(),
+  onSelect: vi.fn(), onToggleMemberSelection: vi.fn(), onUpdate: vi.fn(),
+  onSetMembersGlobalVisibility: vi.fn(), onSetMemberFrameVisibility: vi.fn(),
+  onSetAllMembersFrameVisibility: vi.fn(), onSetGroupFrameVisibility: vi.fn(),
+  onDelete: vi.fn(), onAddMember: vi.fn(), onCreateGroup: vi.fn(), onUpdateGroup: vi.fn(),
+  onDeleteGroup: vi.fn(), onAddMemberToGroup: vi.fn(), onSelectGroup: vi.fn(),
+  onChangeMemberGroup: vi.fn(), onClearMemberObjectAssignments: vi.fn(),
+  onCopySelected: vi.fn(), onPasteMember: vi.fn(),
+});
+
+const objectCard = (name: string) => {
+  const card = Array.from(document.querySelectorAll("article"))
+    .find((article) => article.dataset.objectId === objects.find((object) => object.name === name)?.id ||
+      article.querySelector(".list-card__row strong")?.textContent === name);
+  expect(card).toBeTruthy();
+  return card!;
+};
+
+describe("roster panel integration", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => cleanup());
+
+  it.each(["members", "objects"] as const)("unifies headings and keeps the tabs in the sticky header for %s", async (panel) => {
+    const user = userEvent.setup();
+    if (panel === "members") render(<MemberPanel {...memberProps()} />);
+    else render(<ObjectPanel {...objectProps()} />);
+    const tabs = screen.getByRole("tablist", { name: "表示状態" });
+    const header = tabs.closest(".panel-sticky-header");
+    expect(header?.querySelector("h2")?.textContent).toBe(panel === "members" ? "メンバー" : "道具");
+    expect(within(header as HTMLElement).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "名簿", panel === "members" ? "メンバー" : "道具", "コピー", "貼り付け",
+      panel === "members" ? "表示 0" : "表示 2", "非表示 0",
+    ]);
+    expect(screen.getByText("このシーンの表示")).toBeTruthy();
+    expect(screen.getByText("グループ一覧")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "グループ作成" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "＋グループ" }));
+    const submit = screen.getByRole("button", { name: "グループ作成" });
+    const form = submit.closest(".panel-group-form")!;
+    expect(form.querySelector("input")!.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(submit);
+    expect(panel === "members" ? true : screen.getByText("整列・配置")).toBeTruthy();
+    for (const name of [/幕/, /マーク/, /推し/, /自分用確認/, /注目/]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+  });
+
+  it("keeps object type changes limited to type without overwriting shape or dimensions", async () => {
+    const user = userEvent.setup();
+    const props = objectProps();
+    render(<ObjectPanel {...props} />);
+    const card = objectCard("旗");
+    const select = within(card).getAllByRole("combobox").find((element) =>
+      element.closest("label")?.textContent?.startsWith("種類"));
+    expect(select).toBeTruthy();
+    await user.selectOptions(select!, "curtain");
+    expect(props.onUpdateObject).toHaveBeenCalledExactlyOnceWith("o1", { type: "curtain" });
+    expect(props.onUpdateObjectState).not.toHaveBeenCalled();
+  });
+
+  it.each(["members", "objects", "assignments"] as const)("opens the roster from %s independently of project edit permission", async (panel) => {
+    const user = userEvent.setup();
+    const onOpenRosterManager = vi.fn();
+    if (panel === "members") render(<MemberPanel {...memberProps()} canEditProject={false} onOpenRosterManager={onOpenRosterManager} />);
+    if (panel === "objects") render(<ObjectPanel {...objectProps()} canEditProject={false} onOpenRosterManager={onOpenRosterManager} />);
+    if (panel === "assignments") render(<AssignmentPanel {...assignmentProps()} canEditScene={false} onOpenRosterManager={onOpenRosterManager} />);
+    const button = screen.getByRole("button", { name: "全体名簿を開く" });
+    expect(button.title).toBe("全体名簿を開く");
+    await user.click(button);
+    expect(onOpenRosterManager).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["members", "objects", "assignments"] as const)("disables the roster button for a non-owner in %s", async (panel) => {
+    const user = userEvent.setup();
+    const onOpenRosterManager = vi.fn();
+    const access = { canOpenRosterManager: false, onOpenRosterManager };
+    if (panel === "members") render(<MemberPanel {...memberProps()} {...access} />);
+    if (panel === "objects") render(<ObjectPanel {...objectProps()} {...access} />);
+    if (panel === "assignments") render(<AssignmentPanel {...assignmentProps()} {...access} />);
+    const button = screen.getByRole("button", { name: "全体名簿を開く" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("名簿の編集はownerのみ可能です。");
+    await user.click(button);
+    expect(onOpenRosterManager).not.toHaveBeenCalled();
+  });
+
+  it.each(["objects", "assignments"] as const)("selects a candidate without assigning until confirmation in %s", async (panel) => {
+    const user = userEvent.setup();
+    const props = panel === "objects" ? objectProps() : assignmentProps();
+    if (panel === "objects") render(<ObjectPanel {...objectProps()} onAssignMember={props.onAssignMember} />);
+    else render(<AssignmentPanel {...assignmentProps()} onAssignMember={props.onAssignMember} />);
+    await user.click(within(objectCard("旗")).getByRole("button", { name: "メンバーを選択" }));
+    expect(screen.queryByRole("button", { name: "太郎 赤組" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "花子 赤組" }));
+    expect(props.onAssignMember).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("メンバー候補")).toBeNull();
+    const selectedTrigger = screen.getByRole("button", { name: "花子" });
+    const card = selectedTrigger.closest("article");
+    expect(card).toBeTruthy();
+    await user.click(within(card!).getByRole("button", { name: "割当" }));
+    expect(props.onAssignMember).toHaveBeenCalledExactlyOnceWith("o1", "m2");
+    expect(screen.getAllByRole("button", { name: "メンバーを選択" })).toHaveLength(2);
+  });
+
+  it.each(["objects", "assignments"] as const)("opens only one picker and allows a member already assigned to another object in %s", async (panel) => {
+    const user = userEvent.setup();
+    if (panel === "objects") render(<ObjectPanel {...objectProps()} />);
+    else render(<AssignmentPanel {...assignmentProps()} />);
+    const triggers = ["旗", "椅子"].map((name) =>
+      within(objectCard(name)).getByRole("button", { name: "メンバーを選択" }));
+    await user.click(triggers[0]);
+    await user.click(triggers[1]);
+    expect(screen.getAllByLabelText("メンバー候補")).toHaveLength(1);
+    expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: "太郎 赤組" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "太郎 の割当を解除" }).parentElement?.querySelector<HTMLElement>(".assignment-chip__dot")?.style.backgroundColor).toBe("rgb(239, 71, 111)");
+  });
+
+  it.each(["objects", "assignments"] as const)("preserves read-only disabling and explanation in %s", (panel) => {
+    const access = { canEditScene: false, sceneReadOnlyMessage: "シーンは閲覧のみ" };
+    if (panel === "objects") render(<ObjectPanel {...objectProps()} {...access} />);
+    else render(<AssignmentPanel {...assignmentProps()} {...access} />);
+    const buttons = [
+      ...screen.getAllByRole("button", { name: "メンバーを選択" }),
+      ...screen.getAllByRole("button", { name: "割当" }),
+    ];
+    for (const button of buttons) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(button.title).toBe("シーンは閲覧のみ");
+    }
+  });
+});

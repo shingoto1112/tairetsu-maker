@@ -1,0 +1,175 @@
+import { createAssignmentExportSnapshot } from "./assignmentExportSnapshot";
+import { createRosterExportSnapshot } from "./rosterExportSnapshot";
+import { waitForExportFonts } from "./exportRaster";
+import { encodeMobilePages } from "./mobileExportPipeline";
+import { createFormationSnapshot } from "./formationExportLayout";
+import { formatExportTimestamp, withFileExtension } from "./exportFileName";
+import {
+  assignmentMobileSections, MOBILE_INNER_WIDTH, MOBILE_PADDING, MOBILE_WIDTH,
+  planMobilePages, rosterMobileSections, type MobilePage, type MobileSection, type TextMeasure,
+} from "./mobileExportLayout";
+import type { ExportRequest, ExportSnapshot, ExportSource, ExportTarget, GeneratedExport, GenerationOptions } from "./mobileExportTypes";
+
+type TextExportSnapshot = Exclude<ExportSnapshot, { target: "formation" }>;
+
+const FONT = '"Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
+const div = (text?: string, style: Partial<CSSStyleDeclaration> = {}) => {
+  const element = document.createElement("div");
+  if (text !== undefined) element.textContent = text;
+  Object.assign(element.style, { boxSizing: "border-box", overflowWrap: "anywhere", whiteSpace: "pre-wrap" }, style);
+  return element;
+};
+const checkCancelled = (signal: AbortSignal) => { if (signal.aborted) throw new DOMException("書き出しを取り消しました。", "AbortError"); };
+const yieldToUI = () => new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+
+type TargetDefinition = {
+  label: string; supportsA4: boolean;
+  snapshot: (source: ExportSource, request: ExportRequest) => ExportSnapshot;
+  plan: (snapshot: ExportSnapshot, measure: TextMeasure) => MobileSection[];
+  draw: typeof drawMobilePage;
+};
+const rosterDefinition = (target: "members" | "objects", label: string): TargetDefinition => ({
+  label, supportsA4: true,
+  snapshot: (source) => ({ target, data: createRosterExportSnapshot(source.projectTitle, target,
+    target === "members" ? source.members : source.objects,
+    target === "members" ? source.memberGroups : source.objectGroups) }),
+  plan: (snapshot, measure) => {
+    if (snapshot.target === "assignments" || snapshot.target === "formation") throw new Error("名簿データが不正です。");
+    return rosterMobileSections(snapshot.data, measure);
+  }, draw: drawMobilePage,
+});
+
+/** Formation shares the bounded mobile page encoding and delivery pipeline. */
+export const exportTargets: Record<ExportTarget, TargetDefinition> = {
+  formation: {
+    label: "隊列表", supportsA4: false,
+    snapshot: (source, request) => ({ target: "formation", data: createFormationSnapshot(source, request.scope) }),
+    plan: () => { throw new Error("隊列表は図のページ計画を使用してください。"); }, draw: drawMobilePage,
+  },
+  members: rosterDefinition("members", "メンバー名簿"),
+  objects: rosterDefinition("objects", "道具名簿"),
+  assignments: {
+    label: "道具割当表", supportsA4: false,
+    snapshot: (source, request) => ({ target: "assignments", data: createAssignmentExportSnapshot(source, request.scope) }),
+    plan: (snapshot) => {
+      if (snapshot.target !== "assignments") throw new Error("割当データが不正です。");
+      return assignmentMobileSections(snapshot.data);
+    }, draw: drawMobilePage,
+  },
+};
+
+const metadata = (snapshot: TextExportSnapshot) => `書き出し日: ${new Date(snapshot.data.exportedAt).toLocaleDateString("ja-JP")}　総数: ${snapshot.data.totalCount}${snapshot.target === "members" ? "人" : "個"}`;
+const headerSize = (snapshot: TextExportSnapshot, label: string, first: boolean, measure: TextMeasure) =>
+  measure(snapshot.data.title, MOBILE_INNER_WIDTH, 30, 40, true)
+  + measure(label, MOBILE_INNER_WIDTH - 120, 28, 38, true)
+  + (first ? measure(metadata(snapshot), MOBILE_INNER_WIDTH, 20, 30) : 0) + 16;
+
+function drawMobilePage(snapshot: TextExportSnapshot, label: string, page: MobilePage): HTMLElement {
+  const sheet = div(undefined, {
+    width: `${MOBILE_WIDTH}px`, height: `${page.height}px`, padding: `${MOBILE_PADDING}px`,
+    background: "#ffffff", color: "#0f172a", fontFamily: FONT, fontSize: "24px", lineHeight: "34px",
+  });
+  sheet.dataset.mobileExportPage = String(page.pageNumber);
+  const header = div(undefined, { height: `${page.headerHeight}px` });
+  header.append(div(snapshot.data.title, { fontSize: "30px", lineHeight: "40px", fontWeight: "700" }));
+  const target = div(undefined, { display: "flex", alignItems: "start", gap: "12px" });
+  target.append(div(label, { width: `${MOBILE_INNER_WIDTH - 120}px`, fontSize: "28px", lineHeight: "38px", fontWeight: "700", color: "#0f766e" }),
+    div(`${page.pageNumber}/${page.totalPages}`, { flex: "1", textAlign: "right", fontSize: "20px", lineHeight: "38px", color: "#64748b" }));
+  header.append(target);
+  if (page.pageNumber === 1) header.append(div(metadata(snapshot), { fontSize: "20px", lineHeight: "30px", color: "#64748b" }));
+  sheet.append(header);
+  for (const block of page.blocks) {
+    if (block.heading) {
+      const { kind, text, color } = block.heading;
+      const heading = div(undefined, { height: `${block.height}px`, display: "flex", gap: "12px", padding: "10px 8px",
+        fontSize: kind === "scene" ? "30px" : kind === "group" ? "28px" : "24px", lineHeight: "38px", fontWeight: "700",
+        background: kind === "group" ? "#f8fafc" : "#ffffff", borderLeft: kind === "group" ? `4px solid ${color ?? "#94a3b8"}` : "none",
+      });
+      if (kind === "tool") heading.append(div(undefined, { width: "10px", height: "10px", flex: "0 0 10px", borderRadius: "50%", marginTop: "14px", background: color ?? "#94a3b8" }));
+      heading.append(div(text, { minWidth: "0", flex: "1" })); sheet.append(heading);
+    } else if (block.row) {
+      const row = div(undefined, { height: `${block.height}px`, display: "flex", gap: "16px", padding: "7px 0 8px", borderBottom: "1px solid #e2e8f0", color: block.row.muted ? "#64748b" : "#0f172a" });
+      for (const cell of block.row.cells) {
+        const item = div(undefined, { display: "flex", flex: "1", minWidth: "0" });
+        if (cell.no !== undefined) item.append(div(`${cell.no}.`, { flex: "0 0 44px", fontSize: "20px", color: "#64748b" }));
+        item.append(div(cell.text, { minWidth: "0", flex: "1" })); row.append(item);
+      }
+      // A final single entry in two columns keeps the same text width used in measurement.
+      sheet.append(row);
+    }
+  }
+  return sheet;
+}
+
+export const generateDocumentExport = async (
+  snapshot: ExportSnapshot, request: ExportRequest, options: GenerationOptions,
+): Promise<GeneratedExport> => {
+  if (snapshot.target === "formation") {
+    if (request.purpose !== "mobile") throw new Error("隊列表のA4出力は共有と書き出しの印刷・PDFをご利用ください。");
+    const { generateFormationExport } = await import("./formationExport");
+    return generateFormationExport(snapshot.data, request, options);
+  }
+  const target = exportTargets[snapshot.target];
+  const scopeLabel = snapshot.target === "assignments" ? snapshot.data.scopeLabel : "全体";
+  const label = target.label;
+  const base = `${snapshot.data.title}_${label}${snapshot.target === "assignments" ? `_${scopeLabel}` : ""}_${formatExportTimestamp(new Date(snapshot.data.exportedAt))}`;
+  const check = () => checkCancelled(options.signal);
+  check();
+  if (request.purpose === "a4") {
+    if (snapshot.target === "assignments") throw new Error("道具割当表はスマホ向けで書き出してください。");
+    options.onProgress("印刷用ページを準備中…"); await yieldToUI(); check();
+    const { generateRosterExport } = await import("./rosterExport");
+    const result = await generateRosterExport(snapshot.data, request.format, { ...options, paginatedImages: true });
+    check();
+    const blobs = request.format === "png" ? result.images ?? [result.blob] : [result.blob];
+    const files = blobs.map((blob, index) => new File([blob], withFileExtension(request.format === "png" ? `${base}_${index + 1}` : base, request.format), { type: blob.type }));
+    return { files, preview: result.preview ?? result.blob, targetLabel: label, scopeLabel, pageCount: result.pageCount ?? 1 };
+  }
+  const host = div(undefined, { position: "fixed", left: "-100000px", top: "0", pointerEvents: "none", fontFamily: FONT });
+  host.setAttribute("aria-hidden", "true"); host.dataset.mobileExportHost = "true";
+  document.body.append(host);
+  try {
+    options.onProgress("フォントと改ページを準備中…");
+    // A bounded measuring element, separate from page rendering and image generation.
+    const probe = div(snapshot.data.title, { fontSize: "24px", lineHeight: "34px", width: `${MOBILE_INNER_WIDTH}px` }); host.append(probe);
+    await waitForExportFonts(options.signal); check();
+    let measurements = 0;
+    const cache = new Map<string, number>();
+    const measure: TextMeasure = (text, width, fontSize, lineHeight, bold = false) => {
+      check(); measurements++;
+      const key = JSON.stringify([text, width, fontSize, lineHeight, bold]);
+      const cached = cache.get(key); if (cached !== undefined) return cached;
+      Object.assign(probe.style, { width: `${width}px`, fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px`, fontWeight: bold ? "700" : "400" });
+      probe.textContent = text || " ";
+      const height = Math.ceil(probe.getBoundingClientRect().height);
+      if (height <= 0) throw new Error("文字の表示サイズを測定できませんでした。");
+      cache.set(key, height); return height;
+    };
+    if (snapshot.target !== "assignments") {
+      let count = 0;
+      for (const group of snapshot.data.columns) for (const item of group.items) {
+        measure(item.name, 194, 24, 34); measure(item.name, MOBILE_INNER_WIDTH - 44, 24, 34);
+        if (++count % 32 === 0) { options.onProgress(`${count}件の名前を測定中…`); await yieldToUI(); check(); }
+      }
+    }
+    const sections = target.plan(snapshot, measure);
+    // Warm exact section measurements in small batches so cancellation can be handled.
+    for (let index = 0; index < sections.length; index++) {
+      for (const heading of sections[index].headings) {
+        measure(heading.text, MOBILE_INNER_WIDTH - (heading.kind === "tool" ? 38 : 24), heading.kind === "scene" ? 30 : heading.kind === "group" ? 28 : 24, 38, true);
+      }
+      for (const row of sections[index].rows) {
+        const width = (MOBILE_INNER_WIDTH - (row.cells.length - 1) * 16) / row.cells.length;
+        for (const cell of row.cells) measure(cell.text, width - (cell.no === undefined ? 0 : 44), 24, 34);
+      }
+      if ((index + 1) % 16 === 0) { await yieldToUI(); check(); }
+    }
+    const pages = planMobilePages(sections, measure, (first) => headerSize(snapshot, label, first, measure));
+    options.onProgress(`${pages.length}ページの画像を準備中…`);
+    probe.remove(); await yieldToUI(); check();
+    if (!measurements) throw new Error("文字の表示サイズを測定できませんでした。");
+    return await encodeMobilePages(pages, (page) => {
+      const element = target.draw(snapshot, label, page); host.replaceChildren(element); return element;
+    }, () => host.replaceChildren(), request.format, base, label, scopeLabel, options);
+  } finally { host.remove(); }
+};

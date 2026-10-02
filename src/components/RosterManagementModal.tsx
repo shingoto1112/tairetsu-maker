@@ -1,13 +1,22 @@
-import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { ArrowLeft, FileDown } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import type { CSSProperties, KeyboardEvent } from "react";
 import type { Member, MemberGroup, ObjectGroup, StageObject } from "../types";
 import { ColorPaletteInput } from "./ColorPaletteInput";
+import { collectGroupedItems, type RosterColumn, type RosterMode } from "../utils/rosterColumns";
+import type { ExportSource } from "../utils/mobileExportTypes";
+import type { RosterAssignmentViewProps } from "./RosterAssignmentView";
 
-type RosterMode = "members" | "objects";
+const RosterAssignmentView = lazy(() => import("./RosterAssignmentView").then((module) => ({ default: module.RosterAssignmentView })));
 
-type RosterManagementModalProps = {
+const DocumentExportSheet = lazy(() => import("./DocumentExportSheet").then((module) => ({ default: module.DocumentExportSheet })));
+
+type RosterManagementModalProps = RosterAssignmentViewProps & {
   isOpen: boolean;
+  projectTitle: string;
+  onNotice: (message: string) => void;
+  initialMode?: RosterMode;
   allowedModes?: RosterMode[];
   members: Member[];
   memberGroups: MemberGroup[];
@@ -18,72 +27,30 @@ type RosterManagementModalProps = {
   onRenameObject: (objectId: string, name: string) => void;
   onAddMember: (groupId: string | null, name: string) => void;
   onAddObject: (groupId: string | null, name: string) => void;
+  onQuickAddMember: (groupId: string | null) => void;
+  onQuickAddObject: (groupId: string | null) => void;
   onCreateMemberGroup: () => void;
   onCreateObjectGroup: () => void;
   onRenameMemberGroup: (groupId: string, name: string) => void;
   onRenameObjectGroup: (groupId: string, name: string) => void;
-  onDeleteMember: (memberId: string) => void;
-  onDeleteObject: (objectId: string) => void;
-  onDeleteMemberGroup: (groupId: string) => void;
-  onDeleteObjectGroup: (groupId: string) => void;
+  onDeleteMember: (memberId: string) => Promise<boolean>;
+  onDeleteObject: (objectId: string) => Promise<boolean>;
+  onDeleteMemberGroup: (groupId: string) => Promise<boolean>;
+  onDeleteObjectGroup: (groupId: string) => Promise<boolean>;
   onUpdateMemberGroupColor: (groupId: string, color: string) => void;
   onUpdateObjectGroupColor: (groupId: string, color: string) => void;
 };
 
-type RosterColumn<T> = {
-  id: string;
-  groupId: string | null;
-  label: string;
-  color?: string;
-  items: T[];
-};
+const getCellKey = (mode: RosterMode, columnId: string, itemId?: string) =>
+  itemId ? `${mode}:item:${itemId}` : `${mode}:${columnId}:new`;
 
-const getCellKey = (mode: RosterMode, columnId: string, rowIndex: number) =>
-  `${mode}:${columnId}:${rowIndex}`;
-
-const collectGroupedItems = <T extends { id: string }>(
-  items: T[],
-  groups: Array<{ id: string; name: string; color?: string; memberIds?: string[]; objectIds?: string[] }>,
-  key: "memberIds" | "objectIds",
-): RosterColumn<T>[] => {
-  const itemById = new Map(items.map((item) => [item.id, item]));
-  const assignedIds = new Set<string>();
-  const columns = groups.map((group) => {
-    const groupedItems = (group[key] ?? [])
-      .map((id) => {
-        if (assignedIds.has(id)) {
-          return null;
-        }
-        const item = itemById.get(id);
-        if (!item) {
-          return null;
-        }
-        assignedIds.add(id);
-        return item;
-      })
-      .filter((item): item is T => Boolean(item));
-    return {
-      id: group.id,
-      groupId: group.id,
-      label: group.name,
-      color: group.color,
-      items: groupedItems,
-    };
-  });
-  const ungrouped = items.filter((item) => !assignedIds.has(item.id));
-  return [
-    ...columns,
-    {
-      id: "ungrouped",
-      groupId: null,
-      label: "未所属",
-      items: ungrouped,
-    },
-  ];
-};
+const emptyNameNotice = "名前は空欄にできません。削除は×から行えます。";
 
 export const RosterManagementModal = ({
   isOpen,
+  projectTitle,
+  onNotice,
+  initialMode,
   members,
   memberGroups,
   objects,
@@ -94,6 +61,8 @@ export const RosterManagementModal = ({
   onRenameObject,
   onAddMember,
   onAddObject,
+  onQuickAddMember,
+  onQuickAddObject,
   onCreateMemberGroup,
   onCreateObjectGroup,
   onRenameMemberGroup,
@@ -104,25 +73,82 @@ export const RosterManagementModal = ({
   onDeleteObjectGroup,
   onUpdateMemberGroupColor,
   onUpdateObjectGroupColor,
+  frames,
+  currentFrame,
+  objectStates,
+  previousFrame,
+  previousObjectStates,
+  canEditAssignments,
+  readOnlyMessage,
+  onAssignMember,
+  onRemoveAssignment,
+  onApplyPreviousAssignments,
+  onSelectFrame,
+  canUndo,
+  onUndo,
 }: RosterManagementModalProps) => {
   const [mode, setMode] = useState<RosterMode>("members");
+  const [objectView, setObjectView] = useState<"names" | "assignments">("names");
   const [cellDrafts, setCellDrafts] = useState<Record<string, string>>({});
   const [memberGroupDrafts, setMemberGroupDrafts] = useState<Record<string, string>>({});
   const [objectGroupDrafts, setObjectGroupDrafts] = useState<Record<string, string>>({});
   const inputRefs = useRef(new Map<string, HTMLInputElement>());
+  const cellDraftsRef = useRef<Record<string, string>>({});
+  const deleting = useRef(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [editNotice, setEditNotice] = useState("");
+  const wasOpen = useRef(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const composing = useRef(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportNotice, setExportNotice] = useState("");
+  const reportEditNotice = (message: string) => { setEditNotice(message); onNotice(message); };
+  const latestData = useRef<ExportSource>({ projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates });
+  latestData.current = { projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates };
+  const getExportSource = (): ExportSource => {
+    if (composing.current) throw new Error("入力を確定してから書き出してください。");
+    flushSync(() => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && dialogRef.current?.contains(active)) active.blur();
+    });
+    return structuredClone(latestData.current);
+  };
+  const openExport = () => {
+    if (composing.current) {
+      setExportNotice("入力を確定してから書き出してください。"); onNotice("入力を確定してから書き出してください。"); return;
+    }
+    getExportSource(); setExportNotice(""); setExportOpen(true);
+  };
+
+  useEffect(() => {
+    setObjectView("names");
+  }, [isOpen, mode]);
+
+  useEffect(() => {
+    if (!isOpen) { composing.current = false; setExportOpen(false); }
+    if (isOpen && !wasOpen.current && initialMode) {
+      setMode(
+        allowedModes && !allowedModes.includes(initialMode)
+          ? allowedModes[0] ?? "members"
+          : initialMode,
+      );
+    }
+    wasOpen.current = isOpen;
+  }, [isOpen, initialMode, allowedModes]);
 
   useEffect(() => {
     if (!isOpen) {
       return undefined;
     }
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !exportOpen && !deleting.current && !dialogRef.current?.querySelector(".app-confirm-dialog")) {
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, exportOpen]);
 
   useEffect(() => {
     if (!isOpen || !allowedModes || allowedModes.includes(mode)) {
@@ -171,7 +197,8 @@ export const RosterManagementModal = ({
 
   const focusCell = (columnId: string, rowIndex: number) => {
     window.setTimeout(() => {
-      inputRefs.current.get(getCellKey(mode, columnId, rowIndex))?.focus();
+      const column = (mode === "members" ? memberColumns : objectColumns).find((item) => item.id === columnId);
+      inputRefs.current.get(getCellKey(mode, columnId, column?.items[rowIndex]?.id))?.focus();
     }, 0);
   };
 
@@ -179,52 +206,58 @@ export const RosterManagementModal = ({
     column: RosterColumn<Member | StageObject>,
     rowIndex: number,
   ) => {
-    const key = getCellKey(mode, column.id, rowIndex);
+    if (composing.current || deleting.current) return;
     const item = column.items[rowIndex];
-    const draft = cellDrafts[key];
+    const key = getCellKey(mode, column.id, item?.id);
+    const draft = cellDraftsRef.current[key];
     if (draft === undefined) {
       return;
     }
+    // Consume synchronously so Enter followed by blur cannot commit twice.
+    delete cellDraftsRef.current[key];
+    setCellDrafts({ ...cellDraftsRef.current });
     const nextName = draft.trim();
     if (item) {
       if (!nextName) {
-        if (mode === "members") {
-          onDeleteMember(item.id);
-        } else {
-          onDeleteObject(item.id);
-        }
-        setCellDrafts((previous) => {
-          const { [key]: _removed, ...rest } = previous;
-          void _removed;
-          return rest;
-        });
+        reportEditNotice(emptyNameNotice);
         return;
       }
-      if (nextName === item.name) {
-        setCellDrafts((previous) => {
-          const { [key]: _removed, ...rest } = previous;
-          void _removed;
-          return rest;
-        });
-        return;
-      }
-      if (mode === "members") {
-        onRenameMember(item.id, nextName);
-      } else {
-        onRenameObject(item.id, nextName);
-      }
+      if (nextName === item.name) return;
+      if (mode === "members") onRenameMember(item.id, nextName);
+      else onRenameObject(item.id, nextName);
     } else if (nextName) {
-      if (mode === "members") {
-        onAddMember(column.groupId, nextName);
-      } else {
-        onAddObject(column.groupId, nextName);
-      }
+      if (mode === "members") onAddMember(column.groupId, nextName);
+      else onAddObject(column.groupId, nextName);
     }
-    setCellDrafts((previous) => {
-      const { [key]: _removed, ...rest } = previous;
-      void _removed;
-      return rest;
-    });
+  };
+
+  const requestDelete = async (
+    remove: () => Promise<boolean>,
+    focusTarget: HTMLInputElement | undefined,
+    key?: string,
+  ) => {
+    if (deleting.current) return;
+    if (composing.current) {
+      reportEditNotice("入力を確定してから削除してください。");
+      return;
+    }
+    deleting.current = true;
+    setEditNotice("");
+    setIsDeleting(true);
+    try {
+      const deleted = await remove();
+      if (deleted && key) {
+        delete cellDraftsRef.current[key];
+        setCellDrafts({ ...cellDraftsRef.current });
+      }
+      if (!deleted && focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    } catch {
+      reportEditNotice("削除できませんでした。もう一度お試しください。");
+      if (focusTarget?.isConnected) focusTarget.focus({ preventScroll: true });
+    } finally {
+      deleting.current = false;
+      setIsDeleting(false);
+    }
   };
 
   const handleCellKeyDown = (
@@ -232,7 +265,12 @@ export const RosterManagementModal = ({
     column: RosterColumn<Member | StageObject>,
     rowIndex: number,
   ) => {
-    if (event.key !== "Enter") {
+    if (
+      event.key !== "Enter" ||
+      composing.current ||
+      event.nativeEvent.isComposing ||
+      event.nativeEvent.keyCode === 229
+    ) {
       return;
     }
     event.preventDefault();
@@ -241,6 +279,7 @@ export const RosterManagementModal = ({
   };
 
   const commitGroupName = (groupId: string) => {
+    if (composing.current || deleting.current) return;
     if (groupId === "ungrouped") {
       return;
     }
@@ -252,13 +291,9 @@ export const RosterManagementModal = ({
     }
     const nextName = (drafts[groupId] ?? group.name).trim();
     if (!nextName) {
-      if (mode === "members") {
-        onDeleteMemberGroup(groupId);
-        setMemberGroupDrafts((previous) => ({ ...previous, [groupId]: group.name }));
-      } else {
-        onDeleteObjectGroup(groupId);
-        setObjectGroupDrafts((previous) => ({ ...previous, [groupId]: group.name }));
-      }
+      const setDrafts = mode === "members" ? setMemberGroupDrafts : setObjectGroupDrafts;
+      setDrafts((previous) => ({ ...previous, [groupId]: group.name }));
+      reportEditNotice(emptyNameNotice);
       return;
     }
     if (nextName === group.name) {
@@ -282,7 +317,7 @@ export const RosterManagementModal = ({
       <div className="roster-table__group-heading">
         <ColorPaletteInput
           compact
-          label={`${column.label}の色`}
+          label={`${column.label}のグループの色`}
           value={colorValue}
           onChange={(color) => {
             if (mode === "members") {
@@ -302,14 +337,36 @@ export const RosterManagementModal = ({
             }))
           }
           onBlur={() => commitGroupName(column.id)}
+          onCompositionEnd={(event) => {
+            if (document.activeElement !== event.currentTarget) commitGroupName(column.id);
+          }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
+            if (
+              event.key === "Enter" &&
+              !composing.current &&
+              !event.nativeEvent.isComposing &&
+              event.nativeEvent.keyCode !== 229
+            ) {
               event.preventDefault();
-              commitGroupName(column.id);
               event.currentTarget.blur();
             }
           }}
         />
+        <button
+          className="roster-table__delete"
+          type="button"
+          aria-label={`${column.label}のグループを削除`}
+          disabled={isDeleting}
+          onPointerDown={(event) => event.preventDefault()}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            const input = event.currentTarget.parentElement?.querySelector<HTMLInputElement>('input[aria-label$="のグループ名"]') ?? undefined;
+            void requestDelete(
+              () => mode === "members" ? onDeleteMemberGroup(column.id) : onDeleteObjectGroup(column.id),
+              input,
+            );
+          }}
+        >×</button>
       </div>
     );
   };
@@ -317,7 +374,10 @@ export const RosterManagementModal = ({
   return (
     <div className="roster-manager-backdrop">
       <section
-        className="roster-manager-modal"
+        ref={dialogRef}
+        className={`roster-manager-modal${mode === "objects" && objectView === "assignments" ? " is-assignments" : ""}`}
+        onCompositionStartCapture={() => { composing.current = true; }}
+        onCompositionEndCapture={() => { composing.current = false; }}
         aria-modal="true"
         role="dialog"
         aria-labelledby="roster-manager-title"
@@ -335,9 +395,17 @@ export const RosterManagementModal = ({
             <p>全体名簿</p>
             <h2 id="roster-manager-title">メンバー/道具の管理</h2>
           </div>
+          <div className="roster-manager-export">
+            <button ref={exportButtonRef} type="button" onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()} onClick={openExport}>
+              <FileDown size={18} aria-hidden="true" />書き出し ▾
+            </button>
+          </div>
+          {editNotice && <p className="roster-manager-edit-notice" role="status">{editNotice}</p>}
         </header>
+        {exportNotice && <p className="roster-manager-export-notice" role="status">{exportNotice}</p>}
 
         <div className="roster-manager-topbar">
+          <div className="roster-manager-mode-controls">
           <div className="roster-manager-tabs" role="tablist" aria-label="管理対象">
             <button
               className={mode === "members" ? "is-active" : ""}
@@ -356,7 +424,14 @@ export const RosterManagementModal = ({
               道具管理
             </button>
           </div>
-          <div className="roster-summary" aria-label="名簿の人数">
+          {mode === "objects" && (
+            <div className="roster-assignment-switch" role="group" aria-label="道具管理の表示">
+              <button type="button" aria-pressed={objectView === "names"} onClick={() => setObjectView("names")}>名前の編集</button>
+              <button type="button" aria-pressed={objectView === "assignments"} onClick={() => setObjectView("assignments")}>道具割当</button>
+            </div>
+          )}
+          </div>
+          {!(mode === "objects" && objectView === "assignments") && <div className="roster-summary" aria-label="名簿の人数">
             <div className="roster-summary__total">
               <span>{mode === "members" ? "全体人数" : "全体数"}</span>
               <strong>
@@ -379,16 +454,42 @@ export const RosterManagementModal = ({
                 </span>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
 
-        <div className="roster-table-wrap">
+        {mode === "objects" && objectView === "assignments" ? (
+          <Suspense fallback={<p role="status">割当を読み込み中…</p>}>
+            <RosterAssignmentView frames={frames} currentFrame={currentFrame}
+              objectStates={objectStates} previousFrame={previousFrame} previousObjectStates={previousObjectStates}
+              members={members} memberGroups={memberGroups} objects={objects} objectGroups={objectGroups}
+              canEditAssignments={canEditAssignments} readOnlyMessage={readOnlyMessage}
+              onAssignMember={onAssignMember} onRemoveAssignment={onRemoveAssignment}
+              onApplyPreviousAssignments={onApplyPreviousAssignments} onSelectFrame={onSelectFrame}
+              canUndo={canUndo} onUndo={onUndo} />
+          </Suspense>
+        ) : <div className="roster-table-wrap">
           <table className="roster-table">
             <thead>
               <tr>
                 <th className="roster-table__number">No.</th>
                 {columns.map((column) => (
-                  <th key={column.id}>{renderGroupHeader(column)}</th>
+                  <th key={column.id}>
+                    <div className="roster-table__column-heading">
+                      {renderGroupHeader(column)}
+                      <button
+                        className="roster-table__quick-add"
+                        type="button"
+                        aria-label={`${column.label}に${mode === "members" ? "メンバー" : "道具"}を追加`}
+                        onClick={(event) => {
+                          event.currentTarget.focus({ preventScroll: true });
+                          if (mode === "members") onQuickAddMember(column.groupId);
+                          else onQuickAddObject(column.groupId);
+                        }}
+                      >
+                        {mode === "members" ? "＋ メンバー追加" : "＋ 道具追加"}
+                      </button>
+                    </div>
+                  </th>
                 ))}
                 <th className="roster-table__add-group">
                   <button
@@ -409,7 +510,7 @@ export const RosterManagementModal = ({
                         : "道具グループを追加"
                     }
                   >
-                    +
+                    グループ追加 +
                   </button>
                 </th>
               </tr>
@@ -420,11 +521,18 @@ export const RosterManagementModal = ({
                   <th className="roster-table__number">{rowIndex + 1}</th>
                   {columns.map((column) => {
                     const item = column.items[rowIndex];
-                    const key = getCellKey(mode, column.id, rowIndex);
+                    if (!item && rowIndex > column.items.length) return <td key={column.id} />;
+                    const key = getCellKey(mode, column.id, item?.id);
                     const value = cellDrafts[key] ?? item?.name ?? "";
                     return (
                       <td key={column.id}>
+                        <div className="roster-table__name-cell">
                         <input
+                          key={key}
+                          className="roster-table__cell-input"
+                          style={{
+                            "--roster-group-color": column.color ?? "#94a3b8",
+                          } as CSSProperties}
                           ref={(element) => {
                             if (element) {
                               inputRefs.current.set(key, element);
@@ -434,18 +542,32 @@ export const RosterManagementModal = ({
                           }}
                           value={value}
                           placeholder={item ? "" : "追加"}
-                          onChange={(event) =>
-                            setCellDrafts((previous) => ({
-                              ...previous,
-                              [key]: event.target.value,
-                            }))
-                          }
+                          onChange={(event) => {
+                            cellDraftsRef.current[key] = event.target.value;
+                            setCellDrafts({ ...cellDraftsRef.current });
+                          }}
                           onBlur={() => commitCell(column, rowIndex)}
+                          onCompositionEnd={(event) => {
+                            if (document.activeElement !== event.currentTarget) commitCell(column, rowIndex);
+                          }}
                           onKeyDown={(event) =>
                             handleCellKeyDown(event, column, rowIndex)
                           }
                           aria-label={`${column.label} ${rowIndex + 1}行目`}
                         />
+                        {item && <button
+                          className="roster-table__delete"
+                          type="button"
+                          aria-label={`${item.name}を名簿から削除`}
+                          disabled={isDeleting}
+                          onPointerDown={(event) => event.preventDefault()}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => void requestDelete(
+                            () => mode === "members" ? onDeleteMember(item.id) : onDeleteObject(item.id),
+                            inputRefs.current.get(key), key,
+                          )}
+                        >×</button>}
+                        </div>
                       </td>
                     );
                   })}
@@ -454,7 +576,10 @@ export const RosterManagementModal = ({
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
+        {exportOpen && <Suspense fallback={<p role="status">書き出しを読み込み中…</p>}>
+          <DocumentExportSheet initialTarget={mode === "members" ? "members" : objectView === "assignments" ? "assignments" : "objects"} getSource={getExportSource} onClose={() => { setExportOpen(false); exportButtonRef.current?.focus({ preventScroll: true }); }} />
+        </Suspense>}
       </section>
     </div>
   );

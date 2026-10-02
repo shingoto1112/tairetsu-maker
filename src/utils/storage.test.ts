@@ -44,6 +44,13 @@ describe("hydrateProjectsFromNativeStorage", () => {
     expect(platformMocks.saveNativeProjectsMirror).not.toHaveBeenCalled();
   });
 
+  it("preserves a legacy focusMemberId through saving and reloading", () => {
+    platformMocks.saveNativeProjectsMirror.mockResolvedValue(undefined);
+    const saved = { ...project("legacy", "2026-08-03T10:00:00.000Z"), focusMemberId: "member-old" };
+    saveProjectsToStorage([saved]);
+    expect(loadProjectsFromStorage()[0].focusMemberId).toBe("member-old");
+  });
+
   it("keeps a newer browser save and repairs the native mirror", async () => {
     window.localStorage.setItem(
       "stageflow.projects.v1",

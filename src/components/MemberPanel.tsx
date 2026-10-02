@@ -4,7 +4,6 @@ import {
   Eye,
   EyeOff,
   Plus,
-  Star,
   Trash2,
   Users,
 } from "lucide-react";
@@ -15,22 +14,21 @@ import {
   MemberCreateInput,
   MemberGroup,
   Selection,
-  StageObject,
 } from "../types";
 import { PanelStickyHeader } from "./PanelStickyHeader";
+import { RosterManagerButton } from "./RosterManagerButton";
 import { ColorPaletteInput } from "./ColorPaletteInput";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
-import { formatTime } from "../utils/time";
+import type { ReactNode } from "react";
 
 type MemberPanelProps = {
+  children?: ReactNode;
+  onOpenRosterManager?: () => void;
+  canOpenRosterManager?: boolean;
   members: Member[];
   selected: Selection;
   selectedMemberIds: string[];
-  focusMemberId?: string;
-  focusMode: boolean;
   groups: MemberGroup[];
-  frames: FormationFrame[];
-  stageObjects: StageObject[];
   currentFrame?: FormationFrame;
   objectAssignmentLabelsByMemberId: Record<string, string[]>;
   visibilityTab: VisibilityTab;
@@ -70,9 +68,6 @@ type MemberPanelProps = {
   onCopySelected: () => void;
   onPasteMember: (visibleInCurrentFrame?: boolean) => void;
   canPasteMember: boolean;
-  onSetFocusMember: (id?: string) => void;
-  onToggleFocusMode: () => void;
-  onSelectFrame: (id: string) => void;
 };
 
 type VisibilityTab = "visible" | "hidden";
@@ -87,14 +82,13 @@ const groupDraftColors = [
 ];
 
 export const MemberPanel = ({
+  children,
+  onOpenRosterManager,
+  canOpenRosterManager = true,
   members,
   selected,
   selectedMemberIds,
-  focusMemberId,
-  focusMode,
   groups,
-  frames,
-  stageObjects,
   currentFrame,
   objectAssignmentLabelsByMemberId,
   visibilityTab,
@@ -123,10 +117,8 @@ export const MemberPanel = ({
   onCopySelected,
   onPasteMember,
   canPasteMember,
-  onSetFocusMember,
-  onToggleFocusMode,
-  onSelectFrame,
 }: MemberPanelProps) => {
+  const [isGroupFormOpen, setIsGroupFormOpen] = useState(false);
   const panelRef = useRef<HTMLElement | null>(null);
   const [draftGroupName, setDraftGroupName] = useState("");
   const [draftGroupColor, setDraftGroupColor] = useState(groupDraftColors[0]);
@@ -212,14 +204,6 @@ export const MemberPanel = ({
 
     return ordered;
   }, [groups, members, membersById]);
-  const focusMember = focusMemberId
-    ? members.find((member) => member.id === focusMemberId)
-    : undefined;
-  const stageObjectsById = useMemo(
-    () => new Map(stageObjects.map((object) => [object.id, object])),
-    [stageObjects],
-  );
-
   const handleCreateGroup = () => {
     if (projectDisabled) {
       return;
@@ -303,7 +287,6 @@ export const MemberPanel = ({
   const renderMemberRow = (member: Member, compact = false) => {
     const isSelected = selected?.type === "member" && selected.id === member.id;
     const isMultiSelected = selectedMemberIds.includes(member.id);
-    const isFocus = focusMemberId === member.id;
     const isVisible = isVisibleInCurrentFrame(member);
     const groupName = groupNameByMemberId.get(member.id) ?? "未所属";
     const assignmentLabels = objectAssignmentLabelsByMemberId[member.id] ?? [];
@@ -325,7 +308,6 @@ export const MemberPanel = ({
           "member-row",
           compact ? "is-compact" : "",
           isSelected || isMultiSelected ? "is-selected" : "",
-          isFocus ? "is-focus" : "",
           !isVisible ? "is-scene-hidden" : "",
         ].join(" ")}
         onClick={() => onSelect(member.id)}
@@ -405,19 +387,6 @@ export const MemberPanel = ({
           )}
         </div>
         <div className="card-actions wrap">
-          <button
-            className="mini-button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSetFocusMember(member.id);
-            }}
-            disabled={projectDisabled}
-            title={projectDisabled ? projectReadOnlyMessage : undefined}
-            type="button"
-          >
-            <Star size={15} />
-            {isFocus ? "注目中" : "注目"}
-          </button>
           {isVisible ? (
             <button
               className="mini-button"
@@ -479,7 +448,7 @@ export const MemberPanel = ({
               type="button"
             >
               {(member.visible ?? true) ? <EyeOff size={15} /> : <Eye size={15} />}
-              {(member.visible ?? true) ? "全体OFF" : "全体ON"}
+              {(member.visible ?? true) ? "全シーンで非表示" : "全シーンの非表示を解除"}
             </button>
           )}
           <button
@@ -493,7 +462,7 @@ export const MemberPanel = ({
             type="button"
           >
             <Trash2 size={15} />
-            削除
+            名簿から削除
           </button>
         </div>
       </div>
@@ -507,18 +476,14 @@ export const MemberPanel = ({
         meta={`表示 ${visibleMembers.length}人 / 非表示 ${hiddenMembers.length}人 / 選択中 ${selectedMemberIds.length}人`}
         actions={
           <>
+            {onOpenRosterManager && (
+              <RosterManagerButton
+                onClick={onOpenRosterManager}
+                disabled={!canOpenRosterManager}
+              />
+            )}
             <button
               className="mini-button primary"
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              onClick={handleCreateGroup}
-              type="button"
-            >
-              <Plus size={15} />
-              グループ
-            </button>
-            <button
-              className="mini-button"
               onClick={() =>
                 onAddMember({ visibleInCurrentFrame: isVisibleTab })
               }
@@ -541,50 +506,43 @@ export const MemberPanel = ({
             >
               貼り付け
             </button>
-            <button
-              className={focusMode ? "mini-button is-active" : "mini-button"}
-              onClick={onToggleFocusMode}
-              type="button"
-            >
-              <Star size={15} />
-              推し
-            </button>
           </>
         }
-      />
-      {projectDisabled && (
-        <p className="notice warning">{projectReadOnlyMessage}</p>
-      )}
-      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
-
-      <div className="panel-visibility-summary">
-        <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
-          <button
-            className={visibilityTab === "visible" ? "is-active" : ""}
-            onClick={() => onVisibilityTabChange("visible")}
-            type="button"
-          >
-            表示 {visibleMembers.length}
-          </button>
-          <button
-            className={visibilityTab === "hidden" ? "is-active" : ""}
-            onClick={() => onVisibilityTabChange("hidden")}
-            type="button"
-          >
-            非表示 {hiddenMembers.length}
-          </button>
+      >
+        <div className="panel-visibility-summary">
+          <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
+            <button
+              className={visibilityTab === "visible" ? "is-active" : ""}
+              onClick={() => onVisibilityTabChange("visible")}
+              type="button"
+            >
+              表示 {visibleMembers.length}
+            </button>
+            <button
+              className={visibilityTab === "hidden" ? "is-active" : ""}
+              onClick={() => onVisibilityTabChange("hidden")}
+              type="button"
+            >
+              非表示 {hiddenMembers.length}
+            </button>
+          </div>
         </div>
+      </PanelStickyHeader>
+      <div className="panel-manager-body">
         <p className="muted-text">
           現在の追加先:
           {isVisibleTab
             ? " このシーンでステージに表示"
             : " このシーンでは隊列外・非表示"}
         </p>
-      </div>
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
-      <section className="object-visibility-list" aria-label="メンバー表示切替リスト">
+      <section className="object-visibility-list" aria-label="このシーンの表示">
         <div className="object-visibility-list__header">
-          <strong>メンバー表示切替</strong>
+          <strong>このシーンの表示</strong>
           <span>現在のシーンだけに反映</span>
         </div>
         <div className="visibility-checklist__actions">
@@ -681,130 +639,62 @@ export const MemberPanel = ({
         </div>
       </section>
 
-      <section className="member-management-block personal-check">
+      <div className="member-management-block">
         <div className="panel-section__header">
-          <h3>自分用確認</h3>
-          <button
-            className={focusMode ? "mini-button is-active" : "mini-button"}
-            onClick={onToggleFocusMode}
-            type="button"
-          >
-            <Star size={15} />
-            {focusMode ? "強調ON" : "強調OFF"}
-          </button>
-        </div>
-        <label className="field-stack">
-          確認するメンバー
-          <select
-            value={focusMemberId ?? ""}
-            disabled={projectDisabled}
+          <h3>グループ一覧</h3>
+          <span>{groupsForActiveTab.length}グループ · {isVisibleTab ? "表示中" : "非表示"}</span>
+          <button className="mini-button" type="button" disabled={projectDisabled}
             title={projectDisabled ? projectReadOnlyMessage : undefined}
-            onChange={(event) => {
-              onSetFocusMember(event.target.value || undefined);
-            }}
-          >
-            <option value="">なし</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {!focusMember && (
-          <p className="muted-text">
-            確認したいメンバーを選択してください。未選択の間は通常表示になります。
-          </p>
-        )}
-        {focusMember && (
-          <div className="personal-check__list">
-            {frames.map((frame, index) => {
-              const assignedObjects = Object.entries(frame.objectAssignments ?? {})
-                .filter(([, memberIds]) => memberIds.includes(focusMember.id))
-                .map(([objectId]) => stageObjectsById.get(objectId)?.name)
-                .filter(Boolean);
-              const position = frame.positions[focusMember.id];
-              const hidden =
-                frame.memberVisibility?.[focusMember.id] === false ||
-                assignedObjects.length > 0 ||
-                focusMember.visible === false;
-              return (
+            aria-expanded={isGroupFormOpen} aria-controls="member-group-form"
+            onClick={() => setIsGroupFormOpen((open) => !open)}>＋グループ</button>
+        </div>
+        {isGroupFormOpen && <div id="member-group-form">
+            <div className="panel-group-form" aria-label="グループ作成">
+              <div className="panel-section__header">
+                <h3>グループ作成</h3>
+
+              </div>
+              <div className="settings-grid">
+                <label>
+                  グループ名
+                  <input
+                    value={draftGroupName}
+                    disabled={projectDisabled}
+                    title={projectDisabled ? projectReadOnlyMessage : undefined}
+                    onChange={(event) => setDraftGroupName(event.target.value)}
+                    placeholder="未入力なら グループ1"
+                  />
+                </label>
+                <div className="palette-field">
+                  <span>グループの色</span>
+                  <ColorPaletteInput
+                    value={draftGroupColor}
+                    disabled={projectDisabled}
+                    onChange={setDraftGroupColor}
+                    label="グループの色"
+                  />
+                </div>
+              </div>
                 <button
-                  className="personal-check__item"
-                  key={frame.id}
-                  onClick={() => onSelectFrame(frame.id)}
+                  className="mini-button primary"
+                  disabled={projectDisabled}
+                  title={projectDisabled ? projectReadOnlyMessage : undefined}
+                  onClick={handleCreateGroup}
                   type="button"
                 >
-                  <span>
-                    Scene {index + 1} / {formatTime(frame.timeSec)}
-                  </span>
-                  <strong>{frame.label}</strong>
-                  <small>
-                    {assignedObjects.length > 0
-                      ? `道具割当: ${assignedObjects.join(" / ")}`
-                      : hidden
-                        ? "隊列外"
-                        : position
-                          ? `表示中 x=${position.x.toFixed(1)} / y=${position.y.toFixed(1)}`
-                          : "位置未設定"}
-                  </small>
-                  {frame.notes && <em>{frame.notes}</em>}
+                  <Plus size={15} />
+                  グループ作成
                 </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
+              <p className="muted-text">
+                先にグループを作り、カード内の「＋メンバー」から追加すると名前と色が自動でそろいます。
+              </p>
+            </div>
 
-      <div className="member-management-block">
-        <div className="panel-section__header">
-          <h3>グループ作成</h3>
-          <button
-            className="mini-button primary"
-            disabled={projectDisabled}
-            title={projectDisabled ? projectReadOnlyMessage : undefined}
-            onClick={handleCreateGroup}
-            type="button"
-          >
-            <Plus size={15} />
-            グループ作成
-          </button>
-        </div>
-        <div className="settings-grid">
-          <label>
-            グループ名
-            <input
-              value={draftGroupName}
-              disabled={projectDisabled}
-              title={projectDisabled ? projectReadOnlyMessage : undefined}
-              onChange={(event) => setDraftGroupName(event.target.value)}
-              placeholder="未入力なら グループ1"
-            />
-          </label>
-          <div className="palette-field">
-            <span>グループカラー</span>
-            <ColorPaletteInput
-              value={draftGroupColor}
-              disabled={projectDisabled}
-              onChange={setDraftGroupColor}
-              label="グループカラー"
-            />
-          </div>
-        </div>
-        <p className="muted-text">
-          先にグループを作り、カード内の「＋メンバー」から追加すると名前と色が自動でそろいます。
-        </p>
-      </div>
-
-      <div className="member-management-block">
-        <div className="panel-section__header">
-          <h3>{isVisibleTab ? "表示中のグループ" : "非表示のグループ"}</h3>
-          <span>{groupsForActiveTab.length}組</span>
-        </div>
+        </div>}
         <div className="stack">
           {groups.length === 0 && (
             <p className="empty-state">
-              まだグループがありません。上の「グループ作成」から始められます。
+              まだグループがありません。見出しの「＋グループ」から作成できます。
             </p>
           )}
           {groups.length > 0 && groupsForActiveTab.length === 0 && (
@@ -885,7 +775,7 @@ export const MemberPanel = ({
                 </div>
                 <div className="group-card__actions">
                   <div className="group-color-field" onClick={(event) => event.stopPropagation()}>
-                    <span>色</span>
+                    <span>グループの色</span>
                     <ColorPaletteInput
                       compact
                       value={color}
@@ -893,7 +783,7 @@ export const MemberPanel = ({
                       onChange={(nextColor) =>
                         onUpdateGroup(group.id, { color: nextColor })
                       }
-                      label={`${group.name} の色`}
+                      label={`${group.name}のグループの色`}
                     />
                   </div>
                   <button
@@ -957,7 +847,7 @@ export const MemberPanel = ({
                     type="button"
                   >
                     <Trash2 size={15} />
-                    削除
+                    グループ削除
                   </button>
                 </div>
                 {isExpanded && (
@@ -981,7 +871,7 @@ export const MemberPanel = ({
 
       <div className="member-management-block">
         <div className="panel-section__header">
-          <h3>{visibilityTab === "visible" ? "表示メンバー" : "非表示メンバー"}</h3>
+          <h3>未所属メンバー</h3>
           <span>{activeUngroupedMembers.length}人</span>
           <button
             className="mini-button"
@@ -1007,6 +897,8 @@ export const MemberPanel = ({
             activeUngroupedMembers.map((member) => renderMemberRow(member, false))
           )}
         </div>
+      </div>
+      {children}
       </div>
     </section>
   );

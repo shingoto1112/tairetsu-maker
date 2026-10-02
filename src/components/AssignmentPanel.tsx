@@ -1,22 +1,25 @@
-import { UserPlus, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FormationFrame,
   Member,
+  MemberGroup,
   ObjectState,
   ObjectGroup,
   StageObject,
 } from "../types";
 import { formatTime } from "../utils/time";
 import { PanelStickyHeader } from "./PanelStickyHeader";
+import { RosterManagerButton } from "./RosterManagerButton";
+import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
+import { buildMemberGroupIndex } from "../utils/memberOrdering";
 
 type AssignmentView = "objects" | "members";
 type MemberSort = "total" | "assignments" | "hidden" | "name";
 
-const compareMembersByName = (a: Member, b: Member): number =>
-  a.name.localeCompare(b.name, "ja", { numeric: true });
-
 type AssignmentPanelProps = {
+  onOpenRosterManager?: () => void;
+  canOpenRosterManager?: boolean;
+  memberGroups: MemberGroup[];
   frames: FormationFrame[];
   members: Member[];
   objects: StageObject[];
@@ -27,7 +30,7 @@ type AssignmentPanelProps = {
   previousObjectStates: Record<string, ObjectState>;
   canEditScene?: boolean;
   sceneReadOnlyMessage?: string;
-  onAssignMember: (objectId: string, memberId: string) => void;
+  onAssignMember: AssignMember;
   onApplyPreviousAssignments: () => void;
   onRemoveAssignment: (
     objectId: string,
@@ -38,6 +41,9 @@ type AssignmentPanelProps = {
 };
 
 export const AssignmentPanel = ({
+  onOpenRosterManager,
+  canOpenRosterManager = true,
+  memberGroups,
   frames,
   members,
   objects,
@@ -53,11 +59,14 @@ export const AssignmentPanel = ({
   onRemoveAssignment,
   onSelectFrame,
 }: AssignmentPanelProps) => {
+  const memberGroupIndex = useMemo(
+    () => buildMemberGroupIndex(memberGroups),
+    [memberGroups],
+  );
+  const [openPickerObjectId, setOpenPickerObjectId] = useState<string | null>(null);
   const [view, setView] = useState<AssignmentView>("objects");
   const [memberSort, setMemberSort] = useState<MemberSort>("total");
-  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, string>>(
-    {},
-  );
+  useEffect(() => { setOpenPickerObjectId(null); }, [currentFrame?.id, view]);
   const sceneDisabled = !canEditScene;
 
   const membersById = useMemo(
@@ -240,16 +249,6 @@ export const AssignmentPanel = ({
         ) : (
           visibleObjectsInCurrentFrame.map((object) => {
             const assignedMemberIds = currentAssignments[object.id] ?? [];
-            const assignableMembers = members
-              .filter((member) => !assignedMemberIds.includes(member.id))
-              .sort(compareMembersByName);
-            const sortedAssignedMemberIds = [...assignedMemberIds].sort((a, b) => {
-              const memberA = membersById.get(a);
-              const memberB = membersById.get(b);
-              if (!memberA || !memberB) return 0;
-              return compareMembersByName(memberA, memberB);
-            });
-            const draftMemberId = assignmentDrafts[object.id] ?? "";
             return (
               <article className="list-card assignment-object-card" key={object.id}>
                 <div className="list-card__row">
@@ -260,73 +259,19 @@ export const AssignmentPanel = ({
                   />
                   <strong>{object.name}</strong>
                 </div>
-                <div className="assignment-chip-list">
-                  {assignedMemberIds.length === 0 ? (
-                    <span className="muted-text">割当なし</span>
-                  ) : (
-                    sortedAssignedMemberIds.map((memberId) => {
-                      const member = membersById.get(memberId);
-                      if (!member) return null;
-                      return (
-                        <span className="assignment-chip" key={memberId}>
-                          {member.name}
-                          <button
-                            type="button"
-                            disabled={sceneDisabled}
-                            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                            onClick={() =>
-                              onRemoveAssignment(object.id, memberId, false)
-                            }
-                            aria-label={`${member.name} の割当を解除`}
-                          >
-                            <X size={12} />
-                          </button>
-                        </span>
-                      );
-                    })
-                  )}
-                </div>
-                <div className="assignment-picker">
-                  <select
-                    value={draftMemberId}
-                    disabled={sceneDisabled || assignableMembers.length === 0}
-                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                    onChange={(event) =>
-                      setAssignmentDrafts((previous) => ({
-                        ...previous,
-                        [object.id]: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">
-                      {assignableMembers.length === 0
-                        ? "割当できるメンバーなし"
-                        : "メンバーを選択"}
-                    </option>
-                    {assignableMembers.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="mini-button"
-                    type="button"
-                    disabled={sceneDisabled || !draftMemberId}
-                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                    onClick={() => {
-                      if (!draftMemberId) return;
-                      onAssignMember(object.id, draftMemberId);
-                      setAssignmentDrafts((previous) => ({
-                        ...previous,
-                        [object.id]: "",
-                      }));
-                    }}
-                  >
-                    <UserPlus size={15} />
-                    割当
-                  </button>
-                </div>
+                <ObjectAssignmentEditor
+                  key={`${currentFrame.id}:${object.id}`}
+                  objectId={object.id}
+                  members={members}
+                  assignedMemberIds={assignedMemberIds}
+                  groupIndex={memberGroupIndex}
+                  isPickerOpen={openPickerObjectId === object.id}
+                  onPickerOpenChange={(isOpen) => setOpenPickerObjectId(isOpen ? object.id : null)}
+                  disabled={sceneDisabled}
+                  readOnlyMessage={sceneReadOnlyMessage}
+                  onAssignMember={onAssignMember}
+                  onRemoveAssignment={onRemoveAssignment}
+                />
               </article>
             );
           })
@@ -413,22 +358,30 @@ export const AssignmentPanel = ({
         title="割当"
         meta={currentFrameMeta}
         actions={
-          <div className="member-visibility-tabs" role="tablist" aria-label="割当表示">
-            <button
-              className={view === "objects" ? "is-active" : ""}
-              type="button"
-              onClick={() => setView("objects")}
-            >
-              道具別
-            </button>
-            <button
-              className={view === "members" ? "is-active" : ""}
-              type="button"
-              onClick={() => setView("members")}
-            >
-              メンバー別
-            </button>
-          </div>
+          <>
+            {onOpenRosterManager && (
+              <RosterManagerButton
+                onClick={onOpenRosterManager}
+                disabled={!canOpenRosterManager}
+              />
+            )}
+            <div className="member-visibility-tabs" role="tablist" aria-label="割当表示">
+              <button
+                className={view === "objects" ? "is-active" : ""}
+                type="button"
+                onClick={() => setView("objects")}
+              >
+                道具別
+              </button>
+              <button
+                className={view === "members" ? "is-active" : ""}
+                type="button"
+                onClick={() => setView("members")}
+              >
+                メンバー別
+              </button>
+            </div>
+          </>
         }
       />
       {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}

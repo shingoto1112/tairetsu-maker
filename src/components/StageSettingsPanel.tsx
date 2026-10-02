@@ -20,7 +20,6 @@ type StageSettingsPanelProps = {
   paradeSettings?: ParadeSettings;
   useGlobalStageSize: boolean;
   showMeterRulers?: boolean;
-  focusMode?: boolean;
   showSnapGuides?: boolean;
   snapToGuides?: boolean;
   disabled?: boolean;
@@ -29,7 +28,6 @@ type StageSettingsPanelProps = {
   onParadeSettingsChange?: (patch: Partial<ParadeSettings>) => void;
   onUseGlobalStageSizeChange: (enabled: boolean) => void;
   onToggleMeterRulers?: () => void;
-  onToggleFocusMode?: () => void;
   onToggleSnapGuides?: () => void;
   onToggleSnapToGuides?: () => void;
 };
@@ -40,7 +38,6 @@ export const StageSettingsPanel = ({
   paradeSettings,
   useGlobalStageSize,
   showMeterRulers = true,
-  focusMode = false,
   showSnapGuides = true,
   snapToGuides = false,
   disabled = false,
@@ -49,7 +46,6 @@ export const StageSettingsPanel = ({
   onParadeSettingsChange,
   onUseGlobalStageSizeChange,
   onToggleMeterRulers,
-  onToggleFocusMode,
   onToggleSnapGuides,
   onToggleSnapToGuides,
 }: StageSettingsPanelProps) => {
@@ -147,14 +143,6 @@ export const StageSettingsPanel = ({
             </label>
           </>
         )}
-        <label>
-          <input
-            type="checkbox"
-            checked={focusMode}
-            onChange={onToggleFocusMode}
-          />
-          推しカメ
-        </label>
       </div>
     </div>
   );

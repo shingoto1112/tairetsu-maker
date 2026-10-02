@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -21,7 +23,10 @@ import { MemberPanel } from "./components/MemberPanel";
 import { ObjectPanel } from "./components/ObjectPanel";
 import { PanelTabId, PanelTabs } from "./components/PanelTabs";
 import { getPrintOrientation, PrintPreview } from "./components/PrintPreview";
-import { RosterManagementModal } from "./components/RosterManagementModal";
+import { nextNumberedName } from "./utils/numberedName";
+import { nextRosterItemName } from "./utils/rosterColumns";
+import { confirmAssignmentUpdate } from "./utils/assignmentUpdate";
+import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName";
 import { SceneNotesPanel } from "./components/SceneNotesPanel";
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
 import {
@@ -133,12 +138,10 @@ import {
   snapToGrid,
 } from "./utils/coordinates";
 import {
-  elementToJpegDataUrl,
   elementToPngBlob,
   exportElementAsPng,
 } from "./utils/exportImage";
 import { saveGeneratedBlob, UserFileSaveStatus } from "./utils/fileSave";
-import { jpegDataUrlsToPdfBlob } from "./utils/pdfExport";
 import {
   deleteAudioBlobFromIndexedDb,
   loadAudioBlobFromIndexedDb,
@@ -244,6 +247,12 @@ type HistoryEntry = {
   project: Project;
   label?: string;
 };
+
+const RosterManagementModal = lazy(() =>
+  import("./components/RosterManagementModal").then((module) => ({
+    default: module.RosterManagementModal,
+  })),
+);
 
 const HISTORY_LIMIT = 50;
 const HISTORY_COALESCE_MS = 1200;
@@ -553,18 +562,6 @@ type WindowWithClipboardItem = Window & {
   ClipboardItem?: ClipboardItemConstructor;
 };
 
-const sanitizeExportFileName = (value: string): string =>
-  (value.trim() || APP_NAME)
-    .replace(/[\\/:*?"<>|]/g, "_")
-    .replace(/\s+/g, "_");
-
-const formatExportTimestamp = (date = new Date()): string => {
-  const pad = (value: number): string => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}_${pad(date.getHours())}-${pad(date.getMinutes())}`;
-};
-
 const sortFormationFramesByTime = (
   frames: FormationFrame[],
 ): { changed: boolean; frames: FormationFrame[] } => {
@@ -627,13 +624,6 @@ const createUniqueProjectTitle = (
     index += 1;
   }
   return `${firstCopy} ${index}`;
-};
-
-const withFileExtension = (fileName: string, extension: string): string => {
-  const safeName = sanitizeExportFileName(fileName);
-  return safeName.toLowerCase().endsWith(`.${extension}`)
-    ? safeName
-    : `${safeName}.${extension}`;
 };
 
 const getKeyboardNudgeDelta = (
@@ -2069,6 +2059,9 @@ function App() {
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
   const [isShareExportOpen, setIsShareExportOpen] = useState(false);
   const [isRosterManagerOpen, setIsRosterManagerOpen] = useState(false);
+  const [rosterInitialMode, setRosterInitialMode] = useState<
+    "members" | "objects" | undefined
+  >();
   const [appConfirm, setAppConfirm] = useState<AppConfirmOptions | null>(null);
   const [exportProgress, setExportProgress] =
     useState<ExportProgressState | null>(null);
@@ -2099,9 +2092,7 @@ function App() {
   );
   const [showMovementPaths, setShowMovementPaths] = useState(false);
   const [showMeterRulers, setShowMeterRulers] = useState(true);
-  const [movementPathMode, setMovementPathMode] =
-    useState<MovementPathMode>("all");
-  const [focusMode, setFocusMode] = useState(false);
+  const movementPathMode: MovementPathMode = "all";
   const [templateSpacing, setTemplateSpacing] = useState(1.5);
   const [animationPreviewTimeSec, setAnimationPreviewTimeSec] =
     useState<number | null>(null);
@@ -4291,37 +4282,24 @@ function App() {
   };
 
   const nextGroupMemberName = (groupName: string): string => {
-    const safeName = groupName.trim() || "グループ";
-    let nextNumber = 1;
-    while (
-      project.members.some((member) => member.name === `${safeName}${nextNumber}`)
-    ) {
-      nextNumber += 1;
-    }
-    return `${safeName}${nextNumber}`;
+    return nextNumberedName(
+      groupName.trim() || "グループ",
+      project.members.map((member) => member.name),
+    );
   };
 
   const nextUngroupedMemberName = (): string => {
-    let nextNumber = 1;
-    while (
-      project.members.some((member) => member.name === `メンバー${nextNumber}`)
-    ) {
-      nextNumber += 1;
-    }
-    return `メンバー${nextNumber}`;
+    return nextNumberedName(
+      "メンバー",
+      project.members.map((member) => member.name),
+    );
   };
 
   const nextGroupObjectName = (groupName: string): string => {
-    const safeName = groupName.trim() || "道具";
-    let nextNumber = 1;
-    while (
-      project.stageObjects.some(
-        (object) => object.name === `${safeName}${nextNumber}`,
-      )
-    ) {
-      nextNumber += 1;
-    }
-    return `${safeName}${nextNumber}`;
+    return nextNumberedName(
+      groupName.trim() || "道具",
+      project.stageObjects.map((object) => object.name),
+    );
   };
 
   const getMemberGroupForMemberId = (memberId: string): MemberGroup | undefined =>
@@ -4798,20 +4776,23 @@ function App() {
     return next;
   };
 
-  const updateMemberAssignmentsInCurrentFrame = (
+  const updateMemberAssignmentsInCurrentFrame = async (
     updater: (
       frame: FormationFrame,
       frameStage: Project["stage"],
     ) => Pick<FormationFrame, "objectAssignments" | "memberVisibility" | "positions">,
     notice: string,
     cloudTargets: SceneElementEditTarget[] = [],
-  ) => {
+  ): Promise<boolean> => {
     if (!selectedFrame) {
       setNotice("割当を変更するシーンがありません。");
-      return;
+      return false;
     }
     const activeFrameId = selectedFrame.id;
+    let applied = false;
     const applyChange = () => {
+      const before = projectRef.current.frames.find((frame) => frame.id === activeFrameId);
+      let expected: Pick<FormationFrame, "objectAssignments" | "memberVisibility" | "positions"> | undefined;
       updateProject((previous) => ({
         ...previous,
         frames: previous.frames.map((frame) => {
@@ -4822,33 +4803,37 @@ function App() {
             ...previous.stage,
             ...getEffectiveStageSize(previous, frame),
           };
-          return {
-            ...frame,
-            ...updater(frame, frameStage),
-          };
+          expected = updater(frame, frameStage);
+          return { ...frame, ...expected };
         }),
       }));
-      setNotice(notice);
+      applied = confirmAssignmentUpdate(
+        before,
+        projectRef.current.frames.find((frame) => frame.id === activeFrameId),
+        expected,
+        () => setNotice(notice),
+      );
     };
     if (
       activeCloudProjectRef.current &&
       !activeCloudProjectRef.current.activeSceneLock &&
       cloudTargets.length > 0
     ) {
-      void runCloudSceneCellPatchEditMany("道具割当編集", cloudTargets, applyChange);
-      return;
+      await runCloudSceneCellPatchEditMany("道具割当編集", cloudTargets, applyChange);
+      return applied;
     }
     applyChange();
+    return applied;
   };
 
   const applyPreviousAssignmentsToCurrentFrame = () => {
     if (!selectedFrame) {
       setNotice("割当を反映するシーンがありません。");
-      return;
+      return false;
     }
     if (!selectedPreviousFrame || !selectedPreviousFrameSnapshot) {
       setNotice("反映できる直前シーンがありません。");
-      return;
+      return false;
     }
 
     const validMemberIds = new Set(project.members.map((member) => member.id));
@@ -4882,14 +4867,14 @@ function App() {
 
     if (transferableEntries.length === 0) {
       setNotice("反映できる前シーンの割当がありません。");
-      return;
+      return false;
     }
 
     const assignedMemberIds = new Set(
       transferableEntries.flatMap((entry) => entry.memberIds),
     );
 
-    updateMemberAssignmentsInCurrentFrame(
+    return updateMemberAssignmentsInCurrentFrame(
       (frame) => {
         const objectAssignments = { ...(frame.objectAssignments ?? {}) };
         transferableEntries.forEach(({ objectId, memberIds }) => {
@@ -4924,9 +4909,9 @@ function App() {
     const member = project.members.find((item) => item.id === memberId);
     if (!object || !member) {
       setNotice("割り当てる道具またはメンバーが見つかりません。");
-      return;
+      return false;
     }
-    updateMemberAssignmentsInCurrentFrame(
+    return updateMemberAssignmentsInCurrentFrame(
       (frame) => {
         const objectAssignments = { ...(frame.objectAssignments ?? {}) };
         objectAssignments[objectId] = [
@@ -4956,7 +4941,7 @@ function App() {
   ) => {
     const object = project.stageObjects.find((item) => item.id === objectId);
     const member = project.members.find((item) => item.id === memberId);
-    updateMemberAssignmentsInCurrentFrame(
+    return updateMemberAssignmentsInCurrentFrame(
       (frame, frameStage) => {
         const objectAssignments = { ...(frame.objectAssignments ?? {}) };
         const nextMembers = (objectAssignments[objectId] ?? []).filter(
@@ -5090,16 +5075,14 @@ function App() {
             };
           }),
     }));
+    if (projectRef.current.members.some((item) => item.id === id)) return false;
     if (selected?.type === "member" && selected.id === id) {
       setSelected(null);
     }
     setSelectedMemberIds((previous) =>
       previous.filter((memberId) => memberId !== id),
     );
-    if (project.focusMemberId === id) {
-      setFocusMode(false);
-      setMovementPathMode("all");
-    }
+    return true;
   };
 
   const updateObject = (id: string, patch: Partial<StageObject>) => {
@@ -5194,53 +5177,51 @@ function App() {
             return { ...frame, objectStates, objectAssignments };
           }),
     }));
+    if (projectRef.current.stageObjects.some((item) => item.id === id)) return false;
     if (selected?.type === "object" && selected.id === id) {
       setSelected(null);
     }
+    return true;
   };
 
   const confirmAndDeleteMember = async (id: string) => {
     const member = projectRef.current.members.find((item) => item.id === id);
     if (!member) {
-      return;
+      return false;
     }
-    const isDisplayed = isMemberDisplayedInAnyFrame(id);
     const confirmed = await requestAppConfirm({
       cancelLabel: "キャンセル",
-      confirmLabel: "削除する",
-      message: isDisplayed
-        ? `「${member.name}」は隊列内に表示中です。削除すると各シーンの配置や道具割当からも外れます。`
-        : `「${member.name}」を削除します。`,
-      title: "メンバーを削除しますか？",
+      confirmLabel: "名簿から削除",
+      message: `「${member.name}」を名簿から削除します。全シーンの配置と道具割当からも削除されます。`,
+      title: "名簿から削除",
       tone: "danger",
     });
     if (!confirmed) {
-      return;
+      return false;
     }
-    deleteMember(id);
-    setNotice(`${member.name} を削除しました。`);
+    if (!deleteMember(id)) return false;
+    setNotice(`${member.name} を名簿から削除しました。`);
+    return true;
   };
 
   const confirmAndDeleteObject = async (id: string) => {
     const object = projectRef.current.stageObjects.find((item) => item.id === id);
     if (!object) {
-      return;
+      return false;
     }
-    const isDisplayed = isObjectDisplayedInAnyFrame(id);
     const confirmed = await requestAppConfirm({
       cancelLabel: "キャンセル",
-      confirmLabel: "削除する",
-      message: isDisplayed
-        ? `「${object.name}」は隊列内に表示中です。削除すると各シーンの配置や道具割当からも外れます。`
-        : `「${object.name}」を削除します。`,
-      title: "道具を削除しますか？",
+      confirmLabel: "名簿から削除",
+      message: `「${object.name}」を名簿から削除します。全シーンの配置と道具割当からも削除されます。`,
+      title: "名簿から削除",
       tone: "danger",
     });
     if (!confirmed) {
-      return;
+      return false;
     }
-    deleteObject(id);
-    setNotice(`${object.name} を削除しました。`);
+    if (!deleteObject(id)) return false;
+    setNotice(`${object.name} を名簿から削除しました。`);
+    return true;
   };
 
   const nudgeObjectZ = (id: string, delta: number) => {
@@ -10939,15 +10920,12 @@ function App() {
       if (pages.length === 0) {
         throw new Error("PDF用ページが見つかりません。");
       }
-      const pageDataUrls: string[] = [];
-      for (const page of pages) {
-        pageDataUrls.push(await elementToJpegDataUrl(page));
-      }
-      return await jpegDataUrlsToPdfBlob(
-        pageDataUrls,
-        title,
-        getPrintOrientation(project),
-      );
+      const [{ elementToPngPage }, { imagePagesToPdfBlob }] = await Promise.all([
+        import("./utils/exportRaster"), import("./utils/pdfExport"),
+      ]);
+      const imagePages = [];
+      for (const page of pages) imagePages.push(await elementToPngPage(page));
+      return await imagePagesToPdfBlob(imagePages, { title, orientation: getPrintOrientation(project) });
     } finally {
       cleanupPrintExportElement();
     }
@@ -11563,22 +11541,6 @@ function App() {
     );
   };
 
-  const setFocusMember = (id?: string) => {
-    updateProject((previous) => ({
-      ...previous,
-      focusMemberId: id,
-    }));
-    if (!id) {
-      setFocusMode(false);
-      setMovementPathMode("all");
-      setNotice("自分用確認のメンバー選択を解除しました。");
-      return;
-    }
-    setFocusMode(true);
-    setMovementPathMode("focus");
-    setNotice("注目メンバーを設定しました。");
-  };
-
   const updateViewerPerspective = (nextPerspective: ViewerPerspective) => {
     setViewerPerspective(nextPerspective);
     updateProject((previous) => ({
@@ -11775,6 +11737,9 @@ function App() {
             return { ...frame, groupVisibility };
           }),
     }));
+    if ((projectRef.current.memberGroups ?? []).some((item) => item.id === id)) return false;
+
+    return true;
   };
 
   const createObjectGroup = (
@@ -11820,7 +11785,9 @@ function App() {
         (group) => group.id !== id,
       ),
     }), "道具グループ削除");
+    if ((projectRef.current.objectGroups ?? []).some((item) => item.id === id)) return false;
     setNotice("道具グループを削除しました。道具本体は残ります。");
+    return true;
   };
 
   const confirmAndDeleteMemberGroup = async (id: string) => {
@@ -11828,7 +11795,7 @@ function App() {
       (item) => item.id === id,
     );
     if (!group) {
-      return;
+      return false;
     }
     const hasDisplayedMember = group.memberIds.some((memberId) =>
       isMemberDisplayedInAnyFrame(memberId),
@@ -11843,10 +11810,11 @@ function App() {
       tone: "danger",
     });
     if (!confirmed) {
-      return;
+      return false;
     }
-    deleteGroup(id);
+    if (!deleteGroup(id)) return false;
     setNotice(`${group.name} を削除しました。メンバー本体は残ります。`);
+    return true;
   };
 
   const confirmAndDeleteObjectGroup = async (id: string) => {
@@ -11854,7 +11822,7 @@ function App() {
       (item) => item.id === id,
     );
     if (!group) {
-      return;
+      return false;
     }
     const hasDisplayedObject = group.objectIds.some((objectId) =>
       isObjectDisplayedInAnyFrame(objectId),
@@ -11869,10 +11837,11 @@ function App() {
       tone: "danger",
     });
     if (!confirmed) {
-      return;
+      return false;
     }
-    deleteObjectGroup(id);
+    if (!deleteObjectGroup(id)) return false;
     setNotice(`${group.name} を削除しました。道具本体は残ります。`);
+    return true;
   };
 
   const isMemberAssignedInFrame = (
@@ -11919,19 +11888,19 @@ function App() {
     project.frames.some((frame) => isObjectDisplayedInFrame(objectId, frame));
 
   const deleteRosterMember = async (memberId: string) => {
-    await confirmAndDeleteMember(memberId);
+    return confirmAndDeleteMember(memberId);
   };
 
   const deleteRosterObject = async (objectId: string) => {
-    await confirmAndDeleteObject(objectId);
+    return confirmAndDeleteObject(objectId);
   };
 
   const deleteRosterMemberGroup = async (groupId: string) => {
-    await confirmAndDeleteMemberGroup(groupId);
+    return confirmAndDeleteMemberGroup(groupId);
   };
 
   const deleteRosterObjectGroup = async (groupId: string) => {
-    await confirmAndDeleteObjectGroup(groupId);
+    return confirmAndDeleteObjectGroup(groupId);
   };
 
   const addObjectToGroup = (
@@ -11953,9 +11922,8 @@ function App() {
     );
   };
 
-  const addRosterMember = (groupId: string | null, name: string) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
+  const addRosterMember = (groupId: string | null, name?: string) => {
+    if (name !== undefined && !name.trim()) {
       return;
     }
     const id = createId("m");
@@ -11965,6 +11933,11 @@ function App() {
       const group = (previous.memberGroups ?? []).find(
         (item) => item.id === groupId,
       );
+      if (groupId !== null && !group) return previous;
+      const trimmedName = name?.trim() ??
+        nextRosterItemName(
+          previous.members, previous.memberGroups ?? [], "members", groupId,
+        );
       const activeFrame =
         previous.frames.find((frame) => frame.id === selectedFrame?.id) ??
         previous.frames[0];
@@ -12021,12 +11994,12 @@ function App() {
             }),
       };
     }, "名簿メンバー追加");
-    setNotice(`${trimmedName} を名簿に追加しました。`);
+    const added = projectRef.current.members.find((member) => member.id === id);
+    if (added) setNotice(`${added.name} を名簿に追加しました。`);
   };
 
-  const addRosterObject = (groupId: string | null, name: string) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
+  const addRosterObject = (groupId: string | null, name?: string) => {
+    if (name !== undefined && !name.trim()) {
       return;
     }
     const id = createId("o");
@@ -12036,6 +12009,11 @@ function App() {
       const group = (previous.objectGroups ?? []).find(
         (item) => item.id === groupId,
       );
+      if (groupId !== null && !group) return previous;
+      const trimmedName = name?.trim() ??
+        nextRosterItemName(
+          previous.stageObjects, previous.objectGroups ?? [], "objects", groupId,
+        );
       const draft: StageObjectDraft = {
         ...defaultStageObjectDraft,
         name: trimmedName,
@@ -12128,7 +12106,8 @@ function App() {
             }),
       };
     }, "名簿道具追加");
-    setNotice(`${trimmedName} を名簿に追加しました。`);
+    const added = projectRef.current.stageObjects.find((object) => object.id === id);
+    if (added) setNotice(`${added.name} を名簿に追加しました。`);
   };
 
   const createRosterMemberGroup = () => {
@@ -12834,19 +12813,48 @@ function App() {
       : "全体設定の編集はownerのみ可能です。"
     : undefined;
 
+  const canOpenRosterManager =
+    !activeCloudProject ||
+    !APP_FEATURES.collaboration ||
+    activeCloudProject.role === "owner";
+  const openRosterManager = (mode?: "members" | "objects") => {
+    if (APP_FEATURES.collaboration && activeCloudProject) {
+      const lockKey = activeCloudProject.activeProjectLock?.lockKey;
+      if (lockKey !== "members" && lockKey !== "objects") {
+        setNotice(
+          activeCloudProject.role === "owner"
+            ? "名簿を編集するには、上部の「メンバー名簿」または「道具マスター」を押してください。"
+            : "名簿の編集はownerのみ可能です。",
+        );
+        return;
+      }
+      if (!canOpenRosterManager) {
+        setNotice("名簿の編集はownerのみ可能です。");
+        return;
+      }
+      if (mode && mode !== lockKey) {
+        setNotice(
+          mode === "members"
+            ? "メンバーを編集するには「メンバー名簿」の編集モードにしてください。"
+            : "道具を編集するには「道具マスター」の編集モードにしてください。",
+        );
+        return;
+      }
+    }
+    setRosterInitialMode(mode);
+    setIsRosterManagerOpen(true);
+  };
+
   const panelContent = (() => {
     if (activePanelTab === "members") {
       return (
-        <>
           <MemberPanel
+            canOpenRosterManager={canOpenRosterManager}
+            onOpenRosterManager={() => openRosterManager("members")}
             members={project.members}
             selected={selected}
             selectedMemberIds={selectedMemberIds}
-            focusMemberId={project.focusMemberId}
-            focusMode={focusMode}
             groups={project.memberGroups ?? []}
-            frames={project.frames}
-            stageObjects={project.stageObjects}
             currentFrame={selectedFrame}
             objectAssignmentLabelsByMemberId={objectAssignmentLabelsByMemberId}
             visibilityTab={memberVisibilityTab}
@@ -12880,10 +12888,7 @@ function App() {
             onCopySelected={() => copyMemberToClipboard()}
             onPasteMember={pasteMemberFromClipboard}
             canPasteMember={clipboard?.type === "member" && canEditCurrentScene}
-            onSetFocusMember={setFocusMember}
-            onToggleFocusMode={() => setFocusMode((previous) => !previous)}
-            onSelectFrame={(id) => setSelectedFrameId(id)}
-          />
+          >
           <div data-member-tools-panel="true">
             <GroupToolsPanel
               members={project.members}
@@ -12904,13 +12909,17 @@ function App() {
               onAlignSelection={alignSelectedMembers}
             />
           </div>
-        </>
+          </MemberPanel>
       );
     }
 
     if (activePanelTab === "objects") {
       return (
         <ObjectPanel
+          currentFrameId={selectedFrame?.id}
+          canOpenRosterManager={canOpenRosterManager}
+          onOpenRosterManager={() => openRosterManager("objects")}
+          memberGroups={project.memberGroups ?? []}
           objects={project.stageObjects}
           objectGroups={project.objectGroups ?? []}
           objectStates={snapshot.objectStates}
@@ -12937,12 +12946,6 @@ function App() {
           onAddObject={(visibleInCurrentFrame) =>
             addStageObject(defaultStageObjectDraft, visibleInCurrentFrame)
           }
-          onAddCurtain={(visibleInCurrentFrame) =>
-            addStageObject(curtainDraft, visibleInCurrentFrame)
-          }
-          onAddMark={(visibleInCurrentFrame) =>
-            addStageObject(markDraft, visibleInCurrentFrame)
-          }
           onCreateObjectGroup={createObjectGroup}
           onUpdateObjectGroup={updateObjectGroup}
           onDeleteObjectGroup={(id) => void confirmAndDeleteObjectGroup(id)}
@@ -12962,6 +12965,9 @@ function App() {
     if (activePanelTab === "assignments") {
       return (
         <AssignmentPanel
+          canOpenRosterManager={canOpenRosterManager}
+          onOpenRosterManager={() => openRosterManager("members")}
+          memberGroups={project.memberGroups ?? []}
           frames={project.frames}
           members={project.members}
           objects={project.stageObjects}
@@ -12997,7 +13003,6 @@ function App() {
             project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true
           }
           showMeterRulers={showMeterRulers}
-          focusMode={focusMode}
           showSnapGuides={project.guideSettings?.snapGuideEnabled ?? true}
           snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
           disabled={!canEditCloudSettings}
@@ -13006,7 +13011,6 @@ function App() {
           onParadeSettingsChange={updateParadeSettings}
           onUseGlobalStageSizeChange={updateUseGlobalStageSize}
           onToggleMeterRulers={() => setShowMeterRulers((previous) => !previous)}
-          onToggleFocusMode={() => setFocusMode((previous) => !previous)}
           onToggleSnapGuides={() =>
             updateGuideSettings({
               snapGuideEnabled: !(project.guideSettings?.snapGuideEnabled ?? true),
@@ -13158,7 +13162,6 @@ function App() {
           project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true
         }
         showMeterRulers={showMeterRulers}
-        focusMode={focusMode}
         showSnapGuides={project.guideSettings?.snapGuideEnabled ?? true}
         snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
         disabled={!canEditCloudSettings}
@@ -13167,7 +13170,6 @@ function App() {
         onParadeSettingsChange={updateParadeSettings}
         onUseGlobalStageSizeChange={updateUseGlobalStageSize}
         onToggleMeterRulers={() => setShowMeterRulers((previous) => !previous)}
-        onToggleFocusMode={() => setFocusMode((previous) => !previous)}
         onToggleSnapGuides={() =>
           updateGuideSettings({
             snapGuideEnabled: !(project.guideSettings?.snapGuideEnabled ?? true),
@@ -13286,22 +13288,8 @@ function App() {
           setActivePanelTab("members");
           setIsPanelOpen(true);
         }}
-        onOpenRosterManager={() => {
-          if (
-            APP_FEATURES.collaboration &&
-            activeCloudProject &&
-            activeCloudProject.activeProjectLock?.lockKey !== "members" &&
-            activeCloudProject.activeProjectLock?.lockKey !== "objects"
-          ) {
-            setNotice(
-              activeCloudProject.role === "owner"
-                ? "名簿を編集するには、上部の「メンバー名簿」または「道具マスター」を押してください。"
-                : "名簿の編集はownerのみ可能です。",
-            );
-            return;
-          }
-          setIsRosterManagerOpen(true);
-        }}
+        canOpenRosterManager={canOpenRosterManager}
+        onOpenRosterManager={() => openRosterManager()}
       />
       {isSharedProject && (
         <div className="shared-project-banner">
@@ -13580,8 +13568,8 @@ function App() {
                   selectedFrameLabel={getFrameLabel(displayFrame)}
                   selectedMemberIds={selectedMemberIds}
                   isMemberSelectionMode={isMemberSelectionMode}
-                  focusMemberId={project.focusMemberId}
-                  focusMode={focusMode}
+                  focusMemberId={undefined}
+                  focusMode={false}
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
                   deferMemberDragCommit={Boolean(
@@ -13644,8 +13632,8 @@ function App() {
                   movementPathMode={movementPathMode}
                   selectedMemberIds={selectedMemberIds}
                   isMemberSelectionMode={isMemberSelectionMode}
-                  focusMemberId={project.focusMemberId}
-                  focusMode={focusMode}
+                  focusMemberId={undefined}
+                  focusMode={false}
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
                   deferMemberDragCommit={Boolean(
@@ -13782,18 +13770,6 @@ function App() {
               </button>
               <button onClick={() => runContextMenuAction(hideContextTarget)} type="button">
                 隊列外へ
-              </button>
-              <button
-                onClick={() =>
-                  runContextMenuAction(() => {
-                    if (contextMenu.target.type === "member") {
-                      setFocusMember(contextMenu.target.id);
-                    }
-                  })
-                }
-                type="button"
-              >
-                自分用確認に設定
               </button>
               <button
                 onClick={() => {
@@ -14063,6 +14039,11 @@ function App() {
       onClose={() => setIsShareExportOpen(false)}
       onExport={handleShareExport}
       onExportZip={handleShareExportZip}
+      getMobileExportSource={() => structuredClone({
+        project, projectTitle: project.title, members: project.members, memberGroups: project.memberGroups ?? [],
+        objects: project.stageObjects, objectGroups: project.objectGroups ?? [], frames: project.frames,
+        currentFrame: selectedFrame ?? null, objectStates: selectedFrame?.objectStates ?? {},
+      })}
     />
     {APP_FEATURES.collaboration && activeCloudProject?.role === "owner" && isCloudShareOpen && (
       <CloudShareModal
@@ -14183,7 +14164,40 @@ function App() {
         </section>
       </div>
     )}
+    {isRosterManagerOpen && <Suspense fallback={<div className="roster-loading" role="status">名簿を読み込み中…</div>}>
     <RosterManagementModal
+      canUndo={(!activeCloudProject || !APP_FEATURES.collaboration) && historyCounts.undo > 0}
+      onUndo={undoProject}
+      frames={project.frames}
+      currentFrame={selectedFrame ?? null}
+      objectStates={selectedFrameSnapshot.objectStates}
+      previousFrame={selectedPreviousFrame}
+      previousObjectStates={selectedPreviousFrameSnapshot?.objectStates ?? {}}
+      canEditAssignments={canEditCurrentScene && (!activeCloudProject || !APP_FEATURES.collaboration)}
+      readOnlyMessage={activeCloudProject && APP_FEATURES.collaboration
+        ? "共同編集中の割当は隊列表の「割当」タブで行ってください。"
+        : cloudReadOnlyMessage ?? "このシーンは閲覧のみです。"}
+      onAssignMember={(objectId, memberId) => {
+        if (!canEditCurrentScene || (activeCloudProjectRef.current && APP_FEATURES.collaboration)) return false;
+        return assignMemberToObject(objectId, memberId);
+      }}
+      onRemoveAssignment={(objectId, memberId, restoreMember) => {
+        if (!canEditCurrentScene || (activeCloudProjectRef.current && APP_FEATURES.collaboration)) return false;
+        return removeObjectAssignment(objectId, memberId, restoreMember);
+      }}
+      onApplyPreviousAssignments={() => {
+        if (!canEditCurrentScene || (activeCloudProjectRef.current && APP_FEATURES.collaboration)) return false;
+        return applyPreviousAssignmentsToCurrentFrame();
+      }}
+      onSelectFrame={(id) => {
+        const frame = project.frames.find((item) => item.id === id);
+        if (!frame) return;
+        setSelectedFrameId(frame.id);
+        seek(frame.timeSec);
+      }}
+      projectTitle={project.title}
+      onNotice={setNotice}
+      initialMode={rosterInitialMode}
       isOpen={
         isRosterManagerOpen &&
         (!activeCloudProject ||
@@ -14209,6 +14223,8 @@ function App() {
       onRenameObject={(objectId, name) => updateObject(objectId, { name })}
       onAddMember={addRosterMember}
       onAddObject={addRosterObject}
+      onQuickAddMember={(groupId) => addRosterMember(groupId)}
+      onQuickAddObject={(groupId) => addRosterObject(groupId)}
       onCreateMemberGroup={createRosterMemberGroup}
       onCreateObjectGroup={createRosterObjectGroup}
       onRenameMemberGroup={(groupId, name) => updateGroup(groupId, { name })}
@@ -14226,6 +14242,7 @@ function App() {
         updateObjectGroup(groupId, { color })
       }
     />
+    </Suspense>}
     {isPrintPreviewMounted && (
       <PrintPreview
         project={project}
