@@ -71,8 +71,10 @@ import {
 } from "../utils/touchLongPress";
 import { ResizableRotatableObject } from "./ResizableRotatableObject";
 import { StageTimeBar } from "./StageTimeBar";
+import { CompactStageControls } from "./CompactStageControls";
 
 type StageCanvasProps = {
+  compact?: boolean;
   project: Project;
   snapshot: StageSnapshot;
   selected: Selection;
@@ -357,6 +359,7 @@ const isSnapshotMemberVisible = (
 export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
   (
     {
+      compact = false,
       project,
       snapshot,
       selected,
@@ -421,7 +424,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       anchor?: { clientX: number; clientY: number };
     } | null>(null);
     const stageZoomFrameRef = useRef<number | null>(null);
-    const stageZoomRef = useRef(STAGE_ZOOM_DEFAULT);
+    const initialZoom = compact ? STAGE_ZOOM_MIN : STAGE_ZOOM_DEFAULT;
+    const stageZoomRef = useRef(initialZoom);
+    const portraitFitAppliedRef = useRef(compact);
     const stageHorizontalViewInitializedRef = useRef(false);
     const isStagePinchLockedRef = useRef(false);
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
@@ -430,7 +435,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const [isStagePanning, setIsStagePanning] = useState(false);
     const [isMemberDragging, setIsMemberDragging] = useState(false);
     const [activeSnapGuides, setActiveSnapGuides] = useState<SnapGuide[]>([]);
-    const [stageZoom, setStageZoom] = useState(STAGE_ZOOM_DEFAULT);
+    const [stageZoom, setStageZoom] = useState(initialZoom);
     const [isStagePinchLocked, setIsStagePinchLocked] = useState(false);
     const stableFitAreaSizeRef = useRef(fitAreaSize);
     const stage = project.stage;
@@ -928,6 +933,15 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       cancelPendingStageZoom();
       applyStageZoom(nextZoom, anchor);
     };
+
+    // Apply fit once on the first portrait entry. Playback, panel size and later
+    // rotations must preserve the user's multiplier and pinch state.
+    useEffect(() => {
+      if (!compact || portraitFitAppliedRef.current) return;
+      portraitFitAppliedRef.current = true;
+      cancelPendingStageZoom();
+      applyStageZoom(STAGE_ZOOM_MIN);
+    }, [compact]);
 
     const handleStageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
       if (!event.ctrlKey && !event.metaKey) {
@@ -1770,7 +1784,16 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     return (
       <main className="stage-area">
         <div className={isReadOnly ? "stage-frame is-read-only" : "stage-frame"}>
-          <div className="stage-export-header">
+          {compact ? <CompactStageControls
+            currentTime={currentTime} duration={audioDuration} audioName={audioName}
+            sceneLabel={selectedFrameLabel} isPlaying={isPlaying} isFullscreen={isFullscreen}
+            isReadOnly={isReadOnly} canUndo={canUndo} canRedo={canRedo}
+            zoom={stageZoom} pinchLocked={isStagePinchLocked}
+            onUndo={onUndo} onRedo={onRedo} onPlay={onTogglePlayback} onSave={onSaveFrame}
+            onSeek={onSeekAudio} onZoom={updateStageZoom} onCapture={onCaptureStageImage}
+            onPerspective={onTogglePerspective} onFullscreen={onToggleFullscreen}
+            onPinchLock={() => setIsStagePinchLocked((locked) => !locked)}
+          /> : <div className="stage-export-header">
             <div className="stage-primary-controls">
               <button
                 className="mini-button icon-only undo-redo-button"
@@ -1926,8 +1949,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 <span className="sr-only">{isFullscreen ? "戻る" : "全画面"}</span>
               </button>
             </div>
-          </div>
-          {showMeterRulers && (
+          </div>}
+          {showMeterRulers && !compact && (
             <div className="ruler-reference-labels">
               <span>
                 {horizontalGuideMode === "centerSplit"

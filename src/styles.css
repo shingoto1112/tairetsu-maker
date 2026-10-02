@@ -7549,635 +7549,7 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   padding-top: max(12px, env(safe-area-inset-top));
 }
 
-@media (orientation: portrait) and (max-width: 1400px) {
-  .app-shell {
-    overflow: hidden;
-  }
-
-  .workspace {
-    gap: 8px;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    overflow: hidden;
-    padding: 8px;
-  }
-
-  .tab-panel,
-  .tab-panel.is-collapsed {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    height: clamp(190px, 16dvh, 220px);
-    overflow: hidden;
-    width: 100%;
-  }
-
-  .tab-panel.is-collapsed {
-    height: 64px;
-    grid-template-rows: minmax(0, 1fr);
-  }
-
-  .panel-tabs {
-    border-bottom: 1px solid var(--border);
-    border-right: 0;
-    display: flex;
-    gap: 6px;
-    min-height: 58px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 7px 8px;
-    scrollbar-width: thin;
-  }
-
-  .panel-tab,
-  .panel-collapse-button {
-    flex: 0 0 auto;
-    min-height: 44px;
-    padding: 8px 10px;
-  }
-
-  .panel-collapse-button {
-    position: sticky;
-    right: 0;
-  }
-
-  .tab-panel__content {
-    display: block;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px;
-    scroll-snap-type: x proximity;
-    scrollbar-width: thin;
-  }
-
-  .tab-panel__content > .panel-section,
-  .tab-panel__content > .assignment-tab {
-    align-items: flex-start;
-    display: flex;
-    gap: 10px;
-    height: 100%;
-    min-width: max-content;
-    width: max-content;
-  }
-
-  .tab-panel__content > .panel-section > *,
-  .tab-panel__content > .assignment-tab > * {
-    align-self: flex-start;
-    flex: 0 0 min(330px, 76vw);
-    height: auto;
-    max-height: calc(100% - 2px);
-    min-width: 0;
-    overflow: auto;
-    scroll-snap-align: start;
-  }
-
-  .tab-panel__content .panel-sticky-header {
-    position: static;
-  }
-
-  .center-column {
-    gap: 6px;
-  }
-
-  .stage-workspace,
-  .center-column.is-thumbnail-collapsed .stage-workspace {
-    gap: 6px;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 126px minmax(0, 1fr);
-  }
-
-  .center-column.is-thumbnail-collapsed .stage-workspace {
-    grid-template-rows: 42px minmax(0, 1fr);
-  }
-
-  .scene-thumbnail-rail {
-    grid-template-columns: 78px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
-  }
-
-  .scene-thumbnail-rail__toggle {
-    border-bottom: 0;
-    border-right: 1px solid var(--border);
-    height: 100%;
-    min-height: 0;
-    white-space: nowrap;
-    width: 78px;
-  }
-
-  .scene-thumbnail-list {
-    align-items: stretch;
-    display: flex;
-    gap: 7px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 6px;
-    scrollbar-width: thin;
-  }
-
-  .scene-thumbnail-card {
-    flex: 0 0 106px;
-    height: 112px;
-    max-height: 112px;
-    min-height: 112px;
-  }
-
-  .scene-thumbnail-preview {
-    height: 56px;
-  }
-
-  .stage-fullscreen-host,
-  .stage-area,
-  .stage-frame {
-    min-height: 0;
-  }
-
-  .parade-canvas-shell {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 220px minmax(0, 1fr);
-  }
-
-  .parade-control-panel {
-    align-items: stretch;
-    border-bottom: 1px solid #dbe7ee;
-    border-right: 0;
-    display: flex;
-    gap: 8px;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 8px;
-    scrollbar-width: thin;
-  }
-
-  .parade-control-panel__header,
-  .parade-control-section,
-  .parade-readonly-pill {
-    flex: 0 0 min(260px, 68vw);
-    max-height: 100%;
-    overflow: auto;
-  }
-
-  .parade-control-panel__header {
-    align-content: center;
-  }
-
-  .stage-fullscreen-host.is-stage-fullscreen .parade-canvas-shell {
-    height: 100%;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .workspace {
-    grid-template-rows: clamp(214px, 18dvh, 236px) minmax(0, 1fr);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .workspace.is-editor-collapsed {
-    grid-template-rows: 62px minmax(0, 1fr);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel,
-  html[data-app-runtime="capacitor-ios"] .tab-panel.is-collapsed {
-    height: 100%;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content {
-    box-shadow:
-      inset 0 0 0 rgba(15, 118, 110, 0),
-      inset 0 0 0 rgba(15, 118, 110, 0);
-    padding: 7px;
-    scroll-padding-inline: 8px;
-    scroll-snap-type: x proximity;
-    transition: box-shadow 140ms ease;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content.has-scroll-before {
-    box-shadow: inset 18px 0 16px -18px rgba(15, 118, 110, 0.48);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content.has-scroll-after {
-    box-shadow: inset -18px 0 16px -18px rgba(15, 118, 110, 0.48);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content.has-scroll-before.has-scroll-after {
-    box-shadow:
-      inset 18px 0 16px -18px rgba(15, 118, 110, 0.48),
-      inset -18px 0 16px -18px rgba(15, 118, 110, 0.48);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-tabs {
-    gap: 4px;
-    min-height: 52px;
-    padding: 4px 6px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-tab,
-  html[data-app-runtime="capacitor-ios"] .panel-collapse-button {
-    border-radius: 7px;
-    gap: 6px;
-    min-height: 44px;
-    padding: 7px 9px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-tab svg {
-    height: 17px;
-    width: 17px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-collapse-button {
-    background: #f0fdfa;
-    border-color: #ccfbf1;
-    color: var(--accent);
-    gap: 5px;
-    padding-inline: 10px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-collapse-label {
-    display: inline;
-    font-size: 12px;
-    white-space: nowrap;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .toolbar .mini-button,
-  html[data-app-runtime="capacitor-ios"] .toolbar .icon-button,
-  html[data-app-runtime="capacitor-ios"] .toolbar-menu-button,
-  html[data-app-runtime="capacitor-ios"] .toolbar__title {
-    min-height: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .toolbar-menu-button {
-    height: 44px;
-    width: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .app-menu-item {
-    min-height: 48px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .app-menu-link {
-    min-height: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .panel-section,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .assignment-tab,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .details-panel,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline {
-    align-items: stretch;
-    background: transparent;
-    border: 0;
-    display: flex;
-    gap: 8px;
-    height: 100%;
-    min-width: max-content;
-    padding: 0;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .panel-section > *,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .assignment-tab > *,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .details-panel > * {
-    align-self: stretch;
-    box-sizing: border-box;
-    flex: 0 0 clamp(252px, 27vw, 306px);
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    overflow: auto;
-    scroll-snap-align: start;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .is-current-portrait-card {
-    border-color: #99f6e4;
-    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.08);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .panel-sticky-header {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: none;
-    margin: 0;
-    padding: 9px 10px;
-    position: static;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-visibility-summary {
-    align-items: center;
-    background: #fbfdff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    display: flex;
-    flex: 0 0 auto !important;
-    gap: 8px;
-    min-width: max-content;
-    padding: 9px;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-visibility-summary .member-visibility-tabs {
-    flex: 0 0 250px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .panel-visibility-summary .muted-text {
-    line-height: 1.45;
-    margin: 0;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .object-visibility-list,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .stack {
-    margin-top: 0;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .object-visibility-list {
-    align-items: center;
-    display: flex;
-    flex: 0 0 auto !important;
-    max-width: none;
-    min-width: max-content;
-    overflow: visible;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .object-visibility-list__header {
-    align-items: flex-start;
-    flex: 0 0 148px;
-    flex-direction: column;
-    justify-content: center;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .visibility-checklist__actions {
-    flex: 0 0 auto;
-    flex-wrap: nowrap;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .object-visibility-list__items {
-    align-items: center;
-    display: flex;
-    flex: 0 0 auto;
-    gap: 7px;
-    max-height: none;
-    overflow: visible;
-    padding: 0;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .object-visibility-item {
-    flex: 0 0 auto;
-    grid-template-columns: auto auto minmax(72px, auto) auto;
-    min-height: 44px;
-    min-width: 132px;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .object-visibility-list__items > .empty-state {
-    min-width: 210px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .member-management-block,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .object-group-manager,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .object-placement-tools,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .personal-check,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .stack {
-    align-items: center;
-    display: flex;
-    flex: 0 0 auto !important;
-    gap: 9px;
-    max-width: none;
-    min-width: max-content;
-    overflow: visible;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .member-management-block > .panel-section__header,
-  html[data-app-runtime="capacitor-ios"] .object-group-manager > .object-visibility-list__header,
-  html[data-app-runtime="capacitor-ios"] .object-placement-tools > .panel-section__header {
-    align-items: flex-start;
-    flex: 0 0 154px;
-    flex-direction: column;
-    justify-content: center;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .settings-grid,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .field-grid,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .toggle-list,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .detail-edit-grid {
-    align-items: end;
-    display: flex;
-    flex: 0 0 auto;
-    gap: 8px;
-    margin: 0;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .settings-grid > label,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .field-grid > label,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .detail-edit-field {
-    flex: 0 0 150px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .personal-check__list,
-  html[data-app-runtime="capacitor-ios"] .object-group-list,
-  html[data-app-runtime="capacitor-ios"] .object-group-items,
-  html[data-app-runtime="capacitor-ios"] .assignment-tab-list {
-    align-items: center;
-    display: flex;
-    flex: 0 0 auto;
-    gap: 8px;
-    max-height: none;
-    overflow: visible;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .personal-check__item,
-  html[data-app-runtime="capacitor-ios"] .object-group-card,
-  html[data-app-runtime="capacitor-ios"] .assignment-tab-list > * {
-    flex: 0 0 240px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .settings-disclosure[open] {
-    align-items: center;
-    display: flex;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .settings-disclosure[open] > :not(summary) {
-    margin: 0 8px 0 0;
-    min-width: 240px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .mini-button,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .icon-button,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content button,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content input,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content select {
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content .color-palette-trigger {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .panel-sticky-header,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .timeline-save-status,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .notice {
-    align-self: stretch;
-    box-sizing: border-box;
-    flex: 0 0 clamp(252px, 27vw, 306px);
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    overflow: auto;
-    scroll-snap-align: start;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > .timeline > .timeline__rail {
-    align-items: stretch;
-    display: flex;
-    gap: 8px;
-    height: 100%;
-    padding: 0;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .timeline__rail > .timeline-item,
-  html[data-app-runtime="capacitor-ios"] .timeline__rail > .empty-state {
-    box-sizing: border-box;
-    flex: 0 0 clamp(252px, 27vw, 306px);
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    overflow: auto;
-    scroll-snap-align: start;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .timeline-card {
-    min-height: 100%;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-workspace,
-  html[data-app-runtime="capacitor-ios"] .center-column.is-thumbnail-collapsed .stage-workspace {
-    grid-template-rows: 96px minmax(0, 1fr);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .center-column.is-thumbnail-collapsed .stage-workspace {
-    grid-template-rows: 42px minmax(0, 1fr);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-card {
-    flex-basis: 88px;
-    height: 82px;
-    max-height: 82px;
-    min-height: 82px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-preview {
-    height: 34px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-rail {
-    grid-template-columns: 70px minmax(0, 1fr);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-rail__toggle {
-    min-width: 70px;
-    padding: 6px;
-    width: 70px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .scene-thumbnail-list {
-    gap: 6px;
-    padding: 6px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-frame {
-    gap: 6px;
-    padding: 8px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-export-header {
-    flex-wrap: nowrap;
-    min-height: 58px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 7px;
-    scrollbar-width: thin;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-export-header button {
-    min-height: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-export-header .icon-button {
-    min-width: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-primary-controls,
-  html[data-app-runtime="capacitor-ios"] .stage-export-header__actions {
-    flex: 0 0 auto;
-    flex-wrap: nowrap;
-    min-width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .stage-primary-controls .stage-timebar {
-    flex-basis: 410px;
-    min-width: 410px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-canvas-shell {
-    grid-template-rows: 124px minmax(0, 1fr);
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel {
-    align-items: center;
-    gap: 7px;
-    padding: 6px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel__header,
-  html[data-app-runtime="capacitor-ios"] .parade-control-section,
-  html[data-app-runtime="capacitor-ios"] .parade-readonly-pill {
-    flex: 0 0 auto;
-    max-height: none;
-    overflow: visible;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel__header {
-    min-width: 186px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-section {
-    align-items: center;
-    display: flex;
-    gap: 7px;
-    min-height: 110px;
-    padding: 7px;
-    width: max-content;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-section > h3,
-  html[data-app-runtime="capacitor-ios"] .parade-control-section > label,
-  html[data-app-runtime="capacitor-ios"] .parade-control-section > button,
-  html[data-app-runtime="capacitor-ios"] .parade-control-section > .parade-control-row {
-    flex: 0 0 auto;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-section > label {
-    min-width: 110px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel button,
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel input,
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel select {
-    min-height: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel .icon-button,
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel .mini-button.icon-only {
-    min-width: 44px;
-  }
-
-  html[data-app-runtime="capacitor-ios"] .parade-control-panel .checkbox-row input {
-    min-height: 24px;
-  }
-}
-
-/* Roster controls share one sticky region; only the body becomes a card strip. */
+/* Roster controls share one sticky region and the normal vertical content flow. */
 .panel-manager-body { display: contents; }
 .panel-group-form { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .panel-group-form > button { margin-top: 10px; }
@@ -8212,187 +7584,32 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .roster-manager-edit-notice { color: #9a3412; grid-column: 1 / -1; margin: 0; }
 .roster-loading { background: white; inset: 0; padding: 24px; position: fixed; z-index: 1200; }
 
-/* Sidebar content must not inherit the iPad top layout's horizontal lists. */
+/* Sidebar and portrait reuse the same vertical roster lists. */
 @media screen {
-  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.member-management-block, .object-group-manager, .object-placement-tools, .object-visibility-list) {
+  :is(html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"], .app-shell[data-workspace-layout="portrait"]) :is(.member-manager, .object-manager) .panel-manager-body :is(.member-management-block, .object-group-manager, .object-placement-tools, .object-visibility-list) {
     display: block;
     min-width: 0;
     overflow: visible;
     width: auto;
   }
-  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.stack, .object-group-list, .object-group-items, .object-visibility-list__items, .settings-grid, .field-grid) {
+  :is(html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"], .app-shell[data-workspace-layout="portrait"]) :is(.member-manager, .object-manager) .panel-manager-body :is(.stack, .object-group-list, .object-group-items, .object-visibility-list__items, .settings-grid, .field-grid) {
     display: grid;
     min-width: 0;
     overflow: visible;
     width: auto;
   }
-  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.settings-grid, .field-grid) {
+  :is(html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"], .app-shell[data-workspace-layout="portrait"]) :is(.member-manager, .object-manager) .panel-manager-body :is(.settings-grid, .field-grid) {
     grid-template-columns: minmax(0, 1fr);
   }
-  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .panel-manager-body :is(.object-visibility-list__header, .panel-section__header) {
+  :is(html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"], .app-shell[data-workspace-layout="portrait"]) :is(.member-manager, .object-manager) .panel-manager-body :is(.object-visibility-list__header, .panel-section__header) {
     align-items: center;
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
   }
-  html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"] :is(.member-manager, .object-manager) .object-visibility-item {
+  :is(html[data-app-runtime="capacitor-ios"][data-native-workspace-layout="sidebar"], .app-shell[data-workspace-layout="portrait"]) :is(.member-manager, .object-manager) .object-visibility-item {
     min-width: 0;
     width: auto;
-  }
-}
-
-@media (orientation: portrait) and (max-width: 1400px) {
-
-  html .tab-panel__content > :is(.member-manager, .object-manager) {
-    display: flex;
-    height: 100%;
-    min-width: 0;
-    padding: 0;
-    width: 100%;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header {
-    align-self: stretch;
-    display: flex;
-    flex: 0 0 min(300px, 42vw);
-    flex-direction: column;
-    gap: 6px;
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    overflow: hidden;
-    padding: 8px;
-    position: static;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header .panel-sticky-meta {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions {
-    align-content: start;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary {
-    border: 0;
-    flex: 0 0 auto;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body {
-    align-self: stretch;
-    display: flex;
-    flex: 1 1 0;
-    gap: 8px;
-    height: 100%;
-    max-height: 100%;
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body > * {
-    box-sizing: border-box;
-    flex: 0 0 min(300px, 76vw);
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    min-width: 0;
-    overflow: auto;
-  }
-}
-
-/* The card strip is the iPad portrait (top) layout only; landscape keeps the vertical sidebar list. */
-@media (orientation: portrait) {
-
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) {
-    display: flex;
-    height: 100%;
-    min-width: 0;
-    padding: 0;
-    width: 100%;
-  }
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header {
-    align-self: stretch;
-    display: flex;
-    flex: 0 0 min(300px, 42vw);
-    flex-direction: column;
-    gap: 6px;
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    overflow: hidden;
-    padding: 8px;
-    position: static;
-  }
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header .panel-sticky-meta {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions {
-    align-content: start;
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-  }
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary {
-    border: 0;
-    flex: 0 0 auto;
-  }
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body {
-    align-self: stretch;
-    display: flex;
-    flex: 1 1 0;
-    gap: 8px;
-    height: 100%;
-    max-height: 100%;
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-manager-body > * {
-    box-sizing: border-box;
-    flex: 0 0 min(300px, 76vw);
-    height: 100%;
-    margin: 0;
-    max-height: 100%;
-    min-width: 0;
-    overflow: auto;
-  }
-}
-
-/* Portrait card strip: keep the fixed card to two rows (title + visibility tabs, then one row of
-   actions) so the actions are never squeezed below the 44px touch height. */
-@media (orientation: portrait) and (max-width: 1400px) {
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header {
-    align-content: start;
-    display: grid;
-    flex: 0 0 min(400px, 52vw);
-    gap: 6px 10px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-title,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-title {
-    align-self: center;
-    grid-column: 1;
-    grid-row: 1;
-    min-width: 0;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-visibility-summary {
-    align-self: center;
-    grid-column: 2;
-    grid-row: 1;
-  }
-  html .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions,
-  html[data-app-runtime="capacitor-ios"] .tab-panel__content > :is(.member-manager, .object-manager) > .panel-sticky-header > .panel-sticky-actions {
-    flex-wrap: nowrap;
-    grid-column: 1 / -1;
-    grid-row: 2;
-    min-height: 44px;
-    overflow-x: auto;
-    overflow-y: hidden;
   }
 }
 
@@ -8435,3 +7652,211 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   padding: 0;
 }
 .toolbar .toolbar-icon-button svg { color: var(--accent); }
+/* Tab selection and panel visibility have separate scroll owners. */
+@media screen {
+  .panel-tabs-header { background: #fbfcfe; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+  .panel-tabs-header > .panel-tabs { border-right: 0; flex: 0 0 auto; }
+  .panel-tabs-header > .panel-collapse-button { flex: 0 0 auto; margin: 0 8px 14px; }
+
+  html:not([data-app-runtime="capacitor-ios"]) #root:has(> .app-shell[data-workspace-layout="portrait"]) { height: 100dvh; width: 100%; zoom: 1; }
+  html .app-shell[data-workspace-layout="portrait"] {
+    height: var(--workspace-viewport-height, 100dvh);
+    min-height: 0;
+    overflow: hidden;
+  }
+  .app-shell[data-workspace-layout="portrait"] .toolbar { height: 56px; min-height: 56px; padding: 6px 8px; }
+  .app-shell[data-workspace-layout="portrait"] .toolbar__brand { gap: 6px; }
+  .app-shell[data-workspace-layout="portrait"] .toolbar__logo { display: none; }
+  .app-shell[data-workspace-layout="portrait"] .toolbar__title { flex: 1 1 0; max-width: none; min-width: 0; width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .toolbar :is(button, input) { min-height: 44px; }
+  .app-shell[data-workspace-layout="portrait"] .toolbar :is(.toolbar-menu-button, .toolbar-icon-button) { height: 44px; width: 44px; min-width: 44px; }
+  .app-shell[data-workspace-layout="portrait"] .workspace {
+    container-type: size;
+    gap: 8px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+    padding: 8px;
+  }
+  .app-shell[data-workspace-layout="portrait"] .center-column { grid-column: 1; grid-row: 1; min-width: 0; gap: 6px; }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 56px minmax(0, 1fr);
+    height: clamp(280px, 34cqh, 420px);
+    overflow: hidden;
+    transition: none;
+    width: 100%;
+  }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel.is-collapsed { grid-template-rows: 56px; height: 56px; }
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .tab-panel:not(.is-collapsed) { height: min(55cqh, 420px); }
+  .app-shell[data-workspace-layout="portrait"] .panel-tabs-header {
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    border-right: 0;
+    flex-direction: row;
+    overflow: hidden;
+  }
+  .app-shell[data-workspace-layout="portrait"] .panel-tabs {
+    display: flex;
+    flex: 1 1 0;
+    gap: 2px;
+    height: 56px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px;
+    scrollbar-width: thin;
+  }
+  .app-shell[data-workspace-layout="portrait"] .panel-tab {
+    flex: 1 0 66px;
+    flex-direction: column;
+    font-size: 12px;
+    gap: 3px;
+    justify-content: center;
+    min-height: 44px;
+    padding: 3px 4px;
+    white-space: nowrap;
+  }
+  .app-shell[data-workspace-layout="portrait"] .panel-collapse-button {
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    flex: 0 0 56px;
+    flex-direction: column;
+    font-size: 11px;
+    gap: 2px;
+    height: 56px;
+    margin: 0;
+    min-width: 44px;
+    padding: 4px;
+  }
+  .app-shell[data-workspace-layout="portrait"] .panel-collapse-label { display: block; font-size: 10px; white-space: nowrap; }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content {
+    align-content: start;
+    display: block;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
+    scroll-snap-type: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content > :is(.panel-section, .assignment-tab, .details-panel, .timeline) {
+    align-content: start;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
+    height: auto;
+    min-width: 0;
+    width: 100%;
+  }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content :is(.settings-grid, .field-grid, .member-row__settings, .toggle-list, .detail-edit-grid, .detail-readout-grid, .template-grid, .personal-check__list, .assignment-tab-list, .timeline__rail) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    max-height: none;
+    min-width: 0;
+    overflow: visible;
+    width: auto;
+  }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content :is(.object-visibility-list__items, .member-management-block, .object-group-list, .object-group-items, .timeline-item, .timeline-card) { height: auto; max-height: none; overflow: visible; }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content .panel-sticky-header { position: sticky; height: auto; max-height: none; }
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .tab-panel__content .panel-sticky-header { position: static; }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content :is(.panel-sticky-actions, .panel-section__header, .object-visibility-list__header, .visibility-checklist__actions, .card-actions, .panel-heading-actions) { flex-wrap: wrap; min-width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content :is(.panel-sticky-meta, .panel-visibility-summary, .muted-text) { overflow-wrap: anywhere; white-space: normal; }
+  .app-shell[data-workspace-layout="portrait"] :is(.tab-panel__content, .parade-control-panel) :is(button, summary, select, input:not([type="checkbox"]):not([type="radio"])) { min-height: 44px; touch-action: manipulation; }
+  .app-shell[data-workspace-layout="portrait"] :is(.tab-panel__content, .parade-control-panel) :is(.icon-button, .mini-button.icon-only, .color-palette-trigger) { min-width: 44px; }
+  .app-shell[data-workspace-layout="portrait"] :is(.tab-panel__content, .parade-control-panel) .checkbox-row { min-height: 44px; }
+  .app-shell[data-workspace-layout="portrait"] :is(.tab-panel__content, .parade-control-panel) label:has(> input:is([type="checkbox"], [type="radio"])) { min-height: 44px; min-width: 44px; }
+  .app-shell[data-workspace-layout="portrait"] :is(.tab-panel__content, .parade-control-panel) input:is([type="checkbox"], [type="radio"]) { flex: 0 0 22px; height: 22px; min-height: 22px; width: 22px; }
+
+  /* Stage: fixed scene strip, compact controls, then all remaining height for fit. */
+  .app-shell[data-workspace-layout="portrait"] .scene-thumbnail-card { position: relative; }
+  .app-shell[data-workspace-layout="portrait"] .scene-thumbnail-card :is(.scene-thumbnail-card__lock, .scene-thumbnail-card__presence) { border: 0; border-radius: 50%; font-size: 0; height: 8px; padding: 0; position: absolute; right: 4px; top: 3px; width: 8px; }
+  .app-shell[data-workspace-layout="portrait"] .scene-thumbnail-card__lock { background: #ea580c; }
+  .app-shell[data-workspace-layout="portrait"] .scene-thumbnail-card__presence { background: #2563eb; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage,
+  .app-shell[data-workspace-layout="portrait"] .is-thumbnail-collapsed .stage-workspace--stage {
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 64px minmax(0, 1fr);
+  }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-rail { grid-template-columns: 44px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-rail__toggle { border-bottom: 0; border-right: 1px solid var(--border); flex-direction: column; min-height: 44px; padding: 2px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-list { display: flex; align-items: start; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 5px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-card {
+    flex: 0 0 104px;
+    gap: 2px 4px;
+    grid-template-columns: minmax(0, 1fr) 40px;
+    grid-template-rows: 18px 20px;
+    height: 52px;
+    max-height: 52px;
+    min-height: 52px;
+    padding: 5px;
+  }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-card__meta { grid-column: 1; grid-row: 1; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-card__meta > span { display: none; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-card__label { grid-column: 1; grid-row: 2; font-size: 10px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--stage .scene-thumbnail-preview { grid-column: 2; grid-row: 1 / 3; height: 40px; width: 40px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-frame { gap: 0; padding: 0 6px 6px; min-width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .stage-keyboard-hint { display: none; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact {
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+    flex: 0 0 56px;
+    flex-wrap: nowrap;
+    gap: 6px;
+    height: 56px;
+    min-height: 56px;
+    overflow: visible;
+    padding: 6px 0;
+  }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-primary-controls { flex: 1 1 0; flex-wrap: nowrap; gap: 4px; min-width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-export-header__actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; margin: 0; min-width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact button { height: 44px; min-height: 44px; min-width: 44px; padding: 4px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact :is(.icon-only, .stage-play-button) { flex: 0 0 44px; width: 44px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar { flex: 1 1 0; grid-template-columns: auto minmax(140px, 1fr); gap: 6px; min-width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar__range-shell { height: 44px; min-width: 140px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar__range { height: 44px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-current-scene { flex: 0 1 96px; max-width: 96px; padding: 5px 7px; width: 96px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-compact-fit { font-size: 11px; white-space: nowrap; }
+
+  /* Parade keeps its own zoom and three independent vertical scrolling areas. */
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade { grid-template-columns: 88px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 6px; }
+  .app-shell[data-workspace-layout="portrait"] .is-thumbnail-collapsed .stage-workspace--parade { grid-template-columns: 44px minmax(0, 1fr); }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade .scene-thumbnail-rail { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px minmax(0, 1fr); }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade .scene-thumbnail-rail__toggle { min-height: 44px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade .scene-thumbnail-list { grid-auto-rows: 90px; gap: 6px; overflow-x: hidden; overflow-y: auto; padding: 5px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade .scene-thumbnail-card { gap: 3px; height: 90px; min-height: 90px; max-height: 90px; padding: 5px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade .scene-thumbnail-card__meta > span { display: none; }
+  .app-shell[data-workspace-layout="portrait"] .stage-workspace--parade .scene-thumbnail-preview { height: 38px; }
+  .app-shell[data-workspace-layout="portrait"] .parade-canvas-shell { grid-template-columns: 184px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .app-shell[data-workspace-layout="portrait"] .parade-control-panel { align-content: start; border-bottom: 0; border-right: 1px solid #dbe7ee; display: grid; gap: 8px; overflow-x: hidden; overflow-y: auto; padding: 8px; }
+  .app-shell[data-workspace-layout="portrait"] .parade-control-section { min-width: 0; padding: 8px; }
+  .app-shell[data-workspace-layout="portrait"] .parade-control-section .checkbox-row { display: flex; }
+  .app-shell[data-workspace-layout="portrait"] .parade-control-panel__header { grid-template-columns: minmax(0, 1fr); }
+  .app-shell[data-workspace-layout="portrait"] .parade-control-row { flex-wrap: wrap; }
+  .app-shell[data-workspace-layout="portrait"] .parade-viewport { min-width: 0; }
+
+  .stage-more-menu[data-workspace-layout="portrait"] { background: white; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 36px #0f172a26; display: grid; min-width: 240px; overflow-y: auto; padding: 6px; position: fixed; z-index: 1400; }
+  .stage-more-menu[data-workspace-layout="portrait"] button { background: white; border: 0; border-radius: 6px; color: var(--ink); font: inherit; min-height: 44px; padding: 8px 12px; text-align: left; }
+  .stage-more-menu[data-workspace-layout="portrait"] button:is(:hover, :focus-visible) { background: #f0fdfa; outline: 2px solid var(--accent); outline-offset: -2px; }
+  .stage-more-menu[data-workspace-layout="portrait"] button[aria-checked="true"] { background: #ccfbf1; }
+}
+
+/* A deliberate second row keeps the slider usable on narrow portrait windows. */
+@media screen and (max-width: 740px) {
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact { flex: 0 0 104px; flex-direction: column; align-items: stretch; height: 104px; gap: 4px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-primary-controls { flex: 0 0 44px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-export-header__actions { flex: 0 0 44px; justify-content: flex-end; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-current-scene { margin-right: auto; }
+}
+
+@media screen and (max-width: 420px) {
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact { flex-basis: 118px; height: 118px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-primary-controls { flex-basis: 56px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar { gap: 0; grid-template-columns: minmax(140px, 1fr); grid-template-rows: 12px 44px; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar__time { font-size: 10px; justify-content: flex-start; }
+}

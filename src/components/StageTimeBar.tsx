@@ -8,6 +8,7 @@ import type { CSSProperties } from "react";
 import { formatTime } from "../utils/time";
 
 type StageTimeBarProps = {
+  compact?: boolean;
   currentTime: number;
   duration: number;
   audioName: string | null;
@@ -18,6 +19,7 @@ const formatDuration = (duration: number): string =>
   Number.isFinite(duration) && duration > 0 ? formatTime(duration) : "--:--";
 
 export const StageTimeBar = ({
+  compact = false,
   currentTime,
   duration,
   audioName,
@@ -46,7 +48,7 @@ export const StageTimeBar = ({
 
   return (
     <div className={canSeek ? "stage-timebar" : "stage-timebar is-disabled"}>
-      <div className="stage-timebar__skips" aria-label="再生位置のスキップ">
+      {!compact && <div className="stage-timebar__skips" aria-label="再生位置のスキップ">
         <button
           className="stage-timebar__skip"
           type="button"
@@ -87,7 +89,7 @@ export const StageTimeBar = ({
           <span className="stage-timebar__skip-value">10</span>
           <ChevronsRight size={14} />
         </button>
-      </div>
+      </div>}
       <span className="stage-timebar__time">
         {formatTime(safeCurrentTime)} / {formatDuration(duration)}
       </span>

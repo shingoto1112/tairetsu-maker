@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   lazy,
   Suspense,
   useCallback,
@@ -8,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
 import { AssignmentPanel } from "./components/AssignmentPanel";
@@ -2002,6 +2004,7 @@ const createCloudSceneCellVersionMap = (
   );
 
 function App() {
+  const workspaceLayout = useWorkspaceLayout();
   const initial = useMemo(readInitialProject, []);
   const [project, setProject] = useState<Project>(initial.project);
   const [savedProjects, setSavedProjects] = useState<Project[]>(initial.projects);
@@ -13033,7 +13036,12 @@ function App() {
 
   return (
     <>
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      data-workspace-layout={workspaceLayout.isPortrait ? "portrait" : undefined}
+      data-workspace-keyboard={workspaceLayout.keyboardOpen ? "open" : undefined}
+      style={{ "--workspace-viewport-height": `${workspaceLayout.height}px` } as CSSProperties}
+    >
       <div className="app-top-region">
       <Toolbar
         title={project.title}
@@ -13298,7 +13306,7 @@ function App() {
             notices={notice ? [notice] : []}
             warnings={warnings}
           />
-          <div className="stage-workspace">
+          <div className={`stage-workspace stage-workspace--${project.mode === "parade" ? "parade" : "stage"}`}>
             <SceneThumbnailRail
               project={project}
               selectedFrameId={displayFrame?.id ?? null}
@@ -13378,6 +13386,7 @@ function App() {
               ) : (
                 <StageCanvas
                   ref={stageExportRef}
+                  compact={workspaceLayout.isPortrait}
                   project={projectForStage}
                   snapshot={canvasSnapshot}
                   selected={selected}

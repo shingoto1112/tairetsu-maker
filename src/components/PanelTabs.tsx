@@ -58,78 +58,21 @@ export const PanelTabs = ({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionsRef = useRef<Partial<Record<PanelTabId, number>>>({});
 
-  const updateScrollPresentation = () => {
-    const content = contentRef.current;
-    if (!content) return;
-
-    const maxScrollLeft = Math.max(0, content.scrollWidth - content.clientWidth);
-    content.classList.toggle("has-scroll-before", content.scrollLeft > 6);
-    content.classList.toggle(
-      "has-scroll-after",
-      content.scrollLeft < maxScrollLeft - 6,
-    );
-
-    const cards = Array.from(
-      content.querySelectorAll<HTMLElement>(
-        ":scope > .panel-section > *, :scope > .assignment-tab > *, :scope > .details-panel > *, :scope > .timeline > *",
-      ),
-    ).filter((card) => card.offsetParent !== null);
-    const contentLeft = content.getBoundingClientRect().left + 12;
-    cards.forEach((card) => {
-      card.classList.remove("is-current-portrait-card");
-    });
-    const nearestCard = cards.reduce<HTMLElement | null>((nearest, card) => {
-      if (!nearest) return card;
-      const nearestDistance = Math.abs(
-        nearest.getBoundingClientRect().left - contentLeft,
-      );
-      const cardDistance = Math.abs(
-        card.getBoundingClientRect().left - contentLeft,
-      );
-      return cardDistance < nearestDistance ? card : nearest;
-    }, null);
-    nearestCard?.classList.add("is-current-portrait-card");
-  };
-
   const rememberScrollPosition = () => {
     const content = contentRef.current;
     if (!content) return;
-    scrollPositionsRef.current[activeTab] = content.scrollLeft;
-    updateScrollPresentation();
+    scrollPositionsRef.current[activeTab] = content.scrollTop;
   };
 
   useLayoutEffect(() => {
     const content = contentRef.current;
-    if (!content) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      content.scrollLeft = scrollPositionsRef.current[activeTab] ?? 0;
-      updateScrollPresentation();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [activeTab, isOpen]);
-
-  useLayoutEffect(() => {
-    const content = contentRef.current;
-    if (!content) return undefined;
-    let frame = 0;
-    const scheduleUpdate = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(updateScrollPresentation);
-    };
-    const observer = new ResizeObserver(scheduleUpdate);
-    observer.observe(content);
-    Array.from(content.children).forEach((child) => observer.observe(child));
-    window.addEventListener("resize", scheduleUpdate);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer.disconnect();
-      window.removeEventListener("resize", scheduleUpdate);
-    };
+    if (content) content.scrollTop = scrollPositionsRef.current[activeTab] ?? 0;
   }, [activeTab, isOpen]);
 
   return (
     <aside className={isOpen ? "tab-panel" : "tab-panel is-collapsed"}>
-      <div className="panel-tabs" role="tablist" aria-label="編集パネル">
+      <div className="panel-tabs-header">
+        <div className="panel-tabs" role="tablist" aria-label="編集パネル">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -137,9 +80,7 @@ export const PanelTabs = ({
               key={tab.id}
               className={tab.id === activeTab ? "panel-tab is-active" : "panel-tab"}
               onClick={() => {
-                if (contentRef.current) {
-                  scrollPositionsRef.current[activeTab] = contentRef.current.scrollLeft;
-                }
+                rememberScrollPosition();
                 onChange(tab.id);
                 if (!isOpen) onToggleOpen();
               }}
@@ -152,9 +93,14 @@ export const PanelTabs = ({
             </button>
           );
         })}
+        </div>
         <button
           className="panel-collapse-button"
-          onClick={onToggleOpen}
+          onClick={() => {
+            rememberScrollPosition();
+            onToggleOpen();
+          }}
+          aria-expanded={isOpen}
           type="button"
           title={isOpen ? "編集パネルを閉じる" : "編集パネルを開く"}
           aria-label={isOpen ? "編集パネルを閉じる" : "編集パネルを開く"}

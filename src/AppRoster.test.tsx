@@ -55,6 +55,7 @@ describe("App roster confirmation integration", () => {
     await waitFor(() => expect(canvas.project!.frames).toEqual(before!.frames));
   }, INTEGRATION_TIMEOUT_MS);
   beforeEach(() => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     localStorage.clear();
     const project = { ...createSampleProject(), id: "local-roster", title: "削除検証" };
     project.frames[0].objectAssignments = { o_chair: ["m_ben"] };
