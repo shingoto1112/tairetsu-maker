@@ -1,19 +1,21 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "./types";
 import { createSampleProject } from "./sampleProject";
 
-const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "" }));
+const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
 vi.mock("./components/StageCanvas", () => ({
-  StageCanvas: forwardRef<HTMLDivElement, { project: Project; focusMode: boolean; focusMemberId?: string; movementPathMode: string }>((props, ref) => {
+  StageCanvas: forwardRef<HTMLDivElement, { project: Project; focusMode: boolean; focusMemberId?: string; movementPathMode: string; selectedFrameId: string | null; selectedMemberIds: string[] }>((props, ref) => {
     canvas.project = props.project;
     canvas.focusMode = props.focusMode;
     canvas.focusMemberId = props.focusMemberId ?? "";
     canvas.movementPathMode = props.movementPathMode;
+    canvas.selectedFrameId = props.selectedFrameId;
+    canvas.selectedMemberIds = props.selectedMemberIds;
     return <div ref={ref} />;
   }),
 }));
@@ -24,6 +26,40 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it("suspends background shortcuts in sharing/export dialogs and restores Delete and Undo after closing", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "削除検証を開く" }));
+    fireEvent.keyDown(window, { key: "a", metaKey: true });
+    const before = structuredClone(canvas.project);
+    const beforeSelection = [...canvas.selectedMemberIds];
+    const beforeFrameId = canvas.selectedFrameId;
+    fireEvent.keyDown(window, { key: "p", metaKey: true });
+    const share = await screen.findByRole("dialog", { name: "共有と書き出し" });
+    for (const key of ["Delete", "ArrowRight", "ArrowUp", "z", "y", "a", "v", "PageDown", "Home", "End"]) {
+      fireEvent.keyDown(share, { key, metaKey: !key.startsWith("Arrow") && key !== "Delete" });
+    }
+    expect(canvas.project).toEqual(before);
+    expect(canvas.selectedMemberIds).toEqual(beforeSelection);
+    expect(canvas.selectedFrameId).toBe(beforeFrameId);
+    await user.click(within(share).getByRole("button", { name: /^隊列表の画像/ }));
+    const sheet = await screen.findByRole("dialog", { name: "書き出し" });
+    fireEvent.keyDown(sheet, { key: "Delete" });
+    fireEvent.keyDown(sheet, { key: "z", metaKey: true });
+    expect(canvas.project).toEqual(before);
+    await user.click(within(sheet).getByRole("button", { name: "閉じる" }));
+    await user.click(screen.getByRole("button", { name: "共有と書き出しを閉じる" }));
+    fireEvent.keyDown(window, { key: "Delete" });
+    await waitFor(() => expect(canvas.project!.frames[0].memberVisibility).not.toEqual(before!.frames[0].memberVisibility));
+    const deleted = structuredClone(canvas.project);
+    fireEvent.keyDown(window, { key: "p", metaKey: true });
+    const reopened = await screen.findByRole("dialog", { name: "共有と書き出し" });
+    fireEvent.keyDown(reopened, { key: "z", metaKey: true });
+    expect(canvas.project).toEqual(deleted);
+    await user.click(screen.getByRole("button", { name: "共有と書き出しを閉じる" }));
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    await waitFor(() => expect(canvas.project!.frames).toEqual(before!.frames));
+  }, INTEGRATION_TIMEOUT_MS);
   beforeEach(() => {
     localStorage.clear();
     const project = { ...createSampleProject(), id: "local-roster", title: "削除検証" };

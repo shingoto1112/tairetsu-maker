@@ -5,6 +5,7 @@ import { useState, type ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { ObjectAssignmentEditor } from "./ObjectAssignmentEditor";
+import { runSavedAssignmentUpdate } from "../utils/assignmentUpdate";
 
 const createProps = (): ComponentProps<typeof ObjectAssignmentEditor> => ({
   objectId: "o", members: [{ id: "a", name: "担当", color: "#000" }, { id: "b", name: "候補", color: "#000" }],
@@ -16,6 +17,23 @@ const Harness = (props: ComponentProps<typeof ObjectAssignmentEditor>) => {
   return <ObjectAssignmentEditor {...props} isPickerOpen={open} onPickerOpenChange={setOpen} />;
 };
 describe("ObjectAssignmentEditor", () => {
+  it.each(["false", "throw"])("keeps the draft and search after cloud %s, including an optimistic assignment", async (failure) => {
+    const props = createProps();
+    props.onAssignMember = () => runSavedAssignmentUpdate(
+      failure === "false" ? vi.fn().mockResolvedValue(false) : vi.fn().mockRejectedValue(new Error("save failed")), () => true);
+    const { rerender } = render(<Harness {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "メンバーを選択" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "候補" } });
+    fireEvent.click(screen.getByRole("button", { name: "候補 赤組" }));
+    fireEvent.click(screen.getByRole("button", { name: "候補" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "候補" } });
+    fireEvent.click(screen.getByRole("button", { name: "割当" }));
+    rerender(<Harness {...props} assignedMemberIds={["a", "b"]} />);
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "候補" })).toBeTruthy();
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("候補");
+    expect((screen.getByRole("button", { name: "割当" }) as HTMLButtonElement).disabled).toBe(false);
+  });
   beforeEach(() => localStorage.clear());
   afterEach(cleanup);
   it("removes a chip without restoring the member to the formation", () => {

@@ -1,5 +1,6 @@
 import type { FormationFrame, Project } from "../types";
-import { createDefaultObjectState, sortFrames } from "./interpolation";
+import { createDefaultObjectState } from "./interpolation";
+import { resolveExportFrames } from "./exportFrames";
 import { getSafeParadeCanvasDistance, internalYToParadeDistance } from "./parade";
 import { MOBILE_INNER_WIDTH, MOBILE_MAX_HEIGHT, MOBILE_PADDING, type TextMeasure } from "./mobileExportLayout";
 import type { ExportSource, FormationSnapshot } from "./mobileExportTypes";
@@ -20,7 +21,7 @@ const MINIMAP_HEIGHT = 72;
 export const createFormationSnapshot = (source: ExportSource, scope: "current" | "all"): FormationSnapshot => {
   if (!source.project) throw new Error("隊列表の設定を読み込めませんでした。");
   const project = structuredClone(source.project);
-  project.frames = sortFrames(project.frames).filter((frame) => scope === "all" || frame.id === source.currentFrame?.id);
+  project.frames = resolveExportFrames(project).filter((frame) => scope === "all" || frame.id === source.currentFrame?.id);
   if (!project.frames.length) throw new Error("書き出すシーンがありません。");
   return { title: project.title, exportedAt: new Date().toISOString(), project,
     scopeLabel: scope === "all" ? "全シーン" : project.frames[0].label };

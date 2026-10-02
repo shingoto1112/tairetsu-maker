@@ -1,7 +1,7 @@
 import type { Ref } from "react";
 import type { Project } from "../types";
 import type { ShareExportOptions } from "./ShareExportModal";
-import { sortFrames } from "../utils/interpolation";
+import { resolveExportFrames } from "../utils/exportFrames";
 import { defaultPrintOptions, getEffectiveSize, getPrintMetrics, getFramePrintVerticalRange, paginateFrames, PrintStagePreview, PRINT_SCENE_TITLE_MM } from "./PrintStagePreview";
 export { getPrintOrientation } from "./PrintStagePreview";
 
@@ -22,7 +22,7 @@ export const PrintPreview = ({
   rootRef,
   variant = "document",
 }: PrintPreviewProps) => {
-  const sortedFrames = sortFrames(project.frames);
+  const sortedFrames = resolveExportFrames(project);
   const frames =
     scope === "current" && selectedFrameId
       ? sortedFrames.filter((frame) => frame.id === selectedFrameId)

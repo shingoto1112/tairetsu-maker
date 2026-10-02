@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CompletedExport } from "../utils/mobileExportTypes";
 import { canShareExportFiles, isAppleTouchDevice, saveExportFile, shareExportFiles } from "../utils/exportDelivery";
 import { isNativeExportRuntime, isNativeExportShareAvailable } from "../platform/files";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 const sizeLabel = (size: number) => size >= 1_000_000 ? `${(size / 1_000_000).toFixed(2)}MB` : `${Math.ceil(size / 1000)}KB`;
 type Props = { result: CompletedExport; disabled?: boolean; onBusyChange?: (busy: boolean) => void; onCopyImage?: (blob: Blob) => Promise<boolean> };
@@ -77,21 +78,12 @@ export const ExportCompletionPanel = ({ result, disabled = false, onBusyChange, 
 export const ExportCompletionDialog = ({ result, onClose, onCopyImage }: { result: CompletedExport; onClose: () => void; onCopyImage?: Props["onCopyImage"] }) => {
   const [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement;
-    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true }); };
-  }, []);
+  const handleModalTab = useModalFocus(dialog);
   return <div className="document-export-backdrop document-export-backdrop--viewport">
-    <section ref={dialog} className="document-export-sheet" role="dialog" aria-modal="true" aria-label="書き出し完了"
+    <section ref={dialog} tabIndex={-1} className="document-export-sheet" role="dialog" aria-modal="true" aria-label="書き出し完了"
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.stopPropagation(); if (!busy) onClose(); }
-        if (event.key === "Tab") {
-          const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? []);
-          const first = controls[0], last = controls[controls.length - 1];
-          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-        }
+        handleModalTab(event);
       }}>
       <header><h2>書き出し完了</h2><button className="share-export-close" type="button" disabled={busy} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
       <ExportCompletionPanel result={result} onBusyChange={setBusy} onCopyImage={onCopyImage} />

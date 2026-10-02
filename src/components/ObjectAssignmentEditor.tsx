@@ -38,9 +38,10 @@ export const ObjectAssignmentEditor = ({
     return {
       assignedMembers: members.filter((member) => assigned.has(member.id))
         .sort((a, b) => a.name.localeCompare(b.name, "ja", { numeric: true })),
-      candidates: members.filter((member) => !assigned.has(member.id)),
+      // Keep the pending choice available even if an optimistic cloud update already added it.
+      candidates: members.filter((member) => !assigned.has(member.id) || member.id === draftMemberId),
     };
-  }, [members, assignedMemberIds]);
+  }, [members, assignedMemberIds, draftMemberId]);
   const validDraft = candidates.some((member) => member.id === draftMemberId);
   const unavailable = disabled || isAssigning;
 
