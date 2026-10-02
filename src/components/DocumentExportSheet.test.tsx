@@ -13,7 +13,8 @@ vi.mock("../utils/mobileExport", () => ({
   generateDocumentExport: vi.fn(),
 }));
 vi.mock("../utils/formationExport", () => ({ prepareFormationPages: vi.fn(async () => [{}, {}]) }));
-vi.mock("../utils/exportDelivery", () => ({ canShareExportFiles: () => true, shareExportFiles: vi.fn(), saveExportFile: vi.fn() }));
+vi.mock("../utils/exportDelivery", () => ({ canShareExportFiles: () => true, isAppleTouchDevice: () => false, shareExportFiles: vi.fn(), saveExportFile: vi.fn() }));
+vi.mock("../platform/files", () => ({ isNativeExportRuntime: () => false, isNativeExportShareAvailable: () => false }));
 const source: ExportSource = { projectTitle: "演目", members: [], memberGroups: [], objects: [], objectGroups: [], frames: [], currentFrame: null, objectStates: {} };
 const completed = (): GeneratedExport => ({
   files: [1, 2, 3].map((i) => new File(["image"], `演目_${i}.png`, { type: "image/png" })),
@@ -44,6 +45,7 @@ describe("DocumentExportSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "全シーン" }));
     fireEvent.click(screen.getByRole("button", { name: "道具割当表の画像を作成" }));
     const share = await screen.findByRole("button", { name: "共有する" });
+    expect(shareExportFiles).not.toHaveBeenCalled();
     expect(screen.getByText(/3枚の画像・合計/)).toBeTruthy();
     expect(screen.getByAltText("道具割当表の先頭ページ")).toBeTruthy();
     expect(generateDocumentExport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ target: "assignments", scope: "all", purpose: "mobile" }), expect.anything());

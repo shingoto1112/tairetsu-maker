@@ -216,7 +216,7 @@ export const ShareExportModal = ({
                 <FileText size={26} />
                 <span>
                   <strong>このシーンを書き出す</strong>
-                  <small>現在のシーンをPDFで保存します</small>
+                  <small>PDFを作成してから共有・保存できます</small>
                 </span>
               </button>
               <button
@@ -227,7 +227,7 @@ export const ShareExportModal = ({
                 <Download size={26} />
                 <span>
                   <strong>すべてのシーンを書き出す / PDF保存</strong>
-                  <small>ファイル名を指定してPDFで保存します</small>
+                  <small>全シーンのPDFを作成してから共有・保存できます</small>
                 </span>
               </button>
               <label className="share-export-check">
@@ -256,7 +256,7 @@ export const ShareExportModal = ({
                   <Download size={26} />
                   <span>
                     <strong>隊列表ZIPを書き出す</strong>
-                    <small>他の人の隊列メーカーへ読み込める .zip ファイルを保存します</small>
+                    <small>他の人の隊列メーカーへ読み込める .zip ファイルを作成します</small>
                   </span>
                 </button>
                 <label
@@ -318,7 +318,7 @@ export const ShareExportModal = ({
               onClick={() => void submitExport()}
               type="button"
             >
-              PDFとして保存
+              PDFを作成
             </button>
           </div>
         )}

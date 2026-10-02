@@ -27,6 +27,7 @@ import { nextNumberedName } from "./utils/numberedName";
 import { nextRosterItemName } from "./utils/rosterColumns";
 import { confirmAssignmentUpdate } from "./utils/assignmentUpdate";
 import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName";
+const ExportCompletionDialog = lazy(() => import("./components/ExportCompletionPanel").then((module) => ({ default: module.ExportCompletionDialog })));
 import { SceneNotesPanel } from "./components/SceneNotesPanel";
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
 import {
@@ -139,9 +140,8 @@ import {
 } from "./utils/coordinates";
 import {
   elementToPngBlob,
-  exportElementAsPng,
 } from "./utils/exportImage";
-import { saveGeneratedBlob, UserFileSaveStatus } from "./utils/fileSave";
+import type { CompletedExport } from "./utils/mobileExportTypes";
 import {
   deleteAudioBlobFromIndexedDb,
   loadAudioBlobFromIndexedDb,
@@ -524,10 +524,6 @@ const getKeyboardNudgeMeters = (
   return KEYBOARD_NUDGE_DEFAULT;
 };
 
-type NavigatorWithFileShare = Navigator & {
-  canShare?: (data: ShareData) => boolean;
-};
-
 type AppConfirmOptions = {
   cancelLabel?: string;
   confirmLabel?: string;
@@ -585,10 +581,6 @@ const sortFormationFramesByTime = (
     frames: ordered,
   };
 };
-
-const isAppleTouchDevice = (): boolean =>
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
 const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
   const ClipboardItemCtor = (window as WindowWithClipboardItem).ClipboardItem;
@@ -2058,6 +2050,9 @@ function App() {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
   const [isShareExportOpen, setIsShareExportOpen] = useState(false);
+  const [completedExport, setCompletedExport] = useState<CompletedExport | null>(null);
+  const [canCopyExport, setCanCopyExport] = useState(false);
+  const exportGenerationPending = useRef(false);
   const [isRosterManagerOpen, setIsRosterManagerOpen] = useState(false);
   const [rosterInitialMode, setRosterInitialMode] = useState<
     "members" | "objects" | undefined
@@ -7586,56 +7581,22 @@ function App() {
     setNotice("隊列表を削除しました。");
   };
 
-  const exportTairetsuProject = async (
-    source: Project,
-    includeAudio: boolean,
-  ) => {
+  const exportTairetsuProject = async (source: Project, includeAudio: boolean) => {
+    if (exportGenerationPending.current) return;
+    exportGenerationPending.current = true;
     const projectToExport = normalizeProject(source);
-    let audioMissing = false;
-    let exportedWithAudio = false;
     try {
-      const status = await saveGeneratedBlob({
-        fallbackFileName: createTairetsuFileName(projectToExport),
-        generateBlob: async () => {
-          let audioBlob: Blob | null = null;
-          if (includeAudio && projectToExport.audio?.id) {
-            audioBlob = await loadAudioBlobFromIndexedDb(projectToExport.audio.id);
-            audioMissing = !audioBlob;
-          }
-          exportedWithAudio = Boolean(audioBlob);
-          return createTairetsuArchive(projectToExport, {
-            audioBlob,
-          });
-        },
-        pickerTypes: [
-          {
-            accept: {
-              "application/zip": [".zip", ".tairetsu"],
-            },
-            description: "隊列メーカー共有ZIP",
-          },
-        ],
-      });
-      if (status === "cancelled") {
-        setNotice("書き出しをキャンセルしました。");
-        return;
-      }
-      if (audioMissing) {
-        setNotice("音源が見つからなかったため、音源なしで隊列表を書き出しました。");
-        return;
-      }
-      setNotice(
-        exportedWithAudio
-          ? "音源を含めて隊列表を書き出しました。"
-          : "隊列表を音源なしで書き出しました。",
-      );
+      const audioBlob = includeAudio && projectToExport.audio?.id
+        ? await loadAudioBlobFromIndexedDb(projectToExport.audio.id) : null;
+      const audioMissing = includeAudio && Boolean(projectToExport.audio?.id) && !audioBlob;
+      const blob = await createTairetsuArchive(projectToExport, { audioBlob });
+      setCanCopyExport(false);
+      setCompletedExport({ files: [new File([blob], createTairetsuFileName(projectToExport), { type: "application/zip" })],
+        preview: null, targetLabel: "隊列表ZIP", scopeLabel: audioMissing ? "音源が見つからないため音源なし"
+          : audioBlob ? "音源あり" : "音源なし", pageCount: 1 });
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? `隊列表を書き出せませんでした: ${error.message}`
-          : "隊列表を書き出せませんでした。",
-      );
-    }
+      setNotice(error instanceof Error ? `隊列表を書き出せませんでした: ${error.message}` : "隊列表を書き出せませんでした。");
+    } finally { exportGenerationPending.current = false; }
   };
 
   const importTairetsuProjectFile = async (file: File) => {
@@ -10776,18 +10737,6 @@ function App() {
     }
   };
 
-  const exportPng = async () => {
-    if (!stageExportRef.current) {
-      return;
-    }
-    try {
-      await exportElementAsPng(stageExportRef.current, `${project.title || "隊列メーカー"}.png`);
-      setNotice("PNGを書き出しました。");
-    } catch {
-      setNotice("PNG書き出しに失敗しました。");
-    }
-  };
-
   const waitForPaint = () =>
     new Promise<void>((resolve) => {
       window.requestAnimationFrame(() => {
@@ -10820,81 +10769,6 @@ function App() {
     setIsPrintPreviewMounted(false);
   };
 
-  const getSaveStatusNotice = (
-    status: UserFileSaveStatus,
-    fileType: "PDF" | "画像",
-  ): string => {
-    if (status === "shared") {
-      return `${fileType}を作成しました。共有シートから“ファイル”などに保存できます。`;
-    }
-    if (status === "saved") {
-      return `${fileType}を保存しました。`;
-    }
-    if (status === "downloaded") {
-      return `このブラウザでは保存先選択に対応していないため、通常のダウンロードとして${fileType}を保存しました。`;
-    }
-    return "共有または保存をキャンセルしました。";
-  };
-
-  const shareOrSaveGeneratedBlob = async ({
-    fallbackFileName,
-    fileType,
-    generateBlob,
-    pickerTypes,
-    title,
-  }: {
-    fallbackFileName: string;
-    fileType: "PDF" | "画像";
-    generateBlob: () => Promise<Blob>;
-    pickerTypes: Parameters<typeof saveGeneratedBlob>[0]["pickerTypes"];
-    title: string;
-  }): Promise<UserFileSaveStatus> => {
-    const blob = await generateBlob();
-    if (blob.size <= 0) {
-      throw new Error("保存するファイルの作成に失敗しました。");
-    }
-
-    if (APP_FEATURES.nativeFileShare) {
-      return saveGeneratedBlob({
-        fallbackFileName,
-        generateBlob: async () => blob,
-        pickerTypes,
-      });
-    }
-
-    const file = new File([blob], fallbackFileName, {
-      type: blob.type || "application/octet-stream",
-    });
-    const shareData: ShareData = {
-      files: [file],
-      text: "隊列メーカーから書き出しました。",
-      title,
-    };
-    const nav = navigator as NavigatorWithFileShare;
-
-    if (
-      isAppleTouchDevice() &&
-      navigator.share &&
-      (!nav.canShare || nav.canShare(shareData))
-    ) {
-      try {
-        await navigator.share(shareData);
-        return "shared";
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return "cancelled";
-        }
-        console.error(`${fileType}の共有に失敗しました。保存処理へ切り替えます。`, error);
-      }
-    }
-
-    return await saveGeneratedBlob({
-      fallbackFileName,
-      generateBlob: async () => blob,
-      pickerTypes,
-    });
-  };
-
   const generatePrintImageBlob = async (
     scope: "all" | "current",
     options: ShareExportOptions,
@@ -10911,7 +10785,7 @@ function App() {
     scope: "all" | "current",
     options: ShareExportOptions,
     title: string,
-  ): Promise<Blob> => {
+  ): Promise<{ blob: Blob; preview: Blob; pageCount: number }> => {
     const element = await preparePrintExportElement(scope, options, "document");
     try {
       const pages = Array.from(
@@ -10925,7 +10799,9 @@ function App() {
       ]);
       const imagePages = [];
       for (const page of pages) imagePages.push(await elementToPngPage(page));
-      return await imagePagesToPdfBlob(imagePages, { title, orientation: getPrintOrientation(project) });
+      const blob = await imagePagesToPdfBlob(imagePages, { title, orientation: getPrintOrientation(project) });
+      const preview = await (await fetch(imagePages[0].dataUrl)).blob();
+      return { blob, preview, pageCount: imagePages.length };
     } finally {
       cleanupPrintExportElement();
     }
@@ -10963,89 +10839,22 @@ function App() {
   };
 
   const captureStageImage = async () => {
-    const frameLabel =
-      displayFrame?.label ?? selectedFrame?.label ?? "現在シーン";
+    if (exportGenerationPending.current) return;
+    exportGenerationPending.current = true;
+    const frameLabel = displayFrame?.label ?? selectedFrame?.label ?? "現在シーン";
     const filename = withFileExtension(
-      `${APP_NAME}_${frameLabel}_${formatExportTimestamp()}`,
-      "png",
+      `${APP_NAME}_${frameLabel}_${formatExportTimestamp()}`, "png",
     );
-
+    setExportProgress({ title: "ステージ画像を作成中", detail: frameLabel });
     try {
       const blob = await generateStageScreenshotBlob();
-      if (APP_FEATURES.nativeFileShare) {
-        const status = await saveGeneratedBlob({
-          fallbackFileName: filename,
-          generateBlob: async () => blob,
-          pickerTypes: [
-            {
-              accept: { "image/png": [".png"] },
-              description: "PNG画像",
-            },
-          ],
-        });
-        setNotice(getSaveStatusNotice(status, "画像"));
-        return;
-      }
-      const file = new File([blob], filename, { type: "image/png" });
-      const nav = navigator as NavigatorWithFileShare;
-
-      if (
-        isAppleTouchDevice() &&
-        navigator.share &&
-        (!nav.canShare || nav.canShare({ files: [file] }))
-      ) {
-        try {
-          await navigator.share({
-            files: [file],
-            text: "隊列メーカーのステージ画像です。",
-            title: "ステージ画像",
-          });
-          setNotice("画像を作成しました。共有または保存してください。");
-          return;
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError") {
-            setNotice("共有をキャンセルしました。");
-            return;
-          }
-          console.error("ステージ画像の共有に失敗しました。", error);
-        }
-      }
-
-      const copied = await copyImageToClipboard(blob);
-      const status = await saveGeneratedBlob({
-        fallbackFileName: filename,
-        generateBlob: async () => blob,
-        pickerTypes: [
-          {
-            accept: { "image/png": [".png"] },
-            description: "PNG画像",
-          },
-        ],
-      });
-
-      if (status === "cancelled") {
-        setNotice(
-          copied
-            ? "画像をクリップボードにコピーしました。保存はキャンセルされました。"
-            : "保存をキャンセルしました。",
-        );
-        return;
-      }
-
-      if (copied) {
-        setNotice("ステージ画像を保存し、クリップボードにコピーしました。");
-        return;
-      }
-
-      setNotice(
-        status === "downloaded"
-          ? "ステージ画像をダウンロードしました。クリップボードコピーはこのブラウザでは使えませんでした。"
-          : "ステージ画像を保存しました。",
-      );
+      if (!blob.size) throw new Error("画像を作成できませんでした。");
+      setCanCopyExport(true);
+      setCompletedExport({ files: [new File([blob], filename, { type: "image/png" })], preview: blob,
+        targetLabel: "ステージ画像", scopeLabel: frameLabel, pageCount: 1 });
     } catch (error) {
-      console.error("ステージ画像の保存に失敗しました。", error);
-      setNotice("ステージ画像の保存に失敗しました。");
-    }
+      setNotice(error instanceof Error ? `ステージ画像の作成に失敗しました: ${error.message}` : "ステージ画像の作成に失敗しました。");
+    } finally { exportGenerationPending.current = false; setExportProgress(null); }
   };
 
   const printProject = async (scope: "all" | "current" = "all") => {
@@ -11085,73 +10894,25 @@ function App() {
   };
 
   const handleShareExport = async (request: ShareExportRequest) => {
-    const filenameBase =
-      request.fileName ||
-      (request.scope === "current"
-        ? `${project.title || "隊列メーカー"}_${selectedFrame?.label ?? "現在シーン"}`
-        : project.title || "隊列メーカー");
-
-    if (request.format === "image") {
-      const fallbackFileName = withFileExtension(filenameBase, "png");
-      setExportProgress({
-        detail: fallbackFileName,
-        title: "画像を書き出し中",
-      });
-      try {
-        const status = await shareOrSaveGeneratedBlob({
-          fallbackFileName,
-          fileType: "画像",
-          generateBlob: () => generatePrintImageBlob(request.scope, request.options),
-          pickerTypes: [
-            {
-              accept: { "image/png": [".png"] },
-              description: "PNG画像",
-            },
-          ],
-          title: fallbackFileName,
-        });
-        setNotice(getSaveStatusNotice(status, "画像"));
-      } catch (error) {
-        setNotice(
-          error instanceof Error
-            ? `画像書き出しに失敗しました: ${error.message}`
-            : "画像書き出しに失敗しました。",
-        );
-      } finally {
-        setExportProgress(null);
-      }
-      return;
-    }
-
-    const fallbackFileName = withFileExtension(filenameBase, "pdf");
-    setExportProgress({
-      detail: fallbackFileName,
-      title: "書類を書き出し中",
-    });
+    if (exportGenerationPending.current) return;
+    exportGenerationPending.current = true;
+    const filenameBase = request.fileName || (request.scope === "current"
+      ? `${project.title || "隊列メーカー"}_${selectedFrame?.label ?? "現在シーン"}` : project.title || "隊列メーカー");
+    const image = request.format === "image";
+    const fileName = withFileExtension(filenameBase, image ? "png" : "pdf");
+    setExportProgress({ title: image ? "画像を作成中" : "PDFを作成中", detail: fileName });
     try {
-      const status = await shareOrSaveGeneratedBlob({
-        fallbackFileName,
-        fileType: "PDF",
-        generateBlob: () =>
-          generatePrintPdfBlob(request.scope, request.options, filenameBase),
-        pickerTypes: [
-          {
-            accept: { "application/pdf": [".pdf"] },
-            description: "PDFファイル",
-          },
-        ],
-        title: fallbackFileName,
-      });
-      setNotice(getSaveStatusNotice(status, "PDF"));
+      const generated = image
+        ? await generatePrintImageBlob(request.scope, request.options).then((blob) => ({ blob, preview: blob, pageCount: 1 }))
+        : await generatePrintPdfBlob(request.scope, request.options, filenameBase);
+      if (!generated.blob.size) throw new Error("ファイルを作成できませんでした。");
+      setCanCopyExport(false);
+      setCompletedExport({ files: [new File([generated.blob], fileName, { type: image ? "image/png" : "application/pdf" })],
+        preview: generated.preview, pageCount: generated.pageCount, targetLabel: "隊列表（A4）",
+        scopeLabel: request.scope === "current" ? selectedFrame?.label ?? "現在シーン" : "全シーン" });
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? `PDF書き出しに失敗しました: ${error.message}`
-          : "PDF書き出しに失敗しました。",
-      );
-    } finally {
-      setExportProgress(null);
-    }
+      setNotice(error instanceof Error ? `書き出しに失敗しました: ${error.message}` : "書き出しに失敗しました。");
+    } finally { exportGenerationPending.current = false; setExportProgress(null); }
   };
 
   const handleShareExportZip = async (includeAudio: boolean) => {
@@ -13224,6 +12985,7 @@ function App() {
           onImportProjectFile={importTairetsuProjectFile}
           onDeleteProject={deleteStoredProject}
         />
+        {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
         {isCloudPasswordRecoveryOpen && (
           <CloudPasswordModal
             isBusy={isCloudBusy}
@@ -14031,6 +13793,7 @@ function App() {
           );
         })()}
     </div>
+    {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
     <ShareExportModal
       isOpen={isShareExportOpen}
       projectTitle={project.title}
