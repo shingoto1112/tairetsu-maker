@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ExportRequest, ExportSource, ExportTarget, GeneratedExport } from "../utils/mobileExportTypes";
 import { ExportCompletionPanel } from "./ExportCompletionPanel";
@@ -11,6 +12,11 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
   const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: "mobile", format: initialFormat, includeDetails: false });
   const [estimate, setEstimate] = useState("");
   const [result, setResult] = useState<GeneratedExport | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // The finished file appears below the options; bring it into view so the share action is found.
+    if (result) resultRef.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }, [result]);
   const [busy, setBusy] = useState(false);
   const [delivering, setDelivering] = useState(false);
   const [progress, setProgress] = useState("");
@@ -85,7 +91,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
           else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
         }
       }}>
-      <header><h2 id="document-export-title">書き出し</h2><button type="button" disabled={locked} onClick={onClose}>閉じる</button></header>
+      <header><h2 id="document-export-title">書き出し</h2><button className="share-export-close" type="button" disabled={locked} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
       <fieldset disabled={locked}><legend>対象</legend><div className="document-export-options">
         {Object.entries(EXPORT_TARGET_LABELS).filter(([target]) => target !== "formation" || supportsFormation || initialTarget === "formation").map(([target, label]) => <button type="button" key={target} aria-pressed={request.target === target}
           onClick={() => update({ target: target as ExportTarget, ...(target === "assignments" || target === "formation" ? { purpose: "mobile" } : {}), ...(target === "formation" ? { scope: "all" } : {}) })}>{label}</button>)}
@@ -95,7 +101,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         <button type="button" aria-pressed={request.scope === "all"} onClick={() => update({ scope: "all" })}>全シーン</button>
       </div></fieldset>}
       {request.target === "formation" && <fieldset disabled={locked}><legend>読みやすさ</legend>
-        <label><input type="checkbox" checked={Boolean(request.includeDetails)} onChange={(event) => update({ includeDetails: event.target.checked })} /> 拡大図も付ける</label>
+        <label className="document-export-check"><input type="checkbox" checked={Boolean(request.includeDetails)} onChange={(event) => update({ includeDetails: event.target.checked })} /> 拡大図も付ける</label>
         <p className="muted-text">名前が読める大きさで分割します。狭い隊列表では全体図だけになります。</p>
         <p role="status">{estimate}</p>
       </fieldset>}
@@ -107,9 +113,9 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         <button type="button" aria-pressed={request.format === "png"} onClick={() => update({ format: "png" })}>画像</button>
         <button type="button" aria-pressed={request.format === "pdf"} onClick={() => update({ format: "pdf" })}>PDF</button>
       </div></fieldset>
-      <button type="button" className="primary" disabled={locked} onClick={() => void create()}>{EXPORT_TARGET_LABELS[request.target]}の{request.format === "png" ? "画像" : "PDF"}を作成</button>
+      <button type="button" className="primary document-export-create" disabled={locked} onClick={() => void create()}>{EXPORT_TARGET_LABELS[request.target]}の{request.format === "png" ? "画像" : "PDF"}を作成</button>
       {busy && <div className="document-export-progress"><p role="status">{progress}</p><button type="button" onClick={() => { controller.current?.abort(); setProgress("作成を取り消しています…"); }}>作成を取り消す</button></div>}
-      {result && <ExportCompletionPanel result={result} disabled={busy} onBusyChange={handleDeliveryBusy} />}
+      {result && <div ref={resultRef}><ExportCompletionPanel result={result} disabled={busy} onBusyChange={handleDeliveryBusy} /></div>}
       {notice && <p role="status">{notice}</p>}
     </section>
   </div>;
