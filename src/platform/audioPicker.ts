@@ -74,13 +74,13 @@ export const pickNativeAudioFile = async (): Promise<File | null> => {
     if (!AUDIO_FILE_EXTENSIONS.has(getFileExtension(result.name))) {
       throw new Error("MP3、M4A、WAV、AAC、AIFF、CAF形式の音源を選択してください。");
     }
-    if (typeof result.size === "number") {
-      if (!Number.isFinite(result.size) || result.size <= 0) {
-        throw new Error("選択した音源ファイルが空か、サイズを取得できませんでした。");
-      }
-      if (result.size > MAX_AUDIO_FILE_BYTES) {
-        throw new Error("音源ファイルは200MB以下にしてください。");
-      }
+    // The picker always reports the copied file's size; it is required to confirm a complete read.
+    const expectedSize = result.size;
+    if (typeof expectedSize !== "number" || !Number.isFinite(expectedSize) || expectedSize <= 0) {
+      throw new Error("選択した音源ファイルが空か、サイズを取得できませんでした。");
+    }
+    if (expectedSize > MAX_AUDIO_FILE_BYTES) {
+      throw new Error("音源ファイルは200MB以下にしてください。");
     }
     // Capacitor's asset handler answers audio/video files with a non-HTTP response unless a
     // byte range is requested, and WebKit's fetch reports that as status 0 (not ok). Asking for
@@ -92,10 +92,7 @@ export const pickNativeAudioFile = async (): Promise<File | null> => {
       throw new Error(`音源ファイルの読み込みに失敗しました (${response.status})。`);
     }
     const blob = await response.blob();
-    if (
-      blob.size <= 0 ||
-      (typeof result.size === "number" && result.size > 0 && blob.size !== result.size)
-    ) {
+    if (blob.size !== expectedSize) {
       throw new Error("音源ファイルを最後まで読み込めませんでした。もう一度お試しください。");
     }
     const file = new File([blob], result.name, {

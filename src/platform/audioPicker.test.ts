@@ -54,6 +54,7 @@ describe("native audio import lifecycle", () => {
     { name: "large.m4a", size: MAX_AUDIO_FILE_BYTES + 1 },
     { name: "empty.m4a", size: 0 },
     { name: "invalid.m4a", size: NaN },
+    { name: "nosize.wav" },
     { size: 100 },
   ])("rejects invalid metadata before reading and removes temporary files: %j", async (metadata) => {
     native.pickAudioFile.mockResolvedValue({ uri, ...metadata });
