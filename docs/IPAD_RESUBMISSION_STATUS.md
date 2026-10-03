@@ -32,6 +32,16 @@
 - **TestFlight build 19 配信完了（2026-10-02）。** run [36970279355](https://github.com/shingoto1112/tairetsu-maker/actions/runs/36970279355)、source `0c2af965c5c6e42d85cfc03ef161326f8167eb19`。初回と再実行2回目は契約APIエラーで停止。ユーザーによる更新契約同意（同意日2026-10-02）と反映待ち後、attempt 3が成功。同じrunの再実行なのでbuild番号19を維持。46 files / 298 tests、Web build、Capacitor sync、iOS archive/uploadが成功（Xcode26.6 / iPhoneOS26.5.sdk）。アップロード完了17:51 JST、今回runnerが作ったDevelopment証明書1件のみ後始末済み。Apple側の処理完了と「チーム内テスト」内部1名への登録を画面で確認。外部テスト・App Store審査提出・一般公開は行っていない。最新Web `4414317` との `src` / `public` / package / Capacitor設定差分はテスト2ファイルだけで、アプリ実装は一致。build19の実機確認はこれからであり、旧buildの実機合格を引き継がない。
 - Web本番へ反映済み: `main` を `c64343d` → `4414317` に fast-forward（同じ変更を main 上へ cherry-pick、302 tests・build 成功）。Vercel Production deployment 6802197243 success。本番URLで新UI（名簿ボタン、スマホ向け書き出し）とページエラー0を確認。
 
+### 2026-10-02 夜〜10-03 の進捗
+
+- build 19 の実機確認でユーザーが指摘: (1) iPadアプリで音源が読み込めない（「音源ファイルの読み込みに失敗しました」）、(2) スマホ向け隊列表の書き出しが見にくい、(3) 縦持ちのUIが崩れている。
+- (1) 原因: Capacitor の asset handler が Range なしの音声ファイルに非HTTP応答を返し、WebKit の fetch が status 0 を返していた。**build 18・19 にも存在した不具合で、前回の実機合格を引き継がない理由になる。** `0db535e`・`24c9b8c` で Range 付き読込とサイズ一致確認に修正。**build 20 の実機でユーザーが音源読み込み成功を確認（2026-10-03）。**
+- (2) `12a79b6` で A4 隊列表PDFを build 18 と同一の描画・JPEG方式に復元（実データでサイズ・ページ数・画像寸法一致）。Web `main` にも即日反映（`c1aebd6`、Vercel Production success）。
+- ツールバー変更（編集補助撤去、ホームアイコン、共有ボタン、共有と書き出しに名簿・割当表）`0db535e`。
+- 縦持ちの作り直し `8071939`、お知らせのオーバーレイ化 `03e7808`、縦持ちの名前リストを横スクロールの札に `c146798`（13" 4段・11" 3段・mini 2段、高さ変更と記憶、☑と名前タップの分離は全レイアウト）。
+- **TestFlight build 20**（run #20、`8071939`）2026-10-02 20:02 アップロード成功。**build 21**（run [#21](https://github.com/shingoto1112/tairetsu-maker/actions/runs/37091254427)、`c146798`）2026-10-03 11:55 アップロード成功。内部テスターのみ。審査提出はしていない。
+- 未反映: ツールバー・縦持ち・名前リストの変更は Web `main` に未反映（ユーザー確認後に反映）。iPad横向きの初期175%表示による左右の切れは未対応（ユーザー判断待ち）。
+
 ### 提出までの手順と受入条件
 
 1. **仕上げ（Claude/Codex）**: iPad（capacitor-ios）でメンバー/道具タブが空白・重なる回帰の修正、全パネルの見出し重なり、書き出し・共有ダイアログの統一。受入: Playwright で iPad 横/縦・Web を確認、テスト・ビルド成功。
