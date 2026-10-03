@@ -7,6 +7,7 @@ import { REPOSITORY_ERROR_MESSAGES, RepositoryError, type CommitRequest, type Re
 import projects from "./contract/fixtures/commitProjects.json";
 import type { Project } from "../types";
 import { runMigrationContract } from "../storage/testing/migrationContract";
+import { initialCollaboration } from "./contract/runCollaborationContract";
 
 // Adapter mapping oracle only. SQLite persistence is tested by the actual Swift core.
 const fakePlugin = (): NativeRepositoryPlugin => {
@@ -35,6 +36,12 @@ const fakePlugin = (): NativeRepositoryPlugin => {
   };
 };
 describe("native SQLite adapter mapping", () => {
+  it("rejects shared attachments before the schema-1 bridge can silently drop them", async () => {
+    const plugin = fakePlugin(), call = vi.spyOn(plugin, "commitProject");
+    await expect(new NativeSqliteProjectRepository(plugin).commit({ project: projects.stage as Project, collaboration: initialCollaboration(),
+      localRevision: "1", expectedRepositoryRevision: null, operationId: "shared-create" })).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA" });
+    expect(call).not.toHaveBeenCalled();
+  });
   it("uses fixed recovery/maintenance operations with no paths and validates responses", async () => {
     const plugin = fakePlugin();
     plugin.restoreRecoveryBackup = vi.fn(async () => ({ json: "null" }));

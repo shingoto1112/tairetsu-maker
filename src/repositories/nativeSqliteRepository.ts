@@ -90,6 +90,7 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
   private decodeRecord(v: unknown, id: string): ProjectRecord | null {
     if (v === null) return null;
     if (!object(v) || typeof v.json !== "string" || !isRevision(v.repositoryRevision) || !isRevision(v.localRevision) || v.sync !== null) throw new RepositoryError("CORRUPT");
+    if (v.collaboration != null) throw new RepositoryError("UNSUPPORTED_SCHEMA");
     let project: Project;
     try {
       const checked = validateProjectStructure(JSON.parse(v.json));
@@ -102,6 +103,8 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
     return { project, repositoryRevision: v.repositoryRevision, localRevision: v.localRevision, sync: null };
   }
   async commit(input: CommitRequest): Promise<CommitReceipt> {
+    // Swift schema 1 cannot persist the round-2 attachment. Never silently drop it.
+    if (input.collaboration != null) throw new RepositoryError("UNSUPPORTED_SCHEMA", input.operationId);
     const encoded = serializeProject(input.project);
     if (!encoded.ok) throw encoded.error;
     const id = assertStorageId(input.project.id), op = assertStorageId(input.operationId);

@@ -1,6 +1,8 @@
 // Test oracle only. Never import this module from application code.
 import { createProjectSummary, serializeProject } from "../../../project/codec";
 import { assertStorageId } from "../../ids";
+import { validateCollaboration, validateCollaborationTransition } from "../../collaborationData";
+import { assertCollaborationExtends, validateCollaborationProject } from "../../../collaboration/persistence";
 import {
   assertRevision, compareRevisions, incrementRevision, RepositoryError,
   type CommitReceipt, type CommitRequest, type ListQuery, type Page,
@@ -76,6 +78,7 @@ export class MemoryProjectRepository implements ProjectRepository {
     const encoded = serializeProject(input.project);
     if (!encoded.ok) throw encoded.error;
     const request = clone(input);
+    if (request.collaboration) { request.collaboration = validateCollaboration(request.collaboration); validateCollaborationProject(request.collaboration, request.project); }
     assertRevision(request.localRevision);
     if (request.expectedRepositoryRevision !== null) assertRevision(request.expectedRepositoryRevision);
     const signature = JSON.stringify({ kind: "commit", request });
@@ -90,8 +93,10 @@ export class MemoryProjectRepository implements ProjectRepository {
       if (compareRevisions(request.localRevision, current!.localRevision) <= 0) throw new RepositoryError("CONFLICT", request.operationId);
     }
     const repositoryRevision = current ? incrementRevision(current.repositoryRevision) : "1";
+    validateCollaborationTransition(current?.collaboration, request.collaboration);
+    if (current?.collaboration && request.collaboration) assertCollaborationExtends(current.collaboration, request.collaboration);
     const record: ProjectRecord = { project: request.project, localRevision: request.localRevision,
-      repositoryRevision, sync: current?.sync ?? null };
+      repositoryRevision, sync: current?.sync ?? null, ...(request.collaboration ? { collaboration: request.collaboration } : {}) };
     const receipt = { id, operationId: request.operationId, repositoryRevision,
       localRevision: request.localRevision, summary: createProjectSummary(record.project, repositoryRevision, record.sync) };
     this.records.set(id, record);

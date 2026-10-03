@@ -3,8 +3,13 @@
 import projects from "../fixtures/projects.json";
 import commitProjects from "../fixtures/commitProjects.json";
 import { runRepositoryContract } from "../runRepositoryContract";
+import { runCollaborationContract, initialCollaboration, collaborationUpdates, collaborationProjection } from "../runCollaborationContract";
+import { appendCollaboration } from "../../../collaboration/persistence";
+import { restorePreviousAsCopy } from "../../../storage/recovery";
+import { createTairetsuArchive, readTairetsuArchive } from "../../../utils/tairetsuFile";
 import { IndexedDbProjectRepository } from "../../indexedDbRepository";
-import { PROJECT_STORES, PROJECT_DB_VERSION } from "../../indexedDbFormat";
+import { PROJECT_STORES, PROJECT_DB_VERSION, encodeBody, encodeSummary, jsonIntegrity } from "../../indexedDbFormat";
+import { initialMaintenance, MAINTENANCE_ID } from "../../../storage/maintenanceTypes";
 import { runMigrationContract, memoryReaders } from "../../../storage/testing/migrationContract";
 import { migrateLegacyStorage } from "../../../storage/migrationCoordinator";
 import { LEGACY_MIGRATION_ID } from "../../../storage/migrationPlan";
@@ -60,7 +65,7 @@ const snapshot = async (name: string) => {
 };
 
 type Probe = {
-  fault?: "quota" | "abort" | "access" | "migrationLedger";
+  fault?: "quota" | "abort" | "access" | "migrationLedger" | "previous" | "receipt";
   scopes: string[][];
   putSucceeded?: () => void;
   completed?: () => void;
@@ -93,6 +98,7 @@ const probeFactory = (probe: Probe, audioDbName?: string): IDBFactory => new Pro
                     get(objectStore, method) {
                       if (method === "get" && probe.fault === "access") return () => { throw new DOMException("injected access", "SecurityError"); };
                       if (method === "put") return (...args: Parameters<IDBObjectStore["put"]>) => {
+                        if ((probe.fault === "previous" && storeName === "project_previous") || (probe.fault === "receipt" && storeName === "operation_receipts")) throw new DOMException("injected stage failure", "QuotaExceededError");
                         if (probe.fault === "quota" && storeName === "project_summaries") throw new DOMException("injected quota", "QuotaExceededError");
                         if (probe.fault === "migrationLedger" && storeName === "migration_items" && JSON.parse(args[0].json).state === "written") throw new DOMException("injected ledger failure", "QuotaExceededError");
                         const put = objectStore.put(...args);
@@ -163,6 +169,45 @@ export const runIndexedDbBrowserSuite = async () => {
   try {
     const contract = await runRepositoryContract(() => repo());
     tested(`contract ${contract.scenarios} scenarios / ${contract.steps} steps`);
+    await runCollaborationContract(() => repo(), old => {
+      const original = old as IndexedDbProjectRepository; original.close(); return repo(repositoryNames.get(original)!);
+    }, old => repo(repositoryNames.get(old as IndexedDbProjectRepository)!));
+    tested("shared contract: 2 connections CAS merge / restart outbox / ACK / cursor / compaction / limits");
+    {
+      const sharedName = name(), sharedProbe: Probe = { scopes: [], durability: [] }, sharedRepo = repo(sharedName, probeFactory(sharedProbe));
+      const initial = initialCollaboration();
+      await sharedRepo.commit({ project: commitProjects.stage as Project, collaboration: initial, operationId: "shared-original", localRevision: "1", expectedRepositoryRevision: null });
+      const beforeShared = await snapshot(sharedName);
+      const data = appendCollaboration(initial, collaborationUpdates(), "4");
+      for (const [fault, code] of [["previous", "QUOTA_EXCEEDED"], ["quota", "QUOTA_EXCEEDED"], ["receipt", "QUOTA_EXCEEDED"], ["abort", "IO_ERROR"], ["access", "ACCESS_DENIED"]] as const) {
+        sharedProbe.fault = fault;
+        await rejectCode(sharedRepo.commit({ project: collaborationProjection(data), collaboration: data,
+          operationId: `shared-fault-${fault}`, localRevision: "2", expectedRepositoryRevision: "1" }), code);
+        equal(await snapshot(sharedName), beforeShared, `shared ${fault}: projection/attachment/previous/receipt all old`);
+      }
+      sharedProbe.fault = undefined;
+      await sharedRepo.commit({ project: collaborationProjection(data), collaboration: data, operationId: "shared-success", localRevision: "2", expectedRepositoryRevision: "1" });
+      sharedRepo.close();
+      const restarted = repo(sharedName), saved = (await restarted.get("project_a"))!;
+      equal(saved.collaboration, data, "successful attachment persists after restart");
+      equal((await restarted.getPrevious("project_a"))!.collaboration, initial, "previous keeps matching attachment");
+      const copy = await restorePreviousAsCopy(restarted, "project_a");
+      assert(!(await restarted.get(copy.id))!.collaboration, "shared previous rescued as independent copy");
+      const archive = await createTairetsuArchive(saved.project, { audioBlob: null });
+      const imported = await readTairetsuArchive(new File([archive], "shared.zip"));
+      assert(!("collaboration" in imported.project) && !(JSON.stringify(imported.project).includes("outbox")), "normal ZIP excludes attachment");
+      await migrateLegacyStorage({ repository: restarted, readers: memoryReaders({}) });
+      await restarted.updateMaintenance({ action: "started" });
+      assert((await restarted.collectUnusedAudio()).skipped && (await restarted.readMaintenance()).gcAt === null, "shared current/previous defers audio GC");
+      const raw = await rawTransaction(sharedName, "readonly", tx => tx.objectStore("project_bodies").get("project_a"));
+      raw.collaboration.serverCursor = "5";
+      await rawTransaction(sharedName, "readwrite", tx => tx.objectStore("project_bodies").put(raw));
+      await rejectCode(restarted.get("project_a"), "CORRUPT");
+      raw.collaboration = { ...data, base: "AAAA" }; raw.collaborationIntegrity = jsonIntegrity(JSON.stringify(raw.collaboration));
+      await rawTransaction(sharedName, "readwrite", tx => tx.objectStore("project_bodies").put(raw));
+      await rejectCode(restarted.get("project_a"), "CORRUPT");
+      tested("shared atomic fault injection at previous/body/summary/receipt/access; restart and integrity");
+    }
 
     // All anonymous Project fixtures, including old aliases/unknown fields.
     const fixturesRepo = repo();
@@ -266,7 +311,7 @@ export const runIndexedDbBrowserSuite = async () => {
     const afterCorrupt = await snapshot(corruptName);
     equal(afterCorrupt.slice(1), healthyBeforeCorrupt.slice(1), "corrupt current must not replace healthy previous or summaries/receipts");
     assert((await corrupt.list({ limit: 100 })).items.length === 1, "list never parses corrupt body");
-    await rawTransaction(corruptName, "readwrite", tx => tx.objectStore("project_bodies").put({ ...healthyBody, schemaVersion: 2 }));
+    await rawTransaction(corruptName, "readwrite", tx => tx.objectStore("project_bodies").put({ ...healthyBody, schemaVersion: 3 }));
     await rejectCode(corrupt.get("project_a"), "UNSUPPORTED_SCHEMA");
     await rawTransaction(corruptName, "readwrite", tx => tx.objectStore("project_bodies").put(healthyBody));
     const summary = await rawTransaction(corruptName, "readonly", tx => tx.objectStore("project_summaries").get("project_a"));
@@ -420,8 +465,41 @@ export const runIndexedDbBrowserSuite = async () => {
       const upgraded = repo(upgradeName); await upgraded.initialize();
       const marker = await rawTransaction(upgradeName, "readonly", tx => tx.objectStore("operation_receipts").get("anonymous-upgrade-marker"));
       assert(marker.marker === true, "v1 receipt retained");
-      assert((await upgraded.initialize()).schemaVersion === 2, "v2 migration store");
-      tested("schema 1 -> 2 additive upgrade preserves original stores");
+      assert((await upgraded.initialize()).schemaVersion === PROJECT_DB_VERSION, "v3 migration store");
+      tested("schema 1 -> 3 additive upgrade preserves original stores");
+    }
+    {
+      const upgradeName = name(), request = nativeIndexedDb.open(upgradeName, 2);
+      const record = { project: commitProjects.stage as Project, repositoryRevision: "7", localRevision: "4", sync: null };
+      request.onupgradeneeded = () => {
+        for (const storeName of PROJECT_STORES) {
+          const store = request.result.createObjectStore(storeName, { keyPath: storeName === "operation_receipts" ? "operationId" : "id" });
+          if (storeName === "project_summaries") {
+            store.createIndex("by_order", ["sortTime", "sortId"], { unique: true });
+            store.createIndex("by_mode_order", ["summary.mode", "sortTime", "sortId"], { unique: true });
+          }
+        }
+        const tx = request.transaction!;
+        tx.objectStore("project_bodies").put(encodeBody(record)); tx.objectStore("project_previous").put(encodeBody(record));
+        tx.objectStore("project_summaries").put(encodeSummary(record));
+        tx.objectStore("operation_receipts").put({ operationId: "v2-marker", marker: true });
+        const json = JSON.stringify(initialMaintenance()); tx.objectStore("migration_items").put({ id: MAINTENANCE_ID, json, ...jsonIntegrity(json) });
+      };
+      await new Promise<void>((resolve, reject) => { request.onsuccess = () => { request.result.close(); resolve(); }; request.onerror = () => reject(request.error); });
+      const beforeUpgrade = await snapshot(upgradeName);
+      const upgraded = repo(upgradeName); await upgraded.initialize();
+      equal(await snapshot(upgradeName), beforeUpgrade, "v2 to v3 all records byte-for-byte unchanged");
+      equal(await upgraded.get("project_a"), record, "v2 current unchanged"); equal(await upgraded.getPrevious("project_a"), record, "v2 previous unchanged");
+      equal(await upgraded.readMaintenance(), initialMaintenance(), "v2 maintenance retained");
+      tested("schema 2 -> 3 preserves current/previous/summary/receipts/migration ledger without rewriting");
+    }
+    {
+      const corruptUpgradeName = name(), request = nativeIndexedDb.open(corruptUpgradeName, 2);
+      request.onupgradeneeded = () => { request.result.createObjectStore("project_summaries", { keyPath: "id" }); };
+      await new Promise<void>((resolve, reject) => { request.onsuccess = () => { request.result.close(); resolve(); }; request.onerror = () => reject(request.error); });
+      await rejectCode(repo(corruptUpgradeName).initialize(), "CORRUPT");
+      const unchanged = await openDb(corruptUpgradeName); assert(unchanged.version === 2 && unchanged.objectStoreNames.length === 1, "corrupt v2 never silently repaired"); unchanged.close();
+      tested("schema 2 missing stores rejects CORRUPT without manufacturing empty data");
     }
 
     // Warm latency includes serialization, checksums, signature digest and strict

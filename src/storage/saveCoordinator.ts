@@ -1,9 +1,9 @@
 import type { Project } from "../types";
 import { createId } from "../utils/ids";
-import { compareRevisions, incrementRevision, RepositoryError, type CommitRequest, type ProjectRecord, type ProjectRepository, type ProjectSummary, type Revision } from "../repositories/types";
+import { compareRevisions, incrementRevision, RepositoryError, type CollaborationData, type CollaborationUpdate, type CollaborationOutbox, type CommitRequest, type ProjectRecord, type ProjectRepository, type ProjectSummary, type Revision } from "../repositories/types";
 
 export type SaveState = { id: string; localRevision: Revision; persistedRevision: Revision; dirty: boolean; saving: boolean; error: RepositoryError | null };
-type Session = SaveState & { project: Project; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
+export type Session = SaveState & { project: Project; collaboration?: CollaborationData | null; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
 const detached = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export const repositoryError = (error: unknown): RepositoryError => error instanceof RepositoryError ? error : new RepositoryError("IO_ERROR");
 export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!state?.dirty && !state.saving && !!state.error &&
@@ -24,28 +24,62 @@ export class SaveCoordinator {
     const previous = this.sessions.get(id);
     if (previous?.work || previous?.dirty) throw new RepositoryError("BUSY");
     this.releaseCleanInactiveSession();
-    const session: Session = { id, project: record.project, repositoryRevision: record.repositoryRevision,
+    const session: Session = { id, project: record.project, collaboration: detached(record.collaboration ?? null), repositoryRevision: record.repositoryRevision,
       localRevision: record.localRevision, persistedRevision: record.localRevision, dirty: false, saving: false, error: null };
     this.sessions.set(id, session); this.active = session; this.emit(session);
   }
   activateUnsaved(request: CommitRequest, error: RepositoryError) {
     this.releaseCleanInactiveSession();
-    const session: Session = { id: request.project.id!, project: request.project, repositoryRevision: null,
+    const session: Session = { id: request.project.id!, project: request.project, collaboration: detached(request.collaboration ?? null), repositoryRevision: null,
       localRevision: request.localRevision, persistedRevision: "0", dirty: true, saving: false, error, pending: detached(request) };
     this.sessions.set(session.id, session); this.active = session; this.emit(session);
   }
   deactivate() { this.releaseCleanInactiveSession(); this.active = null; this.changed(null); }
   get state(): SaveState | null { return this.active ? this.publicState(this.active) : null; }
+  /** Future UI can read a merged projection after changed() without sharing mutable state. */
+  get projectProjection(): Project | null { return this.active ? detached(this.active.project) : null; }
   edit(project: Project) {
     const s = this.active;
     if (!s || s.id !== project.id || s.project === project) return;
+    if (s.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
     s.project = project; s.localRevision = incrementRevision(s.localRevision); s.dirty = true; this.emit(s);
+  }
+  /** Shared edits enter as fixed Yjs updates. Returned projection is for the future UI. */
+  async editCollaboration(updates: CollaborationUpdate[], serverCursor?: Revision): Promise<Project> {
+    const s = this.active;
+    if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+    const fixed = detached(updates);
+    const runtime = await import("../collaboration/saveSession");
+    if (this.active !== s) throw new RepositoryError("BUSY");
+    const project = runtime.editSharedSession(s, fixed, serverCursor); this.emit(s); return project;
+  }
+  /** Reads ONLY committed updates, including after restart. Provider supplies auth/epoch checks. */
+  async getSendableOutbox(id = this.active?.id): Promise<CollaborationOutbox[]> {
+    return (await import("../collaboration/saveSession")).readSendableOutbox(this.repository, id);
+  }
+  /** Persist the ID returned by server create before exposing the initial outbox. */
+  async bindSharedDocument(sharedDocumentId: string): Promise<boolean> {
+    const s = this.active;
+    if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+    const runtime = await import("../collaboration/saveSession");
+    if (this.active !== s) throw new RepositoryError("BUSY");
+    runtime.bindSharedSession(s, sharedDocumentId); this.emit(s);
+    return this.flush();
+  }
+  /** Call after durable server ACK; ACK state itself must commit before disappearing. */
+  async markOutboxSent(updateIds: string[]): Promise<boolean> {
+    const s = this.active;
+    if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+    const fixed = [...updateIds], runtime = await import("../collaboration/saveSession");
+    if (this.active !== s) throw new RepositoryError("BUSY");
+    await runtime.acknowledgeSharedSession(s, this.repository, fixed, () => this.active === s); this.emit(s);
+    return this.flush();
   }
   flush(): Promise<boolean> {
     const s = this.active;
     if (!s) return Promise.resolve(true);
     if (s.work) return s.work;
-    if (s.error?.code === "CONFLICT") return Promise.resolve(false);
+    if (s.error?.code === "CONFLICT" && !s.collaboration) return Promise.resolve(false);
     if (!s.dirty) return Promise.resolve(true);
     s.saving = true; this.emit(s);
     // Assign the promise before any asynchronous repository completion.
@@ -63,10 +97,23 @@ export class SaveCoordinator {
   }
   private async drain(s: Session): Promise<boolean> {
     try {
+      let conflicts = 0;
       while (compareRevisions(s.localRevision, s.persistedRevision) > 0) {
-        s.pending ??= { project: detached(s.project), localRevision: s.localRevision,
+        s.pending ??= { project: detached(s.project), ...(s.collaboration ? { collaboration: detached(s.collaboration) } : {}), localRevision: s.localRevision,
           expectedRepositoryRevision: s.repositoryRevision, operationId: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : createId("save") };
-        const receipt = await this.repository.commit(s.pending);
+        let receipt;
+        try { receipt = await this.repository.commit(s.pending); }
+        catch (e) {
+          if (repositoryError(e).code !== "CONFLICT" || !s.collaboration || ++conflicts > 8) throw e;
+          const saved = await this.repository.get(s.id);
+          if (!saved?.collaboration) throw e;
+          const runtime = await import("../collaboration/persistence");
+          const merged = runtime.mergeCollaboration(saved.collaboration, s.collaboration, saved.project);
+          s.project = merged.project; s.collaboration = merged.collaboration;
+          s.repositoryRevision = saved.repositoryRevision;
+          s.localRevision = incrementRevision(compareRevisions(s.localRevision, saved.localRevision) > 0 ? s.localRevision : saved.localRevision);
+          s.pending = undefined; continue;
+        }
         s.repositoryRevision = receipt.repositoryRevision;
         s.persistedRevision = receipt.localRevision;
         s.pending = undefined; s.error = null;

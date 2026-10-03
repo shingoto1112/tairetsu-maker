@@ -1,0 +1,262 @@
+{
+  "contractVersion": 1,
+  "requiresNativeSchema": 2,
+  "initial": {
+    "schemaVersion": 1,
+    "sharedDocumentId": "shared-fixture",
+    "documentSchema": 1,
+    "generation": "1",
+    "base": "AQcqACgBCG1ldGFkYXRhDXNjaGVtYVZlcnNpb24BfQEoAQhtZXRhZGF0YQlwcm9qZWN0SWQBdwlwcm9qZWN0X2EnAQdtZW1iZXJzBW1fMDAxAScBB21lbWJlcnMFbV8wMDIBJwEGc2NlbmVzBWZfMDAxAScAKgQJcG9zaXRpb25zASgAKgUFbV8wMDEBdgIBeH0BAXl9AgA=",
+    "journal": [],
+    "outbox": [],
+    "serverCursor": "0"
+  },
+  "updates": [
+    {
+      "updateId": "fixture-update-0",
+      "bytes": "AQErAKgqBgF2AgF4fQoBeX0UASoBBgE=",
+      "source": "local"
+    },
+    {
+      "updateId": "fixture-update-1",
+      "bytes": "AQEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQA=",
+      "source": "local"
+    }
+  ],
+  "committed": {
+    "schemaVersion": 1,
+    "sharedDocumentId": "shared-fixture",
+    "documentSchema": 1,
+    "generation": "1",
+    "base": "AQcqACgBCG1ldGFkYXRhDXNjaGVtYVZlcnNpb24BfQEoAQhtZXRhZGF0YQlwcm9qZWN0SWQBdwlwcm9qZWN0X2EnAQdtZW1iZXJzBW1fMDAxAScBB21lbWJlcnMFbV8wMDIBJwEGc2NlbmVzBWZfMDAxAScAKgQJcG9zaXRpb25zASgAKgUFbV8wMDEBdgIBeH0BAXl9AgA=",
+    "journal": [
+      {
+        "updateId": "fixture-update-0",
+        "bytes": "AQErAKgqBgF2AgF4fQoBeX0UASoBBgE=",
+        "source": "local"
+      },
+      {
+        "updateId": "fixture-update-1",
+        "bytes": "AQEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQA=",
+        "source": "local"
+      }
+    ],
+    "outbox": [
+      {
+        "updateId": "fixture-update-0",
+        "bytes": "AQErAKgqBgF2AgF4fQoBeX0UASoBBgE=",
+        "status": "pending"
+      },
+      {
+        "updateId": "fixture-update-1",
+        "bytes": "AQEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQA=",
+        "status": "pending"
+      }
+    ],
+    "serverCursor": "7"
+  },
+  "compacted": {
+    "schemaVersion": 1,
+    "sharedDocumentId": "shared-fixture",
+    "documentSchema": 1,
+    "generation": "1",
+    "base": "AwEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQErAKgqBgF2AgF4fQoBeX0UByoAKAEIbWV0YWRhdGENc2NoZW1hVmVyc2lvbgF9ASgBCG1ldGFkYXRhCXByb2plY3RJZAF3CXByb2plY3RfYScBB21lbWJlcnMFbV8wMDEBJwEHbWVtYmVycwVtXzAwMgEnAQZzY2VuZXMFZl8wMDEBJwAqBAlwb3NpdGlvbnMBIQAqBQVtXzAwMQEBKgEGAQ==",
+    "journal": [],
+    "outbox": [
+      {
+        "updateId": "fixture-update-0",
+        "bytes": "AQErAKgqBgF2AgF4fQoBeX0UASoBBgE=",
+        "status": "pending"
+      },
+      {
+        "updateId": "fixture-update-1",
+        "bytes": "AQEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQA=",
+        "status": "pending"
+      }
+    ],
+    "serverCursor": "7"
+  },
+  "acknowledged": {
+    "schemaVersion": 1,
+    "sharedDocumentId": "shared-fixture",
+    "documentSchema": 1,
+    "generation": "1",
+    "base": "AwEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQErAKgqBgF2AgF4fQoBeX0UByoAKAEIbWV0YWRhdGENc2NoZW1hVmVyc2lvbgF9ASgBCG1ldGFkYXRhCXByb2plY3RJZAF3CXByb2plY3RfYScBB21lbWJlcnMFbV8wMDEBJwEHbWVtYmVycwVtXzAwMgEnAQZzY2VuZXMFZl8wMDEBJwAqBAlwb3NpdGlvbnMBIQAqBQVtXzAwMQEBKgEGAQ==",
+    "journal": [],
+    "outbox": [
+      {
+        "updateId": "fixture-update-0",
+        "bytes": "AQErAKgqBgF2AgF4fQoBeX0UASoBBgE=",
+        "status": "sent"
+      },
+      {
+        "updateId": "fixture-update-1",
+        "bytes": "AQEsACgAKgUFbV8wMDIBdgIBeH0LAXl9FQA=",
+        "status": "pending"
+      }
+    ],
+    "serverCursor": "7"
+  },
+  "projectAfterEdits": {
+    "id": "project_a",
+    "version": 1,
+    "title": "匿名ステージ",
+    "mode": "stage",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z",
+    "stage": {
+      "widthMeters": 12,
+      "depthMeters": 6,
+      "gridSizeMeters": 0.5,
+      "showGrid": true,
+      "showCenterLine": true,
+      "audienceSide": "bottom",
+      "showStageLabels": true,
+      "frontDirection": "bottom",
+      "originMode": "center",
+      "showCenterMarker": true,
+      "memberDiameterMeters": 0.5,
+      "horizontalGuideMode": "meters"
+    },
+    "members": [
+      {
+        "id": "m_001",
+        "name": "メンバー001",
+        "color": "#2563eb",
+        "visible": true,
+        "zIndex": 20
+      },
+      {
+        "id": "m_002",
+        "name": "メンバー002",
+        "color": "#0f766e",
+        "visible": true,
+        "zIndex": 21
+      }
+    ],
+    "stageObjects": [
+      {
+        "id": "o_001",
+        "name": "道具001",
+        "type": "prop",
+        "shape": "rectangle",
+        "color": "#2563eb",
+        "widthMeters": 1,
+        "heightMeters": 1,
+        "defaultX": 1,
+        "defaultY": 1,
+        "defaultRotation": 0,
+        "visible": true,
+        "locked": false,
+        "zIndex": 10
+      }
+    ],
+    "frames": [
+      {
+        "id": "f_001",
+        "label": "シーン001",
+        "timeSec": 0,
+        "positions": {
+          "m_001": {
+            "x": 10,
+            "y": 20
+          },
+          "m_002": {
+            "x": 11,
+            "y": 21
+          }
+        },
+        "objectStates": {},
+        "memberVisibility": {
+          "m_001": false
+        },
+        "objectAssignments": {
+          "o_001": [
+            "m_001"
+          ]
+        },
+        "memberAppearanceOverrides": {
+          "m_001": {
+            "color": "#112233"
+          }
+        }
+      }
+    ],
+    "memberGroups": [
+      {
+        "id": "g_001",
+        "name": "グループ1",
+        "memberIds": [
+          "m_001"
+        ],
+        "color": "#0f766e"
+      },
+      {
+        "id": "g_002",
+        "name": "グループ002",
+        "memberIds": [
+          "m_002"
+        ],
+        "color": "#2563eb"
+      }
+    ],
+    "objectGroups": [
+      {
+        "id": "og_001",
+        "name": "道具グループ1",
+        "objectIds": [
+          "o_001"
+        ],
+        "color": "#0f766e",
+        "defaultType": "prop",
+        "defaultShape": "rectangle"
+      }
+    ],
+    "movementPaths": [
+      {
+        "id": "path_001",
+        "memberId": "m_001",
+        "fromFrameId": "f_001",
+        "toFrameId": "f_001",
+        "type": "quadratic",
+        "controlPoint": {
+          "x": 2,
+          "y": 3
+        },
+        "targetType": "member",
+        "targetId": "m_001",
+        "pathType": "curve"
+      }
+    ],
+    "movementPlans": [
+      {
+        "id": "plan_001",
+        "targetType": "member",
+        "targetId": "m_001",
+        "fromFrameId": "f_001",
+        "toFrameId": "f_001",
+        "enabled": true,
+        "pathType": "straight"
+      }
+    ],
+    "customUnknown": {
+      "keep": [
+        "unknown",
+        123
+      ]
+    },
+    "audio": null,
+    "useGlobalStageSize": true,
+    "useGlobalStageWidth": true,
+    "animationSettings": {
+      "membersEnabled": true,
+      "objectsEnabled": true,
+      "curtainsEnabled": true
+    },
+    "guideSettings": {
+      "snapGuideEnabled": true,
+      "snapToGuideEnabled": false
+    },
+    "viewerPerspective": "audience"
+  }
+}

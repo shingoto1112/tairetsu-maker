@@ -1,5 +1,9 @@
 # Repository 契約（第1回）
 
+新しい共同編集第2回の追加契約は [COLLABORATION_STORAGE.md](../../../docs/COLLABORATION_STORAGE.md)。
+`fixtures/collaboration.json` はSwift schema2用のcanonical base64素材。
+既存3種のSwift操作fixtureを変更せず、`runCollaborationContract.ts`をVitest/実IndexedDBで実行する。
+
 第2回のIndexedDB実装・DB構成・試験・第3回への申し送りは
 [INDEXEDDB.md](../INDEXEDDB.md) を参照。Appへの保存接続・移行はまだ行わない。
 

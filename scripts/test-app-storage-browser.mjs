@@ -278,7 +278,7 @@ try {
     await page.evaluate(async()=>{
       const {IndexedDbProjectRepository}=await import("/src/repositories/indexedDbRepository.ts");const r=new IndexedDbProjectRepository(),record=await r.get("anonymous-0");
       await r.commit({project:{...record.project,title:"破損匿名"},localRevision:"2",expectedRepositoryRevision:"1",operationId:"before-damage"});r.close();
-      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open("tairetsu-maker-projects",2);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open("tairetsu-maker-projects");request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
       await new Promise((resolve,reject)=>{const tx=db.transaction("project_bodies","readwrite"),store=tx.objectStore("project_bodies"),read=store.get("anonymous-0");read.onsuccess=()=>store.put({...read.result,crc32:"bad"});tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});db.close();
     });
     await page.goto(origin);await ready(page);await page.getByRole("button",{name:"破損匿名を開く",exact:true}).click();

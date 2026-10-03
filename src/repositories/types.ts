@@ -62,10 +62,28 @@ export type ProjectRecord = {
   repositoryRevision: Revision;
   localRevision: Revision;
   sync: PersonalSyncState | null;
+  /** Independent of personal sync. Missing/null means an independent project. */
+  collaboration?: CollaborationData | null;
+};
+
+/** JSON bridge contract: canonical base64 Yjs V1 state updates, not Y.Snapshot. */
+export type CollaborationUpdate = { updateId: string; bytes: string; source: "local" | "remote" };
+export type CollaborationOutbox = { updateId: string; bytes: string; status: "pending" | "sent" };
+export type CollaborationData = {
+  schemaVersion: 1;
+  sharedDocumentId: string | null;
+  documentSchema: 1;
+  generation: Revision;
+  base: string;
+  journal: CollaborationUpdate[];
+  outbox: CollaborationOutbox[];
+  serverCursor: Revision;
 };
 
 export type CommitRequest = {
   project: Project;
+  /** Shared records must explicitly supply their complete attachment on every commit. */
+  collaboration?: CollaborationData | null;
   localRevision: Revision;
   /** null means create only. A mismatch must leave ALL stored data unchanged. */
   expectedRepositoryRevision: Revision | null;

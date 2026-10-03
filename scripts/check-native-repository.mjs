@@ -33,6 +33,18 @@ for (const name of ["operations", "commitProjects", "ids"]) {
   assert.ok(existsSync(filePath), `Swift fixture path ${name}`);
   JSON.parse(readFileSync(filePath, "utf8"));
 }
+const collaborationFixture = JSON.parse(readFileSync("src/repositories/contract/fixtures/collaboration.json", "utf8"));
+assert.equal(collaborationFixture.contractVersion, 1);
+assert.equal(collaborationFixture.requiresNativeSchema, 2);
+assert.equal(collaborationFixture.initial.schemaVersion, 1);
+assert.equal(collaborationFixture.initial.documentSchema, 1);
+assert.equal(collaborationFixture.initial.serverCursor, "0");
+for (const value of [collaborationFixture.initial.base, ...collaborationFixture.updates.map(e => e.bytes)]) {
+  assert.equal(Buffer.from(value, "base64").toString("base64"), value, "canonical shared base64 fixture");
+}
+const adapter = readFileSync("src/repositories/nativeSqliteRepository.ts", "utf8");
+assert.ok(adapter.includes('if (input.collaboration != null) throw new RepositoryError("UNSUPPORTED_SCHEMA"'), "Swift schema 1 must reject shared commits");
+console.log("Round-2 shared JSON fixture: canonical base64; requires future Swift schema 2; schema-1 adapter refuses shared commits: PASS");
 const workflow = readFileSync(".github/workflows/ios-build.yml", "utf8");
 assert.ok(!/^\s+push:/m.test(workflow), "push trigger must be absent");
 assert.ok(workflow.includes("swift test --package-path ios/ProjectRepositoryCore"));

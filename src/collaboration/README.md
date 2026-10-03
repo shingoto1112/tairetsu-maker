@@ -1,5 +1,8 @@
 # 共同編集モデル — 第1回
 
+第2回のRepository/coordinator統合、付属JSON契約、上限、圧縮、GC判断とSwiftへの引継ぎは
+[COLLABORATION_STORAGE.md](../../docs/COLLABORATION_STORAGE.md)を参照。以下は第1回のモデル設計。
+
 1 Project = 1 Y.Doc。今回はシーン／メンバーの存在と確定座標のみを扱う。
 App、Canvas、Repository、保存 coordinator、クラウド、Swift、ZIP、Project 型は接続・変更していない。
 
@@ -101,9 +104,9 @@ Yjs標準動作では完全に上書きされた履歴を飛ばし、さらに�
 アプリは `index.ts` の `loadCollaboration()` だけを importする。型は `import type`で参照できる。
 `runtime.ts` 以下の Yjs静的importはこの動的境界の内側。テストは直接importしてよい。
 `node scripts/check-collaboration-bundle.mjs` は既存設定で通常 Vite buildと動的ロードprobe buildを作り、
-通常成果物に共同編集／Yjsが含まれず、probeの静的依存に Yjsが入らないことを module graphで確認する。
+通常mainの静的依存に共同編集／Yjsが含まれず、probeの静的依存に Yjsが入らないことを module graphで確認する。
 通常mainと実際の追加chunkのraw/gzipバイト数を出力し、一時ディレクトリをfinallyで削除する。
-現在UI未接続なので、通常ビルドには追加chunkそのものも出ない。
+第2回からRepository/coordinatorの条件付きdynamic importによって追加chunkは出力されるが、共有経路を呼ぶまでロードしない。
 
 ## 第2回への申し送り
 

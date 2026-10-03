@@ -36,8 +36,8 @@ try {
   const normalChunks = normal.filter(item => item.type === "chunk");
   const main = normalChunks.find(chunk => chunk.isEntry && chunk.facadeModuleId?.endsWith("index.html"));
   assert(main, "Missing production app entry");
-  assert(!normalChunks.some(chunk => Object.keys(chunk.modules).some(id => isYjs(id) || isCollaboration(id))),
-    "Unused collaboration must be absent from the normal production build");
+  assert(!staticGraph(main, normalChunks).some(chunk => Object.keys(chunk.modules).some(id => isYjs(id) || isCollaboration(id))),
+    "Collaboration must be absent from the normal production startup graph");
   const mainSize = await measure(normalDir, main);
 
   const probe = path.join(temporary, "probe.js");
@@ -60,7 +60,7 @@ try {
   assert(!additional.some(chunk => startup.includes(chunk)), "Runtime leaked into startup graph");
   const additionalSizes = await Promise.all(additional.map(chunk => measure(probeDir, chunk)));
   console.log("COLLAB_BUNDLE", JSON.stringify({ normalMain: mainSize, additionalChunks: additionalSizes,
-    normalHasCollaboration: false, probeLoadsYjsDynamically: true }));
+    normalStartupHasCollaboration: false, probeLoadsYjsDynamically: true }));
 } finally {
   const relative = path.relative(root, temporary);
   assert(relative && !relative.startsWith("..") && !path.isAbsolute(relative) &&

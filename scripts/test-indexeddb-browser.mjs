@@ -46,6 +46,27 @@ try {
   if (outcomes.filter(o => o.ok && o.revision === "2").length !== 1 || outcomes.filter(o => !o.ok && o.code === "CONFLICT").length !== 1) {
     throw new Error("Two-page CAS did not produce one winner and one CONFLICT");
   }
+  await page.evaluate(async () => {
+    const { default: fixture } = await import("/src/repositories/contract/fixtures/collaboration.json");
+    const record = await window.testRepository.get("project_a");
+    await window.testRepository.commit({ project: record.project, collaboration: fixture.initial,
+      expectedRepositoryRevision: record.repositoryRevision, localRevision: "3", operationId: "two-pages-share" });
+  });
+  for (const [index, tab] of pages.entries()) await tab.evaluate(async i => {
+    const { SaveCoordinator } = await import("/src/storage/saveCoordinator.ts");
+    const { default: fixture } = await import("/src/repositories/contract/fixtures/collaboration.json");
+    window.sharedCoordinator = new SaveCoordinator(window.testRepository, () => {});
+    window.sharedCoordinator.activate(await window.testRepository.get("project_a"));
+    await window.sharedCoordinator.editCollaboration([fixture.updates[i]]);
+    if ((await window.sharedCoordinator.getSendableOutbox()).length) throw new Error("Sent uncommitted update");
+  }, index);
+  const sharedOutcomes = await Promise.all(pages.map(tab => tab.evaluate(() => window.sharedCoordinator.flush())));
+  if (!sharedOutcomes.every(Boolean)) throw new Error("Two-page shared CAS did not recover");
+  const sharedResult = await page.evaluate(async () => {
+    const record = await window.testRepository.get("project_a");
+    if (record.project.frames[0].positions.m_001.x !== 10 || record.project.frames[0].positions.m_002.x !== 11 || record.collaboration.outbox.length !== 2) throw new Error("Two-page merge lost updates/outbox");
+    return { revision: record.repositoryRevision, outbox: record.collaboration.outbox.length };
+  });
   // Native blocked open: hold an existing connection in page 2 and request v2
   // in page 1. The adapter's blocked mapping is tested in the browser suite.
   await second.evaluate(async name => {
@@ -58,7 +79,7 @@ try {
   await page.evaluate(async name => {
     window.testRepository.close();
     await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 3);
+      const request = indexedDB.open(name, 4);
       request.onblocked = () => { window.blockedUpgrade = request; resolve(); };
       request.onerror = () => reject(request.error);
       request.onsuccess = () => { request.result.close(); reject(new Error("expected actual blocked event")); };
@@ -66,7 +87,7 @@ try {
   }, dbName);
   await page.evaluate(() => { window.blockedUpgrade.onsuccess = () => window.blockedUpgrade.result.close(); });
   await second.evaluate(() => { window.blocker.close(); });
-  console.log(JSON.stringify({ ...result, twoPageCas: outcomes, nativeBlocked: true,
+  console.log(JSON.stringify({ ...result, twoPageCas: outcomes, twoPageSharedCas: sharedResult, nativeBlocked: true,
     chromium: browser.version(), os: `${os.platform()} ${os.release()} ${os.arch()}`, cpu: os.cpus()[0]?.model }, null, 2));
 } finally {
   try {

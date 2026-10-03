@@ -3,6 +3,7 @@
 import { serializeProject } from "../project/codec";
 import { runIdbTransaction } from "../utils/idbTransaction";
 import { assertStorageId } from "./ids";
+import { validateCollaboration, validateCollaborationTransition } from "./collaborationData";
 import { DAY, MAINTENANCE_ID, initialMaintenance, validateMaintenance, type MaintenanceAction, type MaintenanceState, type GCResult, type MaintenanceRepository } from "../storage/maintenanceTypes";
 import { withStorageWrite, withStorageMaintenance } from "../storage/maintenanceLock";
 import { addAudioReference, migrationProtectsAudio } from "../storage/audioReferences";
@@ -69,9 +70,12 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
           fail(new RepositoryError("BUSY")); request.transaction!.abort(); return;
         }
         try {
-          if (event.oldVersion > 1) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+          if (event.oldVersion > 2) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+          const existingStores = event.oldVersion === 1 ? PROJECT_STORES.filter(n => n !== "migration_items")
+            : event.oldVersion === 2 ? PROJECT_STORES : [];
+          if (existingStores.some(n => !request.result.objectStoreNames.contains(n))) throw new RepositoryError("CORRUPT");
           for (const name of PROJECT_STORES) {
-            if (event.oldVersion === 1 && name !== "migration_items") continue;
+            if (request.result.objectStoreNames.contains(name)) continue;
             const store = request.result.createObjectStore(name, { keyPath: name === "operation_receipts" ? "operationId" : "id" });
             if (name === "project_summaries") {
               store.createIndex("by_order", ["sortTime", "sortId"], { unique: true });
@@ -133,10 +137,18 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
 
   async getPrevious(id: string): Promise<ProjectRecord | null> {
     assertStorageId(id);
-    return this.transaction(["project_previous"], "readonly", (tx, result, fail) => {
+    const record = await this.transaction<ProjectRecord | null>(["project_previous"], "readonly", (tx, result, fail) => {
       const read = tx.objectStore("project_previous").get(id);
       read.onsuccess = () => { try { result(read.result === undefined ? null : decodeBody(read.result, id)); } catch (e) { fail(e); } };
     });
+    return this.checkedRecord(record);
+  }
+  private async checkedRecord(record: ProjectRecord | null): Promise<ProjectRecord | null> {
+    if (record?.collaboration) {
+      try { (await import("../collaboration/persistence")).validateCollaborationProject(record.collaboration, record.project); }
+      catch (e) { if (e instanceof RepositoryError && e.code === "UNSUPPORTED_SCHEMA") throw e; throw new RepositoryError("CORRUPT"); }
+    }
+    return record;
   }
   private decodeMaintenance(raw: unknown): MaintenanceState {
     if (raw === undefined) return initialMaintenance();
@@ -182,25 +194,31 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
       const batch = await this.readMigration("legacy-projects-v1");
       if (batch?.state !== "completed") return skipped;
       // One verified body at a time; no summary-only shortcuts and no getAll bodies.
-      const references = await this.transaction<Set<string>>(["project_bodies", "project_previous", "migration_items"], "readonly", (tx, result, fail) => {
-        const ids = new Set<string>(); let remaining = 3;
+      const references = await this.transaction<{ ids: Set<string>; shared: boolean }>(["project_bodies", "project_previous", "migration_items"], "readonly", (tx, result, fail) => {
+        const ids = new Set<string>(); let remaining = 3, shared = false;
         for (const name of ["project_bodies", "project_previous", "migration_items"]) {
           const read = tx.objectStore(name).openCursor();
           read.onsuccess = () => { try {
             const cursor = read.result;
-            if (!cursor) { if (!--remaining) result(ids); return; }
+            if (!cursor) { if (!--remaining) result({ ids, shared }); return; }
             if (name === "migration_items") {
               if (cursor.key === MAINTENANCE_ID) this.decodeMaintenance(cursor.value);
               else {
                 const entry = this.decodeMigration(cursor.value, String(cursor.key));
                 if (entry.kind === "item" && migrationProtectsAudio(entry)) addAudioReference(JSON.parse(entry.json), ids);
               }
-            } else addAudioReference(decodeBody(cursor.value, String(cursor.key)).project, ids);
+            } else {
+              const record = decodeBody(cursor.value, String(cursor.key));
+              addAudioReference(record.project, ids); shared ||= !!record.collaboration;
+            }
             cursor.continue();
           } catch (e) { fail(e); } };
         }
       });
-      const stats = await (await import("../utils/audioStorage")).collectWebAudio(references);
+      // Opaque CRDT history has no declared local audio reference contract yet.
+      // Conservatively defer GC until round 6/8 supplies descriptors/mappings.
+      if (references.shared) return skipped;
+      const stats = await (await import("../utils/audioStorage")).collectWebAudio(references.ids);
       await this.transaction(["migration_items"], "readwrite", (tx, result, fail) => {
         const store = tx.objectStore("migration_items"), read = store.get(MAINTENANCE_ID);
         read.onsuccess = () => { try {
@@ -215,13 +233,14 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
 
   async get(id: string): Promise<ProjectRecord | null> {
     assertStorageId(id);
-    return this.transaction(["project_bodies"], "readonly", (tx, result, fail) => {
+    const record = await this.transaction<ProjectRecord | null>(["project_bodies"], "readonly", (tx, result, fail) => {
       const request = tx.objectStore("project_bodies").get(id);
       request.onsuccess = () => {
         try { result(request.result === undefined ? null : decodeBody(request.result, id)); }
         catch (error) { fail(error); }
       };
     });
+    return this.checkedRecord(record);
   }
 
   async readMigration(id: string): Promise<MigrationEntry | null> {
@@ -349,6 +368,10 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
     const encoded = serializeProject(input.project);
     if (!encoded.ok) throw encoded.error;
     const request = capture(input);
+    if (request.collaboration != null) {
+      request.collaboration = validateCollaboration(request.collaboration);
+      (await import("../collaboration/persistence")).validateCollaborationProject(request.collaboration, request.project);
+    }
     assertStorageId(request.project.id);
     assertStorageId(request.operationId);
     assertRevision(request.localRevision);
@@ -379,13 +402,16 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
     const { kind, request } = mutation;
     const id = mutation.kind === "commit" ? mutation.request.project.id! : mutation.request.id;
     const operationId = request.operationId;
+    const collaborationRuntime = kind === "commit" && mutation.request.collaboration
+      ? await import("../collaboration/persistence") : null;
     // Async crypto finishes BEFORE starting the transaction. No payload copy
     // per receipt; exact request bytes are fingerprinted by SHA-256.
     let signature: string;
     try { signature = await requestDigest(JSON.stringify({ kind, request })); }
     catch (error) { throw classifyIndexedDbError(error, operationId); }
     const prepared = kind === "commit" ? encodeBody({ project: mutation.request.project,
-      repositoryRevision: "1", localRevision: mutation.request.localRevision, sync: null }, mutation.json) : undefined;
+      repositoryRevision: "1", localRevision: mutation.request.localRevision, sync: null,
+      collaboration: mutation.request.collaboration }, mutation.json) : undefined;
     return this.transaction(PROJECT_STORES, "readwrite", (tx, result, fail) => {
       const operations = tx.objectStore("operation_receipts");
       const replay = operations.get(operationId);
@@ -421,6 +447,10 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
                 if (current.repositoryRevision !== request.expectedRepositoryRevision) throw new RepositoryError("CONFLICT");
               }
               if (kind !== "remove" && current && compareRevisions((request as CommitRequest | RenameRequest).localRevision, current.localRevision) <= 0) throw new RepositoryError("CONFLICT");
+              if (kind === "commit") {
+                validateCollaborationTransition(current?.collaboration, mutation.request.collaboration);
+                if (current?.collaboration && mutation.request.collaboration) collaborationRuntime!.assertCollaborationExtends(current.collaboration, mutation.request.collaboration);
+              }
               const summaries = tx.objectStore("project_summaries");
               const previous = tx.objectStore("project_previous");
               if (kind === "remove") {
@@ -432,6 +462,7 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
               const record: ProjectRecord = kind === "commit" ? {
                 project: mutation.request.project, localRevision: mutation.request.localRevision,
                 repositoryRevision: current ? incrementRevision(current.repositoryRevision) : "1", sync: current?.sync ?? null,
+                ...(mutation.request.collaboration ? { collaboration: mutation.request.collaboration } : {}),
               } : { ...current!, project: { ...current!.project, title: mutation.request.title, updatedAt: mutation.request.updatedAt },
                 localRevision: mutation.request.localRevision, repositoryRevision: incrementRevision(current!.repositoryRevision) };
               const body = prepared ? { ...prepared, repositoryRevision: record.repositoryRevision, sync: record.sync } : encodeBody(record);

@@ -6,6 +6,7 @@ import fixture from "../repositories/contract/fixtures/commitProjects.json";
 import { createTairetsuArchive, readTairetsuArchive } from "../utils/tairetsuFile";
 import { loadAudioBlobFromIndexedDb } from "../utils/audioStorage";
 import type { Project } from "../types";
+import { initialCollaboration } from "../repositories/contract/runCollaborationContract";
 
 vi.mock("../utils/tairetsuFile", () => ({ createTairetsuArchive: vi.fn(async () => new Blob(["ZIP"], { type: "application/zip" })),
   readTairetsuArchive: vi.fn(async () => ({ project: fixture.stage, audioBlob: null, audioFileName: null })) }));
@@ -18,6 +19,17 @@ const seed = async (count: number, audio = false) => {
   return r;
 };
 describe("manual independent ZIP backup sets", () => {
+  it("exports a shared project's Project only and imports independent copies", async () => {
+    const r = new MemoryProjectRepository();
+    await r.commit({ project: fixture.stage as Project, collaboration: initialCollaboration(), localRevision: "1", expectedRepositoryRevision: null, operationId: "share" });
+    for await (const _file of generateBulkBackup(r, false)) { /* consume the independent archives */ }
+    expect(vi.mocked(createTairetsuArchive).mock.calls[0][0]).toEqual(fixture.stage);
+    expect(JSON.stringify(vi.mocked(createTairetsuArchive).mock.calls)).not.toContain("outbox");
+    await importBackupFiles(r, [new File(["ZIP"], "shared.zip")]);
+    for (const summary of (await r.list({ limit: 100 })).items.filter(s => s.id !== fixture.stage.id)) {
+      expect((await r.get(summary.id))?.collaboration ?? null).toBeNull();
+    }
+  });
   it("streams 1000 independent ZIPs plus manifest, crosses 64 safely and does not pre-generate next payload", async () => {
     const r = await seed(1000), stream = generateBulkBackup(r, false);
     const first = await stream.next(); expect(first.value?.fileName).toMatch(/-000001\.zip$/);

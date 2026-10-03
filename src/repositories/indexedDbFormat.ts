@@ -1,10 +1,11 @@
 import type { Project } from "../types";
 import { createProjectSummary, serializeProject } from "../project/codec";
 import { isValidStorageId } from "./ids";
+import { validateCollaboration } from "./collaborationData";
 import { isRevision, RepositoryError, type ProjectRecord, type ProjectSummary } from "./types";
 
 export const PROJECT_DB_NAME = "tairetsu-maker-projects";
-export const PROJECT_DB_VERSION = 2;
+export const PROJECT_DB_VERSION = 3;
 export const PROJECT_STORES = ["project_bodies", "project_summaries", "project_previous", "operation_receipts", "migration_items"];
 export const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -40,7 +41,10 @@ export const encodeBody = (record: ProjectRecord, json?: string): StoredBody => 
     if (!encoded.ok) throw encoded.error;
     json = encoded.value;
   }
-  return { schemaVersion: 1, id: record.project.id!, json, ...jsonIntegrity(json),
+  const collaboration = record.collaboration ? validateCollaboration(record.collaboration) : null;
+  const attachment = collaboration ? JSON.stringify(collaboration) : undefined;
+  return { schemaVersion: collaboration ? 2 : 1, id: record.project.id!, json, ...jsonIntegrity(json),
+    ...(attachment ? { collaboration, collaborationIntegrity: jsonIntegrity(attachment) } : {}),
     repositoryRevision: record.repositoryRevision, localRevision: record.localRevision, sync: record.sync };
 };
 export const encodeSummary = (record: ProjectRecord): StoredSummary => {
@@ -49,8 +53,8 @@ export const encodeSummary = (record: ProjectRecord): StoredSummary => {
 };
 export const decodeBody = (raw: unknown, id: string): ProjectRecord => {
   if (!object(raw)) throw new RepositoryError("CORRUPT");
-  if (Number.isInteger(raw.schemaVersion) && (raw.schemaVersion as number) > 1) throw new RepositoryError("UNSUPPORTED_SCHEMA");
-  if (raw.schemaVersion !== 1 || raw.id !== id || typeof raw.json !== "string" ||
+  if (Number.isInteger(raw.schemaVersion) && (raw.schemaVersion as number) > 2) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+  if (![1, 2].includes(raw.schemaVersion as number) || raw.id !== id || typeof raw.json !== "string" ||
       !isRevision(raw.repositoryRevision) || !isRevision(raw.localRevision) || raw.sync !== null) {
     // Sync writes are not exposed in this phase. Future sync schema must add
     // explicit validation, never trust arbitrary structured-clone objects.
@@ -63,7 +67,16 @@ export const decodeBody = (raw: unknown, id: string): ProjectRecord => {
   catch { throw new RepositoryError("CORRUPT"); }
   const checked = serializeProject(project);
   if (!checked.ok || project.id !== id) throw new RepositoryError("CORRUPT");
-  return { project, repositoryRevision: raw.repositoryRevision, localRevision: raw.localRevision, sync: null };
+  if (raw.schemaVersion === 1) {
+    if (raw.collaboration !== undefined && raw.collaboration !== null) throw new RepositoryError("CORRUPT");
+    return { project, repositoryRevision: raw.repositoryRevision, localRevision: raw.localRevision, sync: null };
+  }
+  try {
+    const collaboration = validateCollaboration(raw.collaboration);
+    const check = jsonIntegrity(JSON.stringify(raw.collaboration));
+    if (!object(raw.collaborationIntegrity) || raw.collaborationIntegrity.byteLength !== check.byteLength || raw.collaborationIntegrity.crc32 !== check.crc32) throw new Error();
+    return { project, repositoryRevision: raw.repositoryRevision, localRevision: raw.localRevision, sync: null, collaboration };
+  } catch (e) { if (e instanceof RepositoryError && e.code === "UNSUPPORTED_SCHEMA") throw e; throw new RepositoryError("CORRUPT"); }
 };
 export const validSummary = (s: unknown): s is ProjectSummary => object(s) &&
   isValidStorageId(s.id) && typeof s.title === "string" && (s.mode === "stage" || s.mode === "parade") &&
