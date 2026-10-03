@@ -1,0 +1,7 @@
+// Internal static dependencies live behind index.ts's dynamic import boundary.
+export { createSharedDocument, joinSharedDocument, readPosition } from "./model";
+export { projectSharedDocument } from "./projection";
+export { CollaborationCommands } from "./commands";
+export type { MemberMove, PositionTarget, HistoryResult } from "./commands";
+export { encodeStateAsUpdate, encodeStateVector, applyUpdate } from "yjs";
+export { REMOTE_ORIGIN } from "./model";
