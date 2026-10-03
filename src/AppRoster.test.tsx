@@ -224,7 +224,7 @@ describe("App roster confirmation integration", () => {
       const project = { ...createSampleProject(), id: "missing-audio", title: "削除検証",
         audio: { id: "missing", name: "曲.mp3", type: "audio/mpeg", size: 100 } };
       testProject = project;
-      vi.spyOn(audioStorage, "loadAudioBlobFromIndexedDb").mockResolvedValue(null);
+      vi.spyOn(audioStorage, "resolveAudioPlaybackURL").mockResolvedValue(null);
     }
     render(<App />);
     await act(async () => {});

@@ -1,11 +1,14 @@
 import { AudioMeta } from "../types";
+import type { AudioSelection } from "../platform/audioStorage";
 import { MAX_AUDIO_FILE_BYTES } from "../config/fileLimits";
 import { runIdbTransaction } from "./idbTransaction";
 import {
   deleteNativeAudioBlob,
-  getAppRuntime,
+  canUseNativeAudioStorage,
+  resolveNativeAudioURL,
   loadNativeAudioBlob,
   saveNativeAudioBlob,
+  validateNativeAudioMeta,
 } from "../platform";
 
 const DB_NAME = "tairetsu-maker-audio";
@@ -84,7 +87,11 @@ const readAudioDuration = (file: File): Promise<number | undefined> =>
     audio.src = url;
   });
 
-export const saveAudioFileToIndexedDb = async (file: File): Promise<AudioMeta> => {
+export const saveAudioFileToIndexedDb = async (file: AudioSelection): Promise<AudioMeta> => {
+  if (!(file instanceof File)) {
+    if (!canUseNativeAudioStorage()) throw new Error("ネイティブ音源保存を利用できません。");
+    return validateNativeAudioMeta(file); // Native picker already committed the file.
+  }
   return saveAudioBlobToIndexedDb(file, {
     name: file.name,
     type: file.type || "audio/mpeg",
@@ -113,8 +120,8 @@ export const saveAudioBlobToIndexedDb = async (
       : new File([blob], meta.name, {
           type,
         });
-  if (getAppRuntime() === "capacitor-ios") {
-    await saveNativeAudioBlob(id, file, file.type || type);
+  if (canUseNativeAudioStorage()) {
+    return saveNativeAudioBlob(id, file, file.type || type, meta.name, meta.duration);
   } else {
     await withAudioStore("readwrite", (store) =>
       store.put({ id, blob: file } satisfies AudioRecord),
@@ -131,9 +138,10 @@ export const saveAudioBlobToIndexedDb = async (
 
 export const loadAudioBlobFromIndexedDb = async (
   audioId: string,
+  meta?: AudioMeta,
 ): Promise<Blob | null> => {
-  if (getAppRuntime() === "capacitor-ios") {
-    return loadNativeAudioBlob(audioId);
+  if (canUseNativeAudioStorage()) {
+    return loadNativeAudioBlob(audioId, meta);
   }
   const record = await withAudioStore<AudioRecord | undefined>("readonly", (store) =>
     store.get(audioId),
@@ -146,7 +154,7 @@ export const loadAudioBlobFromIndexedDb = async (
 };
 
 export const deleteAudioBlobFromIndexedDb = async (audioId: string): Promise<void> => {
-  if (getAppRuntime() === "capacitor-ios") {
+  if (canUseNativeAudioStorage()) {
     await deleteNativeAudioBlob(audioId);
     return;
   }
@@ -155,4 +163,10 @@ export const deleteAudioBlobFromIndexedDb = async (audioId: string): Promise<voi
   } catch {
     // 音源Blobの掃除に失敗しても、隊列表データの削除は止めない。
   }
+};
+
+export const resolveAudioPlaybackURL = async (meta: AudioMeta): Promise<string | null> => {
+  if (canUseNativeAudioStorage()) return resolveNativeAudioURL(meta.id, meta);
+  const blob = await loadAudioBlobFromIndexedDb(meta.id);
+  return blob ? URL.createObjectURL(blob) : null;
 };

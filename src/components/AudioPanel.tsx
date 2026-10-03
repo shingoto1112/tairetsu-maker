@@ -1,3 +1,4 @@
+import type { AudioSelection } from "../platform/audioStorage";
 import { Music, Pause, Play } from "lucide-react";
 import { formatTime } from "../utils/time";
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
@@ -17,7 +18,7 @@ type AudioPanelProps = {
   canEditAudio?: boolean;
   cloudAudioNotice?: boolean;
   audioReadOnlyMessage?: string;
-  onLoadAudio: (file: File) => void;
+  onLoadAudio: (file: AudioSelection) => void;
   onLoadAudioError?: (message: string) => void;
   onTogglePlayback: () => void;
   onSeek: (time: number) => void;

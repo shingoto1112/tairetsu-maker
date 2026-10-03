@@ -1,3 +1,4 @@
+import type { AudioSelection } from "../platform/audioStorage";
 import {
   ChangeEvent,
   FormEvent,
@@ -57,7 +58,7 @@ export type NewFormationInput = {
   horizontalGuideMode: HorizontalGuideMode;
   memberDiameterMeters: number;
   paradeSettings?: ParadeSettings;
-  audioFile: File | null;
+  audioFile: AudioSelection | null;
 };
 
 type FormationLibraryProps = {
@@ -191,7 +192,7 @@ export const FormationLibrary = ({
     useState<ParadeHorizontalMeasureMode>("centerSplit");
   const [paradeEmphasizeEvery5m, setParadeEmphasizeEvery5m] = useState(true);
   const [paradeEmphasizeEvery10m, setParadeEmphasizeEvery10m] = useState(true);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioFile, setAudioFile] = useState<AudioSelection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [libraryMenu, setLibraryMenu] = useState<LibraryMenu | null>(null);
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);

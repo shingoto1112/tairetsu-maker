@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadAudioBlobFromIndexedDb, saveAudioBlobToIndexedDb } from "./audioStorage";
 
-vi.mock("../platform", () => ({ getAppRuntime: () => "web" }));
+vi.mock("../platform", () => ({ canUseNativeAudioStorage: () => false }));
 afterEach(() => vi.unstubAllGlobals());
 
 const mockDb = () => {

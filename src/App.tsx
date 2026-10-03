@@ -1,3 +1,4 @@
+import type { AudioSelection } from "./platform/audioStorage";
 import { normalizeProject } from "./project/normalizeProject";
 import {
   createProjectId,
@@ -158,6 +159,7 @@ import {
 import type { CompletedExport } from "./utils/mobileExportTypes";
 import {
   loadAudioBlobFromIndexedDb,
+  resolveAudioPlaybackURL,
   saveAudioBlobToIndexedDb,
   saveAudioFileToIndexedDb,
 } from "./utils/audioStorage";
@@ -1963,7 +1965,7 @@ function App() {
   const setAudioSource = useCallback(
     (url: string | null, name: string | null) => {
       setAudioUrl((previous) => {
-        if (previous && previous !== url) {
+        if (previous?.startsWith("blob:") && previous !== url) {
           URL.revokeObjectURL(previous);
         }
         return url;
@@ -1999,15 +2001,17 @@ function App() {
       // Storage distinguishes absence from failure. Keep the existing recovery
       // notice at this UI boundary until the audio error UI is redesigned.
       const generation = editorLoadGenerationRef.current;
-      const blob = await loadAudioBlobFromIndexedDb(meta.id).catch(() => null);
-      if (generation !== editorLoadGenerationRef.current || projectRef.current.id !== targetProject.id || projectRef.current.audio?.id !== meta.id) return false;
-      if (!blob) {
+      const url = await resolveAudioPlaybackURL(meta).catch(() => null);
+      if (generation !== editorLoadGenerationRef.current || projectRef.current.id !== targetProject.id || projectRef.current.audio?.id !== meta.id) {
+        if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+        return false;
+      }
+      if (!url) {
         setAudioSource(null, meta.name);
         setSharedAudioNotice(true);
         setNotice("保存済み音源が見つかりませんでした。必要なら音源を読み込み直してください。");
         return false;
       }
-      const url = URL.createObjectURL(blob);
       setAudioSource(url, meta.name);
       setSharedAudioNotice(false);
       return true;
@@ -3025,7 +3029,7 @@ function App() {
 
   useEffect(
     () => () => {
-      if (audioUrl) {
+      if (audioUrl?.startsWith("blob:")) {
         URL.revokeObjectURL(audioUrl);
       }
       if (animationPreviewRef.current !== null) {
@@ -6998,8 +7002,16 @@ function App() {
       window.removeEventListener("keydown", handleAppShortcuts);
   });
 
-  const loadAudio = async (file: File) => {
-    const nextUrl = URL.createObjectURL(file);
+  // The picker callback keeps the render's generation while native copying is pending.
+  const audioSelectionGeneration = editorLoadGenerationRef.current;
+  const loadAudio = async (file: AudioSelection) => {
+    const generation = audioSelectionGeneration;
+    if (generation !== editorLoadGenerationRef.current) return;
+    const nextUrl = file instanceof File ? URL.createObjectURL(file) : await resolveAudioPlaybackURL(file);
+    if (generation !== editorLoadGenerationRef.current) {
+      if (nextUrl?.startsWith("blob:")) URL.revokeObjectURL(nextUrl);
+      return;
+    }
     setAudioSource(nextUrl, file.name);
     setSharedAudioNotice(false);
     const cloudState = activeCloudProjectRef.current;
@@ -7009,6 +7021,7 @@ function App() {
     }
     try {
       const audio = await saveAudioFileToIndexedDb(file);
+      if (generation !== editorLoadGenerationRef.current) return;
       updateProject(
         (previous) => ({
           ...previous,
@@ -7242,7 +7255,7 @@ function App() {
     const projectToExport = normalizeProject(source);
     try {
       const audioBlob = includeAudio && projectToExport.audio?.id
-        ? await loadAudioBlobFromIndexedDb(projectToExport.audio.id).catch(() => null) : null;
+        ? await loadAudioBlobFromIndexedDb(projectToExport.audio.id, projectToExport.audio).catch(() => null) : null;
       const audioMissing = includeAudio && Boolean(projectToExport.audio?.id) && !audioBlob;
       const blob = await createTairetsuArchive(projectToExport, { audioBlob });
       setCanCopyExport(false);
@@ -12946,7 +12959,7 @@ function App() {
           </div>
         </div>
       )}
-      <audio ref={audioRef} className="persistent-audio" />
+      <audio ref={audioRef} className="persistent-audio" preload="metadata" />
       <input
         ref={cloudImportInputRef}
         accept=".json,.zip,.tairetsu,application/json,application/zip,application/octet-stream"

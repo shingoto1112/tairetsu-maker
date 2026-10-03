@@ -1,6 +1,7 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import type { AudioMeta } from "../types";
+import { canUseNativeAudioStorage, nativeAudio, validateNativeAudioMeta } from "./audioStorage";
 import { MAX_AUDIO_FILE_BYTES } from "../config/fileLimits";
-import { getAppRuntime } from "./runtime";
+
 
 export const AUDIO_FILE_ACCEPT = ".mp3,.m4a,.wav,.aac,.aif,.aiff,.caf";
 export { MAX_AUDIO_FILE_BYTES };
@@ -14,23 +15,6 @@ const AUDIO_FILE_EXTENSIONS = new Set([
   "mp3",
   "wav",
 ]);
-
-type NativeAudioPickerResult = {
-  cancelled?: boolean;
-  mimeType?: string;
-  name?: string;
-  size?: number;
-  uri?: string;
-};
-
-type NativeAudioPickerPlugin = {
-  pickAudioFile: () => Promise<NativeAudioPickerResult>;
-  removeTemporaryFile: (options: { uri: string }) => Promise<void>;
-};
-
-const nativeAudioPicker = registerPlugin<NativeAudioPickerPlugin>(
-  "AudioDocumentPicker",
-);
 
 const getFileExtension = (name: string): string => {
   const dotIndex = name.lastIndexOf(".");
@@ -50,62 +34,14 @@ export const validateAudioFile = (file: File): string | null => {
   return null;
 };
 
-export const canUseNativeAudioPicker = (): boolean =>
-  getAppRuntime() === "capacitor-ios" && Capacitor.isNativePlatform();
-
-export const pickNativeAudioFile = async (): Promise<File | null> => {
-  if (!canUseNativeAudioPicker()) {
-    throw new Error("iPad用の音源選択はネイティブアプリでのみ利用できます。");
+export const canUseNativeAudioPicker = canUseNativeAudioStorage;
+export const pickNativeAudioFile = async (): Promise<AudioMeta | null> => {
+  if (!canUseNativeAudioPicker()) throw new Error("iPad用の音源選択はネイティブアプリでのみ利用できます。");
+  const result = await nativeAudio.pickAudioFile();
+  if (result.cancelled) return null;
+  const meta = validateNativeAudioMeta(result.audio);
+  if (!AUDIO_FILE_EXTENSIONS.has(getFileExtension(meta.name))) {
+    throw new Error("MP3、M4A、WAV、AAC、AIFF、CAF形式の音源を選択してください。");
   }
-
-  const result = await nativeAudioPicker.pickAudioFile();
-  if (result.cancelled) {
-    return null;
-  }
-  if (!result.uri) {
-    throw new Error("音源ファイルを読み込めませんでした。もう一度お試しください。");
-  }
-
-  try {
-    if (!result.name) {
-      throw new Error("音源ファイルを読み込めませんでした。もう一度お試しください。");
-    }
-    // Reject known-invalid documents before allocating the complete audio blob.
-    if (!AUDIO_FILE_EXTENSIONS.has(getFileExtension(result.name))) {
-      throw new Error("MP3、M4A、WAV、AAC、AIFF、CAF形式の音源を選択してください。");
-    }
-    // The picker always reports the copied file's size; it is required to confirm a complete read.
-    const expectedSize = result.size;
-    if (typeof expectedSize !== "number" || !Number.isFinite(expectedSize) || expectedSize <= 0) {
-      throw new Error("選択した音源ファイルが空か、サイズを取得できませんでした。");
-    }
-    if (expectedSize > MAX_AUDIO_FILE_BYTES) {
-      throw new Error("音源ファイルは200MB以下にしてください。");
-    }
-    // Capacitor's asset handler answers audio/video files with a non-HTTP response unless a
-    // byte range is requested, and WebKit's fetch reports that as status 0 (not ok). Asking for
-    // the whole file as a range yields a normal 206; a complete status-0 body is still accepted.
-    const response = await fetch(Capacitor.convertFileSrc(result.uri), {
-      headers: { Range: "bytes=0-" },
-    });
-    if (!response.ok && response.status !== 0) {
-      throw new Error(`音源ファイルの読み込みに失敗しました (${response.status})。`);
-    }
-    const blob = await response.blob();
-    if (blob.size !== expectedSize) {
-      throw new Error("音源ファイルを最後まで読み込めませんでした。もう一度お試しください。");
-    }
-    const file = new File([blob], result.name, {
-      type: result.mimeType || blob.type || "audio/mpeg",
-    });
-    const validationError = validateAudioFile(file);
-    if (validationError) {
-      throw new Error(validationError);
-    }
-    return file;
-  } finally {
-    await nativeAudioPicker
-      .removeTemporaryFile({ uri: result.uri })
-      .catch(() => undefined);
-  }
+  return meta;
 };

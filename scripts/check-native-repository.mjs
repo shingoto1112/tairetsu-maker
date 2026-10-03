@@ -99,3 +99,25 @@ try {
   assert.equal(ids.length, 24);
   console.log(`SQLite SQL preflight: 6 tables / 2 explicit indexes; mutation blocks + ${count} literal statements prepare; 24 ID fixture entries: PASS (not a Swift runtime test)`);
 } finally { database.close(); }
+
+// Audio lives in the same local package; its bridge extends the already-linked picker.
+const audioCorePath = "ios/ProjectRepositoryCore/Sources/ProjectRepositoryCore/AudioStore.swift";
+const audioTestPath = "ios/ProjectRepositoryCore/Tests/ProjectRepositoryCoreTests/AudioStoreTests.swift";
+const audioCore = readFileSync(audioCorePath, "utf8");
+const audioTests = readFileSync(audioTestPath, "utf8");
+const audioBridge = readFileSync("ios/App/App/AudioDocumentPickerPlugin.swift", "utf8");
+const audioMethods = [...audioBridge.matchAll(/CAPPluginMethod\(name: "([^"]+)"/g)].map(m => m[1]);
+assert.equal(audioMethods.length, 6);
+assert.equal(new Set(audioMethods).size, 6);
+for (const method of audioMethods) assert.ok(audioBridge.includes(`@objc func ${method}(`));
+for (const name of ["PBXBuildFile", "PBXFileReference", "PBXGroup", "PBXSourcesBuildPhase"]) {
+  assert.ok(section(name).includes("AudioDocumentPickerPlugin.swift"), `existing picker reference ${name}`);
+}
+assert.deepEqual([...audioCore.matchAll(/^import (\w+)$/gm)].map(m => m[1]), ["Foundation"]);
+assert.ok(audioCore.includes("completeUntilFirstUserAuthentication"));
+assert.ok(!audioCore.includes("isExcludedFromBackup = true"));
+assert.ok(audioCore.includes("try fm.replaceItemAt(index, withItemAt: pending)"));
+assert.ok(audioCore.includes("try equalFiles(source, staged)"));
+assert.ok(!/Filesystem\.(writeFile|deleteFile)/.test(readFileSync("src/platform/audioStorage.ts", "utf8")));
+assert.equal((audioTests.match(/func test\w+\(/g) ?? []).length, 13);
+console.log("Audio preflight: existing picker's four references / 6 fixed methods / Foundation-only core / 13 XCTest cases / protected atomic catalog / byte verification / legacy retained: PASS (not Swift compilation)");

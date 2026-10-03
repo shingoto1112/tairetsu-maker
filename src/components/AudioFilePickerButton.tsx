@@ -1,3 +1,4 @@
+import type { AudioSelection } from "../platform/audioStorage";
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import {
   AUDIO_FILE_ACCEPT,
@@ -11,7 +12,7 @@ type AudioFilePickerButtonProps = {
   className?: string;
   disabled?: boolean;
   onError: (message: string) => void;
-  onFileSelected: (file: File) => void | Promise<void>;
+  onFileSelected: (file: AudioSelection) => void | Promise<void>;
 };
 
 export const AudioFilePickerButton = ({

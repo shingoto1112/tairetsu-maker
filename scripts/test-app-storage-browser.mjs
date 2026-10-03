@@ -151,5 +151,40 @@ try {
     await back(page); await page.context().setOffline(true); await open(page,"匿名計測29");
     console.log("50-project measurements", JSON.stringify(data));
   });
+  await fresh("h Web + non-native iPad audio IndexedDB/playback/ZIP", async page => {
+    for (const query of ["", "?runtime=capacitor-ios"]) {
+      await page.goto(`${origin}/${query}`); await ready(page);
+      const result = await page.evaluate(async base => {
+        const { saveAudioBlobToIndexedDb, loadAudioBlobFromIndexedDb, resolveAudioPlaybackURL } = await import("/src/utils/audioStorage.ts");
+        const { canUseNativeAudioStorage } = await import("/src/platform/audioStorage.ts");
+        const { createTairetsuArchive, readTairetsuArchive } = await import("/src/utils/tairetsuFile.ts");
+        // Small, valid 1s PCM WAV; no user's audio is used or logged.
+        const bytes = new Uint8Array(44 + 16000), view = new DataView(bytes.buffer);
+        const text = (offset, s) => [...s].forEach((c, i) => { bytes[offset + i] = c.charCodeAt(0); });
+        text(0,"RIFF"); view.setUint32(4,bytes.length-8,true); text(8,"WAVE"); text(12,"fmt ");
+        view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,1,true);
+        view.setUint32(24,8000,true); view.setUint32(28,16000,true); view.setUint16(32,2,true); view.setUint16(34,16,true);
+        text(36,"data"); view.setUint32(40,16000,true);
+        const audio = await saveAudioBlobToIndexedDb(new Blob([bytes],{type:"audio/wav"}),{name:"anonymous.wav",duration:1});
+        const playback = await resolveAudioPlaybackURL(audio);
+        const blob = await loadAudioBlobFromIndexedDb(audio.id, audio);
+        const zip = await createTairetsuArchive({...base,audio},{audioBlob:blob});
+        const imported = await readTairetsuArchive(new File([zip],"anonymous.zip"));
+        const importedMeta = await saveAudioBlobToIndexedDb(imported.audioBlob,{name:imported.project.audio.name,type:imported.project.audio.type,duration:1});
+        const roundtrip = await loadAudioBlobFromIndexedDb(importedMeta.id);
+        const media = document.createElement("audio"); media.preload="metadata";
+        const loaded = new Promise((resolve,reject) => {
+          const timeout=setTimeout(()=>reject(new Error("anonymous audio metadata timeout")),10000);
+          media.onloadedmetadata=()=>{clearTimeout(timeout);resolve(media.duration);};
+          media.onerror=()=>{clearTimeout(timeout);reject(new Error("anonymous audio metadata failed"));};
+        });
+        media.src=playback; const duration=await loaded;
+        media.removeAttribute("src"); media.load(); URL.revokeObjectURL(playback);
+        return {native:canUseNativeAudioStorage(),blobURL:playback.startsWith("blob:"),size:blob.size,
+          roundtripSize:roundtrip.size, sameBytes:[...new Uint8Array(await roundtrip.arrayBuffer())].every((b,i)=>b===bytes[i]),duration};
+      }, fixtures.stage);
+      assert.deepEqual(result,{native:false,blobURL:true,size:16044,roundtripSize:16044,sameBytes:true,duration:1});
+    }
+  });
   assert.deepEqual(failures, []);
 } finally { await browser.close(); }
