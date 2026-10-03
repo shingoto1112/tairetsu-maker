@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolvePinchView, stageAnchorMeters, type PinchGeometry } from "./pinchGeometry";
+import { stickyRulerTranslate, resolvePinchView, stageAnchorMeters, type PinchGeometry } from "./pinchGeometry";
 const geometry: PinchGeometry = {
   viewport: { left: 100, top: 20, width: 700, height: 500 },
   padding: { left: 14, right: 14, top: 10, bottom: 14 },
@@ -25,5 +25,19 @@ describe("pinch stage anchor geometry", () => {
   it("includes centering and padding after shrinking below the viewport", () => {
     const v = resolvePinchView(geometry, .5, { x: 450, y: 270 });
     expect(v.origin.x).toBe(14+(700-28-v.width)/2); expect(v.scroll.x).toBe(0);
+  });
+  it("countertranslates a sticky ruler to exactly its viewport position at any scale", () => {
+    for (const scale of [.5, 1, 1.75, 3]) {
+      const top = 20, origin = -390, translate = -120;
+      const correction = stickyRulerTranslate(top, origin, top, origin, scale, translate);
+      expect(origin + translate + scale * (top - origin + correction)).toBeCloseTo(top);
+    }
+  });
+  it("follows natural content above padding until reaching the sticky viewport edge", () => {
+    const origin = 40, edge = 20;
+    expect(stickyRulerTranslate(40, 30, edge, origin, 2, -10)).toBe(0);
+    expect(stickyRulerTranslate(40, 10, edge, origin, 2, -30)).toBe(5);
+    // Final fixed-width ruler placement differs from the scaled old layout.
+    expect(stickyRulerTranslate(40, 35, edge, origin, 2, -10)).toBe(2.5);
   });
 });

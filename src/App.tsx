@@ -17,9 +17,9 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
 import { AssignmentPanel } from "./components/AssignmentPanel";
 import { AudioPanel } from "./components/AudioPanel";
-import { CloudCollaborationHelpModal } from "./components/CloudCollaborationHelpModal";
-import { CloudPasswordModal } from "./components/CloudPasswordModal";
-import { CloudShareModal } from "./components/CloudShareModal";
+const CloudCollaborationHelpModal = lazy(() => import("./components/CloudCollaborationHelpModal").then(module => ({ default: module.CloudCollaborationHelpModal })));
+const CloudPasswordModal = lazy(() => import("./components/CloudPasswordModal").then(module => ({ default: module.CloudPasswordModal })));
+const CloudShareModal = lazy(() => import("./components/CloudShareModal").then(module => ({ default: module.CloudShareModal })));
 const DetailsPanel = lazy(() => import("./components/DetailsPanel").then((module) => ({ default: module.DetailsPanel })));
 import { ExportImportPanel } from "./components/ExportImportPanel";
 import { FormationLibrary, type NewFormationInput } from "./components/FormationLibrary";
@@ -36,11 +36,11 @@ import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName
 const ExportCompletionDialog = lazy(() => import("./components/ExportCompletionPanel").then((module) => ({ default: module.ExportCompletionDialog })));
 import { SceneNotesPanel } from "./components/SceneNotesPanel";
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
-import {
-  ShareExportModal,
+import type {
   ShareExportOptions,
   ShareExportRequest,
 } from "./components/ShareExportModal";
+const ShareExportModal = lazy(() => import("./components/ShareExportModal").then(module => ({ default: module.ShareExportModal })));
 import { StageCanvas } from "./components/StageCanvas";
 import {
   ParadeCanvas,
@@ -2014,6 +2014,12 @@ function App() {
   const [appView, setAppView] = useState<"library" | "editor">(
     initial.shared ? "editor" : "library",
   );
+  // View-only stage navigation never enters Project or cloud scene writes.
+  const stageViewMemoryRef = useRef({ projectId: project.id, appView, views: new Map<string, SceneViewState>() });
+  if (stageViewMemoryRef.current.projectId !== project.id || stageViewMemoryRef.current.appView !== appView) {
+    stageViewMemoryRef.current = { projectId: project.id, appView, views: new Map() };
+  }
+  const stageViewStates = stageViewMemoryRef.current.views;
   const cloudConfig = useMemo(getCloudConfig, []);
   const [cloudSession, setCloudSession] = useState<CloudAuthSession | null>(
     () => readCloudAuthSession(),
@@ -2110,6 +2116,8 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [sharedAudioNotice, setSharedAudioNotice] = useState(initial.shared);
   const [isPlaying, setIsPlaying] = useState(false);
+  const canvasPlaybackRef = useRef(false);
+  canvasPlaybackRef.current = isPlaying || animationPreviewTimeSec !== null;
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [audioName, setAudioName] = useState<string | null>(null);
@@ -3816,6 +3824,8 @@ function App() {
                   scrollTop: Math.max(0, viewState.scrollTop),
                   scrollLeft: Math.max(0, viewState.scrollLeft),
                   zoom: Math.min(3, Math.max(0.2, viewState.zoom)),
+                  viewportWidth: viewState.viewportWidth,
+                  viewportHeight: viewState.viewportHeight,
                 },
               }
             : frame,
@@ -5148,11 +5158,12 @@ function App() {
   };
 
   const updateObjectState = (id: string, patch: Partial<ObjectState>) => {
-    if (!selectedFrame) {
+    if (!selectedFrame || canvasPlaybackRef.current) {
       return;
     }
     const activeFrameId = selectedFrame.id;
     const applyChange = () => {
+      if (canvasPlaybackRef.current) return;
       updateProject((previous) => {
         const object = previous.stageObjects.find((item) => item.id === id);
         if (!object) {
@@ -5605,7 +5616,7 @@ function App() {
   };
 
   const moveMember = (id: string, position: Position) => {
-    if (!selectedFrame) {
+    if (!selectedFrame || canvasPlaybackRef.current) {
       return;
     }
     const activeFrameId = selectedFrame.id;
@@ -5627,6 +5638,7 @@ function App() {
   };
 
   const moveObject = (id: string, patch: Partial<ObjectState>) => {
+    if (canvasPlaybackRef.current) return;
     const objectState = snapshot.objectStates[id];
     if (!objectState) {
       updateObjectState(id, patch);
@@ -5734,7 +5746,7 @@ function App() {
   function nudgeSelectionByKeyboard(event: KeyboardEvent): boolean {
     const delta = getKeyboardNudgeDelta(
       event,
-      viewerPerspective,
+      project.mode === "parade" ? "audience" : viewerPerspective,
       project.stage.gridSizeMeters,
     );
     if (!delta) {
@@ -13058,12 +13070,14 @@ function App() {
         />
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
         {isCloudPasswordRecoveryOpen && (
+          <Suspense fallback={<div role="status">画面を読み込み中…</div>}>
           <CloudPasswordModal
             isBusy={isCloudBusy}
             mode="recovery"
             onClose={() => setIsCloudPasswordRecoveryOpen(false)}
             onSubmit={finishCloudPasswordRecovery}
           />
+          </Suspense>
         )}
       </>
     );
@@ -13387,6 +13401,7 @@ function App() {
               {project.mode === "parade" ? (
                 <ParadeCanvas
                   ref={stageExportRef}
+                  isPlaying={isPlaying || animationPreviewTimeSec !== null}
                   project={projectForStage}
                   snapshot={canvasSnapshot}
                   selected={selected}
@@ -13440,6 +13455,7 @@ function App() {
               ) : (
                 <StageCanvas
                   ref={stageExportRef}
+                  viewStates={stageViewStates}
                   compact={workspaceLayout.isPortrait}
                   project={projectForStage}
                   snapshot={canvasSnapshot}
@@ -13860,7 +13876,7 @@ function App() {
         })()}
     </div>
     {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
-    <ShareExportModal
+    {isShareExportOpen && <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}><ShareExportModal
       isOpen={isShareExportOpen}
       projectTitle={project.title}
       currentSceneLabel={displayFrame?.label ?? selectedFrame?.label ?? "現在シーン"}
@@ -13873,8 +13889,9 @@ function App() {
         objects: project.stageObjects, objectGroups: project.objectGroups ?? [], frames: project.frames,
         currentFrame: selectedFrame ?? null, objectStates: selectedFrame?.objectStates ?? {},
       })}
-    />
+    /></Suspense>}
     {APP_FEATURES.collaboration && activeCloudProject?.role === "owner" && isCloudShareOpen && (
+      <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}>
       <CloudShareModal
         contacts={cloudContacts}
         currentUserId={cloudSession?.user.id}
@@ -13891,9 +13908,12 @@ function App() {
         onUpdateRole={updateCloudProjectMemberRole}
         projectTitle={project.title}
       />
+      </Suspense>
     )}
     {APP_FEATURES.collaboration && isCloudHelpOpen && (
+      <Suspense fallback={<div role="status">使い方を読み込み中…</div>}>
       <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
+      </Suspense>
     )}
     {exportProgress && (
       <div className="export-progress-backdrop" role="presentation">

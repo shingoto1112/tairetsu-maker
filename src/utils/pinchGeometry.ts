@@ -9,28 +9,33 @@ export type PinchGeometry = {
   startScroll: Point;
   startOrigin: Point;
   anchorMeters: Point;
+  bleedMeters?: number;
+  bottom?: number;
+  centerAtFit?: boolean;
 };
 const constrain = (n: number, max: number) => Math.min(Math.max(0, n), Math.max(0, max));
 
 /** Fixed rulers/padding are never multiplied by zoom. No DOM reads in a gesture frame. */
 export const resolvePinchView = (geometry: PinchGeometry, zoom: number, midpoint: Point) => {
-  const { viewport: v, padding: p, fixed: f, stageMeters: m } = geometry;
+  const { viewport: v, fixed: f, stageMeters: m } = geometry;
+  const p = geometry.centerAtFit ? { left: zoom > 1 ? 8 : 0, right: zoom > 1 ? 8 : 0, top: zoom > 1 ? 8 : 0, bottom: zoom > 1 ? 8 : 0 } : geometry.padding;
   const ppm = geometry.pixelsPerMeter * zoom;
-  const width = m.width * ppm + f.left + f.right;
-  const height = m.height * ppm + f.top;
+  const bleed = (geometry.bleedMeters ?? 0) * ppm;
+  const width = m.width * ppm + f.left + f.right + bleed * 2;
+  const height = m.height * ppm + f.top + bleed + (geometry.bottom ?? 0);
   const origin = {
     x: p.left + Math.max(0, (v.width - p.left - p.right - width) / 2),
-    y: p.top,
+    y: geometry.centerAtFit && zoom <= 1 ? Math.max(0, (v.height - height) / 2) : p.top,
   };
-  const anchor = { x: f.left + geometry.anchorMeters.x * ppm, y: f.top + geometry.anchorMeters.y * ppm };
+  const anchor = { x: f.left + bleed + geometry.anchorMeters.x * ppm, y: f.top + bleed + geometry.anchorMeters.y * ppm };
   const scroll = {
     x: constrain(origin.x + anchor.x - (midpoint.x - v.left), width + p.left + p.right - v.width),
     y: constrain(origin.y + anchor.y - (midpoint.y - v.top), height + p.top + p.bottom - v.height),
   };
   const scale = zoom / geometry.startZoom;
   const startAnchor = {
-    x: f.left + geometry.anchorMeters.x * geometry.pixelsPerMeter * geometry.startZoom,
-    y: f.top + geometry.anchorMeters.y * geometry.pixelsPerMeter * geometry.startZoom,
+    x: f.left + ((geometry.bleedMeters ?? 0) + geometry.anchorMeters.x) * geometry.pixelsPerMeter * geometry.startZoom,
+    y: f.top + ((geometry.bleedMeters ?? 0) + geometry.anchorMeters.y) * geometry.pixelsPerMeter * geometry.startZoom,
   };
   // Place the scaled old stage anchor at the same clamped position as the final layout.
   const translate = {
@@ -44,3 +49,18 @@ export const stageAnchorMeters = (midpoint: Point, stageOrigin: Point, pixelsPer
   x: (midpoint.x - stageOrigin.x) / pixelsPerMeter,
   y: (midpoint.y - stageOrigin.y) / pixelsPerMeter,
 });
+
+/** Shared final anchor correction after React commits the real dimensions. */
+export const commitPinchView = (container: HTMLElement, stage: HTMLElement, geometry: PinchGeometry, midpoint: Point) => {
+  const rect = stage.getBoundingClientRect();
+  container.scrollLeft = constrain(container.scrollLeft + rect.left + geometry.anchorMeters.x / geometry.stageMeters.width * rect.width - midpoint.x, container.scrollWidth - container.clientWidth);
+  container.scrollTop = constrain(container.scrollTop + rect.top + geometry.anchorMeters.y / geometry.stageMeters.height * rect.height - midpoint.y, container.scrollHeight - container.clientHeight);
+  return { x: container.scrollLeft, y: container.scrollTop };
+};
+
+/** Match sticky: follow the natural position until reaching the viewport edge. */
+export const stickyRulerTranslate = (position: number, natural: number, edge: number, origin: number, scale: number, translate: number) => {
+  const target = Math.max(edge, natural);
+  const transformed = origin + translate + (position - origin) * scale;
+  return (target - transformed) / scale;
+};

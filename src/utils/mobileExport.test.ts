@@ -21,9 +21,11 @@ describe("mobile export pipeline", () => {
     vi.clearAllMocks();
     writer.finish.mockReturnValue(new Blob(["pdf"], { type: "application/pdf" }));
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
-      const width = Number.parseFloat(this.style.width) || 492;
       const line = Number.parseFloat(this.style.lineHeight) || 34;
       const font = Number.parseFloat(this.style.fontSize) || 24;
+      const width = this.style.width === "max-content"
+        ? Math.max(1, (this.textContent?.length ?? 1) * font * .55)
+        : Number.parseFloat(this.style.width) || 492;
       const height = Math.max(1, Math.ceil((this.textContent?.length ?? 1) * font / width)) * line;
       return { x: 0, y: 0, top: 0, left: 0, width, height, right: width, bottom: height, toJSON: () => ({}) };
     });

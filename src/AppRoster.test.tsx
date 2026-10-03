@@ -7,8 +7,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "./types";
 import { createSampleProject } from "./sampleProject";
 import * as audioStorage from "./utils/audioStorage";
+import { stagePointToDisplayPoint } from "./utils/coordinates";
 
 const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
+const canvasActions = vi.hoisted(() => ({ move: null as null | ((id: string, p: { x: number; y: number }) => void), playing: false }));
+vi.mock("./components/ParadeCanvas", () => ({
+  ParadeCanvas: forwardRef<HTMLDivElement, { project: Project; selectedFrameId: string | null; selectedMemberIds: string[]; isPlaying: boolean; onMoveMember: (id: string, p: { x: number; y: number }) => void }>((props, ref) => {
+    canvas.project = props.project; canvas.selectedFrameId = props.selectedFrameId; canvas.selectedMemberIds = props.selectedMemberIds;
+    canvasActions.move = props.onMoveMember; canvasActions.playing = props.isPlaying;
+    return <div ref={ref} data-testid="parade-export-dom" />;
+  }),
+}));
 vi.mock("./components/StageCanvas", () => ({
   StageCanvas: forwardRef<HTMLDivElement, { project: Project; focusMode: boolean; focusMemberId?: string; movementPathMode: string; selectedFrameId: string | null; selectedMemberIds: string[] }>((props, ref) => {
     canvas.project = props.project;
@@ -27,6 +36,48 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it.each(["stage", "parade"] as const)("moves right in screen space for both perspectives in %s", async mode => {
+    for (const viewerPerspective of ["audience", "performer"] as const) {
+      const project = { ...createSampleProject(), id: `${mode}-${viewerPerspective}`, title: "矢印検証", mode, viewerPerspective };
+      const id = "m_anna";
+      localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+      const user = userEvent.setup(); const view = render(<App />);
+      await user.click(screen.getByRole("button", { name: "矢印検証を開く" }));
+      const picker = screen.getByRole("region", { name: "このシーンの表示" });
+      await user.click(within(picker).getByRole("button", { name: /^Anna/ }));
+      const frameId = canvas.selectedFrameId!;
+      const before = canvas.project!.frames.find(f => f.id === frameId)!.positions[id];
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      const after = canvas.project!.frames.find(f => f.id === frameId)!.positions[id];
+      const perspective = mode === "parade" ? "audience" : viewerPerspective;
+      expect(stagePointToDisplayPoint(after, project.stage, perspective).x - stagePointToDisplayPoint(before, project.stage, perspective).x).toBeCloseTo(.25);
+      view.unmount();
+    }
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("blocks parade keyboard moves and the parent's move callback during playback", async () => {
+    const project = { ...createSampleProject(), id: "playing", title: "再生検証", mode: "parade" as const };
+    localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const user = userEvent.setup(); const view = render(<App />);
+    await user.click(screen.getByRole("button", { name: "再生検証を開く" }));
+    await user.click(within(screen.getByRole("region", { name: "このシーンの表示" })).getByRole("button", { name: /^Anna/ }));
+    await user.click(screen.getByRole("tab", { name: "音源" }));
+    const audio = view.container.querySelector("audio")!; audio.src = "blob:local-test";
+    const oldMoveCallback = canvasActions.move!;
+    fireEvent.click(screen.getByRole("button", { name: "再生" }));
+    await waitFor(() => expect(canvasActions.playing).toBe(true));
+    const before = structuredClone(canvas.project!.frames);
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    act(() => canvasActions.move!("m_anna", { x: 1, y: 2 }));
+    act(() => oldMoveCallback("m_anna", { x: 1, y: 2 }));
+    expect(canvas.project!.frames).toEqual(before);
+    fireEvent.click(screen.getByRole("button", { name: "停止" }));
+    await waitFor(() => expect(canvasActions.playing).toBe(false));
+    act(() => canvasActions.move!("m_anna", { x: 1, y: 2 }));
+    expect(canvas.project!.frames).not.toEqual(before);
+  }, INTEGRATION_TIMEOUT_MS);
+
   it.each([false, true])("restores assigned/globally hidden members in a single Undo; portrait=%s", async (portrait) => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: portrait, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const project = { ...createSampleProject(), id: "visibility-undo", title: "表示Undo検証" };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRosterExportSnapshot } from "./rosterExportSnapshot";
-import { planMemberMobile, memberLineHeight, memberTextWidth } from "./memberMobileLayout";
+import { bestMemberMobileCandidate, planMemberMobile, memberLineHeight, memberTextWidth } from "./memberMobileLayout";
 import type { TextMeasure } from "./mobileExportLayout";
 
 const measure: TextMeasure = (text, width, font, line) => Math.max(1, Math.ceil(Array.from(text).length * font / width)) * line;
@@ -72,5 +72,17 @@ describe("member one-image layout", () => {
     const plan = verify(snapshot, true);
     expect(plan.belowMinimum).toBe(true); expect(plan.fontSize).toBeLessThan(24);
     expect(plan.columns).toBeLessThanOrEqual(6);
+  });
+  it("prefers no wrapped names at 28px to wrapped names at 32px; then chooses the larger text", () => {
+    const plan = verify(createRosterExportSnapshot("演目", "members", people(146), []));
+    expect(bestMemberMobileCandidate([{ ...plan, fontSize: 32, wrappedNames: 1 }, { ...plan, fontSize: 28, wrappedNames: 0 }])?.fontSize).toBe(28);
+    expect(bestMemberMobileCandidate([{ ...plan, fontSize: 28, wrappedNames: 0 }, { ...plan, fontSize: 32, wrappedNames: 0 }])?.fontSize).toBe(32);
+  });
+  it("counts wrapped names and preserves five-character names and numbers for 146 members", () => {
+    const names = ["なっちゃん", "りんたろー", "きゅーぴー", "しょっぴー", "じゃすぴん", "さのっちゅ"];
+    const items = people(146).map((p,i) => ({ ...p, name: names[i % names.length] }));
+    const plan = verify(createRosterExportSnapshot("演目", "members", items, []));
+    expect(plan.fontSize).toBeGreaterThanOrEqual(28); expect(plan.wrappedNames).toBe(0);
+    expect(plan.blocks.flatMap(b => b.entry ? [b.entry.no] : [])).toEqual(items.map((_,i) => i+1));
   });
 });

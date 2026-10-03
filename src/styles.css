@@ -4245,12 +4245,13 @@ h2 {
 .stage-fit-area {
   align-items: center;
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   justify-content: center;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   overscroll-behavior: contain;
+  overflow-anchor: none;
   touch-action: pan-x pan-y;
   width: 100%;
   -webkit-overflow-scrolling: touch;
@@ -4280,6 +4281,17 @@ h2 {
 .stage-fit-area.is-stage-panning {
   cursor: grabbing;
   touch-action: none;
+}
+
+.stage-zoom-layout {
+  flex: 0 0 auto;
+  position: relative;
+  margin-inline: auto;
+}
+
+.stage-pinch-preview .stage-canvas-with-rulers {
+  max-width: none;
+  max-height: none;
 }
 
 .stage-canvas-with-rulers {

@@ -46,25 +46,25 @@ describe("portrait stage controls and fit", () => {
     expect(portrait.container.querySelector(".ruler-reference-labels")).toBeNull();
     portrait.unmount();
     render(<StageCanvas {...props} />);
-    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).textContent).toBe("175%");
+    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("175%");
+    expect(screen.queryByRole("button", { name: "ステージを拡大" })).toBeNull();
   });
   it("fits only on the first portrait entry, preserving later zoom across playback, panel resize and rotation", async () => {
     const view = render(<StageCanvas {...props} />);
     view.rerender(<StageCanvas {...props} compact />);
     expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("100%");
-    fireEvent.click(screen.getByRole("button", { name: "その他のステージ操作" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "ステージを拡大" }));
-    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("125%");
+    fireEvent.wheel(view.container.querySelector(".stage-fit-area")!, { ctrlKey: true, deltaY: -100, clientX: 300, clientY: 200 });
+    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("114%");
     view.rerender(<StageCanvas {...props} compact isPlaying currentTime={30} />);
     const surface = view.container.querySelector<HTMLElement>(".stage-surface")!;
     const beforeHeight = surface.style.height;
     act(() => resizeFit(760, 340));
     await waitFor(() => expect(surface.style.height).not.toBe(beforeHeight));
-    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("125%");
+    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("114%");
     view.rerender(<StageCanvas {...props} />);
-    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).textContent).toBe("125%");
+    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("114%");
     view.rerender(<StageCanvas {...props} compact />);
-    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("125%");
+    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("114%");
   });
   it("shows primary actions directly and accessible additional actions in the menu", () => {
     const { container } = render(<StageCanvas {...props} compact />);
@@ -77,7 +77,9 @@ describe("portrait stage controls and fit", () => {
     expect(toggle.getAttribute("aria-haspopup")).toBe("menu");
     fireEvent.click(toggle);
     const menu = screen.getByRole("menu", { name: "その他のステージ操作" });
-    expect(within(menu).getAllByRole("menuitem")).toHaveLength(8);
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(6);
+    expect(within(menu).queryByRole("menuitem", { name: "ステージを拡大" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "ステージを縮小" })).toBeNull();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "5秒進む" }));
     expect(props.onSeekAudio).toHaveBeenCalledWith(25);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");

@@ -45,8 +45,14 @@ describe("parade pinch lifecycle", () => {
     });
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-  const setup = () => {
-    const p = props(), view = render(<ParadeCanvas {...p} />); flush();
+  const setup = (includeObject = false) => {
+    const p = props();
+    if (includeObject) {
+      const sample = createSampleProject();
+      p.project.stageObjects = sample.stageObjects;
+      p.snapshot.objectStates = sample.frames[0].objectStates;
+    }
+    const view = render(<ParadeCanvas {...p} />); flush();
     vi.mocked(p.onFrameViewStateChange).mockClear();
     const viewport = view.container.querySelector<HTMLElement>(".parade-viewport")!;
     const layout = view.container.querySelector<HTMLElement>(".parade-zoom-layout")!;
@@ -102,5 +108,47 @@ describe("parade pinch lifecycle", () => {
     expect(frames.size).toBe(0); expect(preview.style.transform).toBe("");
     expect(p.onFrameViewStateChange).toHaveBeenCalledTimes(1);
     expect(p.onFrameViewStateChange).toHaveBeenCalledWith("one", expect.objectContaining({ zoom: 1 }));
+  });
+  it("flushes the latest pending scroll to its source scene before switching", () => {
+    const { p, view, viewport } = setup();
+    viewport.scrollTop = 987; viewport.scrollLeft = 123; fireEvent.scroll(viewport);
+    view.rerender(<ParadeCanvas {...p} selectedFrameId="two" />); flush();
+    expect(p.onFrameViewStateChange).toHaveBeenCalledTimes(1);
+    expect(p.onFrameViewStateChange).toHaveBeenCalledWith("one", expect.objectContaining({ scrollTop: 987, scrollLeft: 123, viewportWidth: 700, viewportHeight: 500 }));
+    expect(viewport.scrollTop).toBe(200);
+  });
+  it.each(["member", "object"])("ignores another pointer without detaching the real %s drag", async kind => {
+    const { p, view } = setup(kind === "object");
+    const move = kind === "member" ? p.onMoveMember : p.onUpdateObjectState;
+    const member = view.container.querySelector<HTMLElement>(`.parade-${kind}`)!;
+    fireEvent.pointerDown(member, { pointerType: "mouse", pointerId: 11, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { pointerId: 12, clientX: 500, clientY: 500 });
+    fireEvent.pointerUp(window, { pointerId: 12, clientX: 500, clientY: 500 });
+    expect(move).not.toHaveBeenCalled(); expect(p.onEndProjectEdit).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.pointerMove(window, { pointerId: 11, clientX: 130, clientY: 100 }); });
+    expect(move).toHaveBeenCalled();
+    fireEvent.pointerUp(window, { pointerId: 11, clientX: 130, clientY: 100 });
+    expect(p.onEndProjectEdit).toHaveBeenCalledTimes(1);
+  });
+  it.each(["member", "object"])("blocks %s drag starts during playback and resumes after stopping", async kind => {
+    const { p, view } = setup(kind === "object"); view.rerender(<ParadeCanvas {...p} isPlaying />);
+    const move = kind === "member" ? p.onMoveMember : p.onUpdateObjectState;
+    const member = view.container.querySelector<HTMLElement>(`.parade-${kind}`)!;
+    fireEvent.pointerDown(member, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    await act(async () => { fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 100 }); });
+    expect(p.onBeginProjectEdit).not.toHaveBeenCalled(); expect(move).not.toHaveBeenCalled();
+    view.rerender(<ParadeCanvas {...p} isPlaying={false} />);
+    fireEvent.pointerDown(member, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    await act(async () => { fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 100 }); });
+    expect(move).toHaveBeenCalled();
+  });
+  it("retains 100% and pinch lock, removes zoom buttons, and accepts Ctrl/Command wheel", () => {
+    const { p, view, viewport } = setup();
+    expect(view.queryByTitle("拡大")).toBeNull(); expect(view.queryByTitle("縮小")).toBeNull();
+    expect(view.getByRole("button", { name: "100%" })).toBeTruthy();
+    fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100, clientX: 300, clientY: 250 }); flush();
+    expect(p.onFrameViewStateChange).toHaveBeenLastCalledWith("one", expect.objectContaining({ zoom: 1.14 }));
+    fireEvent.wheel(viewport, { metaKey: true, deltaY: 100, clientX: 300, clientY: 250 }); flush();
+    expect(p.onFrameViewStateChange).toHaveBeenLastCalledWith("one", expect.objectContaining({ zoom: 1 }));
   });
 });

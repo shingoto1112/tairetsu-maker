@@ -36,8 +36,6 @@ export const CompactStageControls = (props: Props) => {
         ...[-10, -5, 5, 10].map((delta) => ({ label: `${Math.abs(delta)}秒${delta < 0 ? "戻る" : "進む"}`, disabled: !canSeek,
           onClick: () => props.onSeek(Math.min(props.duration, Math.max(0, props.currentTime + delta))) })),
         { label: "ステージを画像保存", onClick: props.onCapture },
-        { label: "ステージを縮小", onClick: () => props.onZoom(props.zoom - 0.25), disabled: props.zoom <= 1 },
-        { label: "ステージを拡大", onClick: () => props.onZoom(props.zoom + 0.25), disabled: props.zoom >= 4 },
         { label: "ピンチ拡大縮小をロック", onClick: props.onPinchLock, pressed: props.pinchLocked },
         { label: "観客側 / 踊る人側の視点を切り替え", onClick: props.onPerspective },
       ]} />

@@ -10,17 +10,15 @@ import {
   Redo2,
   Undo2,
   Unlock,
-  ZoomIn,
-  ZoomOut,
 } from "lucide-react";
 import {
   CSSProperties,
   forwardRef,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
-  WheelEvent as ReactWheelEvent,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -34,6 +32,7 @@ import {
   Position,
   Project,
   SceneElementEditTarget,
+  SceneViewState,
   Selection,
   StageContextMenuRequest,
   StageSnapshot,
@@ -65,6 +64,7 @@ import {
   splitMemberLabel,
 } from "../utils/memberLabel";
 import { formatTime } from "../utils/time";
+import { commitPinchView, resolvePinchView, stageAnchorMeters, type PinchGeometry } from "../utils/pinchGeometry";
 import {
   TOUCH_LONG_PRESS_DELAY_MS,
   hasTouchLongPressMoved,
@@ -72,8 +72,10 @@ import {
 import { ResizableRotatableObject } from "./ResizableRotatableObject";
 import { StageTimeBar } from "./StageTimeBar";
 import { CompactStageControls } from "./CompactStageControls";
+import { useCanvasWheelZoom } from "../hooks/useCanvasWheelZoom";
 
 type StageCanvasProps = {
+  viewStates?: Map<string, SceneViewState>;
   compact?: boolean;
   project: Project;
   snapshot: StageSnapshot;
@@ -168,6 +170,10 @@ type StagePinchZoom = {
   pointerIds: [number, number];
   startDistance: number;
   startZoom: number;
+  geometry: PinchGeometry;
+  continuousZoom: number;
+  finishing: boolean;
+  lastAnchor: { clientX: number; clientY: number };
 };
 
 type StagePanState = {
@@ -218,7 +224,6 @@ const RULER_BOTTOM_PADDING_PX = 18;
 const MEMBER_OVERLAP_KEY_SCALE = 100;
 const STAGE_ZOOM_MIN = 1;
 const STAGE_ZOOM_MAX = 4;
-const STAGE_ZOOM_STEP = 0.25;
 const STAGE_ZOOM_DEFAULT = 1.75;
 
 const createMajorTicks = (lengthMeters: number): number[] => {
@@ -361,6 +366,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
   (
     {
       compact = false,
+      viewStates,
       project,
       snapshot,
       selected,
@@ -409,6 +415,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     },
     exportRef,
   ) => {
+    const localViewsRef = useRef({ projectId: project.id, views: new Map<string, SceneViewState>() });
+    if (localViewsRef.current.projectId !== project.id) localViewsRef.current = { projectId: project.id, views: new Map() };
+    const sceneViews = viewStates ?? localViewsRef.current.views;
+    const pendingRestoreRef = useRef<SceneViewState | null>(null);
+    const transientZoomRef = useRef<HTMLDivElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const fitAreaRef = useRef<HTMLDivElement | null>(null);
     const exportElementRef = useRef<HTMLDivElement | null>(null);
@@ -417,18 +428,18 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const memberDragClearFrameRef = useRef<number | null>(null);
     const memberAutoScrollerRef = useRef<EdgeAutoScroller | null>(null);
     const stageTouchPointsRef = useRef(new Map<number, StageTouchPoint>());
+    const pendingTouchSelectionRef = useRef<{
+      pointerId: number; point: StageTouchPoint; selection: Selection; options?: { append?: boolean };
+    } | null>(null);
     const stagePinchZoomRef = useRef<StagePinchZoom | null>(null);
     const stagePanRef = useRef<StagePanState | null>(null);
     const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
-    const pendingStageZoomRef = useRef<{
-      zoom: number;
-      anchor?: { clientX: number; clientY: number };
-    } | null>(null);
     const stageZoomFrameRef = useRef<number | null>(null);
     const initialZoom = compact ? STAGE_ZOOM_MIN : STAGE_ZOOM_DEFAULT;
     const stageZoomRef = useRef(initialZoom);
     const portraitFitAppliedRef = useRef(compact);
     const stageHorizontalViewInitializedRef = useRef(false);
+    const viewReadyRef = useRef(false);
     const isStagePinchLockedRef = useRef(false);
     const [fitAreaSize, setFitAreaSize] = useState({ width: 0, height: 0 });
     const [isStageInteracting, setIsStageInteracting] = useState(false);
@@ -460,7 +471,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const objectEditing = mode === "objects" && !isPlaying;
     const isDenseProject = project.members.length >= 120;
     const simplifyMemberLabels =
-      isDenseProject && (isMemberDragging || isStagePinching || isStagePanning);
+      isDenseProject && (isMemberDragging || isStagePanning);
     const horizontalTicks = useMemo(
       () => createMajorTicks(stage.widthMeters),
       [stage.widthMeters],
@@ -550,6 +561,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         }
         resizeFrame = window.requestAnimationFrame(() => {
           resizeFrame = 0;
+          if (stagePinchZoomRef.current) return;
           if (
             element.classList.contains("is-stage-zoomed") &&
             Math.abs(previousWidth - width) >= 1
@@ -560,9 +572,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               Math.max(0, centeredScrollLeft),
               Math.max(0, element.scrollWidth - element.clientWidth),
             );
-            if (Math.abs(previousWidth - width) >= 16) {
-              stageHorizontalViewInitializedRef.current = false;
-            }
           }
           previousWidth = width;
           setMeasuredSize(width, height);
@@ -577,7 +586,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           return;
         }
         // 外側の表示領域だけを基準にし、選択枠やハンドルの微小な揺れは倍率へ反映しない。
-        scheduleMeasuredSize(entry.contentRect.width, entry.contentRect.height);
+        // Zoom adds viewport padding; keep the fit basis independent of that padding.
+        scheduleMeasuredSize(element.clientWidth || entry.contentRect.width, element.clientHeight || entry.contentRect.height);
       });
       observer.observe(element);
 
@@ -600,7 +610,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     }, [stageZoom]);
 
     const cancelPendingStageZoom = () => {
-      pendingStageZoomRef.current = null;
       if (stageZoomFrameRef.current !== null) {
         window.cancelAnimationFrame(stageZoomFrameRef.current);
         stageZoomFrameRef.current = null;
@@ -609,13 +618,25 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
     const clearStagePinch = () => {
       stageTouchPointsRef.current.clear();
-      stagePinchZoomRef.current = null;
-      setIsStagePinching(false);
+      finishStagePinch("commit");
     };
 
     const clearStagePan = () => {
       stagePanRef.current = null;
       setIsStagePanning(false);
+    };
+
+    const selectPointerTarget = (selection: Selection, options?: { append?: boolean }) => {
+      const touches = [...stageTouchPointsRef.current];
+      if (touches.length === 1) {
+        const [pointerId, point] = touches[0];
+        pendingTouchSelectionRef.current = { pointerId, point, selection, options };
+      } else if (!stagePinchZoomRef.current) onSelect(selection, options);
+    };
+    const flushTouchSelection = () => {
+      const pending = pendingTouchSelectionRef.current;
+      pendingTouchSelectionRef.current = null;
+      if (pending) onSelect(pending.selection, pending.options);
     };
 
     const cancelTouchContextMenu = () => {
@@ -680,7 +701,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!isStageInteracting) {
         return undefined;
       }
-      const releaseFitLock = () => {
+      const releaseFitLock = (event: Event) => {
+        const pinch = stagePinchZoomRef.current;
+        if (pinch && "pointerId" in event && !pinch.pointerIds.includes((event as globalThis.PointerEvent).pointerId)) return;
         cancelTouchContextMenu();
         clearStagePinch();
         clearStagePan();
@@ -782,17 +805,19 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
     useEffect(() => {
       const container = fitAreaRef.current;
-      if (!container) return undefined;
+      if (!container || fitAreaSize.width <= 0) return undefined;
+      if (stagePinchZoomRef.current || pendingRestoreRef.current) return undefined;
       if (!isStageZoomed) {
         stageHorizontalViewInitializedRef.current = false;
+        viewReadyRef.current = true;
         return undefined;
       }
-      if (stageHorizontalViewInitializedRef.current) return undefined;
+      if (stageHorizontalViewInitializedRef.current || stagePinchZoomRef.current || pendingRestoreRef.current) return undefined;
 
       let correctionFrame = 0;
       const frame = window.requestAnimationFrame(() => {
         const nextContainer = fitAreaRef.current;
-        if (!nextContainer) return;
+        if (!nextContainer || stagePinchZoomRef.current || pendingRestoreRef.current) return;
         nextContainer.scrollLeft = Math.max(
           0,
           (nextContainer.scrollWidth - nextContainer.clientWidth) / 2,
@@ -800,13 +825,14 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         correctionFrame = window.requestAnimationFrame(() => {
           const settledContainer = fitAreaRef.current;
           const canvas = exportElementRef.current;
-          if (!settledContainer || !canvas) return;
+          if (!settledContainer || !canvas || stagePinchZoomRef.current || pendingRestoreRef.current) return;
           const containerRect = settledContainer.getBoundingClientRect();
           const canvasRect = canvas.getBoundingClientRect();
           settledContainer.scrollLeft +=
             canvasRect.left + canvasRect.width / 2 -
             (containerRect.left + containerRect.width / 2);
           stageHorizontalViewInitializedRef.current = true;
+          viewReadyRef.current = true;
         });
       });
       return () => {
@@ -826,6 +852,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     ) => {
       const clampedZoom = clampStageZoom(nextZoom);
       stageZoomRef.current = clampedZoom;
+      stageHorizontalViewInitializedRef.current = true;
       const container = fitAreaRef.current;
       if (!container) {
         setStageZoom(clampedZoom);
@@ -907,24 +934,79 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       });
     };
 
-    const scheduleStageZoom = (
-      nextZoom: number,
-      anchor?: { clientX: number; clientY: number },
-    ) => {
-      const clampedZoom = clampStageZoom(nextZoom);
-      stageZoomRef.current = clampedZoom;
-      pendingStageZoomRef.current = { zoom: clampedZoom, anchor };
-      if (stageZoomFrameRef.current !== null) {
-        return;
+    const rememberView = (id = selectedFrameId) => {
+      const container = fitAreaRef.current;
+      if (!container || !id || !viewReadyRef.current || stagePinchZoomRef.current) return;
+      sceneViews.set(id, { zoom: stageZoomRef.current, scrollLeft: container.scrollLeft, scrollTop: container.scrollTop,
+        viewportWidth: container.clientWidth, viewportHeight: container.clientHeight });
+    };
+    const clearTransientZoom = () => {
+      const preview = transientZoomRef.current;
+      if (preview) { preview.style.removeProperty("transform"); preview.style.removeProperty("will-change"); preview.style.removeProperty("transform-origin"); }
+    };
+    const drawTransientPinch = (pinch: StagePinchZoom) => {
+      const preview = transientZoomRef.current;
+      if (!preview) return;
+      const view = resolvePinchView(pinch.geometry, pinch.continuousZoom, { x: pinch.lastAnchor.clientX, y: pinch.lastAnchor.clientY });
+      preview.style.transform = `translate(${view.translate.x}px, ${view.translate.y}px) scale(${view.scale})`;
+    };
+    function finishStagePinch(mode: "commit" | "restore") {
+      cancelPendingStageZoom();
+      stageTouchPointsRef.current.clear();
+      if (mode === "restore") pendingTouchSelectionRef.current = null;
+      const pinch = stagePinchZoomRef.current;
+      if (!pinch) return;
+      if (mode === "restore") { clearTransientZoom(); stagePinchZoomRef.current = null; return; }
+      if (pinch.finishing) return;
+      pinch.finishing = true;
+      pinch.continuousZoom = clampStageZoom(pinch.continuousZoom);
+      stageHorizontalViewInitializedRef.current = true;
+      drawTransientPinch(pinch);
+      setStageZoom(pinch.continuousZoom);
+      setIsStagePinching(false);
+    }
+    useLayoutEffect(() => {
+      const saved = selectedFrameId ? sceneViews.get(selectedFrameId) : undefined;
+      pendingRestoreRef.current = saved ?? null;
+      stageHorizontalViewInitializedRef.current = Boolean(saved);
+      viewReadyRef.current = Boolean(saved);
+      if (!saved && fitAreaRef.current) {
+        fitAreaRef.current.scrollLeft = 0;
+        fitAreaRef.current.scrollTop = 0;
       }
+      setStageZoom(saved?.zoom ?? (compact ? STAGE_ZOOM_MIN : STAGE_ZOOM_DEFAULT));
+      setIsStagePinching(false);
+      return () => { finishStagePinch("restore"); rememberView(selectedFrameId); };
+    }, [selectedFrameId, sceneViews]);
+    useLayoutEffect(() => {
+      stageZoomRef.current = stageZoom;
+      const container = fitAreaRef.current;
+      if (!container) return;
+      const saved = pendingRestoreRef.current;
+      if (saved && saved.zoom === stageZoom) {
+        container.scrollLeft = Math.max(0, Math.min(container.scrollWidth - container.clientWidth,
+          saved.scrollLeft + ((saved.viewportWidth ?? container.clientWidth) - container.clientWidth) / 2));
+        container.scrollTop = saved.scrollTop;
+        pendingRestoreRef.current = null;
+      }
+      const pinch = stagePinchZoomRef.current;
+      if (!pinch?.finishing || !stageRef.current) return;
+      clearTransientZoom();
+      commitPinchView(container, stageRef.current, pinch.geometry, { x: pinch.lastAnchor.clientX, y: pinch.lastAnchor.clientY });
+      stagePinchZoomRef.current = null;
+      viewReadyRef.current = true;
+      rememberView();
+    }, [stageZoom, isStagePinching, selectedFrameId]);
+    const scheduleStageZoom = (nextZoom: number, anchor: { clientX: number; clientY: number }) => {
+      const pinch = stagePinchZoomRef.current;
+      if (!pinch || pinch.finishing) return;
+      pinch.continuousZoom = Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, nextZoom));
+      pinch.lastAnchor = anchor;
+      if (stageZoomFrameRef.current !== null) return;
       stageZoomFrameRef.current = window.requestAnimationFrame(() => {
         stageZoomFrameRef.current = null;
-        const pending = pendingStageZoomRef.current;
-        pendingStageZoomRef.current = null;
-        if (!pending) {
-          return;
-        }
-        applyStageZoom(pending.zoom, pending.anchor);
+        const active = stagePinchZoomRef.current;
+        if (active && !active.finishing) drawTransientPinch(active);
       });
     };
 
@@ -945,20 +1027,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       applyStageZoom(STAGE_ZOOM_MIN);
     }, [compact]);
 
-    const handleStageWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-      if (!event.ctrlKey && !event.metaKey) {
-        return;
-      }
-      if (isStagePinchLockedRef.current) {
-        return;
-      }
-      event.preventDefault();
-      const factor = event.deltaY < 0 ? 1.14 : 1 / 1.14;
-      updateStageZoom(stageZoom * factor, {
-        clientX: event.clientX,
-        clientY: event.clientY,
-      });
-    };
+    useCanvasWheelZoom(fitAreaRef, isStagePinchLockedRef, (factor, anchor) => updateStageZoom(stageZoomRef.current * factor, anchor));
 
     const getTouchDistance = (first: StageTouchPoint, second: StageTouchPoint) =>
       Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
@@ -981,15 +1050,30 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         return;
       }
       const [firstEntry, secondEntry] = touchEntries;
+      // A two-finger gesture must not open/scroll the roster from its first touch.
+      pendingTouchSelectionRef.current = null;
       const startDistance = Math.max(
         1,
         getTouchDistance(firstEntry[1], secondEntry[1]),
       );
+      const container = fitAreaRef.current, layout = exportElementRef.current, stageElement = stageRef.current, preview = transientZoomRef.current;
+      if (!container || !layout || !stageElement || !preview) return;
+      const midpoint = getTouchMidpoint(firstEntry[1], secondEntry[1]);
+      const rect = container.getBoundingClientRect(), layoutRect = layout.getBoundingClientRect(), stageRect = stageElement.getBoundingClientRect();
+      const startZoom = stageZoomRef.current;
+      const viewport = { left: rect.left + container.clientLeft, top: rect.top + container.clientTop, width: container.clientWidth, height: container.clientHeight };
       stagePinchZoomRef.current = {
         pointerIds: [firstEntry[0], secondEntry[0]],
         startDistance,
-        startZoom: stageZoomRef.current,
+        startZoom, continuousZoom: startZoom, finishing: false, lastAnchor: midpoint,
+        geometry: { viewport, padding: { left: 0, right: 0, top: 0, bottom: 0 }, startZoom, pixelsPerMeter: fittedStageSize.pxPerMeter,
+          fixed: { left: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, right: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, top: showMeterRulers ? RULER_LABEL_HEIGHT_PX : 0 },
+          bleedMeters: showMeterRulers ? memberDiameterMeters / 2 : 0, bottom: showMeterRulers ? RULER_BOTTOM_PADDING_PX : 0, centerAtFit: true,
+          stageMeters: { width: stage.widthMeters, height: stage.depthMeters }, startScroll: { x: container.scrollLeft, y: container.scrollTop },
+          startOrigin: { x: layoutRect.left - viewport.left + container.scrollLeft, y: layoutRect.top - viewport.top + container.scrollTop },
+          anchorMeters: stageAnchorMeters({ x: midpoint.clientX, y: midpoint.clientY }, { x: stageRect.left, y: stageRect.top }, visibleStageSize.pxPerMeter) },
       };
+      preview.style.transformOrigin = "0 0"; preview.style.willChange = "transform";
       const activeMemberDrag = memberDragRef.current;
       clearStagePan();
       memberDragRef.current = null;
@@ -1060,6 +1144,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       event: PointerEvent<HTMLDivElement>,
     ) => {
       trackTouchContextMenuMove(event);
+      const pending = pendingTouchSelectionRef.current;
+      if (!stagePinchZoomRef.current && pending?.pointerId === event.pointerId &&
+          Math.hypot(event.clientX - pending.point.clientX, event.clientY - pending.point.clientY) >= 3) flushTouchSelection();
       const pan = stagePanRef.current;
       if (
         event.pointerType === "touch" &&
@@ -1117,16 +1204,12 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         return;
       }
       stopTouchContextMenu(event);
+      if (!stagePinchZoomRef.current && pendingTouchSelectionRef.current?.pointerId === event.pointerId) flushTouchSelection();
       if (stagePanRef.current?.pointerId === event.pointerId) {
         clearStagePan();
       }
       stageTouchPointsRef.current.delete(event.pointerId);
-      if (stageTouchPointsRef.current.size < 2) {
-        stagePinchZoomRef.current = null;
-        setIsStagePinching(false);
-        return;
-      }
-      beginStagePinchIfReady();
+      if (stageTouchPointsRef.current.size < 2 || event.type === "pointercancel") finishStagePinch("commit");
     };
 
     const updateStagePointerPosition = (event: PointerEvent<HTMLElement>) => {
@@ -1465,7 +1548,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         dragMemberIds.unshift(memberId);
       }
       if (!(dragMemberIds.length > 1 && dragMemberIds.includes(memberId))) {
-        onSelect({ type: "member", id: memberId }, { append: appendSelection });
+        selectPointerTarget({ type: "member", id: memberId }, { append: appendSelection });
       }
       const remoteLockOwner = dragMemberIds
         .map((id) => remoteMemberLocks[id])
@@ -1878,33 +1961,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               </button>
               <div className="stage-zoom-controls" aria-label="ステージ表示倍率">
                 <button
-                  className="mini-button icon-only stage-zoom-button"
-                  onClick={() => updateStageZoom(stageZoom - STAGE_ZOOM_STEP)}
-                  disabled={stageZoom <= STAGE_ZOOM_MIN + 0.001}
-                  type="button"
-                  title="ステージを縮小"
-                  aria-label="ステージを縮小"
-                >
-                  <ZoomOut size={15} />
-                </button>
-                <button
                   className="stage-zoom-reset"
                   onClick={() => updateStageZoom(STAGE_ZOOM_MIN)}
                   type="button"
-                  title="全体表示に戻す"
+                  title={`全体表示（現在${Math.round(stageZoom * 100)}%）`}
                   aria-label="ステージを全体表示に戻す"
                 >
-                  {Math.round(stageZoom * 100)}%
-                </button>
-                <button
-                  className="mini-button icon-only stage-zoom-button"
-                  onClick={() => updateStageZoom(stageZoom + STAGE_ZOOM_STEP)}
-                  disabled={stageZoom >= STAGE_ZOOM_MAX - 0.001}
-                  type="button"
-                  title="ステージを拡大"
-                  aria-label="ステージを拡大"
-                >
-                  <ZoomIn size={15} />
+                  全体表示
                 </button>
                 <button
                   className={[
@@ -1981,12 +2044,14 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               isStagePinchLocked ? "is-stage-pinch-locked" : "",
             ].join(" ")}
             ref={fitAreaRef}
-            onWheel={handleStageWheel}
+            onScroll={() => rememberView()}
             onPointerDownCapture={handleStagePointerDownCapture}
             onPointerMoveCapture={handleStagePointerMoveCapture}
             onPointerUpCapture={handleStagePointerEndCapture}
             onPointerCancelCapture={handleStagePointerEndCapture}
           >
+            <div className="stage-zoom-layout" style={{ width: visibleStageSize.widthPx + visibleStageSize.rulerWidth * 2, height: visibleStageSize.heightPx + visibleStageSize.rulerHeight + visibleStageSize.rulerBottomPadding }}>
+            <div className="stage-pinch-preview" ref={transientZoomRef}>
             <div
               ref={exportElementRef}
               className={
@@ -2080,7 +2145,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onPointerDown={(event) => {
                   updateStagePointerPosition(event);
                   if (!isMemberSelectionMode) {
-                    onSelect(null);
+                    selectPointerTarget(null);
                   }
                   startTouchContextMenu(event, { type: "stage" });
                 }}
@@ -2447,7 +2512,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     disabled={!objectEditing || isReadOnly}
                     deferCommit={deferObjectDragCommit}
                     remoteLockOwner={remoteObjectLockOwner}
-                    onSelect={() => onSelect({ type: "object", id: object.id })}
+                    onSelect={() => selectPointerTarget({ type: "object", id: object.id })}
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "object", id: object.id })
                     }
@@ -2553,7 +2618,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                         isDimmed ? "is-dimmed" : "",
                         remoteMemberLockOwner ? "is-remote-locked" : "",
                         memberLabelClassName,
-                        simplifyMemberLabels && !isSelected && !isFocus
+                        simplifyMemberLabels && !isSelected && !selectedMemberIds.includes(member.id) && !isFocus
                           ? "is-label-simplified"
                           : "",
                       ].join(" ")}
@@ -2593,7 +2658,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       }
                       aria-label={member.name}
                     >
-                      {!(simplifyMemberLabels && !isSelected && !isFocus) && (
+                      {!(simplifyMemberLabels && !isSelected && !selectedMemberIds.includes(member.id) && !isFocus) && (
                         <span className="member-token__label" aria-hidden="true">
                           {labelLines.map((line, index) => (
                             <span
@@ -2631,6 +2696,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   </span>
                 ))}
               </div>
+            </div>
+            </div>
             </div>
           </div>
         </div>

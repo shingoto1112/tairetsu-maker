@@ -3,6 +3,8 @@ import {
   FormEvent,
   KeyboardEvent,
   MouseEvent,
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -37,12 +39,10 @@ import type {
   ParadeSettings,
   Project,
 } from "../types";
-import { CloudCollaborationHelpModal } from "./CloudCollaborationHelpModal";
+const CloudCollaborationHelpModal = lazy(() => import("./CloudCollaborationHelpModal").then(module => ({ default: module.CloudCollaborationHelpModal })));
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
-import {
-  CloudAccountModal,
-  type CloudAccountDeleteResponse,
-} from "./CloudAccountModal";
+import type { CloudAccountDeleteResponse } from "./CloudAccountModal";
+const CloudAccountModal = lazy(() => import("./CloudAccountModal").then(module => ({ default: module.CloudAccountModal })));
 import type { CloudPasswordChangeResponse } from "./CloudPasswordModal";
 import { LegalLinks } from "./LegalLinks";
 import { NumericInput } from "./NumericInput";
@@ -780,10 +780,11 @@ export const FormationLibrary = ({
       )}
 
       {!cloud?.personalMode && isCloudHelpOpen && (
-        <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
+        <Suspense fallback={<div role="status">使い方を読み込み中…</div>}><CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} /></Suspense>
       )}
 
       {cloud?.userEmail && isCloudAccountOpen && (
+        <Suspense fallback={<div role="status">アカウントを読み込み中…</div>}>
         <CloudAccountModal
           displayName={cloud.userDisplayName}
           email={cloud.userEmail}
@@ -792,6 +793,7 @@ export const FormationLibrary = ({
           onChangePassword={cloud.onChangePassword}
           onDeleteAccount={cloud.onDeleteAccount}
         />
+        </Suspense>
       )}
 
       <section className="library-grid" aria-label="隊列表一覧">
