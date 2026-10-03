@@ -8,6 +8,21 @@ import type { Project } from "./types";
 import { createSampleProject } from "./sampleProject";
 import * as audioStorage from "./utils/audioStorage";
 import { stagePointToDisplayPoint } from "./utils/coordinates";
+import { MemoryProjectRepository } from "./repositories/contract/testing/MemoryProjectRepository";
+import { RepositoryError } from "./repositories/types";
+
+let testProject: Project;
+let testRepository: MemoryProjectRepository;
+let testCanContinue = true;
+vi.mock("./storage/appRepository", async importOriginal => ({
+  ...await importOriginal<typeof import("./storage/appRepository")>(),
+  prepareAppRepository: async () => {
+    const repository = new MemoryProjectRepository();
+    testRepository = repository;
+    await repository.commit({ project: testProject, localRevision: "1", expectedRepositoryRevision: null, operationId: "test-seed" });
+    return { repository, result: { completed: testCanContinue, canContinue: testCanContinue, failures: testCanContinue ? [] : [{ code: "ACCESS_DENIED" }] } };
+  },
+}));
 
 const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
 const canvasActions = vi.hoisted(() => ({ move: null as null | ((id: string, p: { x: number; y: number }) => void), playing: false }));
@@ -36,13 +51,47 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it("flushes edits on hidden visibility and leaves the old project keys untouched", async () => {
+    const old = "read-only sentinel"; localStorage.setItem("stageflow.projects.v1", old);
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    const title = await screen.findByRole("textbox", { name: "隊列表名" });
+    fireEvent.change(title, { target: { value: "背景化保存" } });
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(async () => expect((await testRepository.get(testProject.id!))?.project.title).toBe("背景化保存"));
+    expect(localStorage.getItem("stageflow.projects.v1")).toBe(old);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("retains quota edits with a persistent ZIP escape and prevents returning until retry succeeds", async () => {
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    const title = await screen.findByRole("textbox", { name: "隊列表名" });
+    const commit = vi.spyOn(testRepository, "commit").mockRejectedValue(new RepositoryError("QUOTA_EXCEEDED"));
+    fireEvent.change(title, { target: { value: "保持する編集" } });
+    fireEvent.click(screen.getByRole("button", { name: "隊列一覧へ戻る" }));
+    const alert = await screen.findByRole("alert", { name: "端末保存エラー" });
+    expect(within(alert).getByText(/空き容量/)).toBeTruthy();
+    expect(within(alert).getByRole("button", { name: "編集中のデータを ZIP で書き出す" })).toBeTruthy();
+    expect((title as HTMLInputElement).value).toBe("保持する編集");
+    expect((await testRepository.get(testProject.id!))?.project.title).toBe("削除検証");
+    commit.mockRestore(); fireEvent.click(within(alert).getByRole("button", { name: "保存を再試行" }));
+    await waitFor(() => expect(screen.queryByRole("alert", { name: "端末保存エラー" })).toBeNull());
+    expect((await testRepository.get(testProject.id!))?.project.title).toBe("保持する編集");
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("keeps local actions gated after a bootstrap access failure", async () => {
+    testCanContinue = false; render(<App />);
+    await screen.findByText(/保存領域にアクセスできません/);
+    expect((screen.getByRole("button", { name: /追加/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "削除検証を開く" })).toBeNull();
+  });
   it.each(["stage", "parade"] as const)("moves right in screen space for both perspectives in %s", async mode => {
     for (const viewerPerspective of ["audience", "performer"] as const) {
       const project = { ...createSampleProject(), id: `${mode}-${viewerPerspective}`, title: "矢印検証", mode, viewerPerspective };
       const id = "m_anna";
-      localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+      testProject = project;
       const user = userEvent.setup(); const view = render(<App />);
-      await user.click(screen.getByRole("button", { name: "矢印検証を開く" }));
+      await user.click(await screen.findByRole("button", { name: "矢印検証を開く" }));
       const picker = screen.getByRole("region", { name: "このシーンの表示" });
       await user.click(within(picker).getByRole("button", { name: /^Anna/ }));
       const frameId = canvas.selectedFrameId!;
@@ -57,10 +106,10 @@ describe("App roster confirmation integration", () => {
 
   it("blocks parade keyboard moves and the parent's move callback during playback", async () => {
     const project = { ...createSampleProject(), id: "playing", title: "再生検証", mode: "parade" as const };
-    localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+    testProject = project;
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const user = userEvent.setup(); const view = render(<App />);
-    await user.click(screen.getByRole("button", { name: "再生検証を開く" }));
+    await user.click(await screen.findByRole("button", { name: "再生検証を開く" }));
     await user.click(within(screen.getByRole("region", { name: "このシーンの表示" })).getByRole("button", { name: /^Anna/ }));
     await user.click(screen.getByRole("tab", { name: "音源" }));
     const audio = view.container.querySelector("audio")!; audio.src = "blob:local-test";
@@ -85,9 +134,9 @@ describe("App roster confirmation integration", () => {
     project.frames[0].objectAssignments = { o_chair: ["m_ben"] };
     project.frames[0].memberVisibility = { m_ben: false };
     delete project.frames[0].positions.m_ben;
-    localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+    testProject = project;
     const user = userEvent.setup(); render(<App />);
-    await user.click(screen.getByRole("button", { name: "表示Undo検証を開く" }));
+    await user.click(await screen.findByRole("button", { name: "表示Undo検証を開く" }));
     const beforeMembers = structuredClone(canvas.project!.members);
     const beforeFrames = structuredClone(canvas.project!.frames);
     await user.click(screen.getByRole("checkbox", { name: "Benをこのシーンに表示" }));
@@ -103,7 +152,7 @@ describe("App roster confirmation integration", () => {
   it("keeps portrait name selection separate, toggles only in selection mode and clears multiple selection for single select", async () => {
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     const user = userEvent.setup(); render(<App />);
-    await user.click(screen.getByRole("button", { name: "削除検証を開く" }));
+    await user.click(await screen.findByRole("button", { name: "削除検証を開く" }));
     const before = structuredClone(canvas.project!.frames);
     const picker = screen.getByRole("region", { name: "このシーンの表示" });
     await user.click(within(picker).getByRole("button", { name: /^Ben/ }));
@@ -129,7 +178,7 @@ describe("App roster confirmation integration", () => {
   it("suspends background shortcuts in sharing/export dialogs and restores Delete and Undo after closing", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "削除検証を開く" }));
+    await user.click(await screen.findByRole("button", { name: "削除検証を開く" }));
     fireEvent.keyDown(window, { key: "a", metaKey: true });
     const before = structuredClone(canvas.project);
     const beforeSelection = [...canvas.selectedMemberIds];
@@ -155,11 +204,12 @@ describe("App roster confirmation integration", () => {
     await waitFor(() => expect(canvas.project!.frames).toEqual(before!.frames));
   }, INTEGRATION_TIMEOUT_MS);
   beforeEach(() => {
+    testCanContinue = true;
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
     localStorage.clear();
     const project = { ...createSampleProject(), id: "local-roster", title: "削除検証" };
     project.frames[0].objectAssignments = { o_chair: ["m_ben"] };
-    localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+    testProject = project;
     canvas.project = null;
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} unobserve() {} });
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
@@ -173,10 +223,11 @@ describe("App roster confirmation integration", () => {
     if (missingAudio) {
       const project = { ...createSampleProject(), id: "missing-audio", title: "削除検証",
         audio: { id: "missing", name: "曲.mp3", type: "audio/mpeg", size: 100 } };
-      localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+      testProject = project;
       vi.spyOn(audioStorage, "loadAudioBlobFromIndexedDb").mockResolvedValue(null);
     }
     render(<App />);
+    await act(async () => {});
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "削除検証を開く" })); });
     const overlay = screen.getByRole("region", { name: "お知らせ" });
     const message = missingAudio
@@ -199,12 +250,12 @@ describe("App roster confirmation integration", () => {
     project.frames[0].memberVisibility = { m_ben: false, m_anna: true };
     project.frames[1].objectAssignments = { o_chair: ["m_anna"] };
     project.frames[1].memberVisibility = { m_ben: true, m_anna: false };
-    localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+    testProject = project;
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "割当Undo検証を開く" }));
+    await user.click(await screen.findByRole("button", { name: "割当Undo検証を開く" }));
     await waitFor(() => expect(canvas.project).not.toBeNull());
-    await user.click(screen.getByRole("button", { name: "全体名簿を開く" }));
+    await user.click(await screen.findByRole("button", { name: "全体名簿を開く" }));
     const roster = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
     await user.click(within(roster).getByRole("button", { name: "道具管理" }));
     await user.click(within(roster).getByRole("button", { name: "道具割当" }));
@@ -231,13 +282,13 @@ describe("App roster confirmation integration", () => {
   it.each(["members", "objects"] as const)("cancels then confirms × deletion and removes %s from every scene", async (mode) => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "削除検証を開く" }));
+    await user.click(await screen.findByRole("button", { name: "削除検証を開く" }));
     await waitFor(() => expect(canvas.project).not.toBeNull());
     expect(canvas.focusMode).toBe(false);
     expect(canvas.focusMemberId).toBe("");
     expect(canvas.movementPathMode).toBe("all");
     expect(canvas.project!.focusMemberId).toBe("m_anna");
-    await user.click(screen.getByRole("button", { name: "全体名簿を開く" }));
+    await user.click(await screen.findByRole("button", { name: "全体名簿を開く" }));
     const roster = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
     if (mode === "objects") await user.click(within(roster).getByRole("button", { name: "道具管理" }));
     const id = mode === "members" ? "m_ben" : "o_chair";

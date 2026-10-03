@@ -196,7 +196,8 @@ Windowsダウンロード版は、Web版のReact/Vite実装をTauriで包む方�
 
 保存:
 
-- 隊列表データはブラウザ内に保存する。
+- 隊列表データはWeb/WindowsではIndexedDB、iPadアプリではネイティブSQLite Repositoryへ1件単位で保存する。
+- 起動時に旧データを移行し、旧localStorage・iPadミラーは読み取り専用で残す。本人クラウドの下書きファイルは別経路を維持する。
 - 音源ファイル本体はlocalStorageではなくIndexedDBにBlobとして保存する。
 - 隊列表データ側には音源メタ情報を保存する。
 

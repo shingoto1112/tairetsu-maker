@@ -4,6 +4,12 @@ const fs = vi.hoisted(() => ({ readFile: vi.fn(), readdir: vi.fn() }));
 vi.mock("@capacitor/filesystem", () => ({ Directory: { Data: "DATA" }, Encoding: { UTF8: "utf8" }, Filesystem: fs }));
 
 describe("read-only Capacitor legacy reader", () => {
+  it("excludes personal drafts at the reader boundary without probing their directory", async () => {
+    const draftNames = vi.fn(); const readText = vi.fn(async () => null);
+    const sources = await collectLegacySources({ includeDrafts: false, local: () => ({ getItem: () => null }), native: { readText, draftNames } });
+    expect(draftNames).not.toHaveBeenCalled(); expect(readText).toHaveBeenCalledTimes(3);
+    expect(sources.some(s => s.source.startsWith("personal-cloud-drafts"))).toBe(false);
+  });
   it("only treats the installed plugin's not-found code as absent", async () => {
     const reader = await createCapacitorLegacyReader();
     fs.readFile.mockRejectedValueOnce({ code: "OS-PLUG-FILE-0008" });

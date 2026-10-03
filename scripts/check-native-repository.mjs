@@ -40,7 +40,7 @@ assert.ok(workflow.includes("cancel-in-progress: true"));
 assert.ok(workflow.includes('if: ${{ !cancelled() }}'));
 const appFiles = ["src/App.tsx", "src/main.tsx", "src/platform/index.ts"];
 for (const filePath of appFiles) if (existsSync(filePath)) assert.ok(!readFileSync(filePath, "utf8").includes("nativeSqliteRepository"));
-console.log(`Native preflight: ${definitions.length} unique/resolved pbxproj UUIDs; plugin's four references; local package/product/framework; 3 original Swift fixture paths; workflow; adapter unconnected: PASS`);
+console.log(`Native preflight: ${definitions.length} unique/resolved pbxproj UUIDs; plugin's four references; local package/product/framework; 3 original Swift fixture paths; workflow; adapter behind lazy boundary: PASS`);
 
 // Compile the actual Swift SQL literals on the locally bundled SQLite, in memory.
 // This detects syntax/reference errors, but does NOT execute Swift or replace XCTest.
@@ -70,7 +70,11 @@ const readers = readFileSync("src/storage/legacyReaders.ts", "utf8");
 assert.ok(!/Filesystem\.(writeFile|deleteFile|rename|mkdir|copy|appendFile)/.test(readers));
 assert.ok(readers.includes('e.code === "OS-PLUG-FILE-0008"'));
 for (const filePath of appFiles) if (existsSync(filePath)) assert.ok(!/storage\/bootstrap|migrationCoordinator/.test(readFileSync(filePath, "utf8")));
-console.log("Migration preflight: 10 fixed bridge methods; reserved SQLite schema 1; empty DB guard; four new XCTest cases; 200/opt-in 1000 + reopen logs; lazy/unconnected bootstrap; read-only readers: PASS");
+const appStorage = readFileSync("src/storage/appRepository.ts", "utf8");
+assert.ok(appStorage.includes('import("./bootstrap")'));
+assert.ok(appStorage.includes("includeDrafts: false"));
+assert.ok(readFileSync("src/App.tsx", "utf8").includes("await prepareAppRepository("));
+console.log("Migration preflight: 10 fixed bridge methods; reserved SQLite schema 1; empty DB guard; four new XCTest cases; 200/opt-in 1000 + reopen logs; connected lazy bootstrap; read-only readers: PASS");
 const database = new DatabaseSync(":memory:");
 try {
   database.exec("PRAGMA foreign_keys=ON");

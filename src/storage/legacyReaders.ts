@@ -11,7 +11,7 @@ export interface LegacyNativeReader {
   readText(path: string): Promise<string | null>;
   draftNames(): Promise<string[] | null>;
 }
-export type LegacyReaderOptions = { local?: () => Pick<Storage, "getItem">; native?: LegacyNativeReader };
+export type LegacyReaderOptions = { local?: () => Pick<Storage, "getItem">; native?: LegacyNativeReader; includeDrafts?: boolean };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const date = (v: unknown): v is string => typeof v === "string" && Number.isFinite(Date.parse(v));
 const accessCode = (e: unknown): MigrationIssue["code"] => object(e) && ["SecurityError", "NotAllowedError"].includes(e.name as string) ? "ACCESS_DENIED" : "IO_ERROR";
@@ -65,6 +65,7 @@ export const collectLegacySources = async (options: LegacyReaderOptions = {}): P
     try { sources.push(parseLegacySource(path, role, await options.native.readText(path))); }
     catch (e) { sources.push({ source: path, role, status: "unreadable", issue: accessCode(e) }); }
   }
+  if (options.includeDrafts === false) return sources;
   let names: string[] | null;
   try { names = await options.native.draftNames(); }
   catch (e) {

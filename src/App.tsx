@@ -107,7 +107,6 @@ import type {
   CloudRealtimeSubscription,
   CloudSaveNotification,
 } from "./cloud/realtime";
-import { createSampleProject } from "./sampleProject";
 import {
   deletePersonalCloudDraft,
   getAppFeatureFlags,
@@ -158,7 +157,6 @@ import {
 } from "./utils/exportImage";
 import type { CompletedExport } from "./utils/mobileExportTypes";
 import {
-  deleteAudioBlobFromIndexedDb,
   loadAudioBlobFromIndexedDb,
   saveAudioBlobToIndexedDb,
   saveAudioFileToIndexedDb,
@@ -183,14 +181,9 @@ import {
   getSafeParadeCanvasDistance,
 } from "./utils/parade";
 import { readProjectFromHash } from "./utils/share";
-import {
-  hydrateProjectsFromNativeStorage,
-  loadProjectFromStorage,
-  loadProjectsFromStorage,
-  saveProjectToStorage,
-  saveProjectsToStorage,
-  sortStoredProjects,
-} from "./utils/storage";
+import { compareRevisions, incrementRevision, RepositoryError, REPOSITORY_ERROR_MESSAGES, type CommitRequest, type ProjectRepository, type ProjectRecord, type ProjectSummary } from "./repositories/types";
+import { SaveCoordinator, repositoryError, type SaveState } from "./storage/saveCoordinator";
+import { getRequiredProject, listAllSummaries, prepareAppRepository, readOpenedProject } from "./storage/appRepository";
 import {
   createTairetsuArchive,
   createTairetsuFileName,
@@ -199,7 +192,6 @@ import {
 
 type InitialLoad = {
   project: Project;
-  projects: Project[];
   shared: boolean;
   error: string | null;
 };
@@ -605,7 +597,7 @@ const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
 
 const createUniqueProjectTitle = (
   baseTitle: string,
-  projects: Project[],
+  projects: Pick<ProjectSummary, "title">[],
 ): string => {
   const base = baseTitle.trim() || "読み込んだ隊列表";
   const existingTitles = new Set(projects.map((item) => item.title));
@@ -825,39 +817,10 @@ const createEmptyFormationProject = (
 };
 
 const readInitialProject = (): InitialLoad => {
-  try {
-    const sharedProject = readProjectFromHash();
-    if (sharedProject) {
-      return {
-        project: normalizeProject(sharedProject),
-        projects: loadProjectsFromStorage().map(normalizeProject),
-        shared: true,
-        error: null,
-      };
-    }
-  } catch (error) {
-    const stored = loadProjectFromStorage();
-    const storedProjects = loadProjectsFromStorage().map(normalizeProject);
-    return {
-      project:
-        storedProjects[0] ??
-        (stored ? normalizeProject(stored) : normalizeProject(createSampleProject())),
-      projects: storedProjects,
-      shared: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "共有データから隊列表データを復元できませんでした。",
-    };
-  }
-
-  const stored = loadProjectFromStorage();
-  const storedProjects = loadProjectsFromStorage().map(normalizeProject);
+  // In-memory view scaffold only; no sample or legacy reads/writes before bootstrap.
   return {
-    project:
-      storedProjects[0] ??
-      (stored ? normalizeProject(stored) : normalizeProject(createSampleProject())),
-    projects: storedProjects,
+    project: createEmptyFormationProject("", { formationMode: "stage", widthMeters: 12, heightMeters: 8,
+      useGlobalStageSize: true, gridSizeMeters: 0.25, horizontalGuideMode: "meters", memberDiameterMeters: 0.5 }, null),
     shared: false,
     error: null,
   };
@@ -1589,7 +1552,15 @@ function App() {
   const workspaceLayout = useWorkspaceLayout();
   const initial = useMemo(readInitialProject, []);
   const [project, setProject] = useState<Project>(initial.project);
-  const [savedProjects, setSavedProjects] = useState<Project[]>(initial.projects);
+  const [savedProjects, setSavedProjects] = useState<ProjectSummary[]>([]);
+  const [storageReady, setStorageReady] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<string | null>("隊列表を準備しています…");
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const [localSaveState, setLocalSaveState] = useState<SaveState | null>(null);
+  const repositoryRef = useRef<ProjectRepository | null>(null);
+  const saveCoordinatorRef = useRef<SaveCoordinator | null>(null);
+  const editorLoadGenerationRef = useRef(0);
+  const libraryLoadGenerationRef = useRef(0);
   const [appView, setAppView] = useState<"library" | "editor">(
     initial.shared ? "editor" : "library",
   );
@@ -1770,24 +1741,63 @@ function App() {
         : APP_NAME;
   }, [appView, project.title]);
 
+  const refreshLocalLibrary = useCallback(async () => {
+    const repository = repositoryRef.current;
+    if (!repository) return;
+    const generation = ++libraryLoadGenerationRef.current;
+    const summaries = await listAllSummaries(repository);
+    if (generation === libraryLoadGenerationRef.current) setSavedProjects(summaries);
+  }, []);
+
+  const markLocalEdit = useCallback((next: Project) => {
+    if (!activeCloudProjectRef.current) saveCoordinatorRef.current?.edit(next);
+  }, []);
+
   useEffect(() => {
-    if (!APP_FEATURES.nativeFileShare || initial.shared) {
-      return undefined;
-    }
     let cancelled = false;
-    void hydrateProjectsFromNativeStorage()
-      .then((projects) => {
-        if (!cancelled && projects) {
-          setSavedProjects(projects.map(normalizeProject));
-        }
-      })
-      .catch((error) => {
-        console.warn("iPadのローカル隊列表を復元できませんでした。", error);
-      });
+    let repository: ProjectRepository | null = null;
+    void (async () => {
+      try {
+        const prepared = await prepareAppRepository(progress => {
+          if (!cancelled && progress.total) setStorageStatus(`隊列表を新しい保存方式へ移行しています（${progress.completed}／${progress.total}件）`);
+        });
+        repository = prepared.repository;
+        if (cancelled) { if ("close" in repository) (repository as ProjectRepository & { close(): void }).close(); return; }
+        repositoryRef.current = repository;
+        const failures = prepared.result.failures.map(f => f.code === "INTERRUPTED" ? "移行を中断しました。次回起動時に再開します。" : REPOSITORY_ERROR_MESSAGES[f.code]);
+        if (failures.length) setStorageWarning([...new Set(failures)].join(" "));
+        if (!prepared.result.canContinue) { setStorageStatus(null); return; }
+        saveCoordinatorRef.current = new SaveCoordinator(repository, state => {
+          if (cancelled) return;
+          setLocalSaveState(state);
+          if (state) { isDirtyRef.current = state.dirty; setIsDirty(state.dirty); setIsSaving(state.saving); }
+          else setIsSaving(false);
+        }, summary => {
+          if (!cancelled) {
+            ++libraryLoadGenerationRef.current;
+            setSavedProjects(previous => previous.some(s => s.id === summary.id)
+              ? previous.map(s => s.id === summary.id && compareRevisions(summary.repositoryRevision, s.repositoryRevision) >= 0 ? summary : s)
+              : [...previous, summary]);
+          }
+        });
+        await refreshLocalLibrary();
+        if (cancelled) return;
+        setStorageReady(true); setStorageStatus(null);
+        try {
+          const shared = readProjectFromHash();
+          if (shared) {
+            await openProjectInEditor(normalizeProject(shared), undefined, { persistLocal: false });
+            if (!cancelled) { setIsSharedProject(true); setSharedAudioNotice(true); }
+          }
+        } catch (error) { setNotice(error instanceof Error ? error.message : "共有データを読み込めませんでした。"); }
+      } catch (error) { if (!cancelled) { setStorageWarning(repositoryError(error).message); setStorageStatus(null); } }
+    })();
     return () => {
-      cancelled = true;
+      cancelled = true; ++editorLoadGenerationRef.current;
+      const close = () => { if (repository && "close" in repository) (repository as ProjectRepository & { close(): void }).close(); };
+      void (saveCoordinatorRef.current?.flush() ?? Promise.resolve()).finally(close);
     };
-  }, [initial.shared]);
+  }, [refreshLocalLibrary]);
 
   useEffect(() => {
     projectRef.current = project;
@@ -1988,7 +1998,9 @@ function App() {
       }
       // Storage distinguishes absence from failure. Keep the existing recovery
       // notice at this UI boundary until the audio error UI is redesigned.
+      const generation = editorLoadGenerationRef.current;
       const blob = await loadAudioBlobFromIndexedDb(meta.id).catch(() => null);
+      if (generation !== editorLoadGenerationRef.current || projectRef.current.id !== targetProject.id || projectRef.current.audio?.id !== meta.id) return false;
       if (!blob) {
         setAudioSource(null, meta.name);
         setSharedAudioNotice(true);
@@ -2170,10 +2182,11 @@ function App() {
       };
       projectRef.current = withUpdatedAt;
       setProject(withUpdatedAt);
+      markLocalEdit(withUpdatedAt);
       setIsDirty(true);
       refreshHistoryCounts();
     },
-    [allowCloudProjectChange, pushUndoSnapshot, refreshHistoryCounts],
+    [allowCloudProjectChange, markLocalEdit, pushUndoSnapshot, refreshHistoryCounts],
   );
 
   const replaceProjectWithHistory = useCallback(
@@ -2184,10 +2197,11 @@ function App() {
       pushUndoSnapshot(projectRef.current, label);
       projectRef.current = nextProject;
       setProject(nextProject);
+      markLocalEdit(nextProject);
       setIsDirty(true);
       refreshHistoryCounts();
     },
-    [allowCloudLockedSceneChange, pushUndoSnapshot, refreshHistoryCounts],
+    [allowCloudLockedSceneChange, markLocalEdit, pushUndoSnapshot, refreshHistoryCounts],
   );
 
   const undoProject = useCallback(() => {
@@ -2209,10 +2223,11 @@ function App() {
     lastHistoryPushRef.current = null;
     projectRef.current = nextProject;
     setProject(nextProject);
+    markLocalEdit(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
     setNotice(entry.label ? `${entry.label}を元に戻しました。` : "元に戻しました。", "success");
-  }, [allowCloudLockedSceneChange, refreshHistoryCounts]);
+  }, [allowCloudLockedSceneChange, markLocalEdit, refreshHistoryCounts]);
 
   const redoProject = useCallback(() => {
     const entry = redoStackRef.current[redoStackRef.current.length - 1];
@@ -2233,10 +2248,11 @@ function App() {
     lastHistoryPushRef.current = null;
     projectRef.current = nextProject;
     setProject(nextProject);
+    markLocalEdit(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
     setNotice(entry.label ? `${entry.label}をやり直しました。` : "やり直しました。", "success");
-  }, [allowCloudLockedSceneChange, refreshHistoryCounts]);
+  }, [allowCloudLockedSceneChange, markLocalEdit, refreshHistoryCounts]);
 
   const clearPendingAutoSave = useCallback(() => {
     if (autoSaveTimerRef.current !== null) {
@@ -2246,34 +2262,17 @@ function App() {
     pendingAutoSaveProjectRef.current = null;
   }, []);
 
-  const flushPendingAutoSave = useCallback(() => {
-    if (appView !== "editor" || isSharedProject || activeCloudProjectRef.current) {
-      clearPendingAutoSave();
-      return;
-    }
-    const targetProject = pendingAutoSaveProjectRef.current;
-    if (!targetProject) {
-      return;
-    }
+  const flushPendingAutoSave = useCallback(async () => {
     clearPendingAutoSave();
-    try {
-      saveProjectToStorage(targetProject);
-      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
-      if (projectRef.current.updatedAt === targetProject.updatedAt) {
-        setIsDirty(false);
-      }
-    } catch (error) {
-      console.error("自動保存に失敗しました。", error);
-      setIsDirty(true);
-      setNotice("自動保存に失敗しました。保存ボタンで再度保存してください。");
-    }
-  }, [appView, clearPendingAutoSave, isSharedProject]);
+    return await (saveCoordinatorRef.current?.flush() ?? Promise.resolve(true));
+  }, [clearPendingAutoSave]);
 
   useEffect(() => {
     if (appView !== "editor" || isSharedProject || activeCloudProject) {
       clearPendingAutoSave();
       return;
     }
+    if (!saveCoordinatorRef.current?.state?.dirty) return;
     pendingAutoSaveProjectRef.current = project;
     if (autoSaveTimerRef.current !== null) {
       window.clearTimeout(autoSaveTimerRef.current);
@@ -2830,6 +2829,8 @@ function App() {
         removeAppStateListener = () => listener.remove();
       });
     }
+    const handleVisibility = () => { if (document.visibilityState === "hidden") handlePageHide(); };
+    document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("beforeunload", handlePageHide);
     return () => {
@@ -2837,9 +2838,9 @@ function App() {
       if (removeAppStateListener) {
         void removeAppStateListener();
       }
+      document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("beforeunload", handlePageHide);
-      flushPendingAutoSave();
     };
   }, [flushPendingAutoSave]);
 
@@ -3417,9 +3418,10 @@ function App() {
       if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
         return;
       }
+      markLocalEdit(nextProject);
       setIsDirty(true);
     },
-    [],
+    [markLocalEdit],
   );
 
   const reflectPreviousParadeFrame = useCallback(
@@ -5663,32 +5665,9 @@ function App() {
     if (cloudState) {
       return saveCloudCurrentScene(projectRef.current, selectedFrameIdRef.current, options);
     }
-    if (isSaving) {
-      return false;
-    }
-    setIsSaving(true);
-    clearPendingAutoSave();
-    const nextProject = {
-      ...projectRef.current,
-      updatedAt: new Date().toISOString(),
-    };
-    try {
-      projectRef.current = nextProject;
-      setProject(nextProject);
-      saveProjectToStorage(nextProject);
-      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
-      setIsDirty(false);
-      if (options.showNotice ?? true) {
-        setNotice("隊列表を保存しました。", "success");
-      }
-      return true;
-    } catch {
-      setIsDirty(true);
-      setNotice("保存に失敗しました。もう一度保存してから戻ってください。");
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
+    const saved = await flushPendingAutoSave();
+    if (saved && (options.showNotice ?? true)) setNotice("隊列表を保存しました。", "success");
+    return saved;
   };
 
   const createFrameDraft = (sourceProject: Project, timeSec?: number): FormationFrame => {
@@ -7056,8 +7035,28 @@ function App() {
       cloudProject?: CloudActiveProjectState | null;
       persistLocal?: boolean;
       noticeKind?: NoticeKind;
+      record?: ProjectRecord;
+      loadGeneration?: number;
     } = {},
   ) => {
+    const generation = options.loadGeneration ?? ++editorLoadGenerationRef.current;
+    if (!await flushPendingAutoSave() || generation !== editorLoadGenerationRef.current) return false;
+    let record = options.record;
+    let creation: CommitRequest | undefined;
+    let creationError: RepositoryError | undefined;
+    try {
+      if (options.persistLocal !== false && !record) {
+        const repository = repositoryRef.current;
+        if (!repository) throw new RepositoryError("BUSY");
+        creation = { project: rawProject, localRevision: "1", expectedRepositoryRevision: null, operationId: createProjectId() };
+        const receipt = await repository.commit(creation);
+        record = { project: rawProject, repositoryRevision: receipt.repositoryRevision, localRevision: receipt.localRevision, sync: null };
+      }
+    } catch (error) {
+      if (!creation) { setNotice(repositoryError(error).message); return false; }
+      creationError = repositoryError(error);
+    }
+    if (generation !== editorLoadGenerationRef.current) return false;
     const now = new Date().toISOString();
     const nextProject = normalizeProject({
       ...rawProject,
@@ -7087,15 +7086,20 @@ function App() {
     setActiveCloudProject(options.cloudProject ?? null);
     setAppView("editor");
     setIsDirty(false);
-    if (options.persistLocal !== false) {
-      saveProjectToStorage(nextProject);
-      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
-    }
+    if (record) {
+      saveCoordinatorRef.current?.activate({ ...record, project: nextProject });
+      void refreshLocalLibrary().catch(error => setNotice(repositoryError(error).message));
+    } else if (creation && creationError) {
+      saveCoordinatorRef.current?.activateUnsaved(creation, creationError);
+      saveCoordinatorRef.current?.edit(nextProject);
+    } else { saveCoordinatorRef.current?.deactivate(); setLocalSaveState(null); }
+
     restoredAudioKeyRef.current = `${nextProject.id ?? "project"}:${nextProject.audio?.id ?? "no-audio"}`;
     const audioRestored = await restoreAudioForProject(nextProject);
-    if (audioRestored) {
+    if (audioRestored && !creationError && generation === editorLoadGenerationRef.current) {
       setNotice(message ?? "隊列表を開きました。", options.noticeKind ?? (message === undefined ? "success" : "persistent"));
     }
+    return true;
   };
 
   const createNewFormationProject = async (input: NewFormationInput) => {
@@ -7123,113 +7127,114 @@ function App() {
   };
 
   const returnToLibrary = async () => {
-    if (isSharedProject) {
-      setIsSharedProject(false);
-      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
-      setAppView("library");
-      setIsPlaying(false);
-      if (audioRef.current) {
-        audioRef.current.pause();
+    try {
+      if (!activeCloudProjectRef.current && !await flushPendingAutoSave()) return;
+      ++editorLoadGenerationRef.current;
+      if (isSharedProject) {
+        setIsSharedProject(false);
+        await refreshLocalLibrary();
+        setAppView("library");
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        if (window.location.hash) {
+          window.history.replaceState(
+            null,
+            "",
+            `${window.location.pathname}${window.location.search}`,
+          );
+        }
+        return;
       }
-      if (window.location.hash) {
-        window.history.replaceState(
-          null,
-          "",
-          `${window.location.pathname}${window.location.search}`,
-        );
+      if (activeCloudProject) {
+        if (isDirty) {
+          const saved = await saveProjectManually({ showNotice: false });
+          if (!saved) {
+            return;
+          }
+        }
+        await releaseActiveCloudSceneLock({ silent: true });
+        await releaseActiveCloudProjectLock({ silent: true });
+        setActiveCloudProject(null);
+        setCloudActiveLocks([]);
+        setCloudCollaborationItems([]);
+        setCloudContacts([]);
+        setCloudPendingUpdates([]);
+        setIsCloudShareOpen(false);
+        await refreshLocalLibrary();
+        setAppView("library");
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+        }
+        return;
       }
-      return;
-    }
-    if (activeCloudProject) {
       if (isDirty) {
         const saved = await saveProjectManually({ showNotice: false });
         if (!saved) {
           return;
         }
+      } else {
+        await refreshLocalLibrary();
       }
-      await releaseActiveCloudSceneLock({ silent: true });
-      await releaseActiveCloudProjectLock({ silent: true });
-      setActiveCloudProject(null);
-      setCloudActiveLocks([]);
-      setCloudCollaborationItems([]);
-      setCloudContacts([]);
-      setCloudPendingUpdates([]);
-      setIsCloudShareOpen(false);
-      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
       setAppView("library");
       setIsPlaying(false);
       if (audioRef.current) {
         audioRef.current.pause();
       }
-      return;
-    }
-    if (isDirty) {
-      const saved = await saveProjectManually({ showNotice: false });
-      if (!saved) {
-        return;
-      }
-    } else {
-      setSavedProjects(loadProjectsFromStorage().map(normalizeProject));
-    }
-    setAppView("library");
-    setIsPlaying(false);
-    if (audioRef.current) {
-      audioRef.current.pause();
+    } catch (error) { setNotice(repositoryError(error).message); }
+  };
+
+  const localAction = async (action: (repository: ProjectRepository) => Promise<void>) => {
+    try {
+      if (!storageReady || !repositoryRef.current) throw new RepositoryError("BUSY");
+      await action(repositoryRef.current);
+    } catch (error) {
+      setNotice(repositoryError(error).message);
+      if (repositoryError(error).code === "CONFLICT") void refreshLocalLibrary().catch(() => {});
     }
   };
 
-  const renameStoredProject = async (projectId: string, title: string) => {
-    const now = new Date().toISOString();
-    const nextProjects = sortStoredProjects(
-      savedProjects.map((item) =>
-        item.id === projectId
-          ? normalizeProject({ ...item, title, updatedAt: now })
-          : item,
-      ),
-    );
-    saveProjectsToStorage(nextProjects);
-    setSavedProjects(nextProjects);
-    if (projectRef.current.id === projectId) {
-      const nextProject = normalizeProject({
-        ...projectRef.current,
-        title,
-        updatedAt: now,
-      });
-      projectRef.current = nextProject;
-      setProject(nextProject);
-      setIsDirty(false);
-    }
-    setNotice("隊列表名を変更しました。", "success");
-  };
-
-  const duplicateStoredProject = async (source: Project) => {
-    const now = new Date().toISOString();
-    const duplicated = normalizeProject({
-      ...cloneProject(source),
-      id: createProjectId(),
-      title: `${source.title || "名称未設定"} のコピー`,
-      createdAt: now,
-      updatedAt: now,
-      lastOpenedAt: now,
+  const openStoredProject = async (id: string) => {
+    const generation = ++editorLoadGenerationRef.current;
+    if (!await flushPendingAutoSave()) return;
+    await localAction(async repository => {
+      const record = await readOpenedProject(repository, id);
+      if (generation !== editorLoadGenerationRef.current) return;
+      await openProjectInEditor(record.project, undefined, { record, loadGeneration: generation });
     });
-    const nextProjects = sortStoredProjects([duplicated, ...savedProjects]);
-    saveProjectsToStorage(nextProjects);
-    setSavedProjects(nextProjects);
-    setNotice("隊列表を複製しました。", "success");
   };
 
-  const deleteStoredProject = async (target: Project) => {
-    const nextProjects = savedProjects.filter((item) => item.id !== target.id);
-    saveProjectsToStorage(nextProjects);
-    setSavedProjects(sortStoredProjects(nextProjects));
-    if (
-      target.audio?.id &&
-      !nextProjects.some((item) => item.audio?.id === target.audio?.id)
-    ) {
-      await deleteAudioBlobFromIndexedDb(target.audio.id);
-    }
-    setNotice("隊列表を削除しました。", "success");
-  };
+  const renameStoredProject = async (id: string, title: string) => localAction(async repository => {
+    const summary = savedProjects.find(s => s.id === id);
+    if (!summary) throw new RepositoryError("NOT_FOUND");
+    const record = await getRequiredProject(repository, id);
+    await repository.rename({ id, title, updatedAt: new Date().toISOString(), localRevision: incrementRevision(record.localRevision),
+      expectedRepositoryRevision: summary.repositoryRevision, operationId: createProjectId() });
+    await refreshLocalLibrary(); setNotice("隊列表名を変更しました。", "success");
+  });
+
+  const duplicateStoredProject = async (id: string) => localAction(async repository => {
+    const { project: source } = await getRequiredProject(repository, id);
+    const now = new Date().toISOString();
+    const duplicated = normalizeProject({ ...cloneProject(source), id: createProjectId(),
+      title: source.title + " のコピー", createdAt: now, updatedAt: now, lastOpenedAt: now });
+    await repository.commit({ project: duplicated, localRevision: "1", expectedRepositoryRevision: null, operationId: createProjectId() });
+    await refreshLocalLibrary(); setNotice("隊列表を複製しました。", "success");
+  });
+
+  const deleteStoredProject = async (id: string) => localAction(async repository => {
+    const summary = savedProjects.find(s => s.id === id);
+    if (!summary) throw new RepositoryError("NOT_FOUND");
+    await repository.remove({ id, expectedRepositoryRevision: summary.repositoryRevision, operationId: createProjectId() });
+    // Audio references can be shared by copies. Collection is deferred to step 10.
+    await refreshLocalLibrary(); setNotice("隊列表を削除しました。", "success");
+  });
+
+  const withStoredProject = async (id: string, action: (project: Project) => Promise<void>) => localAction(async repository => {
+    await action((await getRequiredProject(repository, id)).project);
+  });
 
   const exportTairetsuProject = async (source: Project, includeAudio: boolean) => {
     if (exportGenerationPending.current) return;
@@ -7280,9 +7285,6 @@ function App() {
         title: createUniqueProjectTitle(imported.project.title, savedProjects),
         updatedAt: now,
       });
-      const nextProjects = sortStoredProjects([nextProject, ...savedProjects]);
-      saveProjectsToStorage(nextProjects);
-      setSavedProjects(nextProjects);
       await openProjectInEditor(
         nextProject,
         audioNotice ??
@@ -7460,15 +7462,32 @@ function App() {
       title: createUniqueProjectTitle(projectRef.current.title, savedProjects),
       updatedAt: now,
     });
-    setIsSharedProject(false);
-    if (window.location.hash) {
-      window.history.replaceState(
-        null,
-        "",
-        `${window.location.pathname}${window.location.search}`,
-      );
-    }
-    await openProjectInEditor(nextProject, "共有隊列表を自分の一覧に追加しました。");
+    const opened = await openProjectInEditor(nextProject, "共有隊列表を自分の一覧に追加しました。");
+    if (opened && window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  };
+
+  const saveConflictAsCopy = async () => {
+    const source = projectRef.current;
+    await localAction(async repository => {
+      const now = new Date().toISOString();
+      const copy = normalizeProject({ ...cloneProject(source), id: createProjectId(), title: createUniqueProjectTitle(source.title + " のコピー", savedProjects), createdAt: now, updatedAt: now, lastOpenedAt: now });
+      const receipt = await repository.commit({ project: copy, localRevision: "1", expectedRepositoryRevision: null, operationId: createProjectId() });
+      if (projectRef.current !== source) { await refreshLocalLibrary(); setNotice("複製は保存しました。保存中に追加した編集は元の画面に残っています。"); return; }
+      saveCoordinatorRef.current?.discard();
+      await openProjectInEditor(copy, "編集内容を別の隊列表として保存しました。", { record: { project: copy, repositoryRevision: receipt.repositoryRevision, localRevision: receipt.localRevision, sync: null } });
+    });
+  };
+
+  const reloadConflictingProject = async () => {
+    const id = projectRef.current.id!;
+    if (!await requestAppConfirm({ title: "隊列表を読み込み直す", message: "画面の未保存の編集を破棄して、端末に保存された最新版を読み込みます。", confirmLabel: "読み込み直す", cancelLabel: "キャンセル" })) return;
+    await localAction(async repository => {
+      const source = projectRef.current;
+      const record = await readOpenedProject(repository, id);
+      if (projectRef.current !== source) { setNotice("読み込み中に編集が追加されたため、画面の編集を保持しました。"); return; }
+      saveCoordinatorRef.current?.discard();
+      await openProjectInEditor(record.project, "保存された隊列表を読み込み直しました。", { record });
+    });
   };
 
   const getCloudErrorMessage = (error: unknown): string =>
@@ -10566,12 +10585,6 @@ function App() {
   };
 
   const handleShareExportZip = async (includeAudio: boolean) => {
-    if (isDirty && !isSharedProject) {
-      const saved = await saveProjectManually({ showNotice: false });
-      if (!saved) {
-        return;
-      }
-    }
     setExportProgress({
       detail: projectRef.current.title || "隊列メーカー",
       title: "隊列表を書き出し中",
@@ -12609,16 +12622,17 @@ function App() {
     );
   })();
 
-  if (appView === "library") {
+  if (!storageReady || appView === "library") {
     return (
       <>
         <FormationLibrary
-          projects={sortStoredProjects(savedProjects)}
-          notice={notice}
+          projects={savedProjects}
+          notice={storageStatus ?? storageWarning ?? notice}
+          disabled={!storageReady}
           cloud={{
             configured: Boolean(cloudConfig),
             error: cloudError,
-            isBusy: isCloudBusy,
+            isBusy: isCloudBusy || !storageReady,
             personalMode: !APP_FEATURES.collaboration,
             pendingInviteToken: cloudInviteToken,
             projects: APP_FEATURES.collaboration
@@ -12639,13 +12653,13 @@ function App() {
             onSignIn: signInToCloud,
             onSignOut: signOutFromCloud,
             onSignUp: signUpToCloud,
-            onUploadProject: uploadProjectToCloud,
+            onUploadProject: id => withStoredProject(id, uploadProjectToCloud),
           }}
           onCreate={createNewFormationProject}
-          onOpenProject={(nextProject) => void openProjectInEditor(nextProject)}
+          onOpenProject={openStoredProject}
           onRenameProject={renameStoredProject}
           onDuplicateProject={duplicateStoredProject}
-          onExportProject={exportTairetsuProject}
+          onExportProject={(id, includeAudio) => withStoredProject(id, p => exportTairetsuProject(p, includeAudio))}
           onImportProjectFile={importTairetsuProjectFile}
           onDeleteProject={deleteStoredProject}
         />
@@ -12714,6 +12728,18 @@ function App() {
         canOpenRosterManager={canOpenRosterManager}
         onOpenRosterManager={() => openRosterManager()}
       />
+      {localSaveState?.error && !activeCloudProject && (
+        <div className="shared-project-banner" role="alert" aria-label="端末保存エラー">
+          <span>{localSaveState.error.message}</span>
+          <div className="shared-project-banner__actions">
+            <button className="mini-button" onClick={() => void exportTairetsuProject(projectRef.current, true)}>編集中のデータを ZIP で書き出す</button>
+            {localSaveState.error.code === "CONFLICT" ? <>
+              <button className="mini-button" onClick={() => void saveConflictAsCopy()}>別の隊列表として保存</button>
+              <button className="mini-button" onClick={() => void reloadConflictingProject()}>読み込み直す</button>
+            </> : <button className="mini-button" onClick={() => void saveProjectManually()}>保存を再試行</button>}
+          </div>
+        </div>
+      )}
       {isSharedProject && (
         <div className="shared-project-banner">
           <div>

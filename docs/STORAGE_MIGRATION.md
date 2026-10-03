@@ -65,7 +65,9 @@ Repository初期化失敗は続行不可。移行の容量不足・中断・IO�
 - Claude: 既存workflowのrelease swift testをそのまま実行し、合計14件成功、共通契約50手順、新migration契約ログ、reopen時間、simulator BUILD SUCCEEDED、警告なしを確認。workflow変更なし。1000件の数値が必要なら実行環境にREPOSITORY_PERF=1を設定する。
 - コンパイル自己レビュー: Foundation / SQLite3のみ。新しいソースファイルやpbxproj変更なし。異種辞書は[String: Any]、空配列は[[String: Any]]()等で明示。sync queue内のtransactionを入れ子にしない。throwsのoptional map / UTF-8比較は外側tryで扱い、Int/NSNumberでstate/countを検査する。
 
-## 第5回への申し送り
+## 第5回への申し送り（第4回時点）
+
+第5・6回は統合してAppへ接続した。現行の接続と検証は `docs/STORAGE_APP_CONNECTION.md` を参照。本番bootstrapはreaderで本人クラウド下書きを除外し、`legacy-projects-v1` に含めない。以下の下書き判定・台帳の説明は部品としての契約であり、通常起動から下書きコピーを作る仕様ではない。第9回は別batchで移行する。
 
 1. bootstrapを既存hydrate/保存/初期sampleより先に接続し、canContinueとcompletedを区別してUIへ反映。onProgressのcompleted/totalで「12／18件」を表示、failuresから容量不足・中断・旧ソース破損を案内する。音源は第7回待ち。
 2. Appの一覧/開く/名前変更/複製/削除/ZIP取込みをRepositoryへ接続。FormationLibraryにはsummaryとID callbackだけを渡す。本体は開く1件、保存も対象1件。今回Appは未変更。

@@ -30,6 +30,7 @@ import {
   UserRoundCog,
   X,
 } from "lucide-react";
+import type { ProjectSummary } from "../repositories/types";
 import type { CloudProjectSummary } from "../cloud";
 import type {
   FormationMode,
@@ -37,7 +38,6 @@ import type {
   ParadeHorizontalMeasureMode,
   ParadeRulerPosition,
   ParadeSettings,
-  Project,
 } from "../types";
 const CloudCollaborationHelpModal = lazy(() => import("./CloudCollaborationHelpModal").then(module => ({ default: module.CloudCollaborationHelpModal })));
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
@@ -61,7 +61,8 @@ export type NewFormationInput = {
 };
 
 type FormationLibraryProps = {
-  projects: Project[];
+  projects: ProjectSummary[];
+  disabled?: boolean;
   notice?: string | null;
   cloud?: {
     configured: boolean;
@@ -96,15 +97,15 @@ type FormationLibraryProps = {
       password: string,
       displayName: string,
     ) => void | Promise<void>;
-    onUploadProject: (project: Project) => void | Promise<void>;
+    onUploadProject: (projectId: string) => void | Promise<void>;
   };
   onCreate: (input: NewFormationInput) => void | Promise<void>;
-  onOpenProject: (project: Project) => void | Promise<void>;
+  onOpenProject: (projectId: string) => void | Promise<void>;
   onRenameProject: (projectId: string, title: string) => void | Promise<void>;
-  onDuplicateProject: (project: Project) => void | Promise<void>;
-  onExportProject: (project: Project, includeAudio: boolean) => void | Promise<void>;
+  onDuplicateProject: (projectId: string) => void | Promise<void>;
+  onExportProject: (projectId: string, includeAudio: boolean) => void | Promise<void>;
   onImportProjectFile: (file: File) => void | Promise<void>;
-  onDeleteProject: (project: Project) => void | Promise<void>;
+  onDeleteProject: (projectId: string) => void | Promise<void>;
 };
 
 type LibraryMenu = {
@@ -126,7 +127,7 @@ const clampMenuPosition = (left: number, top: number): { left: number; top: numb
   };
 };
 
-const formatProjectDate = (project: Project): string => {
+const formatProjectDate = (project: ProjectSummary): string => {
   const raw = project.lastOpenedAt ?? project.updatedAt ?? project.createdAt;
   if (!raw) {
     return "日時なし";
@@ -158,6 +159,7 @@ const CLOUD_PASSWORD_MIN_LENGTH = 6;
 
 export const FormationLibrary = ({
   projects,
+  disabled = false,
   notice,
   cloud,
   onCreate,
@@ -192,14 +194,14 @@ export const FormationLibrary = ({
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [libraryMenu, setLibraryMenu] = useState<LibraryMenu | null>(null);
-  const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
   const [cloudDeleteTarget, setCloudDeleteTarget] =
     useState<CloudProjectSummary | null>(null);
   const [cloudHideTarget, setCloudHideTarget] =
     useState<CloudProjectSummary | null>(null);
-  const [exportTarget, setExportTarget] = useState<Project | null>(null);
+  const [exportTarget, setExportTarget] = useState<ProjectSummary | null>(null);
   const [includeAudioInExport, setIncludeAudioInExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -368,7 +370,7 @@ export const FormationLibrary = ({
   };
 
   const openMenu = (
-    project: Project,
+    project: ProjectSummary,
     event: MouseEvent<HTMLElement>,
     anchor?: "button",
   ) => {
@@ -392,13 +394,13 @@ export const FormationLibrary = ({
     setLibraryMenu(null);
   };
 
-  const openRenameDialog = (project: Project) => {
+  const openRenameDialog = (project: ProjectSummary) => {
     setRenameTarget(project);
     setRenameTitle(project.title || "");
     setLibraryMenu(null);
   };
 
-  const openExportDialog = (project: Project) => {
+  const openExportDialog = (project: ProjectSummary) => {
     setExportTarget(project);
     setIncludeAudioInExport(false);
     setLibraryMenu(null);
@@ -416,7 +418,7 @@ export const FormationLibrary = ({
 
   const submitDelete = async () => {
     if (!deleteTarget) return;
-    await onDeleteProject(deleteTarget);
+    await onDeleteProject(deleteTarget.id);
     setDeleteTarget(null);
   };
 
@@ -436,7 +438,7 @@ export const FormationLibrary = ({
     if (!exportTarget) return;
     setIsExporting(true);
     try {
-      await onExportProject(exportTarget, includeAudioInExport && Boolean(exportTarget.audio?.id));
+      await onExportProject(exportTarget.id, includeAudioInExport && Boolean(exportTarget.audioId));
       setExportTarget(null);
       setIncludeAudioInExport(false);
     } finally {
@@ -525,7 +527,7 @@ export const FormationLibrary = ({
         <p>作成済みの隊列表を開くか、新しい隊列表を作成します。</p>
       </header>
 
-      {notice && <p className="library-notice">{notice}</p>}
+      {notice && <p className="library-notice" role="status">{notice}</p>}
 
       {cloud && (
         <section className="library-cloud-panel" aria-label="クラウド">
@@ -799,7 +801,7 @@ export const FormationLibrary = ({
       <section className="library-grid" aria-label="隊列表一覧">
         <button
           className="formation-card formation-card--new"
-          onClick={() => setIsAddDialogOpen(true)}
+          disabled={disabled} onClick={() => setIsAddDialogOpen(true)}
           type="button"
         >
           <span className="formation-card__plus">
@@ -813,12 +815,12 @@ export const FormationLibrary = ({
           <article
             className="formation-card formation-card--saved"
             key={project.id ?? `${project.title}-${index}`}
-            onClick={() => void onOpenProject(project)}
+            onClick={() => void onOpenProject(project.id)}
             onContextMenu={(event) => openMenu(project, event)}
             onKeyDown={(event) => {
               if (isActivationKey(event)) {
                 event.preventDefault();
-                void onOpenProject(project);
+                void onOpenProject(project.id);
               }
             }}
             role="button"
@@ -863,7 +865,7 @@ export const FormationLibrary = ({
         >
           <button
             type="button"
-            onClick={() => runMenuAction(() => onOpenProject(menuProject))}
+            onClick={() => runMenuAction(() => onOpenProject(menuProject.id))}
           >
             <ExternalLink size={15} />
             開く
@@ -874,7 +876,7 @@ export const FormationLibrary = ({
           </button>
           <button
             type="button"
-            onClick={() => runMenuAction(() => onDuplicateProject(menuProject))}
+            onClick={() => runMenuAction(() => onDuplicateProject(menuProject.id))}
           >
             <Copy size={15} />
             複製
@@ -887,7 +889,7 @@ export const FormationLibrary = ({
             <button
               type="button"
               onClick={() =>
-                runMenuAction(() => cloud.onUploadProject(menuProject))
+                runMenuAction(() => cloud.onUploadProject(menuProject.id))
               }
             >
               <CloudUpload size={15} />
@@ -1362,11 +1364,11 @@ export const FormationLibrary = ({
                 type="checkbox"
                 checked={includeAudioInExport}
                 onChange={(event) => setIncludeAudioInExport(event.target.checked)}
-                disabled={!exportTarget.audio?.id}
+                disabled={!exportTarget.audioId}
               />
               音源ファイルも含める
             </label>
-            {!exportTarget.audio?.id && (
+            {!exportTarget.audioId && (
               <p className="notice muted">音源は設定されていません。</p>
             )}
             <footer>

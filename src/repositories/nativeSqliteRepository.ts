@@ -45,8 +45,13 @@ export const classifyNativeRepositoryError = (e: unknown, operationId?: string):
   return new RepositoryError(code, operationId);
 };
 
+// Register once per page: Capacitor warns (and reuses the proxy) on a second registration,
+// which happens when the repository is recreated (e.g. React StrictMode effects).
+let defaultPlugin: NativeRepositoryPlugin | undefined;
+const nativeRepositoryPlugin = () => (defaultPlugin ??= registerPlugin<NativeRepositoryPlugin>("ProjectRepository"));
+
 export class NativeSqliteProjectRepository implements ProjectRepository, MigrationRepository {
-  constructor(private readonly plugin: NativeRepositoryPlugin = registerPlugin<NativeRepositoryPlugin>("ProjectRepository")) {}
+  constructor(private readonly plugin: NativeRepositoryPlugin = nativeRepositoryPlugin()) {}
 
   private async invoke(method: keyof NativeRepositoryPlugin, input: unknown = {}, operationId?: string): Promise<unknown> {
     // Serialize before the first await: subsequent editor mutation cannot alter this snapshot.
