@@ -28,7 +28,9 @@ public final class AudioStore {
     private let legacy: URL
     private let fm = FileManager.default
     private var uploads: [String: Upload] = [:]
-    private static var activeUploadPaths: Set<String> = [] // guarded by StorageMaintenance.lock
+    // File names (not paths) of in-progress uploads, guarded by StorageMaintenance.lock.
+    // Paths are not comparable: /var/... and /private/var/... name the same directory.
+    private static var activeUploadNames: Set<String> = []
     var fault: ((String) throws -> Void)?
 
     public init(directory: URL, legacyDirectory: URL) {
@@ -166,7 +168,7 @@ public final class AudioStore {
         guard fm.createFile(atPath: url.path, contents: nil) else { throw RepositoryError("IO_ERROR") }
         try protect(url)
         uploads[token] = Upload(meta: meta, url: url, written: 0)
-        Self.activeUploadPaths.insert(url.path)
+        Self.activeUploadNames.insert(url.lastPathComponent)
         return token
     }
     public func appendUpload(token: String, offset: Int, base64: String) throws {
@@ -188,7 +190,7 @@ public final class AudioStore {
     }
     public func abortUpload(token: String) {
         StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
-        if let upload = uploads.removeValue(forKey: token) { Self.activeUploadPaths.remove(upload.url.path); try? fm.removeItem(at: upload.url) }
+        if let upload = uploads.removeValue(forKey: token) { Self.activeUploadNames.remove(upload.url.lastPathComponent); try? fm.removeItem(at: upload.url) }
     }
     /// Old IDs are used as paths only after a strict allowlist (the new store never does this).
     public static func safeLegacyID(_ id: String) -> Bool {
@@ -223,8 +225,12 @@ public final class AudioStore {
         StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
         try prepare()
         var records = try catalog()
-        var protected = Self.activeUploadPaths
-        var remove: [URL] = []
+        // Every managed file lives directly in root, so compare by file name only.
+        // Directory listings may spell the container as /private/var/... while the
+        // catalog-derived URLs use /var/...; comparing full paths would treat a
+        // referenced file as an orphan.
+        var protectedNames = Self.activeUploadNames
+        var removeNames = Set<String>()
         // Validate the complete catalog before changing anything.
         for (id, record) in Array(records) {
             try validate(record.meta)
@@ -232,29 +238,34 @@ public final class AudioStore {
             let path = try file(record)
             if referenced.contains(id) {
                 guard try size(path) == record.meta.size else { throw RepositoryError("CORRUPT") }
-                protected.insert(path.path)
+                protectedNames.insert(path.lastPathComponent)
                 var published = record; published.pending = false; records[id] = published
-            } else if record.pending == true { protected.insert(path.path) }
-            else { remove.append(path); records.removeValue(forKey: id) }
+            } else if record.pending == true { protectedNames.insert(path.lastPathComponent) }
+            else { removeNames.insert(path.lastPathComponent); records.removeValue(forKey: id) }
         }
         // Only recognized regular managed files can be orphan garbage. Never
         // follow symlinks or recurse, and never touch Documents here.
         for path in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) {
             let values = try path.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-            guard values.isRegularFile == true, values.isSymbolicLink != true, !protected.contains(path.path),
+            let name = path.lastPathComponent
+            guard values.isRegularFile == true, values.isSymbolicLink != true, !protectedNames.contains(name),
                   UUID(uuidString: path.deletingPathExtension().lastPathComponent) != nil,
                   Self.formats[path.pathExtension] != nil || ["partial", "upload", "index-partial", "decoded-partial"].contains(path.pathExtension) else { continue }
-            if !remove.contains(path) { remove.append(path) }
+            removeNames.insert(name)
         }
+        // A protected name always wins, even if it was also listed for removal.
+        removeNames.subtract(protectedNames)
         // Publish the retained catalog atomically BEFORE unlinking, so a failed
         // removal produces an orphan retried later, never a dangling catalog ID.
         let index = root.appendingPathComponent("index.json")
         try JSONEncoder().encode(records).write(to: index, options: .atomic)
         try protect(index)
         var count = 0, bytes = 0
-        for path in remove {
-            let length = try size(path)
-            try fm.removeItem(at: path); count += 1; bytes += length
+        for name in removeNames.sorted() {
+            let target = root.appendingPathComponent(name)
+            guard fm.fileExists(atPath: target.path) else { continue }
+            let length = try size(target)
+            try fm.removeItem(at: target); count += 1; bytes += length
         }
         return (count, bytes)
     }
