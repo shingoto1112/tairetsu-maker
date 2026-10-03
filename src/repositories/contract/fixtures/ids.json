@@ -1,0 +1,98 @@
+[
+  {
+    "value": "project_legacy_001",
+    "valid": true
+  },
+  {
+    "value": "project-123-abc",
+    "valid": true
+  },
+  {
+    "value": "audio-123-abc",
+    "valid": true
+  },
+  {
+    "value": "00000000-0000-4000-8000-000000000000",
+    "valid": true
+  },
+  {
+    "value": "隊列😀",
+    "valid": true
+  },
+  {
+    "value": "",
+    "valid": false
+  },
+  {
+    "value": null,
+    "valid": false
+  },
+  {
+    "value": 123,
+    "valid": false
+  },
+  {
+    "value": "a/b",
+    "valid": false
+  },
+  {
+    "value": "a\\b",
+    "valid": false
+  },
+  {
+    "value": "..",
+    "valid": false
+  },
+  {
+    "value": "a..b",
+    "valid": false
+  },
+  {
+    "value": "/root",
+    "valid": false
+  },
+  {
+    "value": "C:drive",
+    "valid": false
+  },
+  {
+    "value": "a\u0000b",
+    "valid": false
+  },
+  {
+    "value": "a\nb",
+    "valid": false
+  },
+  {
+    "value": "ab",
+    "valid": false
+  },
+  {
+    "value": "ab",
+    "valid": false
+  },
+  {
+    "value": "\ud800",
+    "valid": false
+  },
+  {
+    "value": "\udc00",
+    "valid": false
+  },
+  {
+    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "valid": true
+  },
+  {
+    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "valid": false
+  },
+  {
+    "value": "あああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ",
+    "valid": true
+  },
+  {
+    "value": "ああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ",
+    "valid": false
+  }
+]

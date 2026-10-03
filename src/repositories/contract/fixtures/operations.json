@@ -1,0 +1,522 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "name": "CRUD, paging, CAS and snapshot revision",
+      "steps": [
+        {
+          "op": "get",
+          "id": "missing",
+          "expect": null
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 100
+          },
+          "expect": {
+            "ids": [],
+            "hasNext": false
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {},
+          "expectedRepositoryRevision": null,
+          "localRevision": "1",
+          "operationId": "create_a",
+          "expect": {
+            "repositoryRevision": "1",
+            "localRevision": "1",
+            "summary": {
+              "id": "project_a",
+              "title": "匿名ステージ",
+              "mode": "stage",
+              "memberCount": 2,
+              "sceneCount": 1,
+              "syncStatus": "local"
+            }
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_a",
+          "expect": {
+            "repositoryRevision": "1",
+            "localRevision": "1",
+            "sync": null,
+            "project": {
+              "title": "匿名ステージ"
+            }
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {},
+          "expectedRepositoryRevision": null,
+          "localRevision": "1",
+          "operationId": "duplicate_create_a",
+          "expect": {
+            "error": "CONFLICT"
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {},
+          "expectedRepositoryRevision": null,
+          "localRevision": "1",
+          "operationId": "create_a",
+          "expect": {
+            "repositoryRevision": "1"
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {
+            "title": "違う内容"
+          },
+          "expectedRepositoryRevision": null,
+          "localRevision": "1",
+          "operationId": "create_a",
+          "expect": {
+            "error": "CONFLICT"
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "parade",
+          "patch": {},
+          "expectedRepositoryRevision": null,
+          "localRevision": "1",
+          "operationId": "create_b",
+          "expect": {}
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {
+            "id": "project_c",
+            "title": "匿名C",
+            "updatedAt": "2026-01-03T00:00:00.000Z"
+          },
+          "expectedRepositoryRevision": null,
+          "localRevision": "1",
+          "operationId": "create_c",
+          "expect": {}
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 2
+          },
+          "expect": {
+            "ids": [
+              "project_c",
+              "project_a"
+            ],
+            "hasNext": true
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 2,
+            "usePreviousCursor": true
+          },
+          "expect": {
+            "ids": [
+              "project_b"
+            ],
+            "hasNext": false
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 100,
+            "mode": "stage"
+          },
+          "expect": {
+            "ids": [
+              "project_c",
+              "project_a"
+            ],
+            "hasNext": false
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 100,
+            "mode": "parade"
+          },
+          "expect": {
+            "ids": [
+              "project_b"
+            ],
+            "hasNext": false
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 0
+          },
+          "expect": {
+            "error": "INVALID_ARGUMENT"
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 101
+          },
+          "expect": {
+            "error": "INVALID_ARGUMENT"
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 1,
+            "cursor": "invalid"
+          },
+          "expect": {
+            "error": "INVALID_ARGUMENT"
+          }
+        },
+        {
+          "op": "rename",
+          "input": {
+            "id": "project_a",
+            "title": "変更済み",
+            "updatedAt": "2026-01-04T00:00:00.000Z",
+            "expectedRepositoryRevision": "1",
+            "localRevision": "2",
+            "operationId": "rename_a"
+          },
+          "expect": {
+            "repositoryRevision": "2",
+            "summary": {
+              "title": "変更済み"
+            }
+          }
+        },
+        {
+          "op": "rename",
+          "input": {
+            "id": "project_a",
+            "title": "変更済み",
+            "updatedAt": "2026-01-04T00:00:00.000Z",
+            "expectedRepositoryRevision": "1",
+            "localRevision": "2",
+            "operationId": "rename_a"
+          },
+          "expect": {
+            "repositoryRevision": "2"
+          }
+        },
+        {
+          "op": "rename",
+          "input": {
+            "id": "missing",
+            "title": "名前",
+            "updatedAt": "2026-01-01T00:00:00.000Z",
+            "expectedRepositoryRevision": "1",
+            "localRevision": "2",
+            "operationId": "rename_missing"
+          },
+          "expect": {
+            "error": "NOT_FOUND"
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_a",
+          "expect": {
+            "repositoryRevision": "2",
+            "localRevision": "2",
+            "project": {
+              "title": "変更済み",
+              "updatedAt": "2026-01-04T00:00:00.000Z"
+            }
+          }
+        },
+        {
+          "op": "touchOpened",
+          "id": "project_b",
+          "at": "2026-01-05T00:00:00.000Z",
+          "expect": {
+            "repositoryRevision": "2",
+            "lastOpenedAt": "2026-01-05T00:00:00.000Z"
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_b",
+          "expect": {
+            "repositoryRevision": "2",
+            "localRevision": "1",
+            "project": {
+              "updatedAt": "2026-01-01T00:00:00.000Z",
+              "lastOpenedAt": "2026-01-05T00:00:00.000Z"
+            }
+          }
+        },
+        {
+          "op": "list",
+          "query": {
+            "limit": 100
+          },
+          "expect": {
+            "ids": [
+              "project_b",
+              "project_a",
+              "project_c"
+            ],
+            "hasNext": false
+          }
+        },
+        {
+          "op": "duplicate",
+          "sourceId": "project_b",
+          "id": "project_copy",
+          "title": "匿名複製",
+          "at": "2026-01-06T00:00:00.000Z",
+          "operationId": "copy_b",
+          "expect": {
+            "repositoryRevision": "1",
+            "localRevision": "1",
+            "summary": {
+              "audioId": "audio-legacy-001",
+              "title": "匿名複製"
+            }
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_copy",
+          "expect": {
+            "sync": null,
+            "project": {
+              "title": "匿名複製",
+              "audio": {
+                "id": "audio-legacy-001"
+              }
+            }
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {
+            "title": "上書き不可"
+          },
+          "expectedRepositoryRevision": "1",
+          "localRevision": "3",
+          "operationId": "stale_a",
+          "expect": {
+            "error": "CONFLICT"
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {},
+          "expectedRepositoryRevision": "2",
+          "localRevision": "2",
+          "operationId": "regress_a",
+          "expect": {
+            "error": "CONFLICT"
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_a",
+          "expect": {
+            "project": {
+              "title": "変更済み"
+            },
+            "repositoryRevision": "2"
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {
+            "id": "missing"
+          },
+          "expectedRepositoryRevision": "1",
+          "localRevision": "2",
+          "operationId": "update_missing",
+          "expect": {
+            "error": "NOT_FOUND"
+          }
+        },
+        {
+          "op": "concurrentCommits",
+          "requests": [
+            {
+              "projectKey": "stage",
+              "patch": {
+                "title": "競合A"
+              },
+              "expectedRepositoryRevision": "2",
+              "localRevision": "3",
+              "operationId": "cas_a"
+            },
+            {
+              "projectKey": "stage",
+              "patch": {
+                "title": "競合B"
+              },
+              "expectedRepositoryRevision": "2",
+              "localRevision": "3",
+              "operationId": "cas_b"
+            }
+          ],
+          "expect": {
+            "successes": 1,
+            "errors": [
+              "CONFLICT"
+            ]
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_a",
+          "expect": {
+            "repositoryRevision": "3",
+            "localRevision": "3"
+          }
+        },
+        {
+          "op": "commitWithEdit",
+          "projectKey": "stage",
+          "patch": {
+            "title": "保存snapshot"
+          },
+          "expectedRepositoryRevision": "3",
+          "localRevision": "4",
+          "operationId": "snapshot_a",
+          "editedTitle": "編集中の追加変更",
+          "editorLocalRevision": "5",
+          "expect": {
+            "receiptLocalRevision": "4",
+            "editorLocalRevision": "5",
+            "dirty": true
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_a",
+          "expect": {
+            "project": {
+              "title": "保存snapshot"
+            },
+            "repositoryRevision": "4",
+            "localRevision": "4"
+          }
+        },
+        {
+          "op": "commit",
+          "projectKey": "stage",
+          "patch": {
+            "title": "編集中の追加変更"
+          },
+          "expectedRepositoryRevision": "4",
+          "localRevision": "5",
+          "operationId": "save_edit_a",
+          "expect": {
+            "repositoryRevision": "5",
+            "localRevision": "5"
+          }
+        },
+        {
+          "op": "remove",
+          "input": {
+            "id": "project_c",
+            "expectedRepositoryRevision": "9",
+            "operationId": "stale_remove"
+          },
+          "expect": {
+            "error": "CONFLICT"
+          }
+        },
+        {
+          "op": "get",
+          "id": "project_c",
+          "expect": {
+            "repositoryRevision": "1"
+          }
+        },
+        {
+          "op": "remove",
+          "input": {
+            "id": "project_c",
+            "expectedRepositoryRevision": "1",
+            "operationId": "remove_c"
+          },
+          "expect": null
+        },
+        {
+          "op": "remove",
+          "input": {
+            "id": "project_c",
+            "expectedRepositoryRevision": "1",
+            "operationId": "remove_c"
+          },
+          "expect": null
+        },
+        {
+          "op": "get",
+          "id": "project_c",
+          "expect": null
+        },
+        {
+          "op": "remove",
+          "input": {
+            "id": "project_c",
+            "expectedRepositoryRevision": "1",
+            "operationId": "remove_c_again"
+          },
+          "expect": {
+            "error": "NOT_FOUND"
+          }
+        },
+        {
+          "op": "get",
+          "id": "../bad",
+          "expect": {
+            "error": "INVALID_ID"
+          }
+        },
+        {
+          "op": "touchOpened",
+          "id": "missing",
+          "at": "2026-01-01T00:00:00.000Z",
+          "expect": {
+            "error": "NOT_FOUND"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unicode tie order and keyset cursor after deletion",
+      "steps": [
+        { "op": "commit", "projectKey": "stage", "patch": { "id": "project_😀" }, "localRevision": "1", "expectedRepositoryRevision": null, "operationId": "unicode_emoji", "expect": {} },
+        { "op": "commit", "projectKey": "stage", "patch": { "id": "project_\ue000" }, "localRevision": "1", "expectedRepositoryRevision": null, "operationId": "unicode_bmp", "expect": {} },
+        { "op": "commit", "projectKey": "stage", "patch": { "id": "project_ascii" }, "localRevision": "1", "expectedRepositoryRevision": null, "operationId": "unicode_ascii", "expect": {} },
+        { "op": "list", "query": { "limit": 1 }, "expect": { "ids": ["project_ascii"], "hasNext": true } },
+        { "op": "list", "query": { "limit": 1, "mode": "stage", "usePreviousCursor": true }, "expect": { "error": "INVALID_ARGUMENT" } },
+        { "op": "remove", "input": { "id": "project_ascii", "expectedRepositoryRevision": "1", "operationId": "remove_bookmark" }, "expect": null },
+        { "op": "list", "query": { "limit": 1, "usePreviousCursor": true }, "expect": { "ids": ["project_\ue000"], "hasNext": true } },
+        { "op": "list", "query": { "limit": 1, "usePreviousCursor": true }, "expect": { "ids": ["project_😀"], "hasNext": false } }
+      ]
+    }
+  ]
+}
