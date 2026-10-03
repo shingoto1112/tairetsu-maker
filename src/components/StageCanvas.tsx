@@ -135,6 +135,7 @@ export type StageCanvasHandle = HTMLDivElement & {
 };
 
 export type StageScrollBounds = {
+  minimumScroll?: boolean;
   heightMeters: number;
   widthMeters: number;
   x: number;
@@ -488,7 +489,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           }
           const containerRect = container.getBoundingClientRect();
           const stageRect = stageElement.getBoundingClientRect();
-          const marginPx = 72;
+          const marginPx = bounds.minimumScroll ? 0 : 72;
           const left =
             stageRect.left + (bounds.x / stage.widthMeters) * stageRect.width;
           const right =
@@ -516,6 +517,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             nextTop += bottom - (containerRect.bottom - marginPx);
           }
 
+          if (bounds.minimumScroll && nextLeft === container.scrollLeft && nextTop === container.scrollTop) return;
           container.scrollTo({
             left: Math.max(0, nextLeft),
             top: Math.max(0, nextTop),

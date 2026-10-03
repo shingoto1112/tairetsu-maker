@@ -55,6 +55,7 @@ const memberProps = (): ComponentProps<typeof MemberPanel> => ({
   onDelete: vi.fn(), onAddMember: vi.fn(), onCreateGroup: vi.fn(), onUpdateGroup: vi.fn(),
   onDeleteGroup: vi.fn(), onAddMemberToGroup: vi.fn(), onSelectGroup: vi.fn(),
   onChangeMemberGroup: vi.fn(), onClearMemberObjectAssignments: vi.fn(),
+  onRestoreMember: vi.fn(),
   onCopySelected: vi.fn(), onPasteMember: vi.fn(),
 });
 
@@ -67,6 +68,47 @@ const objectCard = (name: string) => {
 };
 
 describe("roster panel integration", () => {
+  it.each(["members", "objects"] as const)("places portrait management target beside group heading for %s", async (panel) => {
+    const user = userEvent.setup();
+    const props = panel === "members" ? memberProps() : objectProps();
+    if (panel === "members") render(<MemberPanel {...memberProps()} onVisibilityTabChange={props.onVisibilityTabChange} portrait />);
+    else render(<ObjectPanel {...objectProps()} onVisibilityTabChange={props.onVisibilityTabChange} portrait />);
+    const target = screen.getByRole("group", { name: "管理欄の対象" });
+    const heading = target.closest(".panel-section__header, .object-visibility-list__header")!;
+    expect(heading.textContent).toContain("グループ一覧");
+    expect(document.querySelector(".portrait-panel-header")?.contains(target)).toBe(false);
+    await user.click(within(target).getByRole("button", { name: /^非表示$/ }));
+    expect(props.onVisibilityTabChange).toHaveBeenCalledExactlyOnceWith("hidden");
+  });
+  it("counts portrait member details in one badge without changing the full state", () => {
+    render(<MemberPanel {...memberProps()} portrait members={[{ ...members[0], visible: false }]}
+      currentFrame={{ ...frame, memberAppearanceOverrides: { m1: { color: "#fff" } } }}
+      objectAssignmentLabelsByMemberId={{ m1: ["旗", "椅子"] }} />);
+    expect(document.querySelector(".scene-visibility-chip__badge")?.textContent).toBe("＋4");
+    expect(document.querySelector(".scene-visibility-chip .sr-only")?.textContent).toContain("割当: 旗、椅子");
+  });
+  it.each([false, true])("separates selection/visibility for both panels; portrait=%s", async (portrait) => {
+    const user = userEvent.setup();
+    const member = { ...memberProps(), portrait, members, currentFrame: frame, objectAssignmentLabelsByMemberId: { m1: ["旗"] }, onRestoreMember: vi.fn() };
+    const view = render(<MemberPanel {...member} />);
+    const picker = screen.getByRole("region", { name: "このシーンの表示" });
+    await user.click(within(picker).getByRole("button", { name: /^太郎/ }));
+    expect(member.onSelect).toHaveBeenCalledExactlyOnceWith("m1"); expect(member.onRestoreMember).not.toHaveBeenCalled();
+    vi.mocked(member.onSelect).mockClear();
+    await user.click(within(picker).getByRole("checkbox", { name: "太郎をこのシーンに表示" }));
+    expect(member.onRestoreMember).toHaveBeenCalledExactlyOnceWith("m1"); expect(member.onSelect).not.toHaveBeenCalled();
+    expect(member.onClearMemberObjectAssignments).not.toHaveBeenCalled(); expect(member.onSetMemberFrameVisibility).not.toHaveBeenCalled();
+    view.unmount();
+    const object = { ...objectProps(), portrait }; render(<ObjectPanel {...object} />);
+    const objectPicker = screen.getByRole("region", { name: "このシーンの表示" });
+    await user.click(within(objectPicker).getByRole("button", { name: /^旗/ }));
+    expect(object.onSelect).toHaveBeenCalledExactlyOnceWith("o1"); expect(object.onUpdateObjectState).not.toHaveBeenCalled();
+    vi.mocked(object.onSelect).mockClear();
+    await user.click(within(objectPicker).getByRole("checkbox", { name: "旗をこのシーンに表示" }));
+    expect(object.onUpdateObjectState).toHaveBeenCalledExactlyOnceWith("o1", { visible: false }); expect(object.onSelect).not.toHaveBeenCalled();
+    expect(object.onRemoveAssignment).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => localStorage.clear());
   afterEach(() => cleanup());
 

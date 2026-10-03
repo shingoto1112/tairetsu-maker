@@ -15,6 +15,9 @@ import {
   MemberGroup,
   Selection,
 } from "../types";
+import { SceneVisibilityPicker } from "./SceneVisibilityPicker";
+import { PortraitManagementTarget } from "./PortraitPanelHeader";
+import type { VisibilityItem, VisibilityMemory } from "../utils/sceneVisibility";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 import { RosterManagerButton } from "./RosterManagerButton";
 import { ColorPaletteInput } from "./ColorPaletteInput";
@@ -22,6 +25,9 @@ import { getMemberDisplayColor } from "../utils/memberAppearance";
 import type { ReactNode } from "react";
 
 type MemberPanelProps = {
+  portrait?: boolean;
+  visibilityMemory?: VisibilityMemory;
+  onRestoreMember: (id: string) => void;
   children?: ReactNode;
   onOpenRosterManager?: () => void;
   canOpenRosterManager?: boolean;
@@ -82,6 +88,9 @@ const groupDraftColors = [
 ];
 
 export const MemberPanel = ({
+  portrait = false,
+  visibilityMemory,
+  onRestoreMember,
   children,
   onOpenRosterManager,
   canOpenRosterManager = true,
@@ -176,34 +185,7 @@ export const MemberPanel = ({
       tabMembers.length > 0 || shouldShowEmptyGroup,
     );
   const activeUngroupedMembers = ungroupedMembers.filter(memberBelongsToActiveTab);
-  const orderedMembersForVisibilityList = useMemo(() => {
-    const ordered: Member[] = [];
-    const added = new Set<string>();
 
-    groups.forEach((group) => {
-      group.memberIds.forEach((memberId) => {
-        if (added.has(memberId)) {
-          return;
-        }
-        const member = membersById.get(memberId);
-        if (!member) {
-          return;
-        }
-        ordered.push(member);
-        added.add(memberId);
-      });
-    });
-
-    members.forEach((member) => {
-      if (added.has(member.id)) {
-        return;
-      }
-      ordered.push(member);
-      added.add(member.id);
-    });
-
-    return ordered;
-  }, [groups, members, membersById]);
   const handleCreateGroup = () => {
     if (projectDisabled) {
       return;
@@ -228,7 +210,7 @@ export const MemberPanel = ({
   };
 
   useEffect(() => {
-    if (!scrollTarget) {
+    if (portrait || !scrollTarget) {
       return undefined;
     }
     const groupId = memberGroupById.get(scrollTarget.id);
@@ -264,17 +246,13 @@ export const MemberPanel = ({
         window.clearTimeout(clearTimer);
       }
     };
-  }, [memberGroupById, scrollTarget]);
+  }, [memberGroupById, scrollTarget, portrait]);
 
   const showMemberOnStage = (member: Member) => {
     if (sceneDisabled || (member.visible === false && projectDisabled)) {
       return;
     }
-    onClearMemberObjectAssignments(member.id, true);
-    if (member.visible === false) {
-      onUpdate(member.id, { visible: true });
-    }
-    onSetMemberFrameVisibility([member.id], true);
+    onRestoreMember(member.id);
   };
 
   const hideMemberFromStage = (member: Member) => {
@@ -469,12 +447,28 @@ export const MemberPanel = ({
     );
   };
 
-  return (
-    <section className="panel-section member-manager" ref={panelRef}>
-      <PanelStickyHeader
-        title="メンバー"
-        meta={`表示 ${visibleMembers.length}人 / 非表示 ${hiddenMembers.length}人 / 選択中 ${selectedMemberIds.length}人`}
-        actions={
+  const pickerGroups = useMemo(() => groups.map((group) => ({ ...group, ids: group.memberIds })), [groups]);
+  const groupColorByMemberId = useMemo(() => {
+    const colors = new Map<string, string>();
+    groups.forEach((group) => group.memberIds.forEach((id) => { if (!colors.has(id) && group.color) colors.set(id, group.color); }));
+    return colors;
+  }, [groups]);
+  const selectedIds = useMemo(() => new Set(selectedMemberIds), [selectedMemberIds]);
+  const pickerItems = useMemo<VisibilityItem[]>(() => members.map((member) => {
+    const labels = objectAssignmentLabelsByMemberId[member.id] ?? [];
+    const visible = (member.visible ?? true) && currentFrame?.memberVisibility?.[member.id] !== false && labels.length === 0;
+    const override = currentFrame?.memberAppearanceOverrides?.[member.id]?.color;
+    const states = [visible ? "表示" : "非表示", ...(member.visible === false ? ["全シーン非表示"] : []),
+      ...(labels.length ? ["割当: " + labels[0] + (labels.length > 1 ? "＋" + (labels.length - 1) : "")] : []), ...(override ? ["色変更あり"] : [])];
+    return { id: member.id, name: member.name, color: override ?? groupColorByMemberId.get(member.id) ?? member.color,
+      visible, selected: (selected?.type === "member" && selected.id === member.id) || selectedIds.has(member.id),
+      status: states.join("・"), fullStatus: [...states.filter((state) => !state.startsWith("割当:")), ...(labels.length ? ["割当: " + labels.join("、")] : [])].join("・"),
+      detailCount: labels.length + Number(member.visible === false) + Number(Boolean(override)),
+      disabled: sceneDisabled || (!visible && member.visible === false && projectDisabled),
+      disabledReason: sceneDisabled ? sceneReadOnlyMessage : member.visible === false && projectDisabled ? projectReadOnlyMessage : undefined };
+  }), [members, currentFrame?.memberVisibility, currentFrame?.memberAppearanceOverrides, objectAssignmentLabelsByMemberId,
+    groupColorByMemberId, selected, selectedIds, sceneDisabled, projectDisabled, sceneReadOnlyMessage, projectReadOnlyMessage]);
+  const headerActions = (
           <>
             {onOpenRosterManager && (
               <RosterManagerButton
@@ -490,9 +484,10 @@ export const MemberPanel = ({
               disabled={projectDisabled}
               title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
+              aria-label={portrait ? "メンバーを追加" : undefined}
             >
               <Plus size={15} />
-              メンバー
+              {portrait ? null : "メンバー"}
             </button>
             <button className="mini-button" onClick={onCopySelected} type="button">
               コピー
@@ -504,10 +499,22 @@ export const MemberPanel = ({
               title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
-              貼り付け
+              {portrait ? "貼付" : "貼り付け"}
             </button>
           </>
-        }
+  );
+  const visibilityPicker = <SceneVisibilityPicker title="メンバー" portrait={portrait} items={pickerItems} groups={pickerGroups}
+    memory={visibilityMemory} actions={headerActions} visibilityTab={visibilityTab} onVisibilityTab={onVisibilityTabChange}
+    onSelect={onSelect} onVisibility={(id, visible) => { const member = membersById.get(id); if (member) { if (visible) showMemberOnStage(member); else hideMemberFromStage(member); } }}
+    onAll={onSetAllMembersFrameVisibility} disabled={sceneDisabled} scrollTarget={scrollTarget} />;
+
+  return (
+    <section className="panel-section member-manager" ref={panelRef}>
+      {portrait ? visibilityPicker : (
+      <PanelStickyHeader
+        title="メンバー"
+        meta={`表示 ${visibleMembers.length}人 / 非表示 ${hiddenMembers.length}人 / 選択中 ${selectedMemberIds.length}人`}
+        actions={headerActions}
       >
         <div className="panel-visibility-summary">
           <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
@@ -528,8 +535,9 @@ export const MemberPanel = ({
           </div>
         </div>
       </PanelStickyHeader>
+      )}
       <div className="panel-manager-body">
-        <p className="muted-text">
+        <p className={portrait ? "muted-text portrait-add-target" : "muted-text"}>
           現在の追加先:
           {isVisibleTab
             ? " このシーンでステージに表示"
@@ -540,108 +548,12 @@ export const MemberPanel = ({
       )}
       {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
-      <section className="object-visibility-list" aria-label="このシーンの表示">
-        <div className="object-visibility-list__header">
-          <strong>このシーンの表示</strong>
-          <span>現在のシーンだけに反映</span>
-        </div>
-        <div className="visibility-checklist__actions">
-          <button
-            className="mini-button"
-            onClick={() => onSetAllMembersFrameVisibility(true)}
-            disabled={sceneDisabled}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            type="button"
-          >
-            すべて表示
-          </button>
-          <button
-            className="mini-button"
-            onClick={() => onSetAllMembersFrameVisibility(false)}
-            disabled={sceneDisabled}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            type="button"
-          >
-            すべて非表示
-          </button>
-        </div>
-        <div className="object-visibility-list__items">
-          {members.length === 0 ? (
-            <p className="empty-state compact">メンバーはまだありません。</p>
-          ) : (
-            orderedMembersForVisibilityList.map((member) => {
-              const isVisible = isVisibleInCurrentFrame(member);
-              const assignmentLabels =
-                objectAssignmentLabelsByMemberId[member.id] ?? [];
-              const isSelected =
-                selected?.type === "member" && selected.id === member.id;
-              const displayColor = getMemberDisplayColor(member, {
-                frame: currentFrame,
-                groups,
-              });
-              const hasSceneColorOverride = Boolean(
-                currentFrame?.memberAppearanceOverrides?.[member.id]?.color,
-              );
-              return (
-                <label
-                  className={[
-                    "object-visibility-item",
-                    isVisible ? "is-visible" : "is-hidden",
-                    isSelected ? "is-selected" : "",
-                  ].join(" ")}
-                  key={member.id}
-                  onClick={() => onSelect(member.id)}
-                >
-                  <input
-                    checked={isVisible}
-                    disabled={
-                      sceneDisabled ||
-                      (!isVisible && member.visible === false && projectDisabled)
-                    }
-                    title={
-                      sceneDisabled
-                        ? sceneReadOnlyMessage
-                        : !isVisible && member.visible === false && projectDisabled
-                          ? projectReadOnlyMessage
-                          : undefined
-                    }
-                    onChange={(event) => {
-                      if (event.target.checked) {
-                        showMemberOnStage(member);
-                      } else {
-                        hideMemberFromStage(member);
-                      }
-                    }}
-                    type="checkbox"
-                  />
-                  <span
-                    className="color-dot"
-                    style={{ backgroundColor: displayColor }}
-                    aria-hidden="true"
-                  />
-                  <span className="object-visibility-item__name">
-                    {member.name}
-                  </span>
-                  {assignmentLabels.length > 0 && (
-                    <span className="visibility-checklist__badge">
-                      割当: {assignmentLabels.join(" / ")}
-                    </span>
-                  )}
-                  {hasSceneColorOverride && (
-                    <span className="visibility-checklist__badge">
-                      色変更あり
-                    </span>
-                  )}
-                </label>
-              );
-            })
-          )}
-        </div>
-      </section>
+      {!portrait && visibilityPicker}
 
       <div className="member-management-block">
         <div className="panel-section__header">
           <h3>グループ一覧</h3>
+          {portrait && <PortraitManagementTarget value={visibilityTab} onChange={onVisibilityTabChange} />}
           <span>{groupsForActiveTab.length}グループ · {isVisibleTab ? "表示中" : "非表示"}</span>
           <button className="mini-button" type="button" disabled={projectDisabled}
             title={projectDisabled ? projectReadOnlyMessage : undefined}

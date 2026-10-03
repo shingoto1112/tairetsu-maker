@@ -7726,13 +7726,13 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
     grid-row: 2;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 56px minmax(0, 1fr);
-    height: clamp(280px, 34cqh, 420px);
+    height: var(--portrait-panel-height, clamp(320px, 40cqh, 460px));
     overflow: hidden;
     transition: none;
     width: 100%;
   }
   .app-shell[data-workspace-layout="portrait"] .tab-panel.is-collapsed { grid-template-rows: 56px; height: 56px; }
-  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .tab-panel:not(.is-collapsed) { height: min(55cqh, 420px); }
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .tab-panel:not(.is-collapsed) { height: var(--portrait-panel-height, min(55cqh, 420px)); }
   .app-shell[data-workspace-layout="portrait"] .panel-tabs-header {
     align-items: center;
     border-bottom: 1px solid var(--border);
@@ -7901,4 +7901,65 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-primary-controls { flex-basis: 56px; }
   .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar { gap: 0; grid-template-columns: minmax(140px, 1fr); grid-template-rows: 12px 44px; }
   .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar__time { font-size: 10px; justify-content: flex-start; }
+}
+/* Shared visibility DOM: the check label and selection button have separate hit areas. */
+.scene-visibility-picker { min-width: 0; }
+.scene-visibility-chip.object-visibility-item {
+  box-sizing: border-box; display: flex; gap: 0; min-height: 48px; padding: 0; opacity: 1; border: 2px solid transparent; background: #fff;
+}
+.scene-visibility-chip.object-visibility-item.is-hidden { background: #f1f3f5; opacity: 1; }
+.scene-visibility-chip.object-visibility-item.is-selected { border: 2px solid #0f766e; }
+.scene-visibility-chip__check { align-items: center; display: flex; flex: 0 0 44px; justify-content: center; min-width: 44px; height: 44px; cursor: pointer; }
+.scene-visibility-chip__check input { accent-color: var(--accent); height: 22px; width: 22px; }
+.scene-visibility-chip__name { align-items: center; background: transparent; border: 0; color: #0f172a; display: flex; flex: 1 1 0; gap: 6px; height: 44px; min-width: 0; padding: 0 6px 0 0; text-align: left; }
+.scene-visibility-chip__name .color-dot { flex: 0 0 8px; height: 8px; width: 8px; }
+.scene-visibility-chip__text { display: grid; min-width: 0; }
+.scene-visibility-chip__text > span { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-visibility-chip__text > small { color: #475569; font-size: 10px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-visibility-chip :is(button, input):focus-visible { outline: 2px solid #0f766e; outline-offset: -2px; }
+.scene-visibility-picker__scroll { display: grid; gap: 6px; }
+@media screen {
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker.is-portrait { display: contents; }
+  .app-shell[data-workspace-layout="portrait"] :is(.member-manager, .object-manager) { display: grid; gap: 6px; }
+  .app-shell[data-workspace-layout="portrait"] .portrait-panel-header { align-items: center; background: #fff; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "title actions actions" "search search bulk"; gap: 6px; margin: -12px -12px 0; padding: 4px 12px; position: sticky; top: -12px; z-index: 20; }
+  .portrait-panel-header h2 { grid-area: title; color: #0f172a; font-size: 15px; margin: 0; white-space: nowrap; }
+  .portrait-panel-header h2 small { font-size: 12px; font-weight: normal; }
+  .portrait-panel-header__search { grid-area: search; min-width: 0; width: 100%; box-sizing: border-box; }
+  .portrait-panel-header__actions { grid-area: actions; justify-self: end; align-items: center; display: flex; gap: 6px; }
+  .portrait-panel-header__actions button { min-width: 44px; padding: 6px; }
+  .portrait-panel-header__bulk { grid-area: bulk; align-items: center; display: flex; gap: 6px; white-space: nowrap; }
+  .portrait-management-target { align-items: center; display: flex; gap: 6px; margin-left: auto; }
+  .portrait-management-target > span { font-size: 12px; }
+  .portrait-management-target .member-visibility-tabs { display: flex; gap: 0; }
+  .app-shell[data-workspace-layout="portrait"] .portrait-add-target { margin: 0 0 6px; font-size: 12px; }
+  .app-shell[data-workspace-layout="portrait"] .portrait-panel-header.is-low,
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .portrait-panel-header { position: static; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker__edge { position: relative; min-width: 0; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker__edge::before,
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker__edge::after { content: ""; width: 8px; position: absolute; top: 28px; bottom: 0; pointer-events: none; z-index: 1; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker__edge::before { left: 0; background: linear-gradient(to right, #0f172a12, transparent); }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker__edge::after { right: 0; background: linear-gradient(to left, #0f172a12, transparent); }
+  .app-shell[data-workspace-layout="portrait"] .tab-panel__content .scene-visibility-picker__scroll.object-visibility-list__items {
+    align-items: start; display: flex; gap: 12px; height: auto; max-height: none; min-width: 0; overflow-x: auto; overflow-y: hidden;
+    overscroll-behavior-x: contain; padding: 0 0 6px; scroll-snap-type: none; touch-action: manipulation; width: 100%;
+  }
+  .scene-visibility-picker__group { border-left: 2px solid #cbd5e1; flex: 0 0 auto; min-width: 148px; padding-left: 4px; }
+  .scene-visibility-picker__group-heading { color: #0f172a; font-size: 12px; font-weight: 700; height: 28px; line-height: 28px; position: sticky; left: 0; width: max-content; max-width: 148px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scene-visibility-picker__grid { display: grid; gap: 6px; grid-auto-flow: column; grid-template-rows: repeat(var(--rows), 44px); grid-auto-columns: 148px; }
+  .app-shell[data-workspace-layout="portrait"] :is(.member-manager, .object-manager) .scene-visibility-chip.object-visibility-item { width: 148px; height: 44px; min-height: 44px; border: 0; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-chip.is-selected { box-shadow: inset 0 0 0 2px #0f766e; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-chip.is-hidden .scene-visibility-chip__name { color: #64748b; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-chip__text { display: block; flex: 1 1 0; }
+  .app-shell[data-workspace-layout="portrait"] .scene-visibility-chip__text > span { display: block; }
+  .scene-visibility-chip__badge { background: #e2e8f0; border-radius: 8px; color: #475569; flex: 0 0 auto; font-size: 10px; line-height: 16px; padding: 0 3px; }
+  .scene-visibility-picker__info { color: #334155; font-size: 12px; line-height: 18px; padding: 0; overflow-wrap: anywhere; }
+  .scene-visibility-picker__info button { margin-left: 6px; }
+  .panel-resize-controls { align-items: center; display: flex; flex: 0 0 auto; height: 56px; }
+  .panel-resize-handle { align-items: flex-start; cursor: ns-resize; display: flex; justify-content: center; height: 44px; width: 44px; flex: 0 0 44px; padding-top: 4px; box-sizing: border-box; touch-action: none; user-select: none; }
+  .panel-resize-handle > span { background: #94a3b8; border-radius: 3px; height: 4px; width: 24px; }
+  .panel-resize-handle:focus-visible { outline: 2px solid #0f766e; outline-offset: -2px; }
+  .panel-resize-reset { background: transparent; border: 0; color: #475569; height: 44px; width: 44px; min-width: 44px; touch-action: manipulation; }
+}
+@media screen and (min-width: 900px) {
+  .app-shell[data-workspace-layout="portrait"] .portrait-panel-header { grid-template-columns: auto minmax(100px, 1fr) auto auto; grid-template-areas: "title search bulk actions"; }
 }

@@ -27,6 +27,54 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it.each([false, true])("restores assigned/globally hidden members in a single Undo; portrait=%s", async (portrait) => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: portrait, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const project = { ...createSampleProject(), id: "visibility-undo", title: "表示Undo検証" };
+    project.members = project.members.map((member) => member.id === "m_ben" ? { ...member, visible: false } : member);
+    project.frames[0].objectAssignments = { o_chair: ["m_ben"] };
+    project.frames[0].memberVisibility = { m_ben: false };
+    delete project.frames[0].positions.m_ben;
+    localStorage.setItem("stageflow.projects.v1", JSON.stringify([project]));
+    const user = userEvent.setup(); render(<App />);
+    await user.click(screen.getByRole("button", { name: "表示Undo検証を開く" }));
+    const beforeMembers = structuredClone(canvas.project!.members);
+    const beforeFrames = structuredClone(canvas.project!.frames);
+    await user.click(screen.getByRole("checkbox", { name: "Benをこのシーンに表示" }));
+    expect(canvas.project!.members.find((member) => member.id === "m_ben")?.visible).toBe(true);
+    expect(canvas.project!.frames[0].memberVisibility?.m_ben).toBe(true);
+    expect(Object.values(canvas.project!.frames[0].objectAssignments ?? {}).flat()).not.toContain("m_ben");
+    expect(canvas.project!.frames[0].positions.m_ben).toBeDefined();
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    await waitFor(() => expect(canvas.project!.frames).toEqual(beforeFrames));
+    expect(canvas.project!.members).toEqual(beforeMembers);
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("keeps portrait name selection separate, toggles only in selection mode and clears multiple selection for single select", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+    const user = userEvent.setup(); render(<App />);
+    await user.click(screen.getByRole("button", { name: "削除検証を開く" }));
+    const before = structuredClone(canvas.project!.frames);
+    const picker = screen.getByRole("region", { name: "このシーンの表示" });
+    await user.click(within(picker).getByRole("button", { name: /^Ben/ }));
+    expect(within(picker).getByRole("button", { name: /^Ben/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(canvas.selectedMemberIds).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "選択モード" }));
+    await user.click(within(picker).getByRole("button", { name: /^Anna/ }));
+    await user.click(within(picker).getByRole("button", { name: /^Ben/ }));
+    expect(canvas.selectedMemberIds).toEqual(["m_anna", "m_ben"]);
+    await user.click(within(picker).getByRole("button", { name: /^Ben/ }));
+    expect(canvas.selectedMemberIds).toEqual(["m_anna"]);
+    await user.click(screen.getByRole("button", { name: "選択モード中" }));
+    await user.click(within(picker).getByRole("button", { name: /^Ben/ }));
+    expect(canvas.selectedMemberIds).toEqual([]); expect(canvas.project!.frames).toEqual(before);
+    expect(screen.getByRole("tab", { name: "メンバー" }).getAttribute("aria-selected")).toBe("true");
+    const input = within(picker).getByRole("searchbox"); fireEvent.change(input, { target: { value: "Ben" } });
+    await user.click(screen.getByRole("tab", { name: "道具" }));
+    expect((screen.getByRole("searchbox", { name: "道具名を検索" }) as HTMLInputElement).value).toBe("");
+    await user.click(screen.getByRole("tab", { name: "メンバー" }));
+    expect((screen.getByRole("searchbox", { name: "メンバー名を検索" }) as HTMLInputElement).value).toBe("Ben");
+  }, INTEGRATION_TIMEOUT_MS);
+
   it("suspends background shortcuts in sharing/export dialogs and restores Delete and Undo after closing", async () => {
     const user = userEvent.setup();
     render(<App />);

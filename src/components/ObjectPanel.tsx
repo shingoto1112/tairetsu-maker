@@ -23,6 +23,9 @@ import {
   StageObjectType,
 } from "../types";
 import { NumericInput } from "./NumericInput";
+import { SceneVisibilityPicker } from "./SceneVisibilityPicker";
+import { PortraitManagementTarget } from "./PortraitPanelHeader";
+import type { VisibilityItem, VisibilityMemory } from "../utils/sceneVisibility";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 import { RosterManagerButton } from "./RosterManagerButton";
 import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
@@ -30,6 +33,8 @@ import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type ObjectPanelProps = {
+  portrait?: boolean;
+  visibilityMemory?: VisibilityMemory;
   currentFrameId?: string;
   onOpenRosterManager?: () => void;
   canOpenRosterManager?: boolean;
@@ -122,6 +127,8 @@ const typeLabel: Record<StageObjectType, string> = {
 };
 
 export const ObjectPanel = ({
+  portrait = false,
+  visibilityMemory,
   currentFrameId,
   onOpenRosterManager,
   canOpenRosterManager = true,
@@ -222,34 +229,7 @@ export const ObjectPanel = ({
   const ungroupedActiveObjects = activeObjects.filter(
     (object) => !objectGroupById.has(object.id),
   );
-  const orderedObjectsForVisibilityList = useMemo(() => {
-    const ordered: StageObject[] = [];
-    const added = new Set<string>();
 
-    objectGroups.forEach((group) => {
-      group.objectIds.forEach((objectId) => {
-        if (added.has(objectId)) {
-          return;
-        }
-        const object = objectsById.get(objectId);
-        if (!object) {
-          return;
-        }
-        ordered.push(object);
-        added.add(objectId);
-      });
-    });
-
-    objects.forEach((object) => {
-      if (added.has(object.id)) {
-        return;
-      }
-      ordered.push(object);
-      added.add(object.id);
-    });
-
-    return ordered;
-  }, [objectGroups, objects, objectsById]);
 
   const toggleObjectGroupExpanded = (groupId: string) => {
     setExpandedObjectGroupIds((previous) =>
@@ -273,7 +253,7 @@ export const ObjectPanel = ({
   };
 
   useEffect(() => {
-    if (!scrollTarget) {
+    if (portrait || !scrollTarget) {
       return undefined;
     }
     const group = objectGroupById.get(scrollTarget.id);
@@ -308,21 +288,18 @@ export const ObjectPanel = ({
         window.clearTimeout(clearTimer);
       }
     };
-  }, [scrollTarget]);
+  }, [scrollTarget, portrait]);
 
-  return (
-    <section className="panel-section object-manager" ref={panelRef}>
-      <PanelStickyHeader
-        title="道具"
-        meta={
-          selected?.type === "object"
-            ? `選択中: ${
-                objects.find((object) => object.id === selected.id)?.name ??
-                "道具"
-              } / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`
-            : `選択中: なし / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`
-        }
-        actions={
+  const pickerGroups = useMemo(() => objectGroups.map((group) => ({ ...group, ids: group.objectIds })), [objectGroups]);
+  const pickerItems = useMemo<VisibilityItem[]>(() => objects.map((object) => {
+    const visible = objectStates[object.id]?.visible ?? object.visible ?? true;
+    const count = objectAssignments[object.id]?.length ?? 0;
+    const states = [visible ? "表示" : "非表示", typeLabel[object.type], object.locked ? "ロック" : "編集可", "割当" + count + "人"];
+    return { id: object.id, name: object.name, color: object.color, square: true, visible,
+      selected: selected?.type === "object" && selected.id === object.id,
+      status: states.join("・"), fullStatus: states.join("・"), detailCount: Number(count > 0) + Number(object.locked), disabled: sceneDisabled, disabledReason: sceneDisabled ? sceneReadOnlyMessage : undefined };
+  }), [objects, objectStates, objectAssignments, selected, sceneDisabled, sceneReadOnlyMessage]);
+  const headerActions = (
           <>
             {onOpenRosterManager && (
               <RosterManagerButton
@@ -336,9 +313,10 @@ export const ObjectPanel = ({
               disabled={projectDisabled}
               title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
+              aria-label={portrait ? "道具を追加" : undefined}
             >
               <Plus size={15} />
-              道具
+              {portrait ? null : "道具"}
             </button>
 
             <button className="mini-button" onClick={onCopySelected} type="button">
@@ -351,10 +329,29 @@ export const ObjectPanel = ({
               title={projectDisabled ? projectReadOnlyMessage : undefined}
               type="button"
             >
-              貼り付け
+              {portrait ? "貼付" : "貼り付け"}
             </button>
           </>
+  );
+  const visibilityPicker = <SceneVisibilityPicker title="道具" portrait={portrait} items={pickerItems} groups={pickerGroups}
+    memory={visibilityMemory} actions={headerActions} visibilityTab={visibilityTab} onVisibilityTab={onVisibilityTabChange}
+    onSelect={onSelect} onVisibility={(id, visible) => onUpdateObjectState(id, { visible })}
+    onAll={onSetAllObjectsFrameVisibility} disabled={sceneDisabled} scrollTarget={scrollTarget} />;
+
+  return (
+    <section className="panel-section object-manager" ref={panelRef}>
+      {portrait ? visibilityPicker : (
+      <PanelStickyHeader
+        title="道具"
+        meta={
+          selected?.type === "object"
+            ? `選択中: ${
+                objects.find((object) => object.id === selected.id)?.name ??
+                "道具"
+              } / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`
+            : `選択中: なし / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`
         }
+        actions={headerActions}
       >
         <div className="panel-visibility-summary">
           <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
@@ -375,8 +372,9 @@ export const ObjectPanel = ({
           </div>
         </div>
       </PanelStickyHeader>
+      )}
       <div className="panel-manager-body">
-        <p className="muted-text">
+        <p className={portrait ? "muted-text portrait-add-target" : "muted-text"}>
           現在の追加先:
           {isVisibleTab
             ? " このシーンでステージに表示"
@@ -387,78 +385,12 @@ export const ObjectPanel = ({
       )}
       {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
-      <section className="object-visibility-list" aria-label="このシーンの表示">
-        <div className="object-visibility-list__header">
-          <strong>このシーンの表示</strong>
-          <span>現在のシーンだけに反映</span>
-        </div>
-        <div className="visibility-checklist__actions">
-          <button
-            className="mini-button"
-            onClick={() => onSetAllObjectsFrameVisibility(true)}
-            disabled={sceneDisabled}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            type="button"
-          >
-            すべて表示
-          </button>
-          <button
-            className="mini-button"
-            onClick={() => onSetAllObjectsFrameVisibility(false)}
-            disabled={sceneDisabled}
-            title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-            type="button"
-          >
-            すべて非表示
-          </button>
-        </div>
-        <div className="object-visibility-list__items">
-          {objects.length === 0 ? (
-            <p className="empty-state compact">道具はまだありません。</p>
-          ) : (
-            orderedObjectsForVisibilityList.map((object) => {
-              const isVisible = isObjectVisible(object);
-              const isSelected =
-                selected?.type === "object" && selected.id === object.id;
-              return (
-                <label
-                  className={[
-                    "object-visibility-item",
-                    isVisible ? "is-visible" : "is-hidden",
-                    isSelected ? "is-selected" : "",
-                  ].join(" ")}
-                  key={object.id}
-                  onClick={() => onSelect(object.id)}
-                >
-                  <input
-                    checked={isVisible}
-                    disabled={sceneDisabled}
-                    title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                    onChange={(event) =>
-                      onUpdateObjectState(object.id, {
-                        visible: event.target.checked,
-                      })
-                    }
-                    type="checkbox"
-                  />
-                  <span
-                    className="color-dot square"
-                    style={{ backgroundColor: object.color }}
-                    aria-hidden="true"
-                  />
-                  <span className="object-visibility-item__name">
-                    {object.name}
-                  </span>
-                </label>
-              );
-            })
-          )}
-        </div>
-      </section>
+      {!portrait && visibilityPicker}
 
       <section className="object-group-manager" aria-label="グループ一覧">
         <div className="object-visibility-list__header">
           <strong>グループ一覧</strong>
+          {portrait && <PortraitManagementTarget value={visibilityTab} onChange={onVisibilityTabChange} />}
           <span>{objectGroupCards.length}グループ · {isVisibleTab ? "表示中" : "非表示"}</span>
           <button className="mini-button" type="button" disabled={projectDisabled}
             title={projectDisabled ? projectReadOnlyMessage : undefined}

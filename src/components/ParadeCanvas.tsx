@@ -112,6 +112,7 @@ export type ParadeCanvasHandle = HTMLDivElement & {
 };
 
 export type ParadeScrollBounds = {
+  minimumScroll?: boolean;
   heightMeters: number;
   widthMeters: number;
   x: number;
@@ -631,7 +632,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           }
           const containerRect = container.getBoundingClientRect();
           const stageRect = stageElement.getBoundingClientRect();
-          const marginPx = 80;
+          const marginPx = bounds.minimumScroll ? 0 : 80;
           const left = stageRect.left + (bounds.x / settings.width) * stageRect.width;
           const right =
             stageRect.left +
@@ -659,6 +660,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             nextTop += bottom - (containerRect.bottom - marginPx);
           }
 
+          if (bounds.minimumScroll && nextLeft === container.scrollLeft && nextTop === container.scrollTop) return;
           container.scrollTo({
             left: Math.max(0, nextLeft),
             top: Math.max(0, nextTop),

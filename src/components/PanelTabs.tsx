@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { ReactNode, useLayoutEffect, useRef } from "react";
 
+import { usePortraitPanelHeight } from "../hooks/usePortraitPanelHeight";
+import { PanelResizeHandle } from "./PanelResizeHandle";
+
 export type PanelTabId =
   | "members"
   | "objects"
@@ -30,6 +33,8 @@ type PanelTab = {
 };
 
 type PanelTabsProps = {
+  portrait?: boolean;
+  keyboardOpen?: boolean;
   activeTab: PanelTabId;
   isOpen: boolean;
   children: ReactNode;
@@ -49,12 +54,16 @@ const tabs: PanelTab[] = [
 ];
 
 export const PanelTabs = ({
+  portrait = false,
+  keyboardOpen = false,
   activeTab,
   isOpen,
   children,
   onChange,
   onToggleOpen,
 }: PanelTabsProps) => {
+  const panelRef = useRef<HTMLElement>(null);
+  const heightControl = usePortraitPanelHeight(panelRef, portrait, keyboardOpen);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollPositionsRef = useRef<Partial<Record<PanelTabId, number>>>({});
 
@@ -70,8 +79,9 @@ export const PanelTabs = ({
   }, [activeTab, isOpen]);
 
   return (
-    <aside className={isOpen ? "tab-panel" : "tab-panel is-collapsed"}>
+    <aside ref={panelRef} className={isOpen ? "tab-panel" : "tab-panel is-collapsed"}>
       <div className="panel-tabs-header">
+        {portrait && <PanelResizeHandle control={heightControl} />}
         <div className="panel-tabs" role="tablist" aria-label="編集パネル">
         {tabs.map((tab) => {
           const Icon = tab.icon;

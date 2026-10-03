@@ -9,6 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { createVisibilityMemory } from "./utils/sceneVisibility";
+import { selectionScrollBounds } from "./utils/selectionScrollBounds";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useNotice, type NoticeKind } from "./hooks/useNotice";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -18,7 +20,7 @@ import { AudioPanel } from "./components/AudioPanel";
 import { CloudCollaborationHelpModal } from "./components/CloudCollaborationHelpModal";
 import { CloudPasswordModal } from "./components/CloudPasswordModal";
 import { CloudShareModal } from "./components/CloudShareModal";
-import { DetailsPanel } from "./components/DetailsPanel";
+const DetailsPanel = lazy(() => import("./components/DetailsPanel").then((module) => ({ default: module.DetailsPanel })));
 import { ExportImportPanel } from "./components/ExportImportPanel";
 import { FormationLibrary, type NewFormationInput } from "./components/FormationLibrary";
 import { GroupToolsPanel } from "./components/GroupToolsPanel";
@@ -2081,6 +2083,7 @@ function App() {
   const [isSceneThumbnailRailCollapsed, setIsSceneThumbnailRailCollapsed] =
     useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const visibilityMemories = useMemo(() => ({ members: createVisibilityMemory(), objects: createVisibilityMemory() }), [project.id]);
   const [isMemberSelectionMode, setIsMemberSelectionMode] = useState(false);
   const [memberVisibilityTab, setMemberVisibilityTab] =
     useState<PanelVisibilityTab>("visible");
@@ -4087,6 +4090,21 @@ function App() {
     }
 
     setIsPanelOpen(true);
+    if (workspaceLayout.isPortrait) {
+      if (selection.type === "member" && options.append) {
+        const previousId = selected?.type === "member" ? selected.id : undefined;
+        setSelected(null);
+        setSelectedMemberIds((previous) => {
+          const base = previous.length ? previous : previousId ? [previousId] : [];
+          return base.includes(selection.id) ? base.filter((id) => id !== selection.id) : [...base, selection.id];
+        });
+      }
+      else { setSelected(selection); setSelectedMemberIds([]); }
+      setActivePanelTab(selection.type === "member" ? "members" : "objects");
+      setMode(selection.type === "member" ? "members" : "objects");
+      requestPanelScroll(selection.type, selection.id);
+      return;
+    }
     if (selection.type === "member") {
       const member = project.members.find((item) => item.id === selection.id);
       const visible =
@@ -4134,8 +4152,9 @@ function App() {
   const objectAssignmentLabelsByMemberId = useMemo(() => {
     const labels: Record<string, string[]> = {};
     const assignments = selectedFrame?.objectAssignments ?? {};
+    const objectsById = new Map(project.stageObjects.map((object) => [object.id, object]));
     Object.entries(assignments).forEach(([objectId, memberIds]) => {
-      const object = project.stageObjects.find((item) => item.id === objectId);
+      const object = objectsById.get(objectId);
       if (!object) {
         return;
       }
@@ -4149,7 +4168,7 @@ function App() {
       });
     });
     return labels;
-  }, [project.stageObjects, selectedFrame]);
+  }, [project.stageObjects, selectedFrame?.objectAssignments, selectedFrame?.objectStates]);
 
   const selectedMovementTarget = useMemo(() => {
     if (!selected) {
@@ -4603,7 +4622,7 @@ function App() {
     }));
   };
 
-  const setMembersFrameVisibility = (ids: string[], visible: boolean) => {
+  const setMembersFrameVisibility = (ids: string[], visible: boolean, restore = false) => {
     if (!selectedFrame) {
       setNotice("表示状態を変更するシーンがありません。");
       return;
@@ -4620,6 +4639,7 @@ function App() {
     const applyChange = () => {
       updateProject((previous) => ({
         ...previous,
+        members: restore ? previous.members.map((member) => targetIds.includes(member.id) && member.visible === false ? { ...member, visible: true } : member) : previous.members,
         frames: previous.frames.map((frame) => {
           if (frame.id !== activeFrameId) {
             return frame;
@@ -4630,6 +4650,8 @@ function App() {
           };
           const memberVisibility = { ...(frame.memberVisibility ?? {}) };
           const positions = { ...frame.positions };
+          let objectAssignments = frame.objectAssignments;
+          if (restore) targetIds.forEach((id) => { objectAssignments = removeMemberFromAssignments(objectAssignments, id); });
           targetIds.forEach((id, index) => {
             memberVisibility[id] = visible;
             if (visible && !positions[id]) {
@@ -4645,10 +4667,11 @@ function App() {
           return {
             ...frame,
             memberVisibility,
+            objectAssignments,
             positions,
           };
         }),
-      }));
+      }), restore ? "ステージへ戻す" : undefined, { coalesceHistory: !restore });
       setNotice(noticeText, "success");
     };
     if (activeCloudProjectRef.current && !activeCloudProjectRef.current.activeSceneLock) {
@@ -4658,6 +4681,9 @@ function App() {
           ? [{ id, type: "member-position" } as SceneElementEditTarget]
           : []),
       ]);
+      if (restore) Object.entries(selectedFrame.objectAssignments ?? {}).forEach(([objectId, memberIds]) => {
+        if (memberIds.some((id) => targetIds.includes(id))) targets.push({ id: objectId, type: "object-assignment" });
+      });
       void runCloudSceneCellPatchEditMany("メンバー表示編集", targets, applyChange);
       return;
     }
@@ -12639,10 +12665,23 @@ function App() {
     setIsRosterManagerOpen(true);
   };
 
+  const selectVisibilityTarget = (type: "member" | "object", id: string) => {
+    if (type === "member" && isMemberSelectionMode) { setSelected(null); toggleMemberSelection(id); }
+    else { setSelected({ type, id }); setSelectedMemberIds([]); }
+    setMode(type === "member" ? "members" : "objects");
+    if (!workspaceLayout.isPortrait) return;
+    const bounds = selectionScrollBounds(project, snapshot, type, id, effectiveStage, viewerPerspective, selectedFrame?.objectAssignments);
+    if (bounds) stageExportRef.current?.scrollTargetIntoView?.(bounds);
+  };
+
   const panelContent = (() => {
     if (activePanelTab === "members") {
       return (
           <MemberPanel
+            key={project.id}
+            portrait={workspaceLayout.isPortrait}
+            visibilityMemory={visibilityMemories.members}
+            onRestoreMember={(id) => setMembersFrameVisibility([id], true, true)}
             canOpenRosterManager={canOpenRosterManager}
             onOpenRosterManager={() => openRosterManager("members")}
             members={project.members}
@@ -12660,10 +12699,7 @@ function App() {
             projectReadOnlyMessage={cloudProjectReadOnlyMessage}
             sceneReadOnlyMessage={cloudReadOnlyMessage}
             onVisibilityTabChange={setMemberVisibilityTab}
-            onSelect={(id) => {
-              setSelected({ type: "member", id });
-              setMode("members");
-            }}
+            onSelect={(id) => selectVisibilityTarget("member", id)}
             onToggleMemberSelection={toggleMemberSelection}
             onUpdate={updateMember}
             onSetMembersGlobalVisibility={updateMembersGlobalVisibility}
@@ -12710,6 +12746,9 @@ function App() {
     if (activePanelTab === "objects") {
       return (
         <ObjectPanel
+          key={project.id}
+          portrait={workspaceLayout.isPortrait}
+          visibilityMemory={visibilityMemories.objects}
           currentFrameId={selectedFrame?.id}
           canOpenRosterManager={canOpenRosterManager}
           onOpenRosterManager={() => openRosterManager("objects")}
@@ -12729,10 +12768,7 @@ function App() {
           projectReadOnlyMessage={cloudProjectReadOnlyMessage}
           sceneReadOnlyMessage={cloudReadOnlyMessage}
           onVisibilityTabChange={setObjectVisibilityTab}
-          onSelect={(id) => {
-            setSelected({ type: "object", id });
-            setMode("objects");
-          }}
+          onSelect={(id) => selectVisibilityTarget("object", id)}
           onUpdateObject={updateObject}
           onUpdateObjectState={updateObjectState}
           onDelete={(id) => void confirmAndDeleteObject(id)}
@@ -12821,6 +12857,7 @@ function App() {
 
     if (activePanelTab === "animation") {
       return (
+        <Suspense fallback={<p role="status">詳細を読み込み中…</p>}>
         <DetailsPanel
           selected={selected}
           selectedMemberIds={selectedMemberIds}
@@ -12849,6 +12886,7 @@ function App() {
           onUpdateObject={updateObject}
           onUpdateObjectState={updateObjectState}
         />
+        </Suspense>
       );
     }
 
@@ -13305,6 +13343,8 @@ function App() {
 
       <div className={isPanelOpen ? "workspace" : "workspace is-editor-collapsed"}>
         <PanelTabs
+          portrait={workspaceLayout.isPortrait}
+          keyboardOpen={workspaceLayout.keyboardOpen}
           activeTab={activePanelTab}
           isOpen={isPanelOpen}
           onChange={handlePanelTabChange}
