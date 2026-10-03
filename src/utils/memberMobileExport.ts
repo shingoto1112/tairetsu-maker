@@ -1,3 +1,4 @@
+import { setMemberHeadingText } from "./memberHeadingText";
 import { waitForExportFonts } from "./exportRaster";
 import { encodeMobilePages, checkExportCancelled, yieldExportUI } from "./mobileExportPipeline";
 import {
@@ -7,6 +8,7 @@ import {
 } from "./memberMobileLayout";
 import type { RosterExportSnapshot } from "./rosterExportSnapshot";
 import type { GenerationOptions, GeneratedExport } from "./mobileExportTypes";
+
 
 const node = (text: string | undefined, style: Partial<CSSStyleDeclaration> = {}) => {
   const e = document.createElement("div");
@@ -30,7 +32,7 @@ export const prepareMemberMobilePlan = async (
       const key = JSON.stringify([text, width, fontSize, lineHeight, bold]);
       const value = cache.get(key); if (value !== undefined) return value;
       Object.assign(probe.style, { width: `${width}px`, fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px`, fontWeight: bold ? "700" : "400" });
-      probe.textContent = text || " ";
+      if (bold) setMemberHeadingText(probe, text || " "); else probe.textContent = text || " ";
       const height = Math.ceil(probe.getBoundingClientRect().height);
       if (!height || !Number.isFinite(height)) throw new Error("名前の表示サイズを測定できませんでした。");
       cache.set(key, height); return height;
@@ -52,7 +54,7 @@ export const prepareMemberMobilePlan = async (
       let width = memberTextWidth(available, font);
       for (let attempt = 0; attempt < 3; attempt++) {
         Object.assign(probe.style, { width: `${width}px`, fontSize: `${font}px`, lineHeight: `${line}px`, fontWeight: bold ? "700" : "400" });
-        probe.textContent = text || " ";
+        if (bold) setMemberHeadingText(probe, text || " "); else probe.textContent = text || " ";
         const overflow = probe.scrollWidth - Math.floor(available);
         if (overflow <= 0) { widthCache.set(key, width); return width; }
         width -= overflow + 2;
@@ -94,7 +96,9 @@ export const drawMemberMobilePage = (snapshot: RosterExportSnapshot, plan: Membe
       const h = block.heading;
       const headingFont = memberHeadingFont(font);
       box.dataset.memberGroup = h.groupId; box.dataset.continuation = String(h.continuation);
-      box.append(node(h.text, { width: `${block.textWidth}px` }));
+      const heading = node(undefined, { width: `${block.textWidth}px` });
+      setMemberHeadingText(heading, h.text);
+      box.append(heading);
       Object.assign(box.style, { padding: "10px 8px", borderLeft: `4px solid ${h.color ?? "#94a3b8"}`, background: "#f8fafc", fontWeight: "700", fontSize: `${headingFont}px`, lineHeight: `${memberLineHeight(headingFont)}px` });
     } else if (block.entry) {
       box.dataset.memberId = block.entry.id;

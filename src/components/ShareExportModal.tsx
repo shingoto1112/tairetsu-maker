@@ -128,7 +128,7 @@ export const ShareExportModal = ({
     return null;
   }
   if (rosterTarget && getMobileExportSource) return <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="書き出しを準備中"><p role="status">書き出しを準備中…</p></div>}>
-    <DocumentExportSheet initialTarget={rosterTarget} initialFormat="pdf" viewport
+    <DocumentExportSheet initialTarget={rosterTarget} initialFormat={rosterTarget === "members" ? "png" : "pdf"} viewport
       getSource={getMobileExportSource} onClose={() => setRosterTarget(null)} />
   </Suspense>;
 

@@ -1,3 +1,4 @@
+import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ExportRequest, ExportSource, ExportTarget, GeneratedExport } from "../utils/mobileExportTypes";
@@ -10,7 +11,7 @@ export const EXPORT_TARGET_LABELS: Record<ExportTarget, string> = {
 type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; supportsFormation?: boolean; viewport?: boolean; getSource: () => ExportSource; onClose: () => void };
 
 export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supportsFormation = false, viewport = false, getSource, onClose }: Props) => {
-  const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "members" || initialTarget === "objects" ? "a4" : "mobile", format: initialFormat, includeDetails: false });
+  const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat, includeDetails: false });
   const [estimate, setEstimate] = useState("");
   const [memberFit, setMemberFit] = useState<"checking" | "fits" | "small" | "error">("checking");
   const [memberEstimate, setMemberEstimate] = useState("");
@@ -20,7 +21,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
     // The finished file appears below the options; scroll so its share/save buttons are in view.
     // The preview image is inserted a moment later, so scroll again once it has taken its space.
     if (!result) return undefined;
-    const reveal = () => resultRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+    const reveal = () => scrollWithinContainer(resultRef.current, { behavior: "smooth", block: "end" });
     reveal();
     const timer = window.setTimeout(reveal, 200);
     return () => window.clearTimeout(timer);
@@ -42,7 +43,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
     };
   }, []);
   useEffect(() => {
-    setRequest((previous) => ({ ...previous, target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "members" || initialTarget === "objects" ? "a4" : "mobile", format: initialFormat }));
+    setRequest((previous) => ({ ...previous, target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat }));
   }, [initialTarget, initialFormat]);
   useEffect(() => {
     if (request.target !== "formation") { setEstimate(""); return; }
@@ -117,7 +118,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
       <header><h2 id="document-export-title">書き出し</h2><button className="share-export-close" type="button" disabled={locked} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
       <fieldset disabled={locked}><legend>対象</legend><div className="document-export-options">
         {Object.entries(EXPORT_TARGET_LABELS).filter(([target]) => target !== "formation" || supportsFormation || initialTarget === "formation").map(([target, label]) => <button type="button" key={target} aria-pressed={request.target === target}
-          onClick={() => update({ target: target as ExportTarget, purpose: target === "assignments" || target === "formation" ? "mobile" : "a4", ...(target === "formation" ? { scope: "all" } : {}) })}>{label}</button>)}
+          onClick={() => update({ target: target as ExportTarget, purpose: target === "objects" ? "a4" : "mobile", ...(target === "members" ? { format: "png", memberOverflow: "single" } : {}), ...(target === "formation" ? { scope: "all" } : {}) })}>{label}</button>)}
       </div></fieldset>
       {(request.target === "assignments" || request.target === "formation") && <fieldset disabled={locked}><legend>範囲</legend><div className="document-export-options">
         <button type="button" aria-pressed={request.scope === "current"} onClick={() => update({ scope: "current" })}>このシーン</button>
@@ -129,8 +130,9 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         <p role="status">{estimate}</p>
       </fieldset>}
       <fieldset disabled={locked}><legend>用途</legend><div className="document-export-options">
-        {request.target !== "assignments" && request.target !== "formation" && <button type="button" aria-pressed={request.purpose === "a4"} onClick={() => update({ purpose: "a4" })}>印刷向け（A4）</button>}
-        <button type="button" aria-pressed={request.purpose === "mobile"} onClick={() => update({ purpose: "mobile" })}>スマホで見る（LINE向け）</button>
+        {(request.target === "members" ? ["mobile", "a4"] as const : ["a4", "mobile"] as const)
+          .filter(purpose => purpose === "mobile" || (request.target !== "assignments" && request.target !== "formation"))
+          .map(purpose => <button key={purpose} type="button" aria-pressed={request.purpose === purpose} onClick={() => update({ purpose })}>{purpose === "mobile" ? "スマホで見る（LINE向け）" : "印刷向け（A4）"}</button>)}
       </div></fieldset>
       {request.target === "members" && request.purpose === "mobile" && <fieldset disabled={locked}><legend>1枚の名簿</legend>
         <p className="muted-text">全員を1枚にまとめます。名前は拡大して確認できます</p>

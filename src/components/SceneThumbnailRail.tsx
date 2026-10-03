@@ -1,3 +1,4 @@
+import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { FormationFrame, Project, StageObject } from "../types";
@@ -72,7 +73,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
       const element = listRef.current?.querySelector<HTMLElement>(
         `[data-thumbnail-frame-id="${selectedFrameId}"]`,
       );
-      element?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      scrollWithinContainer(element ?? null, { behavior: "smooth", block: "nearest" });
     });
 
     return () => window.cancelAnimationFrame(frame);

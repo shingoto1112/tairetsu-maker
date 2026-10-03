@@ -1,3 +1,4 @@
+import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import {
   ArrowLeft,
   ArrowRight,
@@ -105,7 +106,7 @@ export const Timeline = ({
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
-      inlineDetailsRef.current?.scrollIntoView({
+      scrollWithinContainer(inlineDetailsRef.current, {
         behavior: "smooth",
         block: "nearest",
       });

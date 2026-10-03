@@ -233,13 +233,13 @@ export const Toolbar = ({
         </div>
 
         <button
-          className="mini-button toolbar-icon-button"
+          className="mini-button toolbar-label-button"
           onClick={onBackToLibrary}
           type="button"
           title="隊列一覧へ戻る"
           aria-label="隊列一覧へ戻る"
         >
-          <Home size={18} aria-hidden="true" />
+          <Home size={15} aria-hidden="true" />ホーム
         </button>
         <button
           className={`mini-button toolbar-save-button${isDirty ? " is-dirty" : ""}`}
@@ -252,13 +252,13 @@ export const Toolbar = ({
           {isSaving ? "保存中" : "保存"}
         </button>
         <button
-          className="mini-button toolbar-icon-button"
+          className="mini-button toolbar-label-button"
           onClick={onOpenShareExport}
           type="button"
           title="共有と書き出し"
           aria-label="共有と書き出し"
         >
-          <Share size={18} aria-hidden="true" />
+          <Share size={15} aria-hidden="true" />共有
         </button>
         <span className="toolbar__logo">隊列メーカー</span>
         <input

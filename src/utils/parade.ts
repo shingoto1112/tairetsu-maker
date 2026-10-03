@@ -1,5 +1,8 @@
 import type { ParadeHorizontalMeasureMode } from "../types";
 
+/** Shared by the viewport and its saved scene view. */
+export const PARADE_MAX_ZOOM = 6;
+
 export const normalizeParadeHorizontalMeasureMode = (
   value: unknown,
 ): ParadeHorizontalMeasureMode =>

@@ -1,3 +1,4 @@
+import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import {
   ChevronDown,
   ChevronRight,
@@ -273,7 +274,7 @@ export const ObjectPanel = ({
         if (!element) {
           return;
         }
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrollWithinContainer(element, { behavior: "smooth", block: "center" });
         element.classList.add("is-scroll-target");
         clearTimer = window.setTimeout(() => {
           element.classList.remove("is-scroll-target");

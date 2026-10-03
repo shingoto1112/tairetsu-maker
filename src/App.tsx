@@ -1,3 +1,5 @@
+import { useAppShellScrollGuard } from "./hooks/useAppShellScrollGuard";
+import { scrollWithinContainer } from "./utils/scrollWithinContainer";
 import type { AudioSelection } from "./platform/audioStorage";
 import { normalizeProject } from "./project/normalizeProject";
 import {
@@ -24,8 +26,8 @@ import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useNotice, type NoticeKind } from "./hooks/useNotice";
 import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
-import { AssignmentPanel } from "./components/AssignmentPanel";
-import { AudioPanel } from "./components/AudioPanel";
+const AssignmentPanel = lazy(() => import("./components/AssignmentPanel").then(module => ({ default: module.AssignmentPanel })));
+const AudioPanel = lazy(() => import("./components/AudioPanel").then(module => ({ default: module.AudioPanel })));
 const CloudCollaborationHelpModal = lazy(() => import("./components/CloudCollaborationHelpModal").then(module => ({ default: module.CloudCollaborationHelpModal })));
 const CloudPasswordModal = lazy(() => import("./components/CloudPasswordModal").then(module => ({ default: module.CloudPasswordModal })));
 const CloudShareModal = lazy(() => import("./components/CloudShareModal").then(module => ({ default: module.CloudShareModal })));
@@ -34,7 +36,7 @@ import { ExportImportPanel } from "./components/ExportImportPanel";
 import { FormationLibrary, type NewFormationInput } from "./components/FormationLibrary";
 import { GroupToolsPanel } from "./components/GroupToolsPanel";
 import { MemberPanel } from "./components/MemberPanel";
-import { ObjectPanel } from "./components/ObjectPanel";
+const ObjectPanel = lazy(() => import("./components/ObjectPanel").then(module => ({ default: module.ObjectPanel })));
 import { PanelTabId, PanelTabs } from "./components/PanelTabs";
 import { getPrintOrientation, PrintPreview } from "./components/PrintPreview";
 import { nextNumberedName } from "./utils/numberedName";
@@ -43,7 +45,7 @@ import { confirmAssignmentUpdate, runSavedAssignmentUpdate } from "./utils/assig
 import { isModalOpen } from "./utils/modal";
 import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName";
 const ExportCompletionDialog = lazy(() => import("./components/ExportCompletionPanel").then((module) => ({ default: module.ExportCompletionDialog })));
-import { SceneNotesPanel } from "./components/SceneNotesPanel";
+const SceneNotesPanel = lazy(() => import("./components/SceneNotesPanel").then(module => ({ default: module.SceneNotesPanel })));
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
 import type {
   ShareExportOptions,
@@ -55,8 +57,8 @@ import {
   ParadeCanvas,
   type ParadeReflectOptions,
 } from "./components/ParadeCanvas";
-import { StageSettingsPanel } from "./components/StageSettingsPanel";
-import { Timeline } from "./components/Timeline";
+const StageSettingsPanel = lazy(() => import("./components/StageSettingsPanel").then(module => ({ default: module.StageSettingsPanel })));
+const Timeline = lazy(() => import("./components/Timeline").then(module => ({ default: module.Timeline })));
 import { Toolbar } from "./components/Toolbar";
 import {
   buildProjectFromCloudParts,
@@ -181,6 +183,7 @@ import { getMemberDisplayColor } from "./utils/memberAppearance";
 import {
   getSafeParadeBackwardDistance,
   getSafeParadeCanvasDistance,
+  PARADE_MAX_ZOOM,
 } from "./utils/parade";
 import { readProjectFromHash } from "./utils/share";
 import { compareRevisions, incrementRevision, RepositoryError, REPOSITORY_ERROR_MESSAGES, type CommitRequest, type ProjectRepository, type ProjectRecord, type ProjectSummary } from "./repositories/types";
@@ -1555,6 +1558,7 @@ const createCloudSceneCellVersionMap = (
   );
 
 function App() {
+  useAppShellScrollGuard();
   const workspaceLayout = useWorkspaceLayout();
   const initial = useMemo(readInitialProject, []);
   const [project, setProject] = useState<Project>(initial.project);
@@ -3424,7 +3428,7 @@ function App() {
                 sceneViewState: {
                   scrollTop: Math.max(0, viewState.scrollTop),
                   scrollLeft: Math.max(0, viewState.scrollLeft),
-                  zoom: Math.min(3, Math.max(0.2, viewState.zoom)),
+                  zoom: Math.min(PARADE_MAX_ZOOM, Math.max(0.2, viewState.zoom)),
                   viewportWidth: viewState.viewportWidth,
                   viewportHeight: viewState.viewportHeight,
                 },
@@ -3666,7 +3670,7 @@ function App() {
         if (!element) {
           return;
         }
-        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrollWithinContainer(element, { behavior: "smooth", block: "center" });
         element.classList.add("is-scroll-target");
         clearTimer = window.setTimeout(() => {
           element.classList.remove("is-scroll-target");
@@ -13035,7 +13039,7 @@ function App() {
           onChange={handlePanelTabChange}
           onToggleOpen={() => setIsPanelOpen((previous) => !previous)}
         >
-          {panelContent}
+          <Suspense fallback={<p role="status">パネルを読み込み中…</p>}>{panelContent}</Suspense>
         </PanelTabs>
 
         <div

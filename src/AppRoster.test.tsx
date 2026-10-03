@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Project } from "./types";
+import type { Project, SceneViewState } from "./types";
 import { createSampleProject } from "./sampleProject";
 import * as audioStorage from "./utils/audioStorage";
 import { stagePointToDisplayPoint } from "./utils/coordinates";
@@ -25,11 +25,12 @@ vi.mock("./storage/appRepository", async importOriginal => ({
 }));
 
 const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
-const canvasActions = vi.hoisted(() => ({ move: null as null | ((id: string, p: { x: number; y: number }) => void), playing: false }));
+const canvasActions = vi.hoisted(() => ({ move: null as null | ((id: string, p: { x: number; y: number }) => void), view: null as null | ((id: string, view: SceneViewState) => void), playing: false }));
 vi.mock("./components/ParadeCanvas", () => ({
-  ParadeCanvas: forwardRef<HTMLDivElement, { project: Project; selectedFrameId: string | null; selectedMemberIds: string[]; isPlaying: boolean; onMoveMember: (id: string, p: { x: number; y: number }) => void }>((props, ref) => {
+  ParadeCanvas: forwardRef<HTMLDivElement, { project: Project; selectedFrameId: string | null; selectedMemberIds: string[]; isPlaying: boolean; onMoveMember: (id: string, p: { x: number; y: number }) => void; onFrameViewStateChange: (id: string, view: SceneViewState) => void }>((props, ref) => {
     canvas.project = props.project; canvas.selectedFrameId = props.selectedFrameId; canvas.selectedMemberIds = props.selectedMemberIds;
     canvasActions.move = props.onMoveMember; canvasActions.playing = props.isPlaying;
+    canvasActions.view = props.onFrameViewStateChange;
     return <div ref={ref} data-testid="parade-export-dom" />;
   }),
 }));
@@ -51,6 +52,16 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it("retains a 600% parade scene view through the app and repository save", async () => {
+    testProject = { ...createSampleProject(), id: "zoom-six", title: "倍率保存検証", mode: "parade" };
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "倍率保存検証を開く" }));
+    await screen.findByTestId("parade-export-dom");
+    const id = canvas.selectedFrameId!;
+    act(() => canvasActions.view!(id, { zoom: 6, scrollTop: 3000, scrollLeft: 100 }));
+    expect(canvas.project!.frames.find(f => f.id === id)?.sceneViewState?.zoom).toBe(6);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(async () => expect((await testRepository.get(testProject.id!))?.project.frames.find(f => f.id === id)?.sceneViewState?.zoom).toBe(6));
+  }, INTEGRATION_TIMEOUT_MS);
   it("confirms before returning without saving after access denial and retains the stored version", async () => {
     render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
     const title = await screen.findByRole("textbox", { name: "隊列表名" });
@@ -128,7 +139,7 @@ describe("App roster confirmation integration", () => {
     await user.click(screen.getByRole("tab", { name: "音源" }));
     const audio = view.container.querySelector("audio")!; audio.src = "blob:local-test";
     const oldMoveCallback = canvasActions.move!;
-    fireEvent.click(screen.getByRole("button", { name: "再生" }));
+    fireEvent.click(await screen.findByRole("button", { name: "再生" }));
     await waitFor(() => expect(canvasActions.playing).toBe(true));
     const before = structuredClone(canvas.project!.frames);
     fireEvent.keyDown(window, { key: "ArrowRight" });
@@ -184,7 +195,7 @@ describe("App roster confirmation integration", () => {
     expect(screen.getByRole("tab", { name: "メンバー" }).getAttribute("aria-selected")).toBe("true");
     const input = within(picker).getByRole("searchbox"); fireEvent.change(input, { target: { value: "Ben" } });
     await user.click(screen.getByRole("tab", { name: "道具" }));
-    expect((screen.getByRole("searchbox", { name: "道具名を検索" }) as HTMLInputElement).value).toBe("");
+    expect((await screen.findByRole("searchbox", { name: "道具名を検索" }) as HTMLInputElement).value).toBe("");
     await user.click(screen.getByRole("tab", { name: "メンバー" }));
     expect((screen.getByRole("searchbox", { name: "メンバー名を検索" }) as HTMLInputElement).value).toBe("Ben");
   }, INTEGRATION_TIMEOUT_MS);

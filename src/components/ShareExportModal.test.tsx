@@ -38,7 +38,7 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     expect(screen.getByText("印刷・PDF")).toBeTruthy();
     for (const [label, target] of [["メンバー名簿", "members"], ["道具名簿", "objects"], ["道具割当表", "assignments"]] as const) {
       fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
-      expect(await screen.findByText(`${target}:pdf`)).toBeTruthy();
+      expect(await screen.findByText(`${target}:${target === "members" ? "png" : "pdf"}`)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "戻る" }));
     }
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));

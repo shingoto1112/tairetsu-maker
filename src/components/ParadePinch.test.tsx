@@ -66,6 +66,32 @@ describe("parade pinch lifecycle", () => {
     begin(viewport); fireEvent.pointerUp(viewport,touch(1,300)); fireEvent.pointerCancel(viewport,touch(2,500)); flush();
     expect(p.onFrameViewStateChange).not.toHaveBeenCalled(); expect(layout.style.width).toBe(width);
   });
+  it.each(["member", "object"])("defers first-touch %s selection, drops it for pinch, selects on release or movement", kind => {
+    const { p, view, viewport } = setup(kind === "object");
+    const target = view.container.querySelector<HTMLElement>(`.parade-${kind}`)!;
+    fireEvent.pointerDown(target, { ...touch(1, 300), button: 0 });
+    expect(p.onSelect).not.toHaveBeenCalled();
+    fireEvent.pointerDown(viewport, touch(2, 500));
+    fireEvent.pointerUp(viewport, touch(2, 500)); fireEvent.pointerUp(target, touch(1, 300)); flush();
+    expect(p.onSelect).not.toHaveBeenCalled();
+    fireEvent.pointerDown(target, { ...touch(3, 300), button: 0 });
+    fireEvent.pointerUp(target, touch(3, 300));
+    expect(p.onSelect).toHaveBeenCalledTimes(1);
+    vi.mocked(p.onSelect).mockClear();
+    fireEvent.pointerDown(target, { ...touch(4, 300), button: 0 });
+    fireEvent.pointerMove(target, touch(4, 310));
+    expect(p.onSelect).toHaveBeenCalledTimes(1);
+    fireEvent.pointerCancel(target, touch(4, 310));
+  });
+  it("pans empty space with pinch locked and cancels without selecting", () => {
+    const { p, view, viewport } = setup();
+    fireEvent.click(view.container.querySelector(".stage-pinch-lock-button")!);
+    fireEvent.pointerDown(viewport, touch(1, 300));
+    fireEvent.pointerMove(viewport, touch(1, 250));
+    expect(viewport.scrollLeft).toBe(50);
+    fireEvent.pointerCancel(viewport, touch(1, 250));
+    expect(p.onSelect).not.toHaveBeenCalled();
+  });
   it("updates only the preview transform per frame, keeps names mounted and commits once", () => {
     const { p, view, viewport, layout, preview } = setup();
     const labels = [...view.container.querySelectorAll(".parade-member__label")];
@@ -80,10 +106,22 @@ describe("parade pinch lifecycle", () => {
     expect(p.onFrameViewStateChange).not.toHaveBeenCalled();
     fireEvent.pointerUp(viewport,touch(2,557)); fireEvent.pointerUp(viewport,touch(1,300)); flush();
     expect(p.onFrameViewStateChange).toHaveBeenCalledTimes(1);
-    expect(p.onFrameViewStateChange).toHaveBeenCalledWith("one", expect.objectContaining({ zoom: 1.29 }));
+    expect(p.onFrameViewStateChange).toHaveBeenCalledWith("one", expect.objectContaining({ zoom: 1.285 }));
     expect(layout.style.width).not.toBe(""); expect(layout.style.height).not.toBe("");
     expect(preview.style.transform).toBe(""); expect(preview.style.willChange).toBe("");
     fireEvent.scroll(viewport); flush(); expect(p.onFrameViewStateChange).toHaveBeenCalledTimes(1);
+  });
+  it("ignores an older saved zoom echo during a pinch without resizing the committed DOM", () => {
+    const { p, view, viewport, layout, preview } = setup();
+    begin(viewport); fireEvent.pointerMove(viewport, touch(2, 560)); flush();
+    const width = layout.style.width;
+    const project = structuredClone(p.project);
+    project.frames[0].sceneViewState!.zoom = .75;
+    view.rerender(<ParadeCanvas {...p} project={project} />); flush();
+    expect(layout.style.width).toBe(width);
+    expect(preview.style.transform).toContain("scale(1.3)");
+    fireEvent.pointerUp(viewport, touch(2, 560)); flush();
+    expect(p.onFrameViewStateChange).toHaveBeenLastCalledWith("one", expect.objectContaining({ zoom: 1.3 }));
   });
   it.each(["cancel", "lock"])("commits %s once and cancels a pending frame", mode => {
     const { p, view, viewport, preview } = setup(); begin(viewport);

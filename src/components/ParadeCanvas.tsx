@@ -47,6 +47,7 @@ import {
   getSafeParadeBackwardDistance,
   getSafeParadeCanvasDistance,
   normalizeParadeHorizontalMeasureMode,
+  PARADE_MAX_ZOOM,
 } from "../utils/parade";
 import {
   TOUCH_LONG_PRESS_DELAY_MS,
@@ -55,6 +56,7 @@ import {
 import { NumericInput } from "./NumericInput";
 import { commitPinchView, stickyRulerTranslate, resolvePinchView, stageAnchorMeters, type PinchGeometry } from "../utils/pinchGeometry";
 import { useCanvasWheelZoom } from "../hooks/useCanvasWheelZoom";
+import { createTouchScroller } from "../utils/touchScroll";
 
 export type ParadeReflectOptions = {
   target: "all" | "group";
@@ -227,7 +229,7 @@ type ParadeObjectStyle = CSSProperties & {
 
 const BASE_PX_PER_METER = 32;
 const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 2.5;
+const MAX_ZOOM = PARADE_MAX_ZOOM;
 const RULER_WIDTH = 58;
 const MEMBER_OVERLAP_KEY_SCALE = 100;
 const MIN_OBJECT_SIZE_METERS = 0.1;
@@ -249,7 +251,9 @@ const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 const clampZoom = (value: number) =>
-  Math.round(clamp(value, MIN_ZOOM, MAX_ZOOM) * 100) / 100;
+  // Keep pinch precision: rounding a long route to 1% shifts distant members
+  // when the transformed preview is replaced by committed dimensions.
+  clamp(value, MIN_ZOOM, MAX_ZOOM);
 
 const snapMeters = (value: number, gridSize: number) => {
   if (!Number.isFinite(gridSize) || gridSize <= 0) {
@@ -441,6 +445,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const zoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
+    const touchScrollerRef = useRef<ReturnType<typeof createTouchScroller> | null>(null);
+    const pendingTouchSelectionRef = useRef<{
+      pointerId: number; point: PinchTouchPoint; selection: Selection; options?: { append?: boolean };
+    } | null>(null);
     const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
     const zoomFrameRef = useRef<number | null>(null);
     const viewportWidthRef = useRef<number | null>(null);
@@ -774,7 +782,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
 
     useLayoutEffect(() => {
       setZoom(clampZoom(currentFrame?.sceneViewState?.zoom ?? 1));
-    }, [currentFrame?.id, currentFrame?.sceneViewState?.zoom]);
+      // Saved view echoes belong to this canvas. Reapplying an older debounced
+      // scroll save during a pinch would resize the committed DOM under its preview.
+    }, [currentFrame?.id]);
 
     useLayoutEffect(() => {
       zoomRef.current = zoom;
@@ -827,6 +837,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       cancelPendingZoom();
       cancelTouchContextMenu();
       pinchTouchPointsRef.current.clear();
+      pendingTouchSelectionRef.current = null;
+      touchScrollerRef.current?.stop();
       const pinch = pinchZoomRef.current;
       if (!pinch) return;
       if (mode === "restore") {
@@ -848,6 +860,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     useLayoutEffect(() => {
       setIsPinching(false);
       return () => {
+        touchScrollerRef.current?.stop();
+        pendingTouchSelectionRef.current = null;
         flushPendingViewState();
         finishPinch("restore", false);
         if (saveViewTimerRef.current !== null) {
@@ -887,6 +901,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           return;
         }
         touchContextMenuRef.current = null;
+        pendingTouchSelectionRef.current = null;
+        touchScrollerRef.current?.stop();
         openContextMenuAt(pending.clientX, pending.clientY, pending.target);
       }, TOUCH_LONG_PRESS_DELAY_MS);
       touchContextMenuRef.current = {
@@ -1636,7 +1652,29 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       applyZoom(nextZoom, anchor);
     };
 
-    useCanvasWheelZoom(scrollRef, isPinchLockedRef, (factor, anchor) => updateZoom(zoomRef.current * factor, anchor));
+    useCanvasWheelZoom(scrollRef, isPinchLockedRef, (factor, anchor) => updateZoom(Math.round(zoomRef.current * factor * 100) / 100, anchor));
+
+    useEffect(() => {
+      const viewport = scrollRef.current;
+      if (!viewport) return;
+      // Local non-passive fallback for WKWebView gesture handling. Pointer events
+      // remain the only source of positions; never handle movement twice.
+      const preventNativeGesture = (event: Event) => { if (event.cancelable) event.preventDefault(); };
+      const stopInertia = () => touchScrollerRef.current?.stop();
+      viewport.addEventListener("touchmove", preventNativeGesture, { passive: false });
+      viewport.addEventListener("gesturestart", preventNativeGesture);
+      viewport.addEventListener("gesturechange", preventNativeGesture);
+      viewport.addEventListener("gestureend", preventNativeGesture);
+      viewport.addEventListener("wheel", stopInertia, { passive: true });
+      return () => {
+        touchScrollerRef.current?.stop();
+        viewport.removeEventListener("touchmove", preventNativeGesture);
+        viewport.removeEventListener("gesturestart", preventNativeGesture);
+        viewport.removeEventListener("gesturechange", preventNativeGesture);
+        viewport.removeEventListener("gestureend", preventNativeGesture);
+        viewport.removeEventListener("wheel", stopInertia);
+      };
+    }, []);
 
     const handleViewportScroll = () => {
       if (pinchZoomRef.current) return;
@@ -1675,6 +1713,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       const [firstEntry, secondEntry] = touchEntries;
+      pendingTouchSelectionRef.current = null;
+      touchScrollerRef.current?.stop();
       const midpoint = getPinchMidpoint(firstEntry[1], secondEntry[1]);
       const container = scrollRef.current;
       const layout = zoomLayoutRef.current;
@@ -1719,19 +1759,27 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const handleViewportPointerDownCapture = (
       event: PointerEvent<HTMLDivElement>,
     ) => {
-      if (event.pointerType !== "touch" || isPinchLockedRef.current) {
+      if (event.pointerType !== "touch") {
         return;
       }
+      touchScrollerRef.current?.stop();
       pinchTouchPointsRef.current.set(event.pointerId, {
         clientX: event.clientX,
         clientY: event.clientY,
       });
       if (pinchTouchPointsRef.current.size >= 2) {
+        pendingTouchSelectionRef.current = null;
+        cancelTouchContextMenu();
         if (!pinchZoomRef.current) {
           beginPinchIfReady();
         }
+        if (isPinchLockedRef.current) setDragState(null);
         event.preventDefault();
         event.stopPropagation();
+      } else if (!(event.target as HTMLElement).closest("button, input, select, textarea, [contenteditable='true'], [role='button']") && scrollRef.current) {
+        touchScrollerRef.current ??= createTouchScroller(scrollRef.current);
+        touchScrollerRef.current.start(event);
+        event.currentTarget.setPointerCapture?.(event.pointerId);
       }
     };
 
@@ -1739,6 +1787,16 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event: PointerEvent<HTMLDivElement>,
     ) => {
       trackTouchContextMenuMove(event);
+      const pending = pendingTouchSelectionRef.current;
+      if (!pinchZoomRef.current && pinchTouchPointsRef.current.size === 1 && pending?.pointerId === event.pointerId &&
+          Math.hypot(event.clientX - pending.point.clientX, event.clientY - pending.point.clientY) >= 3) {
+        // Empty-space panning should not clear the current selection.
+        if (pending.selection) flushTouchSelection(); else pendingTouchSelectionRef.current = null;
+      }
+      if (event.pointerType === "touch" && !pinchZoomRef.current && touchScrollerRef.current?.move(event)) {
+        cancelTouchContextMenu();
+        event.preventDefault(); event.stopPropagation(); return;
+      }
       if (
         event.pointerType !== "touch" ||
         isPinchLockedRef.current ||
@@ -1777,15 +1835,31 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         return;
       }
       stopTouchContextMenu(event);
+      if (event.type === "pointercancel") pendingTouchSelectionRef.current = null;
+      else if (!pinchZoomRef.current && pendingTouchSelectionRef.current?.pointerId === event.pointerId) flushTouchSelection();
+      touchScrollerRef.current?.end(event, event.type === "pointercancel");
       pinchTouchPointsRef.current.delete(event.pointerId);
-      if (event.type === "pointercancel" || pinchTouchPointsRef.current.size < 2) {
+      if (event.type === "pointercancel" || pinchTouchPointsRef.current.size < 2 || pinchZoomRef.current?.pointerIds.includes(event.pointerId)) {
         // Ordinary or locked pointer releases never commit or persist a zoom.
         if (!pinchZoomRef.current) return;
         finishPinch("commit");
       }
     };
 
+    const selectPointerTarget = (selection: Selection, options?: { append?: boolean }) => {
+      const entry = [...pinchTouchPointsRef.current.entries()][0];
+      if (entry && pinchTouchPointsRef.current.size === 1) {
+        pendingTouchSelectionRef.current = { pointerId: entry[0], point: { ...entry[1] }, selection, options };
+      } else onSelect(selection, options);
+    };
+    function flushTouchSelection() {
+      const pending = pendingTouchSelectionRef.current;
+      pendingTouchSelectionRef.current = null;
+      if (pending) onSelect(pending.selection, pending.options);
+    }
+
     const jumpToStart = () => {
+      touchScrollerRef.current?.stop();
       if (!scrollRef.current) {
         return;
       }
@@ -1797,6 +1871,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     };
 
     const jumpToGoal = () => {
+      touchScrollerRef.current?.stop();
       if (!scrollRef.current) {
         return;
       }
@@ -1831,7 +1906,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         dragMemberIds.unshift(memberId);
       }
       if (!(dragMemberIds.length > 1 && dragMemberIds.includes(memberId))) {
-        onSelect({ type: "member", id: memberId }, { append: appendSelection });
+        selectPointerTarget({ type: "member", id: memberId }, { append: appendSelection });
       }
       const remoteLockOwner = dragMemberIds
         .map((id) => remoteMemberLocks[id])
@@ -1895,7 +1970,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       event.preventDefault();
       event.stopPropagation();
-      onSelect({ type: "object", id: objectId });
+      selectPointerTarget({ type: "object", id: objectId });
       const remoteLockOwner = remoteObjectLocks[objectId];
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);
@@ -1939,7 +2014,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       event.preventDefault();
       event.stopPropagation();
-      onSelect({ type: "object", id: objectId });
+      selectPointerTarget({ type: "object", id: objectId });
       const remoteLockOwner = remoteObjectLocks[objectId];
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);
@@ -1993,7 +2068,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         (Math.atan2(event.clientY - centerClientY, event.clientX - centerClientX) *
           180) /
         Math.PI;
-      onSelect({ type: "object", id: objectId });
+      selectPointerTarget({ type: "object", id: objectId });
       const remoteLockOwner = remoteObjectLocks[objectId];
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);
@@ -2298,7 +2373,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               onPointerDown={(event) => {
                 trackStagePointerPosition(event.clientX, event.clientY);
                 if (!isMemberSelectionMode) {
-                  onSelect(null);
+                  selectPointerTarget(null);
                 }
                 startTouchContextMenu(event, { type: "stage" });
               }}

@@ -194,7 +194,7 @@
   overflow: auto;
   padding: 10px 14px 14px;
   overscroll-behavior: contain;
-  touch-action: pan-x pan-y;
+  touch-action: none;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -7699,13 +7699,12 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
    share/save buttons lands correctly. */
 .document-export-result img { height: 230px; max-height: 230px; object-fit: contain; object-position: left top; width: auto; }
 
-/* Home and share are icon-only toolbar actions; keep them square and the same height as 保存. */
-.toolbar .toolbar-icon-button {
-  aspect-ratio: 1 / 1;
-  justify-content: center;
-  padding: 0;
+/* Match labeled Home/share actions to 保存 without shrinking their text. */
+.toolbar .toolbar-label-button {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
-.toolbar .toolbar-icon-button svg { color: var(--accent); }
+.toolbar .toolbar-label-button svg { color: var(--accent); }
 /* Tab selection and panel visibility have separate scroll owners. */
 @media screen {
   .panel-tabs-header { background: #fbfcfe; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; overflow: auto; }

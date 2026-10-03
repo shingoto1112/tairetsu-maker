@@ -31,10 +31,12 @@ describe("DocumentExportSheet", () => {
     vi.stubGlobal("URL", class extends URL { static createObjectURL = vi.fn(() => "blob:preview"); static revokeObjectURL = vi.fn(); });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-  it("tracks the initial target and exposes explicit action labels and supported purposes", () => {
+  it("tracks the initial target and exposes explicit action labels and supported purposes", async () => {
     const props = { getSource: () => structuredClone(source), onClose: vi.fn() };
-    const { rerender } = render(<DocumentExportSheet {...props} initialTarget="members" />);
+    const { rerender } = render(<DocumentExportSheet {...props} initialTarget="members" initialFormat="pdf" />);
     expect(screen.getByRole("button", { name: "メンバー名簿の画像を作成" })).toBeTruthy();
+    await screen.findByText("1枚・1536×2048px・5列・名前32px");
+    expect(screen.getByRole("button", { name: "画像" }).getAttribute("aria-pressed")).toBe("true");
     rerender(<DocumentExportSheet {...props} initialTarget="assignments" />);
     expect(screen.getByRole("button", { name: "道具割当表の画像を作成" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "印刷向け（A4）" })).toBeNull();
@@ -58,8 +60,8 @@ describe("DocumentExportSheet", () => {
   });
   it("shows a one-page estimate for members while A4 and objects retain their existing options", async () => {
     render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);
-    expect(screen.queryByText("1枚の名簿")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "スマホで見る（LINE向け）" }));
+    expect(screen.getByText("1枚の名簿")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "スマホで見る（LINE向け）" }).getAttribute("aria-pressed")).toBe("true");
     await screen.findByText("1枚・1536×2048px・5列・名前32px");
     expect(screen.queryByRole("button", { name: "読みやすさを優先して分ける（複数枚）" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "道具名簿" }));
@@ -94,6 +96,7 @@ describe("DocumentExportSheet", () => {
     vi.mocked(generateDocumentExport).mockImplementationOnce((_snapshot, _request, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new DOMException("cancel", "AbortError")))));
     render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);
     const create = screen.getByRole("button", { name: "メンバー名簿の画像を作成" });
+    await waitFor(() => expect(create.hasAttribute("disabled")).toBe(false));
     fireEvent.click(create);
     await waitFor(() => expect(generateDocumentExport).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "作成を取り消す" }));
