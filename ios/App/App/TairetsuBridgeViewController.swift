@@ -5,5 +5,6 @@ final class TairetsuBridgeViewController: CAPBridgeViewController {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(AudioDocumentPickerPlugin())
         bridge?.registerPluginInstance(ExportSharePlugin())
+        bridge?.registerPluginInstance(ProjectRepositoryPlugin())
     }
 }

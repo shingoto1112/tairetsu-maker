@@ -1,0 +1,362 @@
+import Foundation
+import XCTest
+import SQLite3
+@testable import ProjectRepositoryCore
+
+private final class CASResults {
+    private let lock = NSLock()
+    private(set) var successes = 0
+    private(set) var codes: [String] = []
+    func record(_ error: Error? = nil) {
+        lock.lock(); defer { lock.unlock() }
+        if let e = error { codes.append((e as? RepositoryError)?.code ?? "unknown") } else { successes += 1 }
+    }
+}
+
+final class RepositoryTests: XCTestCase {
+    private var directory: URL!
+    override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("repository-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws { try FileManager.default.removeItem(at: directory) }
+    private func repo(_ name: String = "repository.sqlite") -> ProjectRepository { ProjectRepository(databaseURL: directory.appendingPathComponent(name)) }
+    private func fixture(_ name: String) throws -> Data {
+        // #filePath -> Tests -> ProjectRepositoryCore -> ios -> checkout root.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try Data(contentsOf: root.appendingPathComponent("src/repositories/contract/fixtures/\(name).json"))
+    }
+    private func fixtureObject(_ name: String) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(name)) as? [String: Any])
+    }
+    private func execute(_ r: ProjectRepository, _ method: String, _ input: [String: Any] = [:]) throws -> Any {
+        let text = try r.execute(method, requestJSON: RepositoryValidation.json(input))
+        return try JSONSerialization.jsonObject(with: Data(text.utf8), options: [.fragmentsAllowed])
+    }
+    private func request(_ step: [String: Any], _ projects: [String: Any]) throws -> [String: Any] {
+        var p = try XCTUnwrap(projects[step["projectKey"] as? String ?? ""] as? [String: Any])
+        for (key, value) in step["patch"] as? [String: Any] ?? [:] { p[key] = value }
+        return ["id":p["id"]!,"json":try RepositoryValidation.json(p),"operationId":step["operationId"]!,
+                "localRevision":step["localRevision"]!,"expectedRepositoryRevision":step["expectedRepositoryRevision"]!]
+    }
+    private func initial(_ operation: String = "create") throws -> [String: Any] {
+        let projects = try fixtureObject("commitProjects")
+        return try request(["projectKey":"stage","patch":[String: Any](),"operationId":operation,"localRevision":"1","expectedRepositoryRevision":NSNull()], projects)
+    }
+    private func record(_ r: ProjectRepository, _ id: String) throws -> Any {
+        let raw = try execute(r, "readProject", ["id":id])
+        guard var obj = raw as? [String: Any] else { return raw }
+        obj["project"] = try JSONSerialization.jsonObject(with: Data((obj.removeValue(forKey: "json") as! String).utf8))
+        return obj
+    }
+    private func subset(_ actual: Any?, _ expected: Any, _ context: String, file: StaticString = #filePath, line: UInt = #line) {
+        if let dict = expected as? [String: Any] {
+            guard let actual = actual as? [String: Any] else { XCTFail("\(context): missing object", file: file, line: line); return }
+            for (key, value) in dict { subset(actual[key], value, context + "." + key, file: file, line: line) }
+        } else if let array = expected as? [Any] {
+            guard let actual = actual as? [Any] else { XCTFail("\(context): missing array", file: file, line: line); return }
+            XCTAssertEqual(actual.count, array.count, context, file: file, line: line)
+            for (a, e) in zip(actual, array) { subset(a, e, context, file: file, line: line) }
+        } else {
+            // Report paths only, never member names or project bodies.
+            XCTAssertTrue((actual as? NSObject)?.isEqual(expected) == true, context, file: file, line: line)
+        }
+    }
+    private func verifySummary(_ r: ProjectRepository, _ s: [String: Any]) throws {
+        let obj = try XCTUnwrap(record(r, s["id"] as! String) as? [String: Any])
+        let p = obj["project"] as! [String: Any]
+        var expected: [String: Any] = ["id":p["id"]!,"title":p["title"]!,"mode":p["mode"] ?? "stage",
+            "createdAt":p["createdAt"] ?? p["updatedAt"]!,"updatedAt":p["updatedAt"]!,
+            "memberCount":(p["members"] as! [Any]).count,"sceneCount":(p["frames"] as! [Any]).count,
+            "repositoryRevision":obj["repositoryRevision"]!,"syncStatus":"local"]
+        expected["lastOpenedAt"] = p["lastOpenedAt"]
+        expected["audioId"] = (p["audio"] as? [String: Any])?["id"]
+        XCTAssertTrue(NSDictionary(dictionary: s).isEqual(to: expected), "summary/body mismatch")
+    }
+    private func verifyReceipt(_ r: ProjectRepository, _ value: Any, request: [String: Any]? = nil) throws {
+        let receipt = try XCTUnwrap(value as? [String: Any]), s = try XCTUnwrap(receipt["summary"] as? [String: Any])
+        subset(receipt, ["id":s["id"]!,"repositoryRevision":s["repositoryRevision"]!], "receipt")
+        if let current = try record(r, receipt["id"] as! String) as? [String: Any],
+           current["repositoryRevision"] as? String == receipt["repositoryRevision"] as? String {
+            try verifySummary(r, s)
+            subset(current, ["localRevision":receipt["localRevision"]!], "stored revision")
+            if let req = request {
+                let project = try JSONSerialization.jsonObject(with: Data((req["json"] as! String).utf8))
+                XCTAssertTrue((current["project"] as? NSDictionary)?.isEqual(project) == true, "snapshot mismatch")
+            }
+        }
+        if let req = request { subset(receipt, ["operationId":req["operationId"]!,"localRevision":req["localRevision"]!], "submitted snapshot") }
+    }
+
+    func testSharedJSONContract() throws {
+        let projects = try fixtureObject("commitProjects"), operations = try fixtureObject("operations")
+        XCTAssertEqual(operations["formatVersion"] as? Int, 1)
+        var count = 0
+        for (scenarioIndex, scenario) in (operations["scenarios"] as! [[String: Any]]).enumerated() {
+            let r = repo("scenario-\(scenarioIndex).sqlite"); defer { r.close() }
+            subset(try execute(r, "initialize"), ["status":"ready","errors":[String]()] as [String: Any], "initialize")
+            var previousCursor: String?
+            for (index, step) in (scenario["steps"] as! [[String: Any]]).enumerated() {
+                let op = step["op"] as! String, expected = step["expect"]!
+                let context = "scenario \(scenarioIndex), step \(index+1), \(op)"
+                var result: Any = NSNull()
+                do {
+                    switch op {
+                    case "commit":
+                        let req = try request(step, projects)
+                        result = try execute(r, "commitProject", req); try verifyReceipt(r, result, request: req)
+                    case "get":
+                        result = try record(r, step["id"] as! String)
+                        if var detached = result as? [String: Any], var p = detached["project"] as? [String: Any] {
+                            p["title"] = "detached mutation"; detached["project"] = p
+                            XCTAssertTrue((try record(r, step["id"] as! String) as? NSDictionary)?.isEqual(result) == true, "detached read")
+                        }
+                    case "list":
+                        var q = step["query"] as! [String: Any]
+                        if q.removeValue(forKey: "usePreviousCursor") as? Bool == true { q["cursor"] = try XCTUnwrap(previousCursor) }
+                        let page = try execute(r, "listSummaries", q) as! [String: Any]
+                        previousCursor = page["nextCursor"] as? String
+                        let items = page["items"] as! [[String: Any]]
+                        for s in items { try verifySummary(r, s) }
+                        result = ["ids":items.map { $0["id"]! },"hasNext":previousCursor != nil] as [String: Any]
+                    case "rename":
+                        result = try execute(r, "renameProject", step["input"] as! [String: Any]); try verifyReceipt(r, result)
+                    case "remove": result = try execute(r, "removeProject", step["input"] as! [String: Any])
+                    case "touchOpened":
+                        result = try execute(r, "touchOpened", ["id":step["id"]!,"openedAt":step["at"]!]); try verifySummary(r, result as! [String: Any])
+                    case "duplicate":
+                        let source = try record(r, step["sourceId"] as! String) as! [String: Any]
+                        var p = source["project"] as! [String: Any]
+                        for key in ["id","title"] { p[key] = step[key] }
+                        p["createdAt"] = step["at"]; p["updatedAt"] = step["at"]; p.removeValue(forKey: "lastOpenedAt")
+                        let req: [String: Any] = ["id":p["id"]!,"json":try RepositoryValidation.json(p),"operationId":step["operationId"]!,"localRevision":"1","expectedRepositoryRevision":NSNull()]
+                        result = try execute(r, "commitProject", req); try verifyReceipt(r, result, request: req)
+                    case "concurrentCommits":
+                        // Same-instance queue is covered here; independent connections below race on SQLite.
+                        var successes = 0, errors: [String] = []
+                        for req in step["requests"] as! [[String: Any]] {
+                            let input = try request(req, projects)
+                            do { let receipt = try execute(r, "commitProject", input); successes += 1; try verifyReceipt(r, receipt, request: input) }
+                            catch let e as RepositoryError { errors.append(e.code) }
+                        }
+                        result = ["successes":successes,"errors":errors] as [String: Any]
+                    case "commitWithEdit":
+                        let req = try request(step, projects), snapshot = req["json"] as! String
+                        let receipt = try execute(r, "commitProject", req) as! [String: Any]
+                        // String request is a detached captured snapshot. Editor changes cannot alter it.
+                        var editor = try RepositoryValidation.object(snapshot); editor["title"] = step["editedTitle"]
+                        XCTAssertNotEqual(try RepositoryValidation.json(editor), snapshot, "editor changed")
+                        try verifyReceipt(r, receipt, request: req)
+                        result = ["receiptLocalRevision":receipt["localRevision"]!,"editorLocalRevision":step["editorLocalRevision"]!,
+                                  "dirty":RepositoryValidation.greater(step["editorLocalRevision"] as! String, receipt["localRevision"] as! String)] as [String: Any]
+                    default: XCTFail("unhandled fixture operation"); continue
+                    }
+                } catch let e as RepositoryError {
+                    if let code = (expected as? [String: Any])?["error"] as? String {
+                        XCTAssertEqual(e.code, code, context); count += 1; continue
+                    }
+                    XCTFail(context + ": " + e.code); throw e
+                }
+                XCTAssertNil((expected as? [String: Any])?["error"], context + ": expected failure")
+                subset(result, expected, context); count += 1
+            }
+        }
+        XCTAssertEqual(count, 50)
+        print("Repository contract: 2 scenarios, \(count) steps")
+    }
+
+    func testUnmodifiedIDFixture() throws {
+        let text = try XCTUnwrap(String(data: fixture("ids"), encoding: .utf8))
+        // Foundation cannot decode lone UTF-16 surrogates into Swift Strings.
+        // Read each original object separately so those two negative cases do not
+        // prevent all the remaining fixture cases from being decoded.
+        var objects: [String] = [], start: String.Index?, inString = false, escaped = false
+        for i in text.indices {
+            let c = text[i]
+            if inString {
+                if escaped { escaped = false } else if c == "\\" { escaped = true } else if c == "\"" { inString = false }
+            } else if c == "\"" { inString = true }
+            else if c == "{" { start = i }
+            else if c == "}", let s = start { objects.append(String(text[s...i])); start = nil }
+        }
+        XCTAssertEqual(objects.count, 24)
+        for raw in objects {
+            if raw.contains("\\ud800") || raw.contains("\\udc00") {
+                XCTAssertTrue(raw.contains("\"valid\": false"))
+                XCTAssertTrue(RepositoryValidation.hasUnpairedSurrogateEscape(raw))
+                XCTAssertThrowsError(try RepositoryValidation.object(raw), "lone surrogate must not enter native String")
+            } else {
+                let obj = try RepositoryValidation.object(raw)
+                XCTAssertEqual(RepositoryValidation.validID(obj["value"]), obj["valid"] as? Bool, "ID fixture")
+            }
+        }
+    }
+
+    // Raw SQL is confined to XCTest; no production SQL/path API is exposed.
+    private func raw(_ body: (OpaquePointer) throws -> Void) throws {
+        var h: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(directory.appendingPathComponent("repository.sqlite").path, &h), SQLITE_OK)
+        let handle = try XCTUnwrap(h); defer { sqlite3_close(handle) }; try body(handle)
+    }
+    private func snapshot() throws -> [String] {
+        var values: [String] = []
+        try raw { h in
+            for table in ["project_bodies","project_summaries","project_previous","operation_receipts","personal_sync","migration_items"] {
+                var s: OpaquePointer?
+                XCTAssertEqual(sqlite3_prepare_v2(h, "SELECT * FROM \(table) ORDER BY 1", -1, &s, nil), SQLITE_OK)
+                let statement = try XCTUnwrap(s); defer { sqlite3_finalize(statement) }
+                while sqlite3_step(statement) == SQLITE_ROW {
+                    var columns: [String] = []
+                    for i in 0..<sqlite3_column_count(statement) {
+                        if let p = sqlite3_column_text(statement, i) {
+                            let bytes = Data(bytes: p, count: Int(sqlite3_column_bytes(statement, i)))
+                            columns.append(try XCTUnwrap(String(data: bytes, encoding: .utf8)))
+                        } else { columns.append("<null>") }
+                    }
+                    values.append(table + columns.joined(separator: "|"))
+                }
+            }
+        }
+        return values
+    }
+    func testFailureInjectionLeavesAllTablesUnchanged() throws {
+        let r = repo(); defer { r.close() }
+        _ = try execute(r, "commitProject", initial())
+        var update = try initial("update")
+        update["expectedRepositoryRevision"] = "1"; update["localRevision"] = "2"
+        for phase in ["afterPrevious","afterBody","afterSummary","afterReceipt","beforeCommit"] {
+            let before = try snapshot()
+            r.fault = { if $0 == phase { throw RepositoryError("NO_SPACE") } }
+            XCTAssertThrowsError(try execute(r, "commitProject", update)) { XCTAssertEqual(($0 as? RepositoryError)?.code, "NO_SPACE") }
+            r.fault = nil
+            XCTAssertTrue(try snapshot() == before, "all tables unchanged at \(phase)")
+        }
+        let metadataFailures: [(String, [String: Any])] = [
+            ("renameProject", ["id":"project_a","title":"rename-fail","updatedAt":"2026-01-02T00:00:00.000Z","localRevision":"2","expectedRepositoryRevision":"1","operationId":"rename-fail"]),
+            ("touchOpened", ["id":"project_a","openedAt":"2026-01-03T00:00:00.000Z"])
+        ]
+        for (method, input) in metadataFailures {
+            let before = try snapshot()
+            r.fault = { if $0 == "afterSummary" { throw RepositoryError("IO_ERROR") } }
+            XCTAssertThrowsError(try execute(r, method, input))
+            r.fault = nil
+            XCTAssertTrue(try snapshot() == before, "\(method) preserves body, previous, summary, receipts")
+        }
+        _ = try execute(r, "commitProject", update)
+        let before = try snapshot()
+        r.fault = { if $0 == "afterReceipt" { throw RepositoryError("IO_ERROR") } }
+        XCTAssertThrowsError(try execute(r, "removeProject", ["id":"project_a","expectedRepositoryRevision":"2","operationId":"remove-fail"]))
+        r.fault = nil
+        XCTAssertTrue(try snapshot() == before, "delete cascades and receipt rolled back")
+    }
+    func testReopenPersistenceAndOldReceiptAfterFurtherEditsAndDelete() throws {
+        let r = repo(), create = try initial()
+        let receipt = try r.execute("commitProject", requestJSON: RepositoryValidation.json(create))
+        r.close()
+        let reopened = repo(); defer { reopened.close() }
+        XCTAssertEqual(try reopened.execute("commitProject", requestJSON: RepositoryValidation.json(create)), receipt)
+        var update = try initial("update"); update["localRevision"] = "999999999999999999999999999999"; update["expectedRepositoryRevision"] = "1"
+        _ = try execute(reopened, "commitProject", update)
+        _ = try execute(reopened, "removeProject", ["id":"project_a","expectedRepositoryRevision":"2","operationId":"delete"])
+        reopened.close()
+        XCTAssertEqual(try reopened.execute("commitProject", requestJSON: RepositoryValidation.json(create)), receipt)
+        XCTAssertTrue(try record(reopened, "project_a") is NSNull)
+    }
+    func testTwoConnectionsCAS() throws {
+        let first = repo(), second = repo(); defer { first.close(); second.close() }
+        _ = try execute(first, "commitProject", initial()); _ = try execute(second, "initialize")
+        let group = DispatchGroup(), results = CASResults()
+        for (i, r) in [first, second].enumerated() {
+            var update = try initial("cas-\(i)"); update["expectedRepositoryRevision"] = "1"; update["localRevision"] = "2"
+            let json = try RepositoryValidation.json(update)
+            group.enter()
+            DispatchQueue.global().async {
+                defer { group.leave() }
+                do { _ = try r.execute("commitProject", requestJSON: json); results.record() }
+                catch { results.record(error) }
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 15), .success)
+        XCTAssertEqual(results.successes, 1); XCTAssertEqual(results.codes, ["CONFLICT"])
+    }
+    func testNOTADBIsPreservedAndCRCDetectsCorruption() throws {
+        let path = directory.appendingPathComponent("repository.sqlite")
+        let corrupt = Data(repeating: 0x41, count: 512); try corrupt.write(to: path)
+        let r = repo(); defer { r.close() }
+        XCTAssertThrowsError(try execute(r, "initialize")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
+        XCTAssertEqual(try Data(contentsOf: path), corrupt)
+        // A fresh separate database proves integrity checks reject logical body corruption.
+        try FileManager.default.removeItem(at: path)
+        _ = try execute(r, "commitProject", initial())
+        try raw { XCTAssertEqual(sqlite3_exec($0, "UPDATE project_bodies SET json='{}'", nil, nil, nil), SQLITE_OK) }
+        XCTAssertThrowsError(try record(r, "project_a")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
+        // Listing still reads only the summary table; corrupt body isn't parsed for list.
+        XCTAssertEqual((try execute(r, "listSummaries", ["limit":100]) as? [String: Any])?["items"] as? [[String: Any]] != nil, true)
+        XCTAssertThrowsError(try execute(r, "createRecoveryBackup"))
+    }
+    func testBackupValidationReplacementAndRestore() throws {
+        let r = repo(); defer { r.close() }
+        _ = try execute(r, "commitProject", initial())
+        _ = try execute(r, "createRecoveryBackup")
+        _ = try execute(r, "createRecoveryBackup") // Exercise replacement of an existing valid backup.
+        let backup = directory.appendingPathComponent("recovery/repository.backup.sqlite")
+        let originalBackup = try Data(contentsOf: backup)
+        try raw { XCTAssertEqual(sqlite3_exec($0, "UPDATE project_bodies SET crc32='bad'", nil, nil, nil), SQLITE_OK) }
+        XCTAssertThrowsError(try execute(r, "createRecoveryBackup"))
+        XCTAssertEqual(try Data(contentsOf: backup), originalBackup, "failed backup preserves last verified copy")
+        let other = repo(); _ = try execute(other, "initialize")
+        XCTAssertThrowsError(try r.restoreRecoveryBackup()) { XCTAssertEqual(($0 as? RepositoryError)?.code, "BUSY") }
+        other.close(); r.close()
+        try Data(repeating: 0x42, count: 512).write(to: directory.appendingPathComponent("repository.sqlite"))
+        try r.restoreRecoveryBackup()
+        subset(try record(r, "project_a"), ["repositoryRevision":"1","localRevision":"1"], "restored")
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertTrue(names.contains { $0.hasPrefix("repository.quarantine-") })
+    }
+    func testInvalidBackupDoesNotReplaceCurrentDatabase() throws {
+        let r = repo(); defer { r.close() }
+        _ = try execute(r, "commitProject", initial())
+        _ = try execute(r, "createRecoveryBackup")
+        let before = try snapshot()
+        try Data(repeating: 0x43, count: 512).write(to: directory.appendingPathComponent("recovery/repository.backup.sqlite"))
+        XCTAssertThrowsError(try r.restoreRecoveryBackup()) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
+        XCTAssertTrue(try snapshot() == before, "unverified backup never overwrites current DB")
+    }
+    func testErrorClassificationAndIntegrityVectors() {
+        for (rc, code) in [(SQLITE_FULL,"NO_SPACE"),(SQLITE_BUSY,"BUSY"),(SQLITE_LOCKED,"BUSY"),(SQLITE_CORRUPT,"CORRUPT"),
+                           (SQLITE_NOTADB,"CORRUPT"),(SQLITE_CANTOPEN,"ACCESS_DENIED"),(SQLITE_PERM,"ACCESS_DENIED"),(SQLITE_IOERR,"IO_ERROR")] {
+            XCTAssertEqual(RepositoryError.sqlite(rc).code, code)
+        }
+        XCTAssertEqual(RepositoryError.sqlite(SQLITE_IOERR, systemErrno: 28).code, "NO_SPACE")
+        XCTAssertEqual(RepositoryError.sqlite(SQLITE_CANTOPEN, protectedDataAvailable: false).code, "DEVICE_LOCKED")
+        XCTAssertEqual(Integrity.crc32("123456789"), "cbf43926")
+        XCTAssertEqual("隊列😀".utf8.count, 10)
+        XCTAssertEqual(Integrity.crc32("隊列😀"), "51699122")
+        XCTAssertEqual(Integrity.sha256(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        XCTAssertEqual(Integrity.sha256("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        XCTAssertEqual(RepositoryValidation.increment("999999999999999999999999"), "1000000000000000000000000")
+        XCTAssertFalse(RepositoryValidation.hasUnpairedSurrogateEscape(#"{"id":"\ud83d\ude00"}"#))
+        XCTAssertFalse(RepositoryValidation.hasUnpairedSurrogateEscape(#"{"id":"\\ud800"}"#))
+        XCTAssertEqual(RepositoryValidation.time("2026-01-01"), 1767225600000)
+        XCTAssertEqual(RepositoryValidation.time("2026-01-01T00:00:00.0009Z"), 1767225600000)
+        XCTAssertNil(RepositoryValidation.time("invalid"))
+    }
+    func test1000ProjectTimingLogs() throws {
+        let r = repo(); defer { r.close() }
+        let base = try initial()
+        var p = try RepositoryValidation.object(base["json"] as! String)
+        p["anonymousPerformancePadding"] = String(repeating: "x", count: 230 * 1024)
+        let seedStart = Date()
+        for i in 0..<1000 {
+            p["id"] = "perf-\(i)"
+            _ = try execute(r, "commitProject", ["id":p["id"]!,"json":try RepositoryValidation.json(p),"operationId":"perf-create-\(i)","localRevision":"1","expectedRepositoryRevision":NSNull()])
+        }
+        let listStart = Date(); _ = try execute(r, "listSummaries", ["limit":100]); let listMS = Date().timeIntervalSince(listStart) * 1000
+        let readStart = Date(); _ = try execute(r, "readProject", ["id":"perf-500"]); let readMS = Date().timeIntervalSince(readStart) * 1000
+        p["id"] = "perf-500"
+        let commitStart = Date()
+        _ = try execute(r, "commitProject", ["id":p["id"]!,"json":try RepositoryValidation.json(p),"operationId":"perf-update","localRevision":"2","expectedRepositoryRevision":"1"])
+        print(String(format: "Repository timing (1000 x ~230KiB; log only): seed=%.2fs list100=%.2fms get=%.2fms commit=%.2fms", Date().timeIntervalSince(seedStart), listMS, readMS, Date().timeIntervalSince(commitStart)*1000))
+    }
+}

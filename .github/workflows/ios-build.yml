@@ -3,18 +3,10 @@ name: Build iPad App
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/ios-build.yml"
-      - "capacitor.config.ts"
-      - "ios/**"
-      - "package-lock.json"
-      - "package.json"
-      - "src/**"
-      - "tsconfig*.json"
-      - "vite.config.ts"
+
+concurrency:
+  group: ios-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-ipad-simulator:
@@ -25,35 +17,72 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # Release keeps the 1000-project timing test fast; -enable-testing keeps
+      # @testable import working in release builds.
+      # Runs before the web steps so its result is available even if they fail.
+      - name: Test native repository core
+        id: repository-tests
+        shell: bash
+        run: |
+          set -o pipefail
+          swift test --package-path ios/ProjectRepositoryCore -c release -Xswiftc -enable-testing 2>&1 | tee "$RUNNER_TEMP/repository-swift-tests.log"
+
       - name: Setup Node.js
+        if: ${{ !cancelled() }}
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
 
+      # npm test runs locally before this workflow is dispatched; skipping it here
+      # saves macOS minutes (billed at 10x on this private repository).
       - name: Install dependencies
+        if: ${{ !cancelled() }}
         run: npm ci
 
-      - name: Run tests
-        run: npm test
-
       - name: Build web assets
+        if: ${{ !cancelled() }}
         run: npm run build
 
       - name: Sync Capacitor iOS project
+        if: ${{ !cancelled() }}
         run: npx cap sync ios
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
       - name: Build release configuration without signing
-        run: >-
-          xcodebuild
-          -project ios/App/App.xcodeproj
-          -scheme App
-          -configuration Release
-          -sdk iphonesimulator
-          -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath ios/DerivedData
-          CODE_SIGNING_ALLOWED=NO
-          build
+        id: simulator-build
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/ipad-simulator-build.log"
+
+      - name: Summarize native checks
+        if: ${{ !cancelled() }}
+        env:
+          REPOSITORY_RESULT: ${{ steps.repository-tests.outcome }}
+          SIMULATOR_RESULT: ${{ steps.simulator-build.outcome }}
+        run: |
+          echo "Swift repository tests: $REPOSITORY_RESULT" >> "$GITHUB_STEP_SUMMARY"
+          echo "iPad simulator build: $SIMULATOR_RESULT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload native logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipad-native-check-logs
+          path: |
+            ${{ runner.temp }}/repository-swift-tests.log
+            ${{ runner.temp }}/ipad-simulator-build.log
+          if-no-files-found: ignore
+          retention-days: 3
