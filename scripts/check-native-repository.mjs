@@ -127,6 +127,6 @@ assert.ok(core.includes('try backupReferences()'));
 assert.ok(core.includes('private func draftAudioReferences()'));
 assert.ok(core.includes('try draftAudioReferences()'));
 for (const method of ["testFixedBridgeRecoveryClosesRestoresReopensAndRejectsOtherConnection", "testRecoveryBackupScheduleAndLowSpaceSkip", "testRepositoryAudioGCProtectsPreviousRecoveryIncompleteAndBackup"]) assert.ok(swiftTests.includes(`func ${method}(`));
-assert.ok(audioCore.includes('Self.activeUploadPaths'));
+assert.ok(audioCore.includes('Self.activeUploadNames'));
 assert.ok(audioCore.includes('record.pending == true'));
 console.log("Audio/maintenance preflight: 6 picker methods / Foundation-only audio core / 15 XCTest cases / pending and active upload protection / fixed restore+reopen: PASS (not Swift compilation)");
