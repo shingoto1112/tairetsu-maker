@@ -12,6 +12,7 @@ export const checkExportCancelled = (signal: AbortSignal) => {
 export const encodeMobilePages = async <P extends { height: number; pageNumber: number }>(
   pages: readonly P[], draw: (page: P) => HTMLElement, release: () => void,
   format: "png" | "pdf", base: string, targetLabel: string, scopeLabel: string, options: GenerationOptions,
+  raster: { width: number; pixelRatio: number } = { width: MOBILE_WIDTH, pixelRatio: 2 },
 ): Promise<GeneratedExport> => {
   const check = () => checkExportCancelled(options.signal);
   check();
@@ -22,8 +23,8 @@ export const encodeMobilePages = async <P extends { height: number; pageNumber: 
     for (const page of pages) {
       check(); options.onProgress(`${page.pageNumber}/${pages.length}ページを作成中…`); await yieldExportUI(); check();
       const element = draw(page);
-      if (element.scrollHeight > page.height || element.scrollWidth > MOBILE_WIDTH) throw new Error("ページの内容がはみ出しています。書き出しを中止しました。");
-      const canvas = await elementToCanvas(element, 2);
+      if (element.scrollHeight > page.height || element.scrollWidth > raster.width) throw new Error("ページの内容がはみ出しています。書き出しを中止しました。");
+      const canvas = await elementToCanvas(element, raster.pixelRatio);
       try {
         check();
         if (format === "png" || !preview) {

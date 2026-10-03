@@ -7,6 +7,8 @@ import { shareExportFiles, saveExportFile } from "../utils/exportDelivery";
 import type { ExportSource, GeneratedExport } from "../utils/mobileExportTypes";
 import { formationExportFixture } from "../utils/formationExportFixture";
 import { prepareFormationPages } from "../utils/formationExport";
+import { prepareMemberMobilePlan } from "../utils/memberMobileExport";
+vi.mock("../utils/memberMobileExport", () => ({ prepareMemberMobilePlan: vi.fn() }));
 
 vi.mock("../utils/mobileExport", () => ({
   exportTargets: Object.fromEntries(["formation", "members", "objects", "assignments"].map((target) => [target, { snapshot: (source: ExportSource) => ({ target, data: source }) }])),
@@ -23,6 +25,7 @@ const completed = (): GeneratedExport => ({
 describe("DocumentExportSheet", () => {
   beforeEach(() => {
     vi.mocked(generateDocumentExport).mockReset().mockResolvedValue(completed());
+    vi.mocked(prepareMemberMobilePlan).mockReset().mockResolvedValue({ width: 1536, height: 2048, columns: 5, fontSize: 32 } as Awaited<ReturnType<typeof prepareMemberMobilePlan>>);
     vi.mocked(shareExportFiles).mockReset().mockResolvedValue("shared");
     vi.mocked(saveExportFile).mockReset().mockResolvedValue("saved");
     vi.stubGlobal("URL", class extends URL { static createObjectURL = vi.fn(() => "blob:preview"); static revokeObjectURL = vi.fn(); });
@@ -38,6 +41,29 @@ describe("DocumentExportSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "PDF" }));
     expect(screen.getByRole("button", { name: "道具割当表のPDFを作成" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "このシーン" }).getAttribute("aria-pressed")).toBe("true");
+  });
+  it("preflights member mobile output and presents the below-24px choice before creation, defaulting to one page", async () => {
+    vi.mocked(prepareMemberMobilePlan).mockResolvedValue(null);
+    render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "スマホで見る（LINE向け）" }));
+    expect(screen.getByRole("button", { name: "メンバー名簿の画像を作成" }).hasAttribute("disabled")).toBe(true);
+    const single = await screen.findByRole("button", { name: "全員を1枚にする（文字が小さくなります）" });
+    expect(single.getAttribute("aria-pressed")).toBe("true");
+    expect(generateDocumentExport).not.toHaveBeenCalled();
+    expect(screen.getByText("全員を1枚にまとめます。名前は拡大して確認できます")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "読みやすさを優先して分ける（複数枚）" }));
+    fireEvent.click(screen.getByRole("button", { name: "メンバー名簿の画像を作成" }));
+    await screen.findByRole("button", { name: "共有する" });
+    expect(generateDocumentExport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ memberOverflow: "readable", purpose: "mobile" }), expect.anything());
+  });
+  it("shows a one-page estimate for members while A4 and objects retain their existing options", async () => {
+    render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);
+    expect(screen.queryByText("1枚の名簿")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "スマホで見る（LINE向け）" }));
+    await screen.findByText("1枚・1536×2048px・5列・名前32px");
+    expect(screen.queryByRole("button", { name: "読みやすさを優先して分ける（複数枚）" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "道具名簿" }));
+    expect(screen.queryByText("1枚の名簿")).toBeNull();
   });
   it("retains completed files on cancellation, failure and successful sharing without regenerating", async () => {
     const getSource = vi.fn(() => structuredClone(source));

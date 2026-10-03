@@ -12,6 +12,8 @@ type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; suppo
 export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supportsFormation = false, viewport = false, getSource, onClose }: Props) => {
   const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "members" || initialTarget === "objects" ? "a4" : "mobile", format: initialFormat, includeDetails: false });
   const [estimate, setEstimate] = useState("");
+  const [memberFit, setMemberFit] = useState<"checking" | "fits" | "small" | "error">("checking");
+  const [memberEstimate, setMemberEstimate] = useState("");
   const [result, setResult] = useState<GeneratedExport | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -61,6 +63,28 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
     })();
     return () => abort.abort();
   }, [request.target, request.scope, request.includeDetails, getSource]);
+  useEffect(() => {
+    if (request.target !== "members" || request.purpose !== "mobile") return;
+    const abort = new AbortController();
+    setMemberFit("checking"); setMemberEstimate("全員が入る配置を確認中…");
+    void (async () => {
+      try {
+        const { createRosterExportSnapshot } = await import("../utils/rosterExportSnapshot");
+        const { prepareMemberMobilePlan } = await import("../utils/memberMobileExport");
+        const source = getSource();
+        const snapshot = createRosterExportSnapshot(source.projectTitle, "members", source.members, source.memberGroups);
+        const plan = await prepareMemberMobilePlan(snapshot, { signal: abort.signal, onProgress: () => {} });
+        if (abort.signal.aborted) return;
+        setMemberFit(plan ? "fits" : "small");
+        setMemberEstimate(plan ? `1枚・${plan.width}×${plan.height}px・${plan.columns}列・名前${plan.fontSize}px` : "24pxの文字では全員が1枚に収まりません。作成方法を選び、プレビューで確認してください。");
+      } catch (error) {
+        if (!abort.signal.aborted) {
+          setMemberFit("error"); setMemberEstimate(error instanceof Error ? error.message : "配置を確認できませんでした。");
+        }
+      }
+    })();
+    return () => abort.abort();
+  }, [request.target, request.purpose, getSource]);
   const create = async () => {
     if (controller.current || deliveryPending.current) return;
     const abort = new AbortController(); controller.current = abort;
@@ -108,11 +132,19 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         {request.target !== "assignments" && request.target !== "formation" && <button type="button" aria-pressed={request.purpose === "a4"} onClick={() => update({ purpose: "a4" })}>印刷向け（A4）</button>}
         <button type="button" aria-pressed={request.purpose === "mobile"} onClick={() => update({ purpose: "mobile" })}>スマホで見る（LINE向け）</button>
       </div></fieldset>
+      {request.target === "members" && request.purpose === "mobile" && <fieldset disabled={locked}><legend>1枚の名簿</legend>
+        <p className="muted-text">全員を1枚にまとめます。名前は拡大して確認できます</p>
+        <p role="status">{memberEstimate}</p>
+        {memberFit === "small" && <div className="document-export-options">
+          <button type="button" aria-pressed={request.memberOverflow !== "readable"} onClick={() => update({ memberOverflow: "single" })}>全員を1枚にする（文字が小さくなります）</button>
+          <button type="button" aria-pressed={request.memberOverflow === "readable"} onClick={() => update({ memberOverflow: "readable" })}>読みやすさを優先して分ける（複数枚）</button>
+        </div>}
+      </fieldset>}
       <fieldset disabled={locked}><legend>形式</legend><div className="document-export-options">
         <button type="button" aria-pressed={request.format === "png"} onClick={() => update({ format: "png" })}>画像</button>
         <button type="button" aria-pressed={request.format === "pdf"} onClick={() => update({ format: "pdf" })}>PDF</button>
       </div></fieldset>
-      <button type="button" className="primary document-export-create" disabled={locked} onClick={() => void create()}>{EXPORT_TARGET_LABELS[request.target]}の{request.format === "png" ? "画像" : "PDF"}を作成</button>
+      <button type="button" className="primary document-export-create" disabled={locked || (request.target === "members" && request.purpose === "mobile" && (memberFit === "checking" || memberFit === "error"))} onClick={() => void create()}>{EXPORT_TARGET_LABELS[request.target]}の{request.format === "png" ? "画像" : "PDF"}を作成</button>
       {busy && <div className="document-export-progress"><p role="status">{progress}</p><button type="button" onClick={() => { controller.current?.abort(); setProgress("作成を取り消しています…"); }}>作成を取り消す</button></div>}
       {result && <div ref={resultRef}><ExportCompletionPanel result={result} disabled={busy} onBusyChange={handleDeliveryBusy} /></div>}
       {notice && <p role="status">{notice}</p>}

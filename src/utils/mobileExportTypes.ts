@@ -2,7 +2,7 @@ import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Pro
 import type { RosterExportSnapshot } from "./rosterExportSnapshot";
 
 export type ExportTarget = "formation" | "members" | "objects" | "assignments";
-export type ExportRequest = { target: ExportTarget; scope: "current" | "all"; purpose: "mobile" | "a4"; format: "png" | "pdf"; includeDetails?: boolean };
+export type ExportRequest = { target: ExportTarget; scope: "current" | "all"; purpose: "mobile" | "a4"; format: "png" | "pdf"; includeDetails?: boolean; memberOverflow?: "single" | "readable" };
 export type ExportSource = {
   projectTitle: string; members: Member[]; memberGroups: MemberGroup[];
   objects: StageObject[]; objectGroups: ObjectGroup[]; frames: FormationFrame[];

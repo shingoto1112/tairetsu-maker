@@ -19,6 +19,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -54,6 +55,7 @@ import {
   hasTouchLongPressMoved,
 } from "../utils/touchLongPress";
 import { NumericInput } from "./NumericInput";
+import { resolvePinchView, stageAnchorMeters, type PinchGeometry } from "../utils/pinchGeometry";
 
 export type ParadeReflectOptions = {
   target: "all" | "group";
@@ -176,7 +178,10 @@ type PinchZoomState = {
   pointerIds: [number, number];
   startDistance: number;
   startZoom: number;
-  anchorWithinLayout: { x: number; y: number } | null;
+  geometry: PinchGeometry;
+  frameId: string;
+  continuousZoom: number;
+  finishing: boolean;
   lastAnchor: { clientX: number; clientY: number };
 };
 
@@ -422,19 +427,16 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const stageRef = useRef<HTMLDivElement | null>(null);
     const exportElementRef = useRef<HTMLDivElement | null>(null);
     const zoomLayoutRef = useRef<HTMLDivElement | null>(null);
+    const transientZoomRef = useRef<HTMLDivElement | null>(null);
+    const committedPinchScrollRef = useRef<{ x: number; y: number } | null>(null);
     const memberElementRefs = useRef(new Map<string, HTMLElement>());
     const objectElementRefs = useRef(new Map<string, HTMLElement>());
     const memberDragClearFrameRef = useRef<number | null>(null);
     const objectDragClearFrameRef = useRef<number | null>(null);
     const zoomRef = useRef(zoom);
-    const renderedZoomRef = useRef(zoom);
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
     const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
-    const pendingZoomRef = useRef<{
-      zoom: number;
-      anchor?: { clientX: number; clientY: number };
-    } | null>(null);
     const zoomFrameRef = useRef<number | null>(null);
     const viewportWidthRef = useRef<number | null>(null);
     const horizontalScrollRangeRef = useRef<number | null>(null);
@@ -486,8 +488,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         ),
       [assignedMemberIds, project.members, snapshot.memberVisibility],
     );
-    const isDenseProject = project.members.length >= 120;
-    const simplifyMemberLabels = isDenseProject && isPinching;
 
     const visibleObjects = useMemo(
       () => {
@@ -757,42 +757,88 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       [trackStagePointerPosition],
     );
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       setZoom(clampZoom(currentFrame?.sceneViewState?.zoom ?? 1));
     }, [currentFrame?.id, currentFrame?.sceneViewState?.zoom]);
 
-    useEffect(() => {
-      renderedZoomRef.current = zoom;
+    useLayoutEffect(() => {
       zoomRef.current = zoom;
-    }, [zoom]);
+      const pinch = pinchZoomRef.current;
+      const container = scrollRef.current;
+      const layout = zoomLayoutRef.current;
+      if (!pinch?.finishing || !container || !layout) return;
+      // React has committed dimensions. Read the final untransformed origin,
+      // position the anchor and release the preview together before paint.
+      clearTransientZoom();
+      const view = resolvePinchView(pinch.geometry, zoom, { x: pinch.lastAnchor.clientX, y: pinch.lastAnchor.clientY });
+      const rect = layout.getBoundingClientRect();
+      const viewportRect = container.getBoundingClientRect();
+      const left = rect.left - viewportRect.left - container.clientLeft + container.scrollLeft;
+      const top = rect.top - viewportRect.top - container.clientTop + container.scrollTop;
+      container.scrollLeft = clamp(left + view.anchor.x - (pinch.lastAnchor.clientX - pinch.geometry.viewport.left), 0, Math.max(0, container.scrollWidth - container.clientWidth));
+      container.scrollTop = clamp(top + view.anchor.y - (pinch.lastAnchor.clientY - pinch.geometry.viewport.top), 0, Math.max(0, container.scrollHeight - container.clientHeight));
+      committedPinchScrollRef.current = { x: container.scrollLeft, y: container.scrollTop };
+      pinchZoomRef.current = null;
+      saveViewState(zoom);
+    }, [zoom, isPinching]);
 
     const clearTransientZoom = () => {
-      if (exportElementRef.current) {
-        exportElementRef.current.style.removeProperty("transform");
-        exportElementRef.current.style.removeProperty("transform-origin");
-        exportElementRef.current.style.removeProperty("will-change");
-      }
-      if (zoomLayoutRef.current) {
-        zoomLayoutRef.current.style.removeProperty("width");
-        zoomLayoutRef.current.style.removeProperty("height");
+      const preview = transientZoomRef.current;
+      if (preview) {
+        preview.style.removeProperty("transform");
+        preview.style.removeProperty("transform-origin");
+        preview.style.removeProperty("will-change");
       }
     };
 
     const cancelPendingZoom = () => {
-      pendingZoomRef.current = null;
       if (zoomFrameRef.current !== null) {
         window.cancelAnimationFrame(zoomFrameRef.current);
         zoomFrameRef.current = null;
       }
     };
 
-    const clearPinch = () => {
+    function drawTransientPinch(pinch: PinchZoomState) {
+      const preview = transientZoomRef.current;
+      if (!preview) return;
+      const view = resolvePinchView(pinch.geometry, pinch.continuousZoom, { x: pinch.lastAnchor.clientX, y: pinch.lastAnchor.clientY });
+      preview.style.transform = `translate(${view.translate.x}px, ${view.translate.y}px) scale(${view.scale})`;
+    }
+
+    // Cancel/lock commit the preview. Scene changes/unmount restore the last
+    // committed view, so a transient zoom can never be saved into another scene.
+    function finishPinch(mode: "commit" | "restore", notify = true) {
+      cancelPendingZoom();
       cancelTouchContextMenu();
-      clearTransientZoom();
       pinchTouchPointsRef.current.clear();
-      pinchZoomRef.current = null;
+      const pinch = pinchZoomRef.current;
+      if (!pinch) return;
+      if (mode === "restore") {
+        clearTransientZoom();
+        pinchZoomRef.current = null;
+        const { startScroll, viewport, startZoom } = pinch.geometry;
+        onFrameViewStateChange(pinch.frameId, { zoom: startZoom, scrollLeft: startScroll.x, scrollTop: startScroll.y, viewportWidth: viewport.width, viewportHeight: viewport.height });
+        if (notify) setIsPinching(false);
+        return;
+      }
+      if (pinch.finishing) return;
+      pinch.finishing = true;
+      pinch.continuousZoom = clampZoom(pinch.continuousZoom);
+      drawTransientPinch(pinch);
+      setZoom(pinch.continuousZoom);
       setIsPinching(false);
-    };
+    }
+
+    useLayoutEffect(() => {
+      setIsPinching(false);
+      return () => {
+        finishPinch("restore", false);
+        if (saveViewTimerRef.current !== null) {
+          window.clearTimeout(saveViewTimerRef.current);
+          saveViewTimerRef.current = null;
+        }
+      };
+    }, [currentFrame?.id]);
 
     function cancelTouchContextMenu() {
       const pending = touchContextMenuRef.current;
@@ -1016,11 +1062,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       scheduleClearObjectDragPreview(drag.id);
     };
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       isPinchLockedRef.current = isPinchLocked;
       if (isPinchLocked) {
-        cancelPendingZoom();
-        clearPinch();
+        finishPinch("commit");
       }
     }, [isPinchLocked]);
 
@@ -1032,6 +1077,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const frameViewState = currentFrame?.sceneViewState;
       const frameId = currentFrame?.id;
       const raf = window.requestAnimationFrame(() => {
+        if (pinchZoomRef.current) return;
         if (frameViewState) {
           container.scrollTop = frameViewState.scrollTop;
           const savedViewportWidth =
@@ -1096,6 +1142,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         }
         resizeFrame = window.requestAnimationFrame(() => {
           resizeFrame = 0;
+          if (pinchZoomRef.current) return;
           const previousWidth = viewportWidthRef.current ?? container.clientWidth;
           const nextWidth = container.clientWidth;
           if (Math.abs(previousWidth - nextWidth) < 1) {
@@ -1443,8 +1490,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       anchor?: { clientX: number; clientY: number },
       options?: {
         persist?: boolean;
-        layoutAnchor?: { x: number; y: number } | null;
-        sourceZoom?: number;
       },
     ) => {
       const clampedZoom = clampZoom(nextZoom);
@@ -1488,24 +1533,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       setZoom(clampedZoom);
       window.requestAnimationFrame(() => {
         const nextContainer = scrollRef.current;
-        if (!nextContainer) {
-          return;
-        }
-        if (options?.layoutAnchor && zoomLayoutRef.current) {
-          const nextLayout = zoomLayoutRef.current;
-          const scaleFromSource =
-            clampedZoom / Math.max(MIN_ZOOM, options.sourceZoom ?? renderedZoomRef.current);
-          nextContainer.scrollLeft = Math.max(
-            0,
-            nextLayout.offsetLeft + options.layoutAnchor.x * scaleFromSource - anchorX,
-          );
-          nextContainer.scrollTop = Math.max(
-            0,
-            nextLayout.offsetTop + options.layoutAnchor.y * scaleFromSource - anchorY,
-          );
-          if (shouldPersist) {
-            saveViewState(clampedZoom);
-          }
+        if (!nextContainer || pinchZoomRef.current) {
           return;
         }
         if (anchorStageRatio && stageRef.current) {
@@ -1546,52 +1574,17 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       });
     };
 
-    const scheduleZoom = (
-      nextZoom: number,
-      anchor?: { clientX: number; clientY: number },
-    ) => {
-      const clampedZoom = clampZoom(nextZoom);
-      zoomRef.current = clampedZoom;
-      pendingZoomRef.current = {
-        zoom: clampedZoom,
-        anchor,
-      };
-      if (zoomFrameRef.current !== null) {
-        return;
-      }
+    const scheduleZoom = (nextZoom: number, anchor: { clientX: number; clientY: number }) => {
+      const pinch = pinchZoomRef.current;
+      if (!pinch || pinch.finishing) return;
+      // Full precision until commit; gesture frames update refs and transform only.
+      pinch.continuousZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+      pinch.lastAnchor = anchor;
+      if (zoomFrameRef.current !== null) return;
       zoomFrameRef.current = window.requestAnimationFrame(() => {
         zoomFrameRef.current = null;
-        const pending = pendingZoomRef.current;
-        pendingZoomRef.current = null;
-        if (!pending) {
-          return;
-        }
-        const container = scrollRef.current;
-        const layout = zoomLayoutRef.current;
-        const exportElement = exportElementRef.current;
-        const pinch = pinchZoomRef.current;
-        if (!container || !layout || !exportElement || !pinch || !pending.anchor) {
-          return;
-        }
-        const scale = pending.zoom / Math.max(MIN_ZOOM, renderedZoomRef.current);
-        const containerRect = container.getBoundingClientRect();
-        const anchorX = pending.anchor.clientX - containerRect.left;
-        const anchorY = pending.anchor.clientY - containerRect.top;
-        exportElement.style.transformOrigin = "0 0";
-        exportElement.style.willChange = "transform";
-        exportElement.style.transform = `scale(${scale})`;
-        layout.style.width = `${paradeLayoutWidthPx * scale}px`;
-        layout.style.height = `${paradeLayoutHeightPx * scale}px`;
-        if (pinch.anchorWithinLayout) {
-          container.scrollLeft = Math.max(
-            0,
-            layout.offsetLeft + pinch.anchorWithinLayout.x * scale - anchorX,
-          );
-          container.scrollTop = Math.max(
-            0,
-            layout.offsetTop + pinch.anchorWithinLayout.y * scale - anchorY,
-          );
-        }
+        const active = pinchZoomRef.current;
+        if (active && !active.finishing) drawTransientPinch(active);
       });
     };
 
@@ -1613,7 +1606,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     };
 
     const handleViewportScroll = () => {
+      if (pinchZoomRef.current) return;
       const container = scrollRef.current;
+      const committed = committedPinchScrollRef.current;
+      if (container && committed && container.scrollLeft === committed.x && container.scrollTop === committed.y) return;
+      committedPinchScrollRef.current = null;
       if (container) {
         horizontalScrollRangeRef.current = Math.max(
           0,
@@ -1651,27 +1648,33 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       const midpoint = getPinchMidpoint(firstEntry[1], secondEntry[1]);
       const container = scrollRef.current;
       const layout = zoomLayoutRef.current;
-      const containerRect = container?.getBoundingClientRect();
+      const stage = stageRef.current;
+      const preview = transientZoomRef.current;
+      if (!container || !layout || !stage || !preview || !currentFrame?.id) return;
+      const containerRect = container.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const layoutRect = layout.getBoundingClientRect();
+      const css = window.getComputedStyle(container);
+      const padding = { left: parseFloat(css.paddingLeft) || 0, right: parseFloat(css.paddingRight) || 0, top: parseFloat(css.paddingTop) || 0, bottom: parseFloat(css.paddingBottom) || 0 };
+      const viewport = { left: containerRect.left + container.clientLeft, top: containerRect.top + container.clientTop, width: container.clientWidth, height: container.clientHeight };
+      const startZoom = zoomRef.current;
       pinchZoomRef.current = {
         pointerIds: [firstEntry[0], secondEntry[0]],
-        startDistance: Math.max(
-          1,
-          getPinchDistance(firstEntry[1], secondEntry[1]),
-        ),
-        startZoom: zoomRef.current,
-        anchorWithinLayout:
-          container && layout && containerRect
-            ? {
-                x:
-                  container.scrollLeft + midpoint.clientX - containerRect.left -
-                  layout.offsetLeft,
-                y:
-                  container.scrollTop + midpoint.clientY - containerRect.top -
-                  layout.offsetTop,
-              }
-            : null,
+        startDistance: Math.max(1, getPinchDistance(firstEntry[1], secondEntry[1])),
+        startZoom, continuousZoom: startZoom, finishing: false, frameId: currentFrame.id,
+        geometry: {
+          viewport, padding, startZoom, pixelsPerMeter: BASE_PX_PER_METER,
+          fixed: { left: leftRulerVisible ? RULER_WIDTH : 0, right: rightRulerVisible ? RULER_WIDTH : 0, top: horizontalRulerHeight },
+          stageMeters: { width: settings.width, height: canvasDistanceMeters },
+          startScroll: { x: container.scrollLeft, y: container.scrollTop },
+          startOrigin: { x: layoutRect.left - viewport.left + container.scrollLeft, y: layoutRect.top - viewport.top + container.scrollTop },
+          anchorMeters: stageAnchorMeters({ x: midpoint.clientX, y: midpoint.clientY }, { x: stageRect.left, y: stageRect.top }, BASE_PX_PER_METER * startZoom),
+        },
         lastAnchor: midpoint,
       };
+      preview.style.transformOrigin = "0 0";
+      preview.style.willChange = "transform";
+      committedPinchScrollRef.current = null;
       if (dragState) {
         const shouldEndEdit = dragState.hasMoved;
         setDragState(null);
@@ -1744,22 +1747,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       stopTouchContextMenu(event);
       pinchTouchPointsRef.current.delete(event.pointerId);
-      if (pinchTouchPointsRef.current.size < 2) {
-        const completedPinch = pinchZoomRef.current;
-        cancelPendingZoom();
-        const finalZoom = zoomRef.current;
-        const finalAnchor = completedPinch?.lastAnchor;
-        clearTransientZoom();
-        pinchZoomRef.current = null;
-        setIsPinching(false);
-        applyZoom(finalZoom, finalAnchor, {
-          persist: true,
-          layoutAnchor: completedPinch?.anchorWithinLayout,
-          sourceZoom: completedPinch?.startZoom,
-        });
-        return;
+      if (event.type === "pointercancel" || pinchTouchPointsRef.current.size < 2) {
+        // Ordinary or locked pointer releases never commit or persist a zoom.
+        if (!pinchZoomRef.current) return;
+        finishPinch("commit");
       }
-      beginPinchIfReady();
     };
 
     const jumpToStart = () => {
@@ -2213,6 +2205,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               width: paradeLayoutWidthPx,
             }}
           >
+            <div className="parade-pinch-preview" ref={transientZoomRef}>
             <div
               className="parade-stage-wrap"
               style={{
@@ -2436,11 +2429,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     type="button"
                     className={`parade-member ${isSelected || isMultiSelected ? "is-selected" : ""} ${isFocus ? "is-focus" : ""} ${
                       memberLabelClassName
-                    } ${remoteMemberLockOwner ? "is-remote-locked" : ""} ${
-                      simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus
-                        ? "is-label-simplified"
-                        : ""
-                    }`}
+                    } ${remoteMemberLockOwner ? "is-remote-locked" : ""}`}
                     style={memberStyle}
                     onPointerDown={(event) => startMemberDrag(member.id, position, event)}
                     onContextMenu={(event) =>
@@ -2452,7 +2441,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                         : member.name
                     }
                   >
-                    {!(simplifyMemberLabels && !isSelected && !isMultiSelected && !isFocus) && (
                       <span className="parade-member__label" aria-hidden="true">
                         {labelLines.map((line, index) => (
                           <span
@@ -2463,7 +2451,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                           </span>
                         ))}
                       </span>
-                    )}
                   </button>
                 );
               })}
@@ -2487,6 +2474,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 })}
               </div>
             )}
+            </div>
             </div>
           </div>
         </div>

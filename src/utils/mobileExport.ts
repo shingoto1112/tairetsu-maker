@@ -125,6 +125,15 @@ export const generateDocumentExport = async (
     const files = blobs.map((blob, index) => new File([blob], withFileExtension(request.format === "png" ? `${base}_${index + 1}` : base, request.format), { type: blob.type }));
     return { files, preview: result.preview ?? result.blob, targetLabel: label, scopeLabel, pageCount: result.pageCount ?? 1 };
   }
+  if (snapshot.target === "members") {
+    const { prepareMemberMobilePlan, generateMemberMobileExport } = await import("./memberMobileExport");
+    options.onProgress("全員が入る1枚の配置を確認中…");
+    let plan = await prepareMemberMobilePlan(snapshot.data, options);
+    if (!plan && request.memberOverflow !== "readable") plan = await prepareMemberMobilePlan(snapshot.data, options, true);
+    if (plan) return generateMemberMobileExport(snapshot.data, request.format, base, options, plan);
+    if (request.memberOverflow !== "readable") throw new Error("全員を1枚に配置できません。読みやすさを優先して分ける方法を選んでください。");
+    // Explicit opt-in only: retain the existing readable pagination pipeline.
+  }
   const host = div(undefined, { position: "fixed", left: "-100000px", top: "0", pointerEvents: "none", fontFamily: FONT });
   host.setAttribute("aria-hidden", "true"); host.dataset.mobileExportHost = "true";
   document.body.append(host);
