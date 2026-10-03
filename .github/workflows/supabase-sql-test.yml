@@ -1,0 +1,58 @@
+name: Collaboration v2 server tests (Linux)
+
+on:
+  push:
+    branches: [codex/ipad-release-20261002]
+    paths:
+      - 'supabase/**'
+      - 'src/collaboration/serverValidation*'
+      - 'scripts/check-collab-v2.mjs'
+      - 'scripts/test-cloud-sql.mjs'
+      - 'scripts/bench-collab-v2.mjs'
+      - '.github/workflows/supabase-sql-test.yml'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: cloud_collab_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: local-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cloud_collab_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install only locked existing dependencies
+        run: npm ci
+      - name: Static preflight
+        run: node scripts/check-collab-v2.mjs
+      - name: PostgreSQL migrations, authorization, races, rerun
+        run: node scripts/test-cloud-sql.mjs
+      - name: Pure validation and ingest contract
+        run: npm test -- src/collaboration/serverValidation.test.ts supabase/functions/collab-ingest/handler.test.ts --maxWorkers 2 --silent=false
+      - name: Application typecheck
+        run: npm run typecheck
+      - name: Synthetic load estimate (no hosted-performance claim)
+        run: node --expose-gc scripts/bench-collab-v2.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno entry point typecheck (no production credentials)
+        run: deno check --config supabase/functions/collab-ingest/deno.json supabase/functions/collab-ingest/index.ts
