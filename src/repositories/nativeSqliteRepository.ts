@@ -3,6 +3,7 @@ import { registerPlugin } from "@capacitor/core";
 import { serializeProject, validateProjectStructure } from "../project/codec";
 import type { Project } from "../types";
 import { assertStorageId } from "./ids";
+import { validateMigrationEntry, type MigrationEntry, type MigrationRepository } from "./migrationTypes";
 import {
   assertRevision, isRevision, RepositoryError, REPOSITORY_ERROR_MESSAGES,
   type CommitReceipt, type CommitRequest, type ListQuery, type Page, type ProjectRecord,
@@ -13,7 +14,7 @@ import {
 type JsonCall = (input: { json: string }) => Promise<{ json: string }>;
 export type NativeRepositoryPlugin = Record<
   "initialize" | "listSummaries" | "readProject" | "commitProject" | "touchOpened" |
-  "renameProject" | "removeProject" | "createRecoveryBackup", JsonCall>;
+  "renameProject" | "removeProject" | "createRecoveryBackup" | "readMigration" | "writeMigration", JsonCall>;
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const validSummary = (s: unknown): s is ProjectSummary => object(s) &&
   typeof s.id === "string" && typeof s.title === "string" && ["stage", "parade"].includes(s.mode as string) &&
@@ -44,7 +45,7 @@ export const classifyNativeRepositoryError = (e: unknown, operationId?: string):
   return new RepositoryError(code, operationId);
 };
 
-export class NativeSqliteProjectRepository implements ProjectRepository {
+export class NativeSqliteProjectRepository implements ProjectRepository, MigrationRepository {
   constructor(private readonly plugin: NativeRepositoryPlugin = registerPlugin<NativeRepositoryPlugin>("ProjectRepository")) {}
 
   private async invoke(method: keyof NativeRepositoryPlugin, input: unknown = {}, operationId?: string): Promise<unknown> {
@@ -121,5 +122,22 @@ export class NativeSqliteProjectRepository implements ProjectRepository {
     const v = await this.invoke("createRecoveryBackup");
     if (!object(v) || v.created !== true) throw new RepositoryError("CORRUPT");
     return { created: true };
+  }
+  async readMigration(id: string): Promise<MigrationEntry | null> {
+    assertStorageId(id);
+    const result = await this.invoke("readMigration", { id });
+    if (result === null) return null;
+    let entry: MigrationEntry;
+    try { entry = validateMigrationEntry(result); } catch { throw new RepositoryError("CORRUPT"); }
+    if (entry.id !== id) throw new RepositoryError("CORRUPT");
+    return entry;
+  }
+  async writeMigration(entry: MigrationEntry, expectedState: MigrationEntry["state"] | null): Promise<MigrationEntry> {
+    validateMigrationEntry(entry);
+    const response = await this.invoke("writeMigration", { entry, expectedState });
+    let result: MigrationEntry;
+    try { result = validateMigrationEntry(response); } catch { throw new RepositoryError("CORRUPT"); }
+    if (result.id !== entry.id) throw new RepositoryError("CORRUPT");
+    return result;
   }
 }

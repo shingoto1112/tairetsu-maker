@@ -3,9 +3,10 @@
 import { serializeProject } from "../project/codec";
 import { runIdbTransaction } from "../utils/idbTransaction";
 import { assertStorageId } from "./ids";
+import { canonicalJson, migrationTransition, validateMigrationEntry, type MigrationEntry, type MigrationRepository } from "./migrationTypes";
 import {
   PROJECT_DB_NAME, PROJECT_DB_VERSION, PROJECT_STORES, decodeBody, decodeSummary,
-  encodeBody, encodeSummary, object, requestDigest, scalarKey, sortTime, validSummary,
+  encodeBody, encodeSummary, jsonIntegrity, object, requestDigest, scalarKey, sortTime, validSummary,
   type StoredBody,
 } from "./indexedDbFormat";
 import {
@@ -32,7 +33,7 @@ const capture = <T>(input: T): T => {
   catch { throw new RepositoryError("INVALID_ARGUMENT"); }
 };
 
-export class IndexedDbProjectRepository implements ProjectRepository {
+export class IndexedDbProjectRepository implements ProjectRepository, MigrationRepository {
   private db?: IDBDatabase;
   private opening?: Promise<IDBDatabase>;
   private invalidated = false;
@@ -65,8 +66,9 @@ export class IndexedDbProjectRepository implements ProjectRepository {
           fail(new RepositoryError("BUSY")); request.transaction!.abort(); return;
         }
         try {
-          if (event.oldVersion !== 0) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+          if (event.oldVersion > 1) throw new RepositoryError("UNSUPPORTED_SCHEMA");
           for (const name of PROJECT_STORES) {
+            if (event.oldVersion === 1 && name !== "migration_items") continue;
             const store = request.result.createObjectStore(name, { keyPath: name === "operation_receipts" ? "operationId" : "id" });
             if (name === "project_summaries") {
               store.createIndex("by_order", ["sortTime", "sortId"], { unique: true });
@@ -132,6 +134,98 @@ export class IndexedDbProjectRepository implements ProjectRepository {
       request.onsuccess = () => {
         try { result(request.result === undefined ? null : decodeBody(request.result, id)); }
         catch (error) { fail(error); }
+      };
+    });
+  }
+
+  async readMigration(id: string): Promise<MigrationEntry | null> {
+    assertStorageId(id);
+    return this.transaction(["migration_items"], "readonly", (tx, result, fail) => {
+      const request = tx.objectStore("migration_items").get(id);
+      request.onsuccess = () => {
+        try { result(request.result === undefined ? null : this.decodeMigration(request.result, id)); }
+        catch (e) { fail(e); }
+      };
+    });
+  }
+  private decodeMigration(raw: unknown, id: string): MigrationEntry {
+    if (!object(raw) || raw.id !== id || typeof raw.json !== "string") throw new RepositoryError("CORRUPT");
+    const integrity = jsonIntegrity(raw.json);
+    if (raw.byteLength !== integrity.byteLength || raw.crc32 !== integrity.crc32) throw new RepositoryError("CORRUPT");
+    try {
+      const entry = validateMigrationEntry(JSON.parse(raw.json));
+      if (entry.id !== id) throw new RepositoryError("CORRUPT");
+      return entry;
+    } catch { throw new RepositoryError("CORRUPT"); }
+  }
+  async writeMigration(input: MigrationEntry, expectedState: MigrationEntry["state"] | null): Promise<MigrationEntry> {
+    const entry = validateMigrationEntry(capture(input));
+    const claim = entry.kind === "item" ? `legacy-target-${await requestDigest(entry.targetId)}` : "";
+    return this.transaction(["migration_items", "project_bodies", "project_summaries", "operation_receipts"], "readwrite", (tx, result, fail) => {
+      const ledger = tx.objectStore("migration_items");
+      const request = ledger.get(entry.id);
+      const persist = () => {
+        const json = JSON.stringify(entry);
+        ledger.put({ id: entry.id, json, ...jsonIntegrity(json) }); result(entry);
+      };
+      request.onsuccess = () => {
+        try {
+          const current = request.result === undefined ? null : this.decodeMigration(request.result, entry.id);
+          if (migrationTransition(current, entry, expectedState) === "replay") { result(current!); return; }
+          if (entry.kind === "batch" && entry.state === "completed") {
+            let remaining = entry.itemIds.length;
+            if (!remaining) { persist(); return; }
+            for (const id of entry.itemIds) {
+              const read = ledger.get(id);
+              read.onsuccess = () => {
+                try {
+                  if (this.decodeMigration(read.result, id).state !== "completed") throw new RepositoryError("CONFLICT");
+                  if (!--remaining) persist();
+                } catch (e) { fail(e); }
+              };
+            }
+            return;
+          }
+          if (entry.kind === "item" && entry.state === "validated" && entry.disposition === "import") {
+            const project = JSON.parse(entry.json);
+            const encoded = serializeProject(project);
+            if (!encoded.ok || project.id !== entry.targetId) throw new RepositoryError("CORRUPT");
+          }
+          if (entry.kind !== "item" || entry.state !== "written") { persist(); return; }
+          if (entry.disposition === "recovery") { entry.outcome = "recovery"; persist(); return; }
+          const project = JSON.parse(entry.json);
+          const encoded = serializeProject(project);
+          if (!encoded.ok || project.id !== entry.targetId) throw new RepositoryError("CORRUPT");
+          const bodies = tx.objectStore("project_bodies");
+          const read = bodies.get(entry.targetId);
+          read.onsuccess = () => {
+            try {
+              if (read.result !== undefined) {
+                const stored = decodeBody(read.result, entry.targetId);
+                entry.outcome = canonicalJson(stored.project) === canonicalJson(project) ? "duplicate" : "recovery";
+                persist();
+              } else {
+                const operations = tx.objectStore("operation_receipts");
+                const seen = operations.get(claim);
+                seen.onsuccess = () => {
+                  try {
+                    // A prior migration created this ID and it was since
+                    // deleted. Retained receipt prevents accidental revival.
+                    if (seen.result !== undefined) { entry.outcome = "recovery"; persist(); return; }
+                    const record: ProjectRecord = { project, repositoryRevision: "1", localRevision: "1", sync: null };
+                    const summary = encodeSummary(record);
+                    bodies.put(encodeBody(record)); tx.objectStore("project_summaries").put(summary);
+                    const receipt: CommitReceipt = { id: entry.targetId, operationId: claim,
+                      repositoryRevision: "1", localRevision: "1", summary: summary.summary };
+                    operations.put({ operationId: claim, signature: entry.sourceHash, kind: "commit", receipt } satisfies StoredOperation);
+                    entry.outcome = "imported";
+                    persist();
+                  } catch (e) { fail(e); }
+                };
+              }
+            } catch (e) { fail(e); }
+          };
+        } catch (e) { fail(e); }
       };
     });
   }

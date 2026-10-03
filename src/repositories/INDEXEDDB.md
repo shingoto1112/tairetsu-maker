@@ -6,7 +6,8 @@ Appの保存経路・移行は未接続。Web/Windowsの選択境界で将来
 
 ## DB / schema / store
 
-DB名は `tairetsu-maker-projects`、IndexedDB schema versionは **1**。
+DB名は `tairetsu-maker-projects`、IndexedDB schema versionは **2**（第4回で台帳 store を追加）。
+version 1 からは既存4 storeを変更せず `migration_items` だけ追加する。
 旧localStorage、音源DB `tairetsu-maker-audio`、Project.versionとは独立。
 新DBを空で作ることは既存データの移行完了を意味しない。
 
@@ -16,6 +17,9 @@ DB名は `tairetsu-maker-projects`、IndexedDB schema versionは **1**。
 | project_summaries | id | summaryと索引用sortTime / sortId。本体なし |
 | project_previous | id | 更新直前に検証できた正常な本体envelopeを1世代保持 |
 | operation_receipts | operationId | kind、要求SHA-256 signature、commit/renameの元receipt。removeはreceiptなし |
+| migration_items | id | 移行のbatch / item、JSON、UTF-8 byteLength、crc32。判定・中断再開・復元候補 |
+
+第4回の移行規則・原子性・bootstrap gate は [STORAGE_MIGRATION.md](../../docs/STORAGE_MIGRATION.md) を参照。
 
 commit/rename/removeは4 storeを同一readwrite transactionで扱う。
 touchOpenedは本体・summary・previousを同一transactionで扱う。

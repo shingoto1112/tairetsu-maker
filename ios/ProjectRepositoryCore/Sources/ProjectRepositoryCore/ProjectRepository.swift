@@ -2,7 +2,7 @@ import Foundation
 import SQLite3
 
 /// One connection per instance, always accessed on its own serial queue.
-/// The bridge exposes only execute's eight operations, never paths or SQL.
+/// The bridge exposes only execute's fixed operations, never paths or SQL.
 public final class ProjectRepository {
     private let queue = DispatchQueue(label: "jp.tairetsu.repository", qos: .userInitiated)
     private let url: URL
@@ -66,7 +66,10 @@ public final class ProjectRepository {
             let attrs = try fm.attributesOfItem(atPath: url.path)
             existed = true
             guard attrs[.type] as? FileAttributeType == .typeRegular,
-                  let size = attrs[.size] as? NSNumber, size.int64Value >= 100 else { throw RepositoryError("CORRUPT") }
+                  let size = attrs[.size] as? NSNumber,
+                  size.int64Value == 0 || size.int64Value >= 100 else { throw RepositoryError("CORRUPT") }
+        } catch let error as RepositoryError {
+            throw error // Preserve validation codes before NSError bridging.
         } catch let error as NSError {
             if !(error.domain == NSCocoaErrorDomain && [NSFileReadNoSuchFileError, NSFileNoSuchFileError].contains(error.code)) { throw classified(error) }
         }
@@ -87,7 +90,12 @@ public final class ProjectRepository {
             if existed { try physicalCheck() }
             let initialVersion = try rows("PRAGMA user_version").first?["user_version"]
             if let version = initialVersion.flatMap(Int.init), version > 1 { throw RepositoryError("UNSUPPORTED_SCHEMA") }
-            if existed && initialVersion == "0" { throw RepositoryError("CORRUPT") }
+            if existed && initialVersion == "0" {
+                // A crash between sqlite3_open and the schema COMMIT can leave
+                // zero bytes or a valid empty SQLite file. Only these are new.
+                guard try rows("SELECT name FROM sqlite_master").isEmpty,
+                      try rows("PRAGMA application_id").first?["application_id"] == "0" else { throw RepositoryError("CORRUPT") }
+            }
             guard try rows("PRAGMA journal_mode=DELETE").first?["journal_mode"] == "delete" else { throw RepositoryError("BUSY") }
             try run("PRAGMA synchronous=EXTRA")
             try run("PRAGMA foreign_keys=ON")
@@ -308,7 +316,7 @@ public final class ProjectRepository {
         try queue.sync {
             do {
                 let input = try RepositoryValidation.object(requestJSON)
-                guard ["initialize","listSummaries","readProject","commitProject","touchOpened","renameProject","removeProject","createRecoveryBackup"].contains(method) else {
+                guard ["initialize","listSummaries","readProject","commitProject","touchOpened","renameProject","removeProject","createRecoveryBackup","readMigration","writeMigration"].contains(method) else {
                     throw RepositoryError("INVALID_ARGUMENT")
                 }
                 try connection()
@@ -321,12 +329,137 @@ public final class ProjectRepository {
                 case "listSummaries": return try list(input)
                 case "touchOpened": return try touch(input)
                 case "createRecoveryBackup": try backup(); return "{\"created\":true}"
+                case "readMigration":
+                    let id = try RepositoryValidation.id(input["id"])
+                    return try migrationEntry(id).map { try RepositoryValidation.json($0) } ?? "null"
+                case "writeMigration": return try writeMigration(input)
                 default: return try mutate(method, input)
                 }
             } catch {
                 if poisoned { closeConnection(); poisoned = false }
                 throw classified(error)
             }
+        }
+    }
+
+    private let migrationStates = ["discovered", "validated", "written", "verified", "completed"]
+    private func validateMigration(_ e: [String: Any]) throws {
+        _ = try RepositoryValidation.id(e["id"])
+        guard let state = e["state"] as? String else { throw RepositoryError("CORRUPT") }
+        if e["kind"] as? String == "item" {
+            _ = try RepositoryValidation.id(e["targetId"])
+            guard let index = migrationStates.firstIndex(of: state), let hash = e["sourceHash"] as? String,
+                  hash.utf8.count == 64, hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+                  let sources = e["sources"] as? [String], !sources.isEmpty,
+                  e["json"] is String, e["reason"] is String,
+                  ["import", "recovery"].contains(e["disposition"] as? String ?? ""),
+                  (index >= 2) == (e["outcome"] != nil),
+                  e["outcome"] == nil || ["imported", "duplicate", "recovery"].contains(e["outcome"] as? String ?? "") else {
+                throw RepositoryError("CORRUPT")
+            }
+            if let value = e["draft"] {
+                guard let draft = value as? [String: Any], let cloud = draft["cloudProjectId"] as? String, !cloud.isEmpty,
+                      draft["baseUpdatedAt"] is NSNull || draft["baseUpdatedAt"] is String,
+                      draft["savedAt"] is String, draft["status"] as? String == "pending" else { throw RepositoryError("CORRUPT") }
+            }
+        } else if e["kind"] as? String == "batch" {
+            guard ["discovered", "completed"].contains(state), let ids = e["itemIds"] as? [String], Set(ids).count == ids.count,
+                  let sources = e["sources"] as? [[String: Any]], let issues = e["issues"] as? [[String: Any]] else {
+                throw RepositoryError("CORRUPT")
+            }
+            for id in ids { _ = try RepositoryValidation.id(id) }
+            for source in sources {
+                guard source["source"] is String, ["absent", "unreadable", "ok"].contains(source["status"] as? String ?? "") else { throw RepositoryError("CORRUPT") }
+                if let hash = source["hash"] {
+                    guard let h = hash as? String, h.utf8.count == 64,
+                          h.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw RepositoryError("CORRUPT") }
+                }
+            }
+            for issue in issues {
+                guard issue["source"] is String, ["CORRUPT", "ACCESS_DENIED", "IO_ERROR"].contains(issue["code"] as? String ?? "") else { throw RepositoryError("CORRUPT") }
+            }
+            if let value = e["counts"] {
+                guard state == "completed", let counts = value as? [String: Any] else { throw RepositoryError("CORRUPT") }
+                for key in ["migratedCount", "recoveryCount", "duplicateCount"] {
+                    guard let n = RepositoryValidation.integer(counts[key]), n >= 0 else { throw RepositoryError("CORRUPT") }
+                }
+            }
+        } else { throw RepositoryError("CORRUPT") }
+    }
+    private func migrationEntry(_ id: String) throws -> [String: Any]? {
+        guard let row = try rows("SELECT state_json FROM migration_items WHERE source_key=?", [id]).first,
+              let text = row["state_json"] else { return nil }
+        let envelope = try RepositoryValidation.object(text, code: "CORRUPT")
+        guard let json = envelope["json"] as? String,
+              RepositoryValidation.integer(envelope["byteLength"]) == json.utf8.count,
+              envelope["crc32"] as? String == Integrity.crc32(json) else { throw RepositoryError("CORRUPT") }
+        let entry = try RepositoryValidation.object(json, code: "CORRUPT")
+        do { try validateMigration(entry) } catch { throw RepositoryError("CORRUPT") }
+        guard let storedID = entry["id"] as? String, storedID.utf8.elementsEqual(id.utf8) else { throw RepositoryError("CORRUPT") }
+        return entry
+    }
+    private func migrationIdentity(_ e: [String: Any]) throws -> String {
+        var identity = e
+        identity.removeValue(forKey: "state"); identity.removeValue(forKey: "outcome"); identity.removeValue(forKey: "counts")
+        return try RepositoryValidation.json(identity)
+    }
+    private func writeMigration(_ input: [String: Any]) throws -> String {
+        guard var entry = input["entry"] as? [String: Any] else { throw RepositoryError("INVALID_ARGUMENT") }
+        try validateMigration(entry)
+        let id = try RepositoryValidation.id(entry["id"])
+        let state = entry["state"] as! String
+        let isItem = entry["kind"] as? String == "item"
+        let states: [String] = isItem ? migrationStates : ["discovered", "completed"]
+        guard input["expectedState"] is NSNull || (input["expectedState"] as? String).map({ states.contains($0) }) == true else {
+            throw RepositoryError("INVALID_ARGUMENT")
+        }
+        return try transaction {
+            if let current = try migrationEntry(id) {
+                guard try migrationIdentity(current).utf8.elementsEqual(migrationIdentity(entry).utf8),
+                      let oldState = current["state"] as? String, let oldIndex = states.firstIndex(of: oldState),
+                      let newIndex = states.firstIndex(of: state) else { throw RepositoryError("CONFLICT") }
+                if isItem && newIndex > 2 && current["outcome"] as? String != entry["outcome"] as? String { throw RepositoryError("CONFLICT") }
+                if oldIndex >= newIndex { return try RepositoryValidation.json(current) }
+                guard oldState == input["expectedState"] as? String, newIndex == oldIndex + 1 else { throw RepositoryError("CONFLICT") }
+            } else {
+                guard input["expectedState"] is NSNull, state == "discovered" else { throw RepositoryError("CONFLICT") }
+            }
+            if !isItem && state == "completed" {
+                for itemID in entry["itemIds"] as! [String] {
+                    guard let item = try migrationEntry(itemID), item["kind"] as? String == "item",
+                          item["state"] as? String == "completed" else { throw RepositoryError("CONFLICT") }
+                }
+            }
+            if isItem && state == "validated" && entry["disposition"] as? String == "import" {
+                let p = try project(entry["json"] as! String)
+                guard let pid = p["id"] as? String, let target = entry["targetId"] as? String,
+                      pid.utf8.elementsEqual(target.utf8) else { throw RepositoryError("CORRUPT") }
+            }
+            if isItem && state == "written" {
+                entry["outcome"] = "recovery"
+                if entry["disposition"] as? String == "import" {
+                    let target = try RepositoryValidation.id(entry["targetId"])
+                    let json = entry["json"] as! String
+                    let p = try project(json)
+                    guard let pid = p["id"] as? String, pid.utf8.elementsEqual(target.utf8) else { throw RepositoryError("CORRUPT") }
+                    let claim = "legacy-target-" + Integrity.sha256(target)
+                    if let current = try body(target) {
+                        let old = try project(current["json"]!)
+                        if try RepositoryValidation.json(old).utf8.elementsEqual(RepositoryValidation.json(p).utf8) { entry["outcome"] = "duplicate" }
+                    } else if try rows("SELECT operation_id FROM operation_receipts WHERE operation_id=?", [claim]).isEmpty {
+                        let s = try save(target, json: json, revision: "1", local: "1")
+                        let receipt = try RepositoryValidation.json(["id":target,"operationId":claim,"repositoryRevision":"1","localRevision":"1","summary":s] as [String: Any])
+                        try run("INSERT INTO operation_receipts VALUES(?,?,?,?,?,?)", [claim,entry["sourceHash"] as? String,"commitProject",receipt,String(receipt.utf8.count),Integrity.crc32(receipt)])
+                        entry["outcome"] = "imported"
+                    }
+                }
+                try fault?("migrationAfterBody")
+            }
+            let json = try RepositoryValidation.json(entry)
+            let envelope = try RepositoryValidation.json(["json":json,"byteLength":json.utf8.count,"crc32":Integrity.crc32(json)] as [String: Any])
+            try run("INSERT INTO migration_items(source_key,state_json) VALUES(?,?) ON CONFLICT(source_key) DO UPDATE SET state_json=excluded.state_json", [id,envelope])
+            try fault?("migrationAfterLedger")
+            return json
         }
     }
 
@@ -472,6 +605,9 @@ public final class ProjectRepository {
         try scan("SELECT * FROM project_previous") { try validateBody($0) }
         try scan("SELECT * FROM operation_receipts") { r in
             _ = try validateReceipt(r)
+        }
+        try scan("SELECT source_key FROM migration_items") { r in
+            guard let id = r["source_key"], try migrationEntry(id) != nil else { throw RepositoryError("CORRUPT") }
         }
     }
     private func backup() throws {

@@ -4,7 +4,10 @@ import projects from "../fixtures/projects.json";
 import commitProjects from "../fixtures/commitProjects.json";
 import { runRepositoryContract } from "../runRepositoryContract";
 import { IndexedDbProjectRepository } from "../../indexedDbRepository";
-import { PROJECT_STORES } from "../../indexedDbFormat";
+import { PROJECT_STORES, PROJECT_DB_VERSION } from "../../indexedDbFormat";
+import { runMigrationContract, memoryReaders } from "../../../storage/testing/migrationContract";
+import { migrateLegacyStorage } from "../../../storage/migrationCoordinator";
+import { LEGACY_MIGRATION_ID } from "../../../storage/migrationPlan";
 import { normalizeProjectWithContext } from "../../../project/normalizeProject";
 import { serializeProject } from "../../../project/codec";
 import type { Project } from "../../../types";
@@ -57,7 +60,7 @@ const snapshot = async (name: string) => {
 };
 
 type Probe = {
-  fault?: "quota" | "abort" | "access";
+  fault?: "quota" | "abort" | "access" | "migrationLedger";
   scopes: string[][];
   putSucceeded?: () => void;
   completed?: () => void;
@@ -91,6 +94,7 @@ const probeFactory = (probe: Probe, audioDbName?: string): IDBFactory => new Pro
                       if (method === "get" && probe.fault === "access") return () => { throw new DOMException("injected access", "SecurityError"); };
                       if (method === "put") return (...args: Parameters<IDBObjectStore["put"]>) => {
                         if (probe.fault === "quota" && storeName === "project_summaries") throw new DOMException("injected quota", "QuotaExceededError");
+                        if (probe.fault === "migrationLedger" && storeName === "migration_items" && JSON.parse(args[0].json).state === "written") throw new DOMException("injected ledger failure", "QuotaExceededError");
                         const put = objectStore.put(...args);
                         if (storeName === "project_bodies" || storeName === "audio-files") {
                           put.addEventListener("success", () => {
@@ -148,9 +152,10 @@ export const runIndexedDbBrowserSuite = async () => {
   const prefix = `tairetsu-repository-test-${crypto.randomUUID()}`;
   const names: string[] = [];
   const repositories: IndexedDbProjectRepository[] = [];
+  const repositoryNames = new WeakMap<IndexedDbProjectRepository, string>();
   const name = () => { const n = `${prefix}-${names.length}`; names.push(n); return n; };
   const repo = (dbName = name(), factory?: IDBFactory) => {
-    const r = new IndexedDbProjectRepository({ dbName, factory }); repositories.push(r); return r;
+    const r = new IndexedDbProjectRepository({ dbName, factory }); repositories.push(r); repositoryNames.set(r, dbName); return r;
   };
   const extra: string[] = [];
   const tested = (label: string) => { extra.push(label); console.log(`IndexedDB: ${label}`); };
@@ -272,7 +277,7 @@ export const runIndexedDbBrowserSuite = async () => {
     const versionName = name();
     const versionRepo = repo(versionName);
     await versionRepo.initialize();
-    const upgraded = await openDb(versionName, 2); // triggers versionchange and closes old connection
+    const upgraded = await openDb(versionName, PROJECT_DB_VERSION + 1); // triggers versionchange and closes old connection
     await rejectCode(versionRepo.get("project_a"), "BUSY");
     upgraded.close();
     await rejectCode(repo(versionName).initialize(), "UNSUPPORTED_SCHEMA");
@@ -364,6 +369,61 @@ export const runIndexedDbBrowserSuite = async () => {
     }
     tested("real audio completion / abort rollback / null vs access error / unchanged keys and Blob format");
 
+    const migration = await runMigrationContract(() => repo(), current => {
+      const r = current as IndexedDbProjectRepository;
+      r.close(); return repo(repositoryNames.get(r)!);
+    });
+    assert(migration.scenarios === 30, "all migration coordinator cases");
+    tested(`migration ${migration.scenarios} scenarios / old sources read-only / durable restart / edited destination protected`);
+    {
+      const sameName = name(), first = repo(sameName), second = repo(sameName);
+      const readers = memoryReaders({ "stageflow.projects.v1": JSON.stringify([commitProjects.stage, commitProjects.parade]) });
+      const outcomes = await Promise.all([first, second].map(repository => migrateLegacyStorage({ repository, readers })));
+      assert(outcomes.every(o => o.completed && o.migratedCount === 2), "concurrent bootstraps accept advanced durable states");
+      assert((await first.list({ limit: 100 })).items.length === 2, "concurrent migration does not duplicate bodies");
+      tested("concurrent bootstrap across independent connections is replay-safe");
+    }
+    for (const fault of ["quota", "abort", "migrationLedger"] as const) {
+      const probe: Probe = { scopes: [], durability: [] };
+      const migrationName = name(), r = repo(migrationName, probeFactory(probe));
+      const write = r.writeMigration.bind(r);
+      r.writeMigration = async (entry, expected) => {
+        if (entry.kind === "item" && entry.state === "written") probe.fault = fault;
+        return write(entry, expected);
+      };
+      const readers = memoryReaders({ "stageflow.projects.v1": JSON.stringify([commitProjects.stage]) });
+      const first = await migrateLegacyStorage({ repository: r, readers });
+      assert(!first.completed && first.failures.some(f => f.code === (fault === "abort" ? "IO_ERROR" : "QUOTA_EXCEEDED")), `migration ${fault} classified`);
+      assert(await r.get("project_a") === null, `migration ${fault} body rollback`);
+      const batch = await r.readMigration(LEGACY_MIGRATION_ID);
+      assert(batch?.kind === "batch" && (await r.readMigration(batch.itemIds[0]))?.state === "validated", `migration ${fault} ledger rollback`);
+      r.close();
+      const resumed = repo(migrationName);
+      assert((await migrateLegacyStorage({ repository: resumed, readers })).migratedCount === 1, `migration ${fault} reopen/resume`);
+      tested(`migration ${fault} rolls back body/summary/receipt/ledger atomically, then reopens`);
+    }
+    // Actual 1 -> 2 upgrade preserves original schema/body/receipts.
+    {
+      const upgradeName = name();
+      const request = nativeIndexedDb.open(upgradeName, 1);
+      request.onupgradeneeded = () => {
+        for (const storeName of PROJECT_STORES.filter(n => n !== "migration_items")) {
+          const store = request.result.createObjectStore(storeName, { keyPath: storeName === "operation_receipts" ? "operationId" : "id" });
+          if (storeName === "project_summaries") {
+            store.createIndex("by_order", ["sortTime", "sortId"], { unique: true });
+            store.createIndex("by_mode_order", ["summary.mode", "sortTime", "sortId"], { unique: true });
+          }
+        }
+        request.transaction!.objectStore("operation_receipts").put({ operationId: "anonymous-upgrade-marker", marker: true });
+      };
+      await new Promise<void>((resolve, reject) => { request.onsuccess = () => { request.result.close(); resolve(); }; request.onerror = () => reject(request.error); });
+      const upgraded = repo(upgradeName); await upgraded.initialize();
+      const marker = await rawTransaction(upgradeName, "readonly", tx => tx.objectStore("operation_receipts").get("anonymous-upgrade-marker"));
+      assert(marker.marker === true, "v1 receipt retained");
+      assert((await upgraded.initialize()).schemaVersion === 2, "v2 migration store");
+      tested("schema 1 -> 2 additive upgrade preserves original stores");
+    }
+
     // Warm latency includes serialization, checksums, signature digest and strict
     // transaction completion. Anonymous large fixture is never a user project.
     const large = normalizeProjectWithContext(projects.large as unknown as Project, {
@@ -399,7 +459,7 @@ export const runIndexedDbBrowserSuite = async () => {
       tested(`benchmark ${count} projects / 50 warm samples`);
       bench.close();
     }
-    return { contract, extra, performance: performanceResults, userAgent: navigator.userAgent, databases: names.length };
+    return { contract, migration, extra, performance: performanceResults, userAgent: navigator.userAgent, databases: names.length };
   } finally {
     repositories.forEach(r => r.close());
     // Only names generated by this run are ever deleted.

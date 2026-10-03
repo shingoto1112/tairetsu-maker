@@ -51,14 +51,14 @@ try {
   await second.evaluate(async name => {
     window.testRepository.close();
     window.blocker = await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 1);
+      const request = indexedDB.open(name);
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
     });
   }, dbName);
   await page.evaluate(async name => {
     window.testRepository.close();
     await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 2);
+      const request = indexedDB.open(name, 3);
       request.onblocked = () => { window.blockedUpgrade = request; resolve(); };
       request.onerror = () => reject(request.error);
       request.onsuccess = () => { request.result.close(); reject(new Error("expected actual blocked event")); };

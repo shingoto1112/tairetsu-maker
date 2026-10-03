@@ -15,7 +15,9 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "touchOpened", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "renameProject", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeProject", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "createRecoveryBackup", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "createRecoveryBackup", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readMigration", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "writeMigration", returnType: CAPPluginReturnPromise)
     ]
     private let worker = DispatchQueue(label: "jp.tairetsu.repository.bridge", qos: .userInitiated)
     private var repository: ProjectRepository?
@@ -53,4 +55,6 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func renameProject(_ call: CAPPluginCall) { perform("renameProject", call) }
     @objc func removeProject(_ call: CAPPluginCall) { perform("removeProject", call) }
     @objc func createRecoveryBackup(_ call: CAPPluginCall) { perform("createRecoveryBackup", call) }
+    @objc func readMigration(_ call: CAPPluginCall) { perform("readMigration", call) }
+    @objc func writeMigration(_ call: CAPPluginCall) { perform("writeMigration", call) }
 }

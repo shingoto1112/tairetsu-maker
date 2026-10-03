@@ -45,6 +45,32 @@ console.log(`Native preflight: ${definitions.length} unique/resolved pbxproj UUI
 // Compile the actual Swift SQL literals on the locally bundled SQLite, in memory.
 // This detects syntax/reference errors, but does NOT execute Swift or replace XCTest.
 const core = readFileSync("ios/ProjectRepositoryCore/Sources/ProjectRepositoryCore/ProjectRepository.swift", "utf8");
+const bridge = readFileSync("ios/App/App/ProjectRepositoryPlugin.swift", "utf8");
+const methods = [...bridge.matchAll(/CAPPluginMethod\(name: "([^"]+)"/g)].map(m => m[1]);
+assert.equal(methods.length, 10);
+assert.equal(new Set(methods).size, methods.length);
+for (const method of methods) {
+  assert.ok(bridge.includes(`@objc func ${method}(`), `bridge method ${method}`);
+  assert.ok(core.includes(`"${method}"`), `core dispatch ${method}`);
+}
+assert.ok(core.includes('CREATE TABLE migration_items (source_key TEXT PRIMARY KEY, state_json TEXT NOT NULL)'));
+assert.ok(core.includes('size.int64Value == 0 || size.int64Value >= 100'));
+assert.ok(core.includes('rows("SELECT name FROM sqlite_master").isEmpty'));
+assert.ok(core.includes('try scan("SELECT source_key FROM migration_items")'));
+const swiftTests = readFileSync(testFile, "utf8");
+assert.ok(swiftTests.includes('environment["REPOSITORY_PERF"] == "1" ? 1000 : 200'));
+assert.ok(swiftTests.includes('reopen=%.2fms'));
+for (const method of ["testEmptyDatabaseAfterInterruptedCreationIsNew", "testMigrationStateContractAndResponseLossDoesNotOverwriteEdits",
+  "testMigrationAtomicRollbackAndResume", "testMigrationRecoveryDuplicateDraftAndDeletedTarget"]) assert.ok(swiftTests.includes(`func ${method}(`));
+const bootstrap = readFileSync("src/storage/bootstrap.ts", "utf8");
+for (const module of ["migrationCoordinator", "nativeSqliteRepository", "indexedDbRepository"]) {
+  assert.ok(bootstrap.includes(`import("${module === "migrationCoordinator" ? "./" : "../repositories/"}${module}")`));
+}
+const readers = readFileSync("src/storage/legacyReaders.ts", "utf8");
+assert.ok(!/Filesystem\.(writeFile|deleteFile|rename|mkdir|copy|appendFile)/.test(readers));
+assert.ok(readers.includes('e.code === "OS-PLUG-FILE-0008"'));
+for (const filePath of appFiles) if (existsSync(filePath)) assert.ok(!/storage\/bootstrap|migrationCoordinator/.test(readFileSync(filePath, "utf8")));
+console.log("Migration preflight: 10 fixed bridge methods; reserved SQLite schema 1; empty DB guard; four new XCTest cases; 200/opt-in 1000 + reopen logs; lazy/unconnected bootstrap; read-only readers: PASS");
 const database = new DatabaseSync(":memory:");
 try {
   database.exec("PRAGMA foreign_keys=ON");

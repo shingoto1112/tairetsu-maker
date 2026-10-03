@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { runRepositoryContract } from "./contract/runRepositoryContract";
-import { MemoryProjectRepository } from "./contract/testing/MemoryProjectRepository";
+import { MemoryMigrationRepository } from "../storage/testing/MemoryMigrationRepository";
+import type { MigrationEntry } from "./migrationTypes";
 import { NativeSqliteProjectRepository, type NativeRepositoryPlugin } from "./nativeSqliteRepository";
 import { REPOSITORY_ERROR_MESSAGES, RepositoryError, type CommitRequest, type RenameRequest, type RemoveRequest } from "./types";
 import projects from "./contract/fixtures/commitProjects.json";
 import type { Project } from "../types";
+import { runMigrationContract } from "../storage/testing/migrationContract";
 
 // Adapter mapping oracle only. SQLite persistence is tested by the actual Swift core.
 const fakePlugin = (): NativeRepositoryPlugin => {
-  const memory = new MemoryProjectRepository();
+  const memory = new MemoryMigrationRepository();
   const wrap = (fn: (input: Record<string, unknown>) => Promise<unknown>) => async ({ json }: { json: string }) => {
     try { return { json: JSON.stringify(await fn(JSON.parse(json) as Record<string, unknown>)) }; }
     catch (error) {
@@ -28,9 +30,14 @@ const fakePlugin = (): NativeRepositoryPlugin => {
     renameProject: wrap(input => memory.rename(input as RenameRequest)),
     removeProject: wrap(async input => { await memory.remove(input as RemoveRequest); return null; }),
     createRecoveryBackup: wrap(async () => ({ created: true })),
+    readMigration: wrap(input => memory.readMigration(input.id as string)),
+    writeMigration: wrap(input => memory.writeMigration(input.entry as MigrationEntry, input.expectedState as MigrationEntry["state"] | null)),
   };
 };
 describe("native SQLite adapter mapping", () => {
+  it("maps the migration contract through JSON-only read/write bridge calls", async () => {
+    expect((await runMigrationContract(() => new NativeSqliteProjectRepository(fakePlugin()))).scenarios).toBe(30);
+  });
   it("passes the unmodified shared contract", async () => {
     expect(await runRepositoryContract(() => new NativeSqliteProjectRepository(fakePlugin()))).toEqual({ scenarios: 2, steps: 50 });
   });

@@ -342,21 +342,130 @@ final class RepositoryTests: XCTestCase {
         XCTAssertEqual(RepositoryValidation.time("2026-01-01T00:00:00.0009Z"), 1767225600000)
         XCTAssertNil(RepositoryValidation.time("invalid"))
     }
-    func test1000ProjectTimingLogs() throws {
+    func testProjectTimingLogs() throws {
+        let count = ProcessInfo.processInfo.environment["REPOSITORY_PERF"] == "1" ? 1000 : 200
         let r = repo(); defer { r.close() }
         let base = try initial()
         var p = try RepositoryValidation.object(base["json"] as! String)
         p["anonymousPerformancePadding"] = String(repeating: "x", count: 230 * 1024)
         let seedStart = Date()
-        for i in 0..<1000 {
+        for i in 0..<count {
             p["id"] = "perf-\(i)"
             _ = try execute(r, "commitProject", ["id":p["id"]!,"json":try RepositoryValidation.json(p),"operationId":"perf-create-\(i)","localRevision":"1","expectedRepositoryRevision":NSNull()])
         }
+        let seedSeconds = Date().timeIntervalSince(seedStart)
+        r.close()
+        let reopenStart = Date(); _ = try execute(r, "initialize"); let reopenMS = Date().timeIntervalSince(reopenStart) * 1000
+        let middle = "perf-\(count / 2)"
         let listStart = Date(); _ = try execute(r, "listSummaries", ["limit":100]); let listMS = Date().timeIntervalSince(listStart) * 1000
-        let readStart = Date(); _ = try execute(r, "readProject", ["id":"perf-500"]); let readMS = Date().timeIntervalSince(readStart) * 1000
-        p["id"] = "perf-500"
+        let readStart = Date(); _ = try execute(r, "readProject", ["id":middle]); let readMS = Date().timeIntervalSince(readStart) * 1000
+        p["id"] = middle
         let commitStart = Date()
         _ = try execute(r, "commitProject", ["id":p["id"]!,"json":try RepositoryValidation.json(p),"operationId":"perf-update","localRevision":"2","expectedRepositoryRevision":"1"])
-        print(String(format: "Repository timing (1000 x ~230KiB; log only): seed=%.2fs list100=%.2fms get=%.2fms commit=%.2fms", Date().timeIntervalSince(seedStart), listMS, readMS, Date().timeIntervalSince(commitStart)*1000))
+        print(String(format: "Repository timing (%d x ~230KiB; log only; quick_check retained): seed=%.2fs reopen=%.2fms list100=%.2fms get=%.2fms commit=%.2fms", count, seedSeconds, reopenMS, listMS, readMS, Date().timeIntervalSince(commitStart)*1000))
+    }
+
+    func testEmptyDatabaseAfterInterruptedCreationIsNew() throws {
+        let path = directory.appendingPathComponent("repository.sqlite")
+        let short = Data(repeating: 0x41, count: 64)
+        try short.write(to: path)
+        let invalid = repo(); defer { invalid.close() }
+        XCTAssertThrowsError(try execute(invalid, "initialize")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
+        XCTAssertEqual(try Data(contentsOf: path), short)
+        try Data().write(to: path)
+        let empty = repo(); _ = try execute(empty, "initialize"); empty.close()
+        try FileManager.default.removeItem(at: path)
+        try raw { h in
+            // Header-only, user_version=0, no application tables.
+            XCTAssertEqual(sqlite3_exec(h, "PRAGMA journal_mode=DELETE; VACUUM", nil, nil, nil), SQLITE_OK)
+        }
+        let header = repo(); _ = try execute(header, "initialize"); header.close()
+        try FileManager.default.removeItem(at: path)
+        try raw { h in XCTAssertEqual(sqlite3_exec(h, "CREATE TABLE unknown_user_data(value TEXT)", nil, nil, nil), SQLITE_OK) }
+        let before = try Data(contentsOf: path)
+        let foreign = repo(); defer { foreign.close() }
+        XCTAssertThrowsError(try execute(foreign, "initialize")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
+        XCTAssertEqual(try Data(contentsOf: path), before, "version 0 with user data must not be recreated")
+    }
+
+    private func migrationItem(_ name: String = "migration-native-one", disposition: String = "import") throws -> [String: Any] {
+        let create = try initial()
+        let json = try XCTUnwrap(create["json"] as? String)
+        return ["kind":"item","id":name,"state":"discovered","sourceHash":Integrity.sha256(json),
+                "sources":["anonymous-fixture"],"targetId":"project_a","json":json,
+                "disposition":disposition,"reason":"anonymous migration contract"] as [String: Any]
+    }
+    private func advance(_ r: ProjectRepository, _ entry: [String: Any], state: String, expected: Any) throws -> [String: Any] {
+        var next = entry; next["state"] = state
+        if state == "written" && next["outcome"] == nil { next["outcome"] = "imported" }
+        return try XCTUnwrap(try execute(r, "writeMigration", ["entry":next,"expectedState":expected] as [String: Any]) as? [String: Any])
+    }
+    func testMigrationStateContractAndResponseLossDoesNotOverwriteEdits() throws {
+        let r = repo(); defer { r.close() }
+        var item = try advance(r, migrationItem(), state: "discovered", expected: NSNull())
+        XCTAssertThrowsError(try advance(r, item, state: "written", expected: "discovered")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CONFLICT") }
+        item = try advance(r, item, state: "validated", expected: "discovered")
+        let submitted = item
+        item = try advance(r, item, state: "written", expected: "validated")
+        subset(item, ["state":"written","outcome":"imported"], "atomic import")
+        r.close()
+        _ = try execute(r, "renameProject", ["id":"project_a","title":"anonymous later edit","updatedAt":"2026-02-01T00:00:00Z",
+                       "localRevision":"2","expectedRepositoryRevision":"1","operationId":"migration-later-edit"] as [String: Any])
+        let replay = try advance(r, submitted, state: "written", expected: "validated")
+        XCTAssertEqual(try RepositoryValidation.json(replay), try RepositoryValidation.json(item), "written ledger is response-loss receipt")
+        subset(try record(r, "project_a"), ["repositoryRevision":"2","project":["title":"anonymous later edit"] as [String: Any]] as [String: Any], "new edit retained")
+        item = try advance(r, item, state: "verified", expected: "written")
+        item = try advance(r, item, state: "completed", expected: "verified")
+        var batch: [String: Any] = ["kind":"batch","id":"legacy-projects-v1","state":"discovered","itemIds":["migration-native-one"],
+                                  "sources":[["source":"anonymous-fixture","status":"ok"] as [String: Any]],"issues":[[String: Any]]()]
+        _ = try advance(r, batch, state: "discovered", expected: NSNull())
+        batch["counts"] = ["migratedCount":1,"recoveryCount":0,"duplicateCount":0] as [String: Any]
+        _ = try advance(r, batch, state: "completed", expected: "discovered")
+        _ = try execute(r, "createRecoveryBackup") // Backup validates ledger envelopes too.
+        var changed = item; changed["json"] = "{}"
+        XCTAssertThrowsError(try advance(r, changed, state: "completed", expected: "verified")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CONFLICT") }
+        print("Migration contract: discovered -> validated -> written -> verified -> completed; atomic receipt / reopen / later edit / batch / backup: PASS")
+    }
+    func testMigrationAtomicRollbackAndResume() throws {
+        let r = repo(); defer { r.close() }
+        var item = try advance(r, migrationItem(), state: "discovered", expected: NSNull())
+        item = try advance(r, item, state: "validated", expected: "discovered")
+        for phase in ["afterBody", "afterSummary", "migrationAfterBody", "migrationAfterLedger", "beforeCommit"] {
+            let before = try snapshot()
+            r.fault = { if $0 == phase { throw RepositoryError("NO_SPACE") } }
+            XCTAssertThrowsError(try advance(r, item, state: "written", expected: "validated")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "NO_SPACE") }
+            r.fault = nil
+            XCTAssertEqual(try snapshot(), before, "all six tables unchanged: \(phase)")
+            r.close()
+            let ledger = try execute(r, "readMigration", ["id":"migration-native-one"])
+            subset(ledger, ["state":"validated"], "restart phase")
+        }
+        _ = try advance(r, item, state: "written", expected: "validated")
+        subset(try record(r, "project_a"), ["repositoryRevision":"1"], "resumed creation exactly once")
+    }
+    func testMigrationRecoveryDuplicateDraftAndDeletedTarget() throws {
+        let r = repo(); defer { r.close() }
+        var imported = try advance(r, migrationItem(), state: "discovered", expected: NSNull())
+        imported = try advance(r, imported, state: "validated", expected: "discovered")
+        _ = try advance(r, imported, state: "written", expected: "validated")
+        var duplicate = try advance(r, migrationItem("migration-duplicate"), state: "discovered", expected: NSNull())
+        duplicate = try advance(r, duplicate, state: "validated", expected: "discovered")
+        duplicate = try advance(r, duplicate, state: "written", expected: "validated")
+        subset(duplicate, ["outcome":"duplicate"], "same id/body")
+        var candidate = try migrationItem("migration-recovery", disposition: "recovery")
+        candidate["json"] = "{\"anonymousInvalid\":true}"
+        candidate["draft"] = ["cloudProjectId":"anonymous-cloud","baseUpdatedAt":NSNull(),"savedAt":"2026-02-01T00:00:00Z","status":"pending"] as [String: Any]
+        candidate = try advance(r, candidate, state: "discovered", expected: NSNull())
+        candidate = try advance(r, candidate, state: "validated", expected: "discovered")
+        candidate = try advance(r, candidate, state: "written", expected: "validated")
+        subset(candidate, ["outcome":"recovery","draft":["status":"pending","baseUpdatedAt":NSNull()] as [String: Any]] as [String: Any], "recovery retains JSON and draft provenance")
+        _ = try execute(r, "removeProject", ["id":"project_a","expectedRepositoryRevision":"1","operationId":"migration-delete"])
+        var another = try advance(r, migrationItem("migration-new-evidence"), state: "discovered", expected: NSNull())
+        another = try advance(r, another, state: "validated", expected: "discovered")
+        another = try advance(r, another, state: "written", expected: "validated")
+        subset(another, ["outcome":"recovery"], "retained target receipt prevents revival")
+        XCTAssertTrue(try execute(r, "readProject", ["id":"project_a"]) is NSNull)
+        try raw { h in XCTAssertEqual(sqlite3_exec(h, "UPDATE migration_items SET state_json='{}' WHERE source_key='migration-recovery'", nil, nil, nil), SQLITE_OK) }
+        XCTAssertThrowsError(try execute(r, "readMigration", ["id":"migration-recovery"])) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
     }
 }

@@ -1,4 +1,4 @@
-# iPad ProjectRepository（第3回）
+# iPad ProjectRepository（第3〜4回）
 
 App の保存先はまだ切り替えていません。既存の localStorage、IndexedDB、ZIP、音源、クラウドは変更していません。
 
@@ -7,7 +7,7 @@ App の保存先はまだ切り替えていません。既存の localStorage、
 - Foundation と OS 内蔵 SQLite3 のみ。Swift tools 5.7 / Swift 5 言語モード、iOS 15 / macOS 12 以上。外部 package はゼロ。
 - App.xcodeproj から `../ProjectRepositoryCore` を local Swift package としてリンク。App に core のソースを重複登録する方法と比べ、App と XCTest が同じモジュールを使え、コンパイル設定の分岐を避けられる。CapApp-SPM は変更しない。
 - `ProjectRepositoryPlugin` は既存 BridgeViewController で instance 登録。任意 SQL、任意パス、復元 API は JS に公開しない。
-- bridge の8操作は `{ json: string }` を受け、`{ json: string }` を返す。commit の本文は request 内の `json` 文字列、read の本文は response 内の `json` 文字列。巨大な Project オブジェクトや base64 を渡さない。エラーは固定メッセージと code / retryable。
+- bridge の10操作は `{ json: string }` を受け、`{ json: string }` を返す。第4回で `readMigration` / `writeMigration` を追加。commit の本文は request 内の `json` 文字列、read の本文は response 内の `json` 文字列。巨大な Project オブジェクトや base64 を渡さない。エラーは固定メッセージと code / retryable。
 - native adapter は将来の runtime 選択地点から動的 import する。現在 App / barrel への import はない。
 
 ## 保存・整合性
@@ -70,7 +70,9 @@ extended result code は下位8bitの primary code に分類し、sqlite3_system
 
 Tests は checkout の `src/repositories/contract/fixtures/{operations,commitProjects,ids}.json` を直接読む。複製した fixture は使わない。`#filePath` から5階層戻って checkout root を得る。孤立サロゲートの2負例は元の JSON オブジェクトを個別に読み、native の escape 検査で拒否する。
 
-共通 2 scenarios / 50 steps と、途中故障で全6テーブル不変、再 open、古い receipt、2接続の同時 CAS、NOTADB 原本保持、CRC 破損、backup 再置換・失敗保持・復元・無効 backup 拒否、error 分類、CRC/SHA ベクトルを確認する。1000件 × 約230KiB の list100 / get / commit は時間ログのみで、速度を合否に使わない。
+共通 2 scenarios / 50 steps と、途中故障で全6テーブル不変、再 open、古い receipt、2接続の同時 CAS、NOTADB 原本保持、CRC 破損、backup 再置換・失敗保持・復元・無効 backup 拒否、error 分類、CRC/SHA ベクトルを確認する。通常200件 × 約230KiB の reopen / list100 / get / commit を計測し、`REPOSITORY_PERF=1` の時だけ1000件にする。時間はログのみで、速度を合否に使わない。
+
+第4回の判定規則、同じ `migration_items` への台帳・復元候補の保存、原子的な written、空DBの再初期化と4件の追加XCTestは [STORAGE_MIGRATION.md](../../docs/STORAGE_MIGRATION.md) を参照。SQLite schema 1 の6テーブルは変更していない。
 
 workflow は `swift test --package-path ios/ProjectRepositoryCore -c release -Xswiftc -enable-testing` を実行する（`@testable import` を release でも使えるようにするため）。純 Swift CRC/SHA の1000件計測を debug の低速なコードで回す消費時間を避け、App の Release と同じ最適化で検証するため。XCTest / 故障注入は Release でも実行する。
 

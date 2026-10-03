@@ -4,8 +4,8 @@ import { isValidStorageId } from "./ids";
 import { isRevision, RepositoryError, type ProjectRecord, type ProjectSummary } from "./types";
 
 export const PROJECT_DB_NAME = "tairetsu-maker-projects";
-export const PROJECT_DB_VERSION = 1;
-export const PROJECT_STORES = ["project_bodies", "project_summaries", "project_previous", "operation_receipts"];
+export const PROJECT_DB_VERSION = 2;
+export const PROJECT_STORES = ["project_bodies", "project_summaries", "project_previous", "operation_receipts", "migration_items"];
 export const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
