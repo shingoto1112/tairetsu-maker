@@ -2,6 +2,8 @@ import { AudioMeta } from "../types";
 import type { AudioSelection } from "../platform/audioStorage";
 import { MAX_AUDIO_FILE_BYTES } from "../config/fileLimits";
 import { runIdbTransaction } from "./idbTransaction";
+import { withStorageWrite } from "../storage/maintenanceLock";
+import type { GCResult } from "../storage/maintenanceTypes";
 import {
   deleteNativeAudioBlob,
   canUseNativeAudioStorage,
@@ -18,6 +20,7 @@ const STORE_NAME = "audio-files";
 type AudioRecord = {
   id: string;
   blob: Blob;
+  pending?: boolean;
 };
 
 const createAudioId = (): string => {
@@ -123,9 +126,9 @@ export const saveAudioBlobToIndexedDb = async (
   if (canUseNativeAudioStorage()) {
     return saveNativeAudioBlob(id, file, file.type || type, meta.name, meta.duration);
   } else {
-    await withAudioStore("readwrite", (store) =>
-      store.put({ id, blob: file } satisfies AudioRecord),
-    );
+    await withStorageWrite(() => withAudioStore("readwrite", (store) =>
+      store.put({ id, blob: file, pending: true } satisfies AudioRecord),
+    ));
   }
   return {
     id,
@@ -169,4 +172,45 @@ export const resolveAudioPlaybackURL = async (meta: AudioMeta): Promise<string |
   if (canUseNativeAudioStorage()) return resolveNativeAudioURL(meta.id, meta);
   const blob = await loadAudioBlobFromIndexedDb(meta.id);
   return blob ? URL.createObjectURL(blob) : null;
+};
+
+/** Called only while the origin-wide exclusive maintenance lock is held. A new
+ * audio publication remains pending across crashes until a durable reference is seen. */
+export const collectWebAudio = async (references: ReadonlySet<string>) => {
+  const db = await openAudioDb();
+  try {
+    return await runIdbTransaction<GCResult>(db, STORE_NAME, "readwrite", (tx, result) => {
+      let count = 0, bytes = 0;
+      const read = tx.objectStore(STORE_NAME).openCursor();
+      read.onsuccess = () => {
+        const cursor = read.result;
+        if (!cursor) { result({ count, bytes, skipped: false }); return; }
+        const record = cursor.value as AudioRecord;
+        // Unknown/corrupt records are retained, never interpreted as disposable.
+        if (record?.id === cursor.key && record.blob instanceof Blob &&
+            (record.pending === undefined || typeof record.pending === "boolean")) {
+          if (references.has(record.id)) {
+            if (record.pending) cursor.update({ ...record, pending: false });
+          } else if (!record.pending) { count++; bytes += record.blob.size; cursor.delete(); }
+        }
+        cursor.continue();
+      };
+    });
+  } finally { db.close(); }
+};
+
+/** A receipt proves the byte publication is no longer an unfinished import.
+ * Failure to clear this marker only retains extra audio; it cannot invalidate commit. */
+export const confirmWebAudioReference = async (id: string): Promise<void> => {
+  await withStorageWrite(async () => {
+    const db = await openAudioDb();
+    try { await runIdbTransaction<void>(db, STORE_NAME, "readwrite", (tx, result) => {
+      const store = tx.objectStore(STORE_NAME), read = store.get(id);
+      read.onsuccess = () => {
+        const record = read.result as AudioRecord | undefined;
+        if (record?.id === id && record.blob instanceof Blob && record.pending === true) store.put({ ...record, pending: false });
+        result(undefined);
+      };
+    }); } finally { db.close(); }
+  });
 };

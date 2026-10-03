@@ -47,7 +47,7 @@ console.log(`Native preflight: ${definitions.length} unique/resolved pbxproj UUI
 const core = readFileSync("ios/ProjectRepositoryCore/Sources/ProjectRepositoryCore/ProjectRepository.swift", "utf8");
 const bridge = readFileSync("ios/App/App/ProjectRepositoryPlugin.swift", "utf8");
 const methods = [...bridge.matchAll(/CAPPluginMethod\(name: "([^"]+)"/g)].map(m => m[1]);
-assert.equal(methods.length, 10);
+assert.equal(methods.length, 17);
 assert.equal(new Set(methods).size, methods.length);
 for (const method of methods) {
   assert.ok(bridge.includes(`@objc func ${method}(`), `bridge method ${method}`);
@@ -74,7 +74,7 @@ const appStorage = readFileSync("src/storage/appRepository.ts", "utf8");
 assert.ok(appStorage.includes('import("./bootstrap")'));
 assert.ok(appStorage.includes("includeDrafts: false"));
 assert.ok(readFileSync("src/App.tsx", "utf8").includes("await prepareAppRepository("));
-console.log("Migration preflight: 10 fixed bridge methods; reserved SQLite schema 1; empty DB guard; four new XCTest cases; 200/opt-in 1000 + reopen logs; connected lazy bootstrap; read-only readers: PASS");
+console.log("Migration/maintenance preflight: 17 fixed bridge methods; reserved SQLite schema 1; empty DB guard; connected lazy bootstrap; read-only readers: PASS");
 const database = new DatabaseSync(":memory:");
 try {
   database.exec("PRAGMA foreign_keys=ON");
@@ -119,5 +119,14 @@ assert.ok(!audioCore.includes("isExcludedFromBackup = true"));
 assert.ok(audioCore.includes("try fm.replaceItemAt(index, withItemAt: pending)"));
 assert.ok(audioCore.includes("try equalFiles(source, staged)"));
 assert.ok(!/Filesystem\.(writeFile|deleteFile)/.test(readFileSync("src/platform/audioStorage.ts", "utf8")));
-assert.equal((audioTests.match(/func test\w+\(/g) ?? []).length, 13);
-console.log("Audio preflight: existing picker's four references / 6 fixed methods / Foundation-only core / 13 XCTest cases / protected atomic catalog / byte verification / legacy retained: PASS (not Swift compilation)");
+assert.equal((audioTests.match(/func test\w+\(/g) ?? []).length, 15);
+assert.ok(core.includes('if method == "restoreRecoveryBackup"'));
+assert.ok(core.includes('try restoreRecoveryBackupLocked(); try connection(); return "null"'));
+assert.ok(core.includes('guard input.isEmpty else'));
+assert.ok(core.includes('try backupReferences()'));
+assert.ok(core.includes('private func draftAudioReferences()'));
+assert.ok(core.includes('try draftAudioReferences()'));
+for (const method of ["testFixedBridgeRecoveryClosesRestoresReopensAndRejectsOtherConnection", "testRecoveryBackupScheduleAndLowSpaceSkip", "testRepositoryAudioGCProtectsPreviousRecoveryIncompleteAndBackup"]) assert.ok(swiftTests.includes(`func ${method}(`));
+assert.ok(audioCore.includes('Self.activeUploadPaths'));
+assert.ok(audioCore.includes('record.pending == true'));
+console.log("Audio/maintenance preflight: 6 picker methods / Foundation-only audio core / 15 XCTest cases / pending and active upload protection / fixed restore+reopen: PASS (not Swift compilation)");

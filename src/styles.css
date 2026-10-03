@@ -7975,3 +7975,9 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 @media screen and (min-width: 900px) {
   .app-shell[data-workspace-layout="portrait"] .portrait-panel-header { grid-template-columns: auto minmax(100px, 1fr) auto auto; grid-template-areas: "title search bulk actions"; }
 }
+
+.storage-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.storage-tools-dialog { max-height: 85dvh; overflow-y: auto; }
+.storage-tools-dialog > .mini-button { margin: 8px 8px 8px 0; }
+.storage-recovery-item { border-top: 1px solid #dbe3e5; padding: 12px 0; }
+.storage-recovery-item p { margin: 6px 0; }

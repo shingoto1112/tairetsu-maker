@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   CircleHelp,
@@ -65,6 +66,8 @@ type FormationLibraryProps = {
   projects: ProjectSummary[];
   disabled?: boolean;
   notice?: string | null;
+  storageTools?: ReactNode;
+  onImportProjectFiles?: (files: File[]) => void | Promise<void>;
   cloud?: {
     configured: boolean;
     error?: string | null;
@@ -162,6 +165,8 @@ export const FormationLibrary = ({
   projects,
   disabled = false,
   notice,
+  storageTools,
+  onImportProjectFiles,
   cloud,
   onCreate,
   onOpenProject,
@@ -301,14 +306,15 @@ export const FormationLibrary = ({
   };
 
   const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!file) {
+    if (!files.length) {
       return;
     }
     setIsImporting(true);
     try {
-      await onImportProjectFile(file);
+      if (onImportProjectFiles && (files.length > 1 || files[0].name.endsWith(".manifest.json"))) await onImportProjectFiles(files);
+      else await onImportProjectFile(files[0]);
       setIsAddDialogOpen(false);
     } finally {
       setIsImporting(false);
@@ -529,6 +535,7 @@ export const FormationLibrary = ({
       </header>
 
       {notice && <p className="library-notice" role="status">{notice}</p>}
+      {storageTools}
 
       {cloud && (
         <section className="library-cloud-panel" aria-label="クラウド">
@@ -914,7 +921,8 @@ export const FormationLibrary = ({
       <input
         ref={importInputRef}
         type="file"
-        accept=".zip,.tairetsu,application/zip,application/x-zip-compressed,application/octet-stream"
+        accept=".zip,.tairetsu,.json,application/json,application/zip,application/x-zip-compressed,application/octet-stream"
+        multiple
         onChange={(event) => void handleImportFile(event)}
         hidden
       />

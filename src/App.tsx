@@ -184,7 +184,11 @@ import {
 } from "./utils/parade";
 import { readProjectFromHash } from "./utils/share";
 import { compareRevisions, incrementRevision, RepositoryError, REPOSITORY_ERROR_MESSAGES, type CommitRequest, type ProjectRepository, type ProjectRecord, type ProjectSummary } from "./repositories/types";
-import { SaveCoordinator, repositoryError, type SaveState } from "./storage/saveCoordinator";
+import { SaveCoordinator, repositoryError, canLeaveWithoutSaving, type SaveState } from "./storage/saveCoordinator";
+import type { MaintenanceRepository } from "./storage/maintenanceTypes";
+import { protectAudioEditor } from "./storage/maintenanceLock";
+const StorageTools = lazy(() => import("./components/StorageTools").then(module => ({ default: module.StorageTools })));
+const StorageRecoveryScreen = lazy(() => import("./components/StorageTools").then(module => ({ default: module.StorageRecoveryScreen })));
 import { getRequiredProject, listAllSummaries, prepareAppRepository, readOpenedProject } from "./storage/appRepository";
 import {
   createTairetsuArchive,
@@ -1556,16 +1560,27 @@ function App() {
   const [project, setProject] = useState<Project>(initial.project);
   const [savedProjects, setSavedProjects] = useState<ProjectSummary[]>([]);
   const [storageReady, setStorageReady] = useState(false);
+  const [storageCorrupt, setStorageCorrupt] = useState(false);
+  const [storageRetry, setStorageRetry] = useState(0);
+  const [damagedProjectId, setDamagedProjectId] = useState<string | null>(null);
   const [storageStatus, setStorageStatus] = useState<string | null>("隊列表を準備しています…");
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [localSaveState, setLocalSaveState] = useState<SaveState | null>(null);
   const repositoryRef = useRef<ProjectRepository | null>(null);
+  const audioEditorProtectionRef = useRef<Promise<() => void> | null>(null);
   const saveCoordinatorRef = useRef<SaveCoordinator | null>(null);
   const editorLoadGenerationRef = useRef(0);
   const libraryLoadGenerationRef = useRef(0);
   const [appView, setAppView] = useState<"library" | "editor">(
     initial.shared ? "editor" : "library",
   );
+  useEffect(() => {
+    if (appView === "library") {
+      const protection = audioEditorProtectionRef.current; audioEditorProtectionRef.current = null;
+      void protection?.then(release => release());
+    }
+  }, [appView]);
+  useEffect(() => () => { void audioEditorProtectionRef.current?.then(release => release()); audioEditorProtectionRef.current = null; }, []);
   // View-only stage navigation never enters Project or cloud scene writes.
   const stageViewMemoryRef = useRef({ projectId: project.id, appView, views: new Map<string, SceneViewState>() });
   if (stageViewMemoryRef.current.projectId !== project.id || stageViewMemoryRef.current.appView !== appView) {
@@ -1768,7 +1783,7 @@ function App() {
         repositoryRef.current = repository;
         const failures = prepared.result.failures.map(f => f.code === "INTERRUPTED" ? "移行を中断しました。次回起動時に再開します。" : REPOSITORY_ERROR_MESSAGES[f.code]);
         if (failures.length) setStorageWarning([...new Set(failures)].join(" "));
-        if (!prepared.result.canContinue) { setStorageStatus(null); return; }
+        if (!prepared.result.canContinue) { setStorageCorrupt(prepared.result.failures.some(f => f.code === "CORRUPT")); setStorageStatus(null); return; }
         saveCoordinatorRef.current = new SaveCoordinator(repository, state => {
           if (cancelled) return;
           setLocalSaveState(state);
@@ -1792,14 +1807,14 @@ function App() {
             if (!cancelled) { setIsSharedProject(true); setSharedAudioNotice(true); }
           }
         } catch (error) { setNotice(error instanceof Error ? error.message : "共有データを読み込めませんでした。"); }
-      } catch (error) { if (!cancelled) { setStorageWarning(repositoryError(error).message); setStorageStatus(null); } }
+      } catch (error) { if (!cancelled) { setStorageCorrupt(repositoryError(error).code === "CORRUPT"); setStorageWarning(repositoryError(error).message); setStorageStatus(null); } }
     })();
     return () => {
       cancelled = true; ++editorLoadGenerationRef.current;
       const close = () => { if (repository && "close" in repository) (repository as ProjectRepository & { close(): void }).close(); };
       void (saveCoordinatorRef.current?.flush() ?? Promise.resolve()).finally(close);
     };
-  }, [refreshLocalLibrary]);
+  }, [refreshLocalLibrary, storageRetry]);
 
   useEffect(() => {
     projectRef.current = project;
@@ -7052,6 +7067,7 @@ function App() {
       loadGeneration?: number;
     } = {},
   ) => {
+    await (audioEditorProtectionRef.current ??= protectAudioEditor());
     const generation = options.loadGeneration ?? ++editorLoadGenerationRef.current;
     if (!await flushPendingAutoSave() || generation !== editorLoadGenerationRef.current) return false;
     let record = options.record;
@@ -7199,6 +7215,15 @@ function App() {
     } catch (error) { setNotice(repositoryError(error).message); }
   };
 
+  const leaveWithoutSaving = async () => {
+    const coordinator = saveCoordinatorRef.current;
+    if (!coordinator || !canLeaveWithoutSaving(coordinator.state)) return;
+    if (!window.confirm("未保存の編集が失われます。先に「編集中のデータを ZIP で書き出す」で退避することをおすすめします。保存せずに一覧へ戻りますか？")) return;
+    clearPendingAutoSave(); coordinator.discard(); ++editorLoadGenerationRef.current;
+    setIsDirty(false); isDirtyRef.current = false; setIsPlaying(false); audioRef.current?.pause(); setAppView("library");
+    void refreshLocalLibrary().catch(error => setNotice(repositoryError(error).message));
+  };
+
   const localAction = async (action: (repository: ProjectRepository) => Promise<void>) => {
     try {
       if (!storageReady || !repositoryRef.current) throw new RepositoryError("BUSY");
@@ -7210,10 +7235,17 @@ function App() {
   };
 
   const openStoredProject = async (id: string) => {
+    await (audioEditorProtectionRef.current ??= protectAudioEditor());
     const generation = ++editorLoadGenerationRef.current;
     if (!await flushPendingAutoSave()) return;
     await localAction(async repository => {
-      const record = await readOpenedProject(repository, id);
+      let record: ProjectRecord;
+      try { record = await readOpenedProject(repository, id); }
+      catch (error) {
+        if (repositoryError(error).code === "CORRUPT") setDamagedProjectId(id);
+        const protection = audioEditorProtectionRef.current; audioEditorProtectionRef.current = null; void protection?.then(release => release());
+        throw error;
+      }
       if (generation !== editorLoadGenerationRef.current) return;
       await openProjectInEditor(record.project, undefined, { record, loadGeneration: generation });
     });
@@ -7313,6 +7345,18 @@ function App() {
           : "隊列表ファイルを読み込めませんでした。",
       );
     }
+  };
+
+  const importTairetsuProjectFiles = async (files: File[]) => {
+    if (!storageReady || !repositoryRef.current) return;
+    try {
+      const { importBackupFiles } = await import("./storage/bulkBackup");
+      const report = await importBackupFiles(repositoryRef.current, files, { confirmManifest: async (manifest, missing) =>
+        window.confirm(`バックアップの${manifest.exportedCount}件を、新しい隊列表として読み込みます。未選択 ${missing}件、書き出し時の失敗 ${manifest.failedCount}件。続けますか？`) });
+      if (report.cancelled) { setNotice("バックアップの読み込みを取り消しました。"); return; }
+      await refreshLocalLibrary();
+      setNotice(`読み込み完了：成功 ${report.imported}件、失敗 ${report.failed}件、未選択 ${report.missing}件。${report.errors[0] ?? ""}`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "バックアップを読み込めませんでした。"); }
   };
 
   const importCloudProjectFile = async (file: File) => {
@@ -12635,6 +12679,9 @@ function App() {
     );
   })();
 
+  if (storageCorrupt && !storageReady) return <Suspense fallback={<div role="status">復旧画面を準備中…</div>}><StorageRecoveryScreen
+    repository={repositoryRef.current as MaintenanceRepository | null} onRestored={() => { setStorageCorrupt(false); setStorageWarning(null); setStorageStatus("隊列表を準備しています…"); setStorageRetry(value => value + 1); }} /></Suspense>;
+
   if (!storageReady || appView === "library") {
     return (
       <>
@@ -12642,6 +12689,8 @@ function App() {
           projects={savedProjects}
           notice={storageStatus ?? storageWarning ?? notice}
           disabled={!storageReady}
+          storageTools={storageReady && repositoryRef.current && "readMaintenance" in repositoryRef.current ? <Suspense fallback={null}><StorageTools
+            repository={repositoryRef.current as MaintenanceRepository} onChanged={refreshLocalLibrary} damagedId={damagedProjectId} onDismissDamaged={() => setDamagedProjectId(null)} /></Suspense> : null}
           cloud={{
             configured: Boolean(cloudConfig),
             error: cloudError,
@@ -12674,6 +12723,7 @@ function App() {
           onDuplicateProject={duplicateStoredProject}
           onExportProject={(id, includeAudio) => withStoredProject(id, p => exportTairetsuProject(p, includeAudio))}
           onImportProjectFile={importTairetsuProjectFile}
+          onImportProjectFiles={importTairetsuProjectFiles}
           onDeleteProject={deleteStoredProject}
         />
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
@@ -12750,6 +12800,7 @@ function App() {
               <button className="mini-button" onClick={() => void saveConflictAsCopy()}>別の隊列表として保存</button>
               <button className="mini-button" onClick={() => void reloadConflictingProject()}>読み込み直す</button>
             </> : <button className="mini-button" onClick={() => void saveProjectManually()}>保存を再試行</button>}
+            {canLeaveWithoutSaving(localSaveState) && <button className="mini-button" onClick={() => void leaveWithoutSaving()}>保存せずに一覧へ戻る</button>}
           </div>
         </div>
       )}

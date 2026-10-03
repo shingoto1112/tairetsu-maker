@@ -186,5 +186,106 @@ try {
       assert.deepEqual(result,{native:false,blobURL:true,size:16044,roundtripSize:16044,sameBytes:true,duration:1});
     }
   });
+  await fresh("i bulk backup downloads + separate-context restore + continuing failures", async page => {
+    await seed(page, 3);
+    await page.evaluate(async () => {
+      const { IndexedDbProjectRepository } = await import("/src/repositories/indexedDbRepository.ts");
+      const { saveAudioBlobToIndexedDb } = await import("/src/utils/audioStorage.ts");
+      const r = new IndexedDbProjectRepository(), record = await r.get("anonymous-0");
+      const audio = await saveAudioBlobToIndexedDb(new Blob([new Uint8Array([1,2,3,4,5])], {type:"audio/mpeg"}), {name:"anonymous.mp3",duration:1});
+      await r.commit({project:{...record.project,audio},localRevision:"2",expectedRepositoryRevision:record.repositoryRevision,operationId:"backup-audio"}); r.close();
+    });
+    await page.goto(origin); await ready(page);
+    await page.getByRole("button",{name:"保存データの管理",exact:true}).click();
+    await page.getByRole("button",{name:"すべての隊列表をバックアップ",exact:true}).click();
+    await page.getByRole("checkbox",{name:"音源も含める",exact:true}).check();
+    const downloads = []; page.on("download", download => downloads.push(download));
+    await page.getByRole("button",{name:"バックアップを書き出す",exact:true}).click();
+    await expect(page.getByText(/3件を書き出しました。失敗 0件/)).toBeVisible();
+    await expect.poll(() => downloads.length).toBe(4);
+    const files = [];
+    for (const download of downloads) files.push({name:download.suggestedFilename(),mimeType:download.suggestedFilename().endsWith(".json")?"application/json":"application/zip",buffer:await readFile(await download.path())});
+    const target = await browser.newContext({viewport:{width:1440,height:1000}});
+    try {
+      const restored = await target.newPage(); restored.on("pageerror", error => failures.push(`i restore: ${error.message}`));
+      restored.on("dialog", dialog => dialog.accept()); await restored.goto(origin); await ready(restored);
+      await restored.locator('input[type="file"][accept*=".zip"]').setInputFiles(files);
+      await expect(restored.getByText(/成功 3件、失敗 0件、未選択 0件/)).toBeVisible();
+      await expect(restored.locator(".formation-card--saved")).toHaveCount(3);
+      const data = await restored.evaluate(async () => {
+        const { IndexedDbProjectRepository }=await import("/src/repositories/indexedDbRepository.ts");
+        const { loadAudioBlobFromIndexedDb }=await import("/src/utils/audioStorage.ts");
+        const r=new IndexedDbProjectRepository(),page=await r.list({limit:100});
+        const withAudio=page.items.find(s=>s.audioId),audio=withAudio?await loadAudioBlobFromIndexedDb(withAudio.audioId):null;
+        r.close();return {newIDs:page.items.every(s=>!s.id.startsWith("anonymous-")),audioSize:audio?.size};
+      });
+      assert.deepEqual(data,{newIDs:true,audioSize:5}); await restored.reload(); await ready(restored);
+      await expect(restored.locator(".formation-card--saved")).toHaveCount(3);
+      const zips=files.filter(f=>f.name.endsWith(".zip"));
+      await restored.locator('input[type="file"][accept*=".zip"]').setInputFiles([zips[0],{name:"invalid.zip",mimeType:"application/zip",buffer:Buffer.from("invalid")},zips[1]]);
+      await expect(restored.getByText(/成功 2件、失敗 1件/)).toBeVisible();
+      await expect(restored.locator(".formation-card--saved")).toHaveCount(5);
+    } finally { await target.close(); }
+  });
+  await fresh("j GC current/previous/recovery/incomplete/pending/editor protection", async page => {
+    await inert(page);
+    const result = await page.evaluate(async base => {
+      const { IndexedDbProjectRepository }=await import("/src/repositories/indexedDbRepository.ts");
+      const { saveAudioBlobToIndexedDb,loadAudioBlobFromIndexedDb,confirmWebAudioReference }=await import("/src/utils/audioStorage.ts");
+      const { migrateLegacyStorage }=await import("/src/storage/migrationCoordinator.ts");
+      const { protectAudioEditor }=await import("/src/storage/maintenanceLock.ts");
+      const audio={}; for(const key of ["current","previous","recovery","incomplete","unused","uncommitted"]) {
+        audio[key]=await saveAudioBlobToIndexedDb(new Blob([new Uint8Array([1,2,3,4,5])],{type:"audio/mpeg"}),{name:"anonymous.mp3",duration:1});
+        if(key!=="uncommitted")await confirmWebAudioReference(audio[key].id);
+      }
+      const r=new IndexedDbProjectRepository();
+      const main={...base,id:"gc-main",audio:audio.current}; const candidate={...base,id:"gc-candidate",audio:audio.recovery};
+      await migrateLegacyStorage({repository:r,readers:{includeDrafts:false,local:()=>({getItem:key=>key==="stageflow.projects.v1"?JSON.stringify([main]):null}),native:{readText:async path=>path.endsWith("backup.json")?JSON.stringify([candidate]):null,draftNames:async()=>null}}});
+      await r.commit({project:{...base,id:"gc-previous",audio:audio.previous},localRevision:"1",expectedRepositoryRevision:null,operationId:"previous-create"});
+      await r.commit({project:{...base,id:"gc-previous",audio:null},localRevision:"2",expectedRepositoryRevision:"1",operationId:"previous-update"});
+      const item={kind:"item",id:"gc-incomplete-item",targetId:"gc-import",state:"discovered",sourceHash:"a".repeat(64),sources:["anonymous"],json:JSON.stringify({...base,id:"gc-import",audio:audio.incomplete}),disposition:"import",reason:"incomplete"};
+      await r.writeMigration(item,null);await r.writeMigration({...item,state:"validated"},"discovered");await r.updateMaintenance({action:"started"});
+      const release=await protectAudioEditor();const editing=await r.collectUnusedAudio();await release();
+      const stats=await r.collectUnusedAudio();const second=await r.collectUnusedAudio();
+      const present={};for(const [key,meta]of Object.entries(audio))present[key]=!!await loadAudioBlobFromIndexedDb(meta.id);
+      // Undecidable recovery data must abort before deleting anything.
+      const extra=await saveAudioBlobToIndexedDb(new Blob([new Uint8Array([9])],{type:"audio/mpeg"}),{name:"anonymous.mp3",duration:1});await confirmWebAudioReference(extra.id);
+      await r.writeMigration({...item,id:"gc-broken",targetId:"gc-broken-target",json:'{"audio":123}',disposition:"recovery"},null);
+      const originalNow=Date.now;Date.now=()=>originalNow()+86400001;let corrupt=false;
+      try{await r.collectUnusedAudio();}catch(e){corrupt=e.code==="CORRUPT";}finally{Date.now=originalNow;}
+      const extraRetained=!!await loadAudioBlobFromIndexedDb(extra.id);r.close();return{editingSkipped:editing.skipped,stats,secondSkipped:second.skipped,present,corrupt,extraRetained};
+    }, fixtures.stage);
+    assert.deepEqual(result,{editingSkipped:true,stats:{count:1,bytes:5,skipped:false},secondSkipped:true,present:{current:true,previous:true,recovery:true,incomplete:true,unused:false,uncommitted:true},corrupt:true,extraRetained:true});
+  });
+  await fresh("k recovery candidate UI + independent restored project + review retention", async page => {
+    await inert(page);
+    await page.evaluate(base=>{
+      localStorage.setItem("stageflow.projects.v1",JSON.stringify([{...base,id:"original",title:"原本匿名"}]));
+      localStorage.setItem("stageflow.project.v1",JSON.stringify({...base,id:"original",title:"候補匿名"}));
+    },fixtures.stage);
+    await page.goto(origin);await ready(page);await expect(page.locator(".formation-card--saved")).toHaveCount(1);
+    await page.getByRole("button",{name:/復元できる隊列表（1件）/}).click();
+    const dialog=page.getByRole("dialog",{name:"復元できる隊列表",exact:true});await expect(dialog.getByText("候補匿名",{exact:true})).toBeVisible();
+    await expect(dialog.getByText(/以前のブラウザの保存/)).toBeVisible();await dialog.getByRole("button",{name:"一覧に復元",exact:true}).click();
+    await expect(dialog.getByRole("checkbox")).toBeChecked();await dialog.getByRole("button",{name:"閉じる",exact:true}).click();
+    await expect(page.locator(".formation-card--saved")).toHaveCount(2);
+    const original=await stored(page,"original");assert.equal(original.title,"原本匿名");
+    await page.reload();await ready(page);await expect(page.locator(".formation-card--saved")).toHaveCount(2);
+    await expect(page.getByRole("button",{name:/復元できる隊列表（1件）/})).toBeVisible();
+  });
+  await fresh("l unreadable body rescued from previous without overwriting damaged original", async page => {
+    await seed(page);
+    await page.evaluate(async()=>{
+      const {IndexedDbProjectRepository}=await import("/src/repositories/indexedDbRepository.ts");const r=new IndexedDbProjectRepository(),record=await r.get("anonymous-0");
+      await r.commit({project:{...record.project,title:"破損匿名"},localRevision:"2",expectedRepositoryRevision:"1",operationId:"before-damage"});r.close();
+      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open("tairetsu-maker-projects",2);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      await new Promise((resolve,reject)=>{const tx=db.transaction("project_bodies","readwrite"),store=tx.objectStore("project_bodies"),read=store.get("anonymous-0");read.onsuccess=()=>store.put({...read.result,crc32:"bad"});tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});db.close();
+    });
+    await page.goto(origin);await ready(page);await page.getByRole("button",{name:"破損匿名を開く",exact:true}).click();
+    const dialog=page.getByRole("dialog",{name:"読み込めない隊列表の復旧",exact:true});await dialog.getByRole("button",{name:"前の保存を一覧に復元",exact:true}).click();
+    await expect(page.locator(".formation-card--saved")).toHaveCount(2);
+    await expect(page.getByRole("button",{name:"匿名0を開く",exact:true})).toBeVisible();
+    const code=await page.evaluate(async()=>{const {IndexedDbProjectRepository}=await import("/src/repositories/indexedDbRepository.ts");const r=new IndexedDbProjectRepository();try{await r.get("anonymous-0");return"unexpected";}catch(e){return e.code;}finally{r.close();}});assert.equal(code,"CORRUPT");
+  });
   assert.deepEqual(failures, []);
 } finally { await browser.close(); }

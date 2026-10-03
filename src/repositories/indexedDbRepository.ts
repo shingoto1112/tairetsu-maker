@@ -3,6 +3,9 @@
 import { serializeProject } from "../project/codec";
 import { runIdbTransaction } from "../utils/idbTransaction";
 import { assertStorageId } from "./ids";
+import { DAY, MAINTENANCE_ID, initialMaintenance, validateMaintenance, type MaintenanceAction, type MaintenanceState, type GCResult, type MaintenanceRepository } from "../storage/maintenanceTypes";
+import { withStorageWrite, withStorageMaintenance } from "../storage/maintenanceLock";
+import { addAudioReference, migrationProtectsAudio } from "../storage/audioReferences";
 import { canonicalJson, migrationTransition, validateMigrationEntry, type MigrationEntry, type MigrationRepository } from "./migrationTypes";
 import {
   PROJECT_DB_NAME, PROJECT_DB_VERSION, PROJECT_STORES, decodeBody, decodeSummary,
@@ -33,7 +36,7 @@ const capture = <T>(input: T): T => {
   catch { throw new RepositoryError("INVALID_ARGUMENT"); }
 };
 
-export class IndexedDbProjectRepository implements ProjectRepository, MigrationRepository {
+export class IndexedDbProjectRepository implements ProjectRepository, MigrationRepository, MaintenanceRepository {
   private db?: IDBDatabase;
   private opening?: Promise<IDBDatabase>;
   private invalidated = false;
@@ -120,11 +123,94 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
   }
 
   private async transaction<T>(stores: string[], mode: IDBTransactionMode,
-    work: Parameters<typeof runIdbTransaction<T>>[3], operationId?: string): Promise<T> {
+    work: Parameters<typeof runIdbTransaction<T>>[3], operationId?: string, unlocked = false): Promise<T> {
     try {
       const db = await this.connection();
-      return await runIdbTransaction(db, stores, mode, work, error => classifyIndexedDbError(error, operationId));
+      const run = () => runIdbTransaction(db, stores, mode, work, error => classifyIndexedDbError(error, operationId));
+      return await (mode === "readwrite" && !unlocked ? withStorageWrite(run) : run());
     } catch (error) { throw classifyIndexedDbError(error, operationId); }
+  }
+
+  async getPrevious(id: string): Promise<ProjectRecord | null> {
+    assertStorageId(id);
+    return this.transaction(["project_previous"], "readonly", (tx, result, fail) => {
+      const read = tx.objectStore("project_previous").get(id);
+      read.onsuccess = () => { try { result(read.result === undefined ? null : decodeBody(read.result, id)); } catch (e) { fail(e); } };
+    });
+  }
+  private decodeMaintenance(raw: unknown): MaintenanceState {
+    if (raw === undefined) return initialMaintenance();
+    if (!object(raw) || raw.id !== MAINTENANCE_ID || typeof raw.json !== "string") throw new RepositoryError("CORRUPT");
+    const check = jsonIntegrity(raw.json);
+    if (raw.byteLength !== check.byteLength || raw.crc32 !== check.crc32) throw new RepositoryError("CORRUPT");
+    try { return validateMaintenance(JSON.parse(raw.json)); } catch { throw new RepositoryError("CORRUPT"); }
+  }
+  async readMaintenance(): Promise<MaintenanceState> {
+    return this.transaction(["migration_items"], "readonly", (tx, result, fail) => {
+      const read = tx.objectStore("migration_items").get(MAINTENANCE_ID);
+      read.onsuccess = () => { try { result(this.decodeMaintenance(read.result)); } catch (e) { fail(e); } };
+    });
+  }
+  async updateMaintenance(input: MaintenanceAction): Promise<MaintenanceState> {
+    const action = capture(input);
+    if (!["started", "reviewed"].includes(action.action)) throw new RepositoryError("INVALID_ARGUMENT");
+    if (action.action === "reviewed") action.ids.forEach(assertStorageId);
+    return this.transaction(["migration_items"], "readwrite", (tx, result, fail) => {
+      const store = tx.objectStore("migration_items"), read = store.get(MAINTENANCE_ID);
+      read.onsuccess = () => { try {
+        const state = this.decodeMaintenance(read.result);
+        const batchRead = store.get("legacy-projects-v1");
+        batchRead.onsuccess = () => { try {
+          const batch = batchRead.result === undefined ? null : this.decodeMigration(batchRead.result, "legacy-projects-v1");
+          if (action.action === "started" && batch?.state === "completed") {
+            state.completedAt ??= Date.now(); state.successfulStarts++;
+          } else if (action.action === "reviewed") {
+            if (!batch || batch.kind !== "batch" || action.ids.some(id => !batch.itemIds.includes(id))) throw new RepositoryError("INVALID_ARGUMENT");
+            state.reviewedIds = [...new Set([...state.reviewedIds, ...action.ids])];
+          }
+          const json = JSON.stringify(validateMaintenance(state));
+          store.put({ id: MAINTENANCE_ID, json, ...jsonIntegrity(json) }); result(state);
+        } catch (e) { fail(e); } };
+      } catch (e) { fail(e); } };
+    });
+  }
+  async collectUnusedAudio(): Promise<GCResult> {
+    const skipped: GCResult = { count: 0, bytes: 0, skipped: true };
+    return withStorageMaintenance(async () => {
+      const state = await this.readMaintenance();
+      if (!state.completedAt || (state.gcAt !== null && Date.now() - state.gcAt < DAY)) return skipped;
+      const batch = await this.readMigration("legacy-projects-v1");
+      if (batch?.state !== "completed") return skipped;
+      // One verified body at a time; no summary-only shortcuts and no getAll bodies.
+      const references = await this.transaction<Set<string>>(["project_bodies", "project_previous", "migration_items"], "readonly", (tx, result, fail) => {
+        const ids = new Set<string>(); let remaining = 3;
+        for (const name of ["project_bodies", "project_previous", "migration_items"]) {
+          const read = tx.objectStore(name).openCursor();
+          read.onsuccess = () => { try {
+            const cursor = read.result;
+            if (!cursor) { if (!--remaining) result(ids); return; }
+            if (name === "migration_items") {
+              if (cursor.key === MAINTENANCE_ID) this.decodeMaintenance(cursor.value);
+              else {
+                const entry = this.decodeMigration(cursor.value, String(cursor.key));
+                if (entry.kind === "item" && migrationProtectsAudio(entry)) addAudioReference(JSON.parse(entry.json), ids);
+              }
+            } else addAudioReference(decodeBody(cursor.value, String(cursor.key)).project, ids);
+            cursor.continue();
+          } catch (e) { fail(e); } };
+        }
+      });
+      const stats = await (await import("../utils/audioStorage")).collectWebAudio(references);
+      await this.transaction(["migration_items"], "readwrite", (tx, result, fail) => {
+        const store = tx.objectStore("migration_items"), read = store.get(MAINTENANCE_ID);
+        read.onsuccess = () => { try {
+          const current = this.decodeMaintenance(read.result); current.gcAt = Date.now();
+          const json = JSON.stringify(current); store.put({ id: MAINTENANCE_ID, json, ...jsonIntegrity(json) }); result(undefined);
+        } catch (e) { fail(e); } };
+      }, undefined, true);
+      console.info("[audio GC]", { count: stats.count, bytes: stats.bytes });
+      return stats;
+    }, skipped);
   }
 
   async get(id: string): Promise<ProjectRecord | null> {
@@ -267,7 +353,12 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
     assertStorageId(request.operationId);
     assertRevision(request.localRevision);
     if (request.expectedRepositoryRevision !== null) assertRevision(request.expectedRepositoryRevision);
-    return (await this.mutate({ kind: "commit", request, json: encoded.value }))!;
+    const receipt = (await this.mutate({ kind: "commit", request, json: encoded.value }))!;
+    if (receipt.summary.audioId) {
+      try { await (await import("../utils/audioStorage")).confirmWebAudioReference(receipt.summary.audioId); }
+      catch { console.info("[audio publication] pending marker retained"); }
+    }
+    return receipt;
   }
 
   async rename(input: RenameRequest): Promise<CommitReceipt> {

@@ -2,6 +2,7 @@
 import { registerPlugin } from "@capacitor/core";
 import { serializeProject, validateProjectStructure } from "../project/codec";
 import type { Project } from "../types";
+import { validateMaintenance, type MaintenanceRepository, type MaintenanceAction, type GCResult } from "../storage/maintenanceTypes";
 import { assertStorageId } from "./ids";
 import { validateMigrationEntry, type MigrationEntry, type MigrationRepository } from "./migrationTypes";
 import {
@@ -14,7 +15,8 @@ import {
 type JsonCall = (input: { json: string }) => Promise<{ json: string }>;
 export type NativeRepositoryPlugin = Record<
   "initialize" | "listSummaries" | "readProject" | "commitProject" | "touchOpened" |
-  "renameProject" | "removeProject" | "createRecoveryBackup" | "readMigration" | "writeMigration", JsonCall>;
+  "renameProject" | "removeProject" | "createRecoveryBackup" | "readMigration" | "writeMigration", JsonCall> & Partial<Record<
+  "restoreRecoveryBackup" | "readPrevious" | "readMaintenance" | "updateMaintenance" | "collectUnusedAudio" | "legacyCleanupStatus" | "cleanupLegacyData", JsonCall>>;
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const validSummary = (s: unknown): s is ProjectSummary => object(s) &&
   typeof s.id === "string" && typeof s.title === "string" && ["stage", "parade"].includes(s.mode as string) &&
@@ -50,7 +52,7 @@ export const classifyNativeRepositoryError = (e: unknown, operationId?: string):
 let defaultPlugin: NativeRepositoryPlugin | undefined;
 const nativeRepositoryPlugin = () => (defaultPlugin ??= registerPlugin<NativeRepositoryPlugin>("ProjectRepository"));
 
-export class NativeSqliteProjectRepository implements ProjectRepository, MigrationRepository {
+export class NativeSqliteProjectRepository implements ProjectRepository, MigrationRepository, MaintenanceRepository {
   constructor(private readonly plugin: NativeRepositoryPlugin = nativeRepositoryPlugin()) {}
 
   private async invoke(method: keyof NativeRepositoryPlugin, input: unknown = {}, operationId?: string): Promise<unknown> {
@@ -58,7 +60,7 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
     let json: string;
     try { json = JSON.stringify(input); } catch { throw new RepositoryError("INVALID_ARGUMENT", operationId); }
     let response: { json: string };
-    try { response = await this.plugin[method]({ json }); }
+    try { const call = this.plugin[method]; if (!call) throw new RepositoryError("IO_ERROR"); response = await call({ json }); }
     catch (e) { throw classifyNativeRepositoryError(e, operationId); }
     try {
       if (!object(response) || typeof response.json !== "string") throw new Error();
@@ -83,6 +85,9 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
   async get(id: string): Promise<ProjectRecord | null> {
     assertStorageId(id);
     const v = await this.invoke("readProject", { id });
+    return this.decodeRecord(v, id);
+  }
+  private decodeRecord(v: unknown, id: string): ProjectRecord | null {
     if (v === null) return null;
     if (!object(v) || typeof v.json !== "string" || !isRevision(v.repositoryRevision) || !isRevision(v.localRevision) || v.sync !== null) throw new RepositoryError("CORRUPT");
     let project: Project;
@@ -123,10 +128,31 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
     assertStorageId(input.id); const op = assertStorageId(input.operationId); assertRevision(input.expectedRepositoryRevision);
     if (await this.invoke("removeProject", input, op) !== null) throw new RepositoryError("CORRUPT", op);
   }
-  async createRecoveryBackup(): Promise<{ created: true }> {
-    const v = await this.invoke("createRecoveryBackup");
-    if (!object(v) || v.created !== true) throw new RepositoryError("CORRUPT");
-    return { created: true };
+  async createRecoveryBackup(): Promise<{ created: boolean }> {
+    const v = await this.invoke("createRecoveryBackup", { ifDue: true });
+    if (!object(v) || typeof v.created !== "boolean") throw new RepositoryError("CORRUPT");
+    return { created: v.created };
+  }
+  async restoreRecoveryBackup(): Promise<void> {
+    if (await this.invoke("restoreRecoveryBackup") !== null) throw new RepositoryError("CORRUPT");
+  }
+  async getPrevious(id: string): Promise<ProjectRecord | null> {
+    assertStorageId(id); return this.decodeRecord(await this.invoke("readPrevious", { id }), id);
+  }
+  async readMaintenance() { return validateMaintenance(await this.invoke("readMaintenance")); }
+  async updateMaintenance(action: MaintenanceAction) { return validateMaintenance(await this.invoke("updateMaintenance", action)); }
+  async collectUnusedAudio(): Promise<GCResult> {
+    const v = await this.invoke("collectUnusedAudio");
+    if (!object(v) || !Number.isSafeInteger(v.count) || (v.count as number) < 0 || !Number.isSafeInteger(v.bytes) || (v.bytes as number) < 0 || typeof v.skipped !== "boolean") throw new RepositoryError("CORRUPT");
+    return v as GCResult;
+  }
+  async legacyCleanupStatus(): Promise<string[]> {
+    const v = await this.invoke("legacyCleanupStatus");
+    if (!Array.isArray(v) || !v.every(x => typeof x === "string")) throw new RepositoryError("CORRUPT");
+    return v as string[];
+  }
+  async cleanupLegacyData(): Promise<void> {
+    if (await this.invoke("cleanupLegacyData") !== null) throw new RepositoryError("CORRUPT");
   }
   async readMigration(id: string): Promise<MigrationEntry | null> {
     assertStorageId(id);

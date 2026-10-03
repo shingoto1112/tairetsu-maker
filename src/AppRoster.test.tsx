@@ -51,6 +51,20 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it("confirms before returning without saving after access denial and retains the stored version", async () => {
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    const title = await screen.findByRole("textbox", { name: "隊列表名" });
+    vi.spyOn(testRepository, "commit").mockRejectedValue(new RepositoryError("ACCESS_DENIED"));
+    fireEvent.change(title, { target: { value: "退避が必要な未保存" } });
+    fireEvent.click(screen.getByRole("button", { name: "隊列一覧へ戻る" }));
+    const leave = await screen.findByRole("button", { name: "保存せずに一覧へ戻る" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fireEvent.click(leave); expect(screen.getByRole("textbox", { name: "隊列表名" })).toBeTruthy();
+    confirm.mockReturnValue(true); fireEvent.click(leave);
+    await screen.findByRole("button", { name: "削除検証を開く" });
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("ZIP"));
+    expect((await testRepository.get(testProject.id!))?.project.title).toBe("削除検証");
+  }, INTEGRATION_TIMEOUT_MS);
   it("flushes edits on hidden visibility and leaves the old project keys untouched", async () => {
     const old = "read-only sentinel"; localStorage.setItem("stageflow.projects.v1", old);
     render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));

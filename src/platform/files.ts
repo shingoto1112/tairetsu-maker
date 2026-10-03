@@ -77,3 +77,35 @@ export const shareBlobsWithNativeSheet = async ({
 
 export const shareBlobWithNativeSheet = (file: { blob: Blob; fileName: string; title?: string }): Promise<NativeShareStatus> =>
   shareBlobsWithNativeSheet({ files: [file], title: file.title });
+
+/** Stage one generated ZIP at a time. Only cache URLs survive until the sheet
+ * closes; base64 bridge allocations are bounded to 192KiB, including large audio. */
+export const shareGeneratedFilesWithNativeSheet = async (files: AsyncIterable<{ blob: Blob; fileName: string }>): Promise<NativeShareStatus> => {
+  if (!isNativeExportShareAvailable()) throw new Error("共有機能を利用できません。");
+  if (sharePending) throw new Error("別の共有・保存が進行中です。");
+  sharePending = true;
+  const paths: string[] = [], items: { path: string; mimeType: string; fileName: string }[] = [];
+  const prefix = `exports/bulk-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let cleanup: (() => Promise<void>) | undefined;
+  try {
+    const { Directory, Filesystem } = await import("@capacitor/filesystem");
+    cleanup = async () => { for (const path of paths) await Filesystem.deleteFile({ directory: Directory.Cache, path }).catch(() => {}); };
+    for await (const file of files) {
+      const path = `${prefix}-${sanitizeNativeFileName(file.fileName)}`;
+      paths.push(path);
+      for (let offset = 0; offset < file.blob.size; offset += 192 * 1024) {
+        const data = await blobToBase64(file.blob.slice(offset, offset + 192 * 1024));
+        if (!offset) await Filesystem.writeFile({ directory: Directory.Cache, path, data, recursive: true });
+        else await Filesystem.appendFile({ directory: Directory.Cache, path, data });
+      }
+      if ((await Filesystem.stat({ directory: Directory.Cache, path })).size !== file.blob.size) throw new Error("バックアップを最後まで書き込めませんでした。");
+      const { uri } = await Filesystem.getUri({ directory: Directory.Cache, path });
+      items.push({ path: uri, fileName: file.fileName, mimeType: file.blob.type || "application/zip" });
+    }
+    const result = await ExportShare.shareFiles({ files: items, title: "すべての隊列表のバックアップ" });
+    if (!["shared", "cancelled"].includes(result.status)) throw new Error("共有結果を確認できませんでした。");
+    return result.status;
+  } finally {
+    try { await cleanup?.(); } finally { sharePending = false; }
+  }
+};

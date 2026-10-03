@@ -5,6 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { getAppRuntime } from "../platform/runtime";
 
 let persistenceAttempted = false;
+let maintenanceWork: Promise<void> | undefined;
 export const prepareAppRepository = async (onProgress: (progress: { completed: number; total: number }) => void) => {
   // The dev-only ?runtime=capacitor-ios preview runs in a browser without the native
   // plugin; it keeps the iPad UI but stores in IndexedDB. Real devices always use SQLite.
@@ -19,6 +20,10 @@ export const prepareAppRepository = async (onProgress: (progress: { completed: n
     : new (await import("../repositories/indexedDbRepository")).IndexedDbProjectRepository();
   const readers = native ? { native: await (await import("./legacyReaders")).createCapacitorLegacyReader(), includeDrafts: false } : { includeDrafts: false };
   const result: StorageBootstrapResult = await (await import("./bootstrap")).runStorageBootstrap({ repository, readers, onProgress });
+  if (result.completed) {
+    try { await (maintenanceWork ??= import("./maintenance").then(module => module.runDeviceMaintenance(repository))); }
+    catch { console.info("[device maintenance] skipped"); }
+  }
   return { repository, result };
 };
 

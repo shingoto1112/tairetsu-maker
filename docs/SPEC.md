@@ -200,6 +200,7 @@ Windowsダウンロード版は、Web版のReact/Vite実装をTauriで包む方�
 - 起動時に旧データを移行し、旧localStorage・iPadミラーは読み取り専用で残す。本人クラウドの下書きファイルは別経路を維持する。
 - 音源ファイル本体は端末のみへ保存する。Web/WindowsはIndexedDBのBlob、iPadネイティブはApplication Support内のファイルを使い、IDから解決したURLで再生する。旧iPad音源はコピー移行し、元ファイルを残す。
 - 隊列表データ側には音源メタ情報を保存する。
+- 復元候補・検証済み端末バックアップからの復旧、手動全件バックアップ、音源GC、利用者による旧データ整理を提供する。安全条件と未確認項目は `docs/STORAGE_RECOVERY_BACKUP.md` を参照する。
 
 共有ファイル:
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runRepositoryContract } from "./contract/runRepositoryContract";
 import { MemoryMigrationRepository } from "../storage/testing/MemoryMigrationRepository";
 import type { MigrationEntry } from "./migrationTypes";
@@ -35,6 +35,20 @@ const fakePlugin = (): NativeRepositoryPlugin => {
   };
 };
 describe("native SQLite adapter mapping", () => {
+  it("uses fixed recovery/maintenance operations with no paths and validates responses", async () => {
+    const plugin = fakePlugin();
+    plugin.restoreRecoveryBackup = vi.fn(async () => ({ json: "null" }));
+    plugin.readMaintenance = async () => ({ json: JSON.stringify({ completedAt: null, successfulStarts: 0, reviewedIds: [], gcAt: null }) });
+    plugin.collectUnusedAudio = async () => ({ json: '{"count":2,"bytes":10,"skipped":false}' });
+    const r = new NativeSqliteProjectRepository(plugin);
+    await r.restoreRecoveryBackup(); expect(plugin.restoreRecoveryBackup).toHaveBeenCalledWith({ json: "{}" });
+    expect((await r.readMaintenance()).reviewedIds).toEqual([]);
+    expect(await r.collectUnusedAudio()).toEqual({ count: 2, bytes: 10, skipped: false });
+    plugin.collectUnusedAudio = async () => ({ json: '{"count":-1,"bytes":0,"skipped":false}' });
+    await expect(r.collectUnusedAudio()).rejects.toMatchObject({ code: "CORRUPT" });
+    plugin.restoreRecoveryBackup = async () => { throw { code: "BUSY", message: "private" }; };
+    await expect(r.restoreRecoveryBackup()).rejects.toMatchObject({ code: "BUSY" });
+  });
   it("maps the migration contract through JSON-only read/write bridge calls", async () => {
     expect((await runMigrationContract(() => new NativeSqliteProjectRepository(fakePlugin()))).scenarios).toBe(30);
   });

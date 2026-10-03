@@ -28,6 +28,34 @@ final class AudioStoreTests: XCTestCase {
         let object: [String: Any] = ["type": "audio/mpeg"]
         try JSONSerialization.data(withJSONObject: object).write(to: legacy.appendingPathComponent(id).appendingPathExtension("json"))
     }
+    func testGarbageCollectionProtectsReferencesPendingAndActiveUploadsAndRemovesOrphans() throws {
+        _ = try store.importFile(source, meta: meta("referenced"))
+        _ = try store.importFile(source, meta: meta("unused"))
+        _ = try store.importFile(source, meta: meta("pending"))
+        try store.confirmReference(id: "unused")
+        let token = try store.beginUpload(meta: meta("active"))
+        try store.appendUpload(token: token, offset: 0, base64: bytes.base64EncodedString())
+        let orphan = root.appendingPathComponent(UUID().uuidString.lowercased()).appendingPathExtension("partial")
+        try bytes.write(to: orphan)
+        let unknown = root.appendingPathComponent("unknown.keep")
+        try bytes.write(to: unknown)
+        let stats = try store.collectUnused(referenced: Set(["referenced"]))
+        XCTAssertEqual(stats.count, 2); XCTAssertEqual(stats.bytes, 10)
+        XCTAssertNotNil(try store.resolve(id: "referenced")); XCTAssertNotNil(try store.resolve(id: "pending"))
+        XCTAssertNil(try store.resolve(id: "unused")); XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unknown.path))
+        // GC uses a different store instance in production; active uploads are process-wide.
+        let second = AudioStore(directory: root, legacyDirectory: legacy)
+        _ = try second.collectUnused(referenced: Set(["referenced"]))
+        XCTAssertEqual(try store.finishUpload(token: token).id, "active")
+    }
+    func testGarbageCollectionRejectsCorruptCatalogBeforeDeletion() throws {
+        _ = try store.importFile(source, meta: meta("safe"))
+        let safe = try resolved("safe")
+        try Data("invalid".utf8).write(to: root.appendingPathComponent("index.json"))
+        XCTAssertThrowsError(try store.collectUnused(referenced: Set<String>()))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: safe.path))
+    }
     func testImportCopyAtomicPublicationAndReopen() throws {
         XCTAssertEqual(try store.importFile(source, meta: meta()), meta())
         let url = try resolved("audio-old")

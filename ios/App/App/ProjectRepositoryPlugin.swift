@@ -17,7 +17,14 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "removeProject", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "createRecoveryBackup", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readMigration", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "writeMigration", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "writeMigration", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "restoreRecoveryBackup", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readPrevious", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readMaintenance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updateMaintenance", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "collectUnusedAudio", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "legacyCleanupStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cleanupLegacyData", returnType: CAPPluginReturnPromise)
     ]
     private let worker = DispatchQueue(label: "jp.tairetsu.repository.bridge", qos: .userInitiated)
     private var repository: ProjectRepository?
@@ -57,4 +64,11 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func createRecoveryBackup(_ call: CAPPluginCall) { perform("createRecoveryBackup", call) }
     @objc func readMigration(_ call: CAPPluginCall) { perform("readMigration", call) }
     @objc func writeMigration(_ call: CAPPluginCall) { perform("writeMigration", call) }
+    @objc func restoreRecoveryBackup(_ call: CAPPluginCall) { perform("restoreRecoveryBackup", call) }
+    @objc func readPrevious(_ call: CAPPluginCall) { perform("readPrevious", call) }
+    @objc func readMaintenance(_ call: CAPPluginCall) { perform("readMaintenance", call) }
+    @objc func updateMaintenance(_ call: CAPPluginCall) { perform("updateMaintenance", call) }
+    @objc func collectUnusedAudio(_ call: CAPPluginCall) { perform("collectUnusedAudio", call) }
+    @objc func legacyCleanupStatus(_ call: CAPPluginCall) { perform("legacyCleanupStatus", call) }
+    @objc func cleanupLegacyData(_ call: CAPPluginCall) { perform("cleanupLegacyData", call) }
 }

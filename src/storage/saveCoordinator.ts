@@ -6,6 +6,8 @@ export type SaveState = { id: string; localRevision: Revision; persistedRevision
 type Session = SaveState & { project: Project; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
 const detached = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export const repositoryError = (error: unknown): RepositoryError => error instanceof RepositoryError ? error : new RepositoryError("IO_ERROR");
+export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!state?.dirty && !state.saving && !!state.error &&
+  ["ACCESS_DENIED", "UNSUPPORTED_SCHEMA", "CORRUPT", "INVALID_ID", "INVALID_ARGUMENT", "NO_SPACE", "QUOTA_EXCEEDED", "IO_ERROR"].includes(state.error.code);
 
 /** Owns fixed snapshots and CAS receipts, never mutates editor Project objects.
  * A failed request is retained for exact retry after a potentially lost reply.

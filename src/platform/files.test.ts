@@ -8,6 +8,9 @@ const fileMocks = vi.hoisted(() => ({
   pluginAvailable: true,
   share: vi.fn(),
   writeFile: vi.fn(),
+  appendFile: vi.fn(),
+  getUri: vi.fn(),
+  stat: vi.fn(),
 }));
 
 vi.mock("@capacitor/core", () => ({
@@ -20,10 +23,13 @@ vi.mock("@capacitor/filesystem", () => ({
   Filesystem: {
     deleteFile: fileMocks.deleteFile,
     writeFile: fileMocks.writeFile,
+    appendFile: fileMocks.appendFile,
+    getUri: fileMocks.getUri,
+    stat: fileMocks.stat,
   },
 }));
 
-import { shareBlobWithNativeSheet, shareBlobsWithNativeSheet } from "./files";
+import { shareBlobWithNativeSheet, shareBlobsWithNativeSheet, shareGeneratedFilesWithNativeSheet } from "./files";
 
 describe("native file sharing", () => {
   afterEach(() => {
@@ -38,6 +44,9 @@ describe("native file sharing", () => {
     fileMocks.writeFile.mockReset().mockResolvedValue({
       uri: "file://cache/export.pdf",
     });
+    fileMocks.appendFile.mockReset().mockResolvedValue(undefined);
+    fileMocks.getUri.mockReset().mockImplementation(async ({ path }: { path: string }) => ({ uri: `file://cache/${path}` }));
+    fileMocks.stat.mockReset();
     vi.spyOn(Date, "now").mockReturnValue(1234);
   });
 
@@ -106,6 +115,31 @@ describe("native file sharing", () => {
     fileMocks.writeFile.mockResolvedValueOnce({ uri: "file://one" }).mockRejectedValueOnce(new Error("write failed"));
     await expect(shareBlobsWithNativeSheet({ files: [{ blob: new Blob(["one"]), fileName: "one.png" }, { blob: new Blob(["two"]), fileName: "two.png" }] })).rejects.toThrow("write failed");
     expect(fileMocks.share).not.toHaveBeenCalled(); expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("stages generated files sequentially with bounded base64 and cleans all paths after sharing", async () => {
+    const order: string[] = [];
+    fileMocks.appendFile.mockImplementation(async () => { order.push("append"); });
+    fileMocks.stat.mockResolvedValueOnce({ size: 400 * 1024 }).mockResolvedValueOnce({ size: 8 });
+    async function* files() {
+      yield { blob: new Blob([new Uint8Array(400 * 1024)], { type: "application/zip" }), fileName: "part-1.zip" };
+      order.push("next");
+      yield { blob: new Blob(["manifest"], { type: "application/json" }), fileName: "set.manifest.json" };
+    }
+    expect(await shareGeneratedFilesWithNativeSheet(files())).toBe("shared");
+    expect(order).toEqual(["append", "append", "next"]);
+    expect(fileMocks.writeFile).toHaveBeenCalledTimes(2);
+    for (const [request] of [...fileMocks.writeFile.mock.calls, ...fileMocks.appendFile.mock.calls]) expect(request.data.length).toBeLessThanOrEqual(192 * 1024 / 3 * 4);
+    expect(fileMocks.share.mock.calls[0][0].files).toHaveLength(2); expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
+  });
+  it("cleans partial staging when a chunk fails and releases the share guard", async () => {
+    fileMocks.appendFile.mockRejectedValueOnce(new Error("no space"));
+    fileMocks.stat.mockResolvedValue({ size: 200 * 1024 });
+    async function* files() { yield { blob: new Blob([new Uint8Array(200 * 1024)]), fileName: "large.zip" }; }
+    await expect(shareGeneratedFilesWithNativeSheet(files())).rejects.toThrow("no space");
+    expect(fileMocks.deleteFile).toHaveBeenCalledTimes(1);
+    expect(fileMocks.share).not.toHaveBeenCalled();
+    expect(await shareGeneratedFilesWithNativeSheet(files())).toBe("shared");
   });
   it("rejects a missing plugin without writing or falling back to file-URL sharing", async () => {
     fileMocks.pluginAvailable = false;

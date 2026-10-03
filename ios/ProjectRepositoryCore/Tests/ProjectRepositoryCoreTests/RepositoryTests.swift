@@ -323,6 +323,94 @@ final class RepositoryTests: XCTestCase {
         XCTAssertThrowsError(try r.restoreRecoveryBackup()) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
         XCTAssertTrue(try snapshot() == before, "unverified backup never overwrites current DB")
     }
+    func testFixedBridgeRecoveryClosesRestoresReopensAndRejectsOtherConnection() throws {
+        let r = repo(); defer { r.close() }
+        _ = try execute(r, "commitProject", initial())
+        _ = try execute(r, "createRecoveryBackup")
+        let other = repo(); _ = try execute(other, "initialize")
+        XCTAssertThrowsError(try execute(r, "restoreRecoveryBackup")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "BUSY") }
+        other.close(); r.close()
+        try Data(repeating: 0x42, count: 512).write(to: directory.appendingPathComponent("repository.sqlite"))
+        XCTAssertThrowsError(try execute(r, "initialize")) { XCTAssertEqual(($0 as? RepositoryError)?.code, "CORRUPT") }
+        XCTAssertThrowsError(try execute(r, "restoreRecoveryBackup", ["path": "/anywhere"])) { XCTAssertEqual(($0 as? RepositoryError)?.code, "INVALID_ARGUMENT") }
+        _ = try execute(r, "restoreRecoveryBackup")
+        subset(try record(r, "project_a"), ["repositoryRevision": "1", "localRevision": "1"], "bridge restored")
+        _ = try execute(r, "listSummaries", ["limit": 100])
+    }
+    func testRecoveryBackupScheduleAndLowSpaceSkip() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let ample: Int64 = 100 * 1024 * 1024
+        XCTAssertTrue(ProjectRepository.recoveryBackupDue(now: now, last: nil, freeBytes: ample, databaseBytes: 1024))
+        XCTAssertFalse(ProjectRepository.recoveryBackupDue(now: now, last: now.addingTimeInterval(-86399), freeBytes: ample, databaseBytes: 1024))
+        XCTAssertTrue(ProjectRepository.recoveryBackupDue(now: now, last: now.addingTimeInterval(-86400), freeBytes: ample, databaseBytes: 1024))
+        XCTAssertFalse(ProjectRepository.recoveryBackupDue(now: now, last: nil, freeBytes: 0, databaseBytes: 1024))
+        XCTAssertFalse(ProjectRepository.recoveryBackupDue(now: now, last: nil, freeBytes: Int64.max, databaseBytes: Int64.max))
+        let r = repo(); defer { r.close() }
+        _ = try execute(r, "commitProject", initial())
+        let first = try execute(r, "createRecoveryBackup", ["ifDue": true])
+        let second = try execute(r, "createRecoveryBackup", ["ifDue": true])
+        subset(first, ["created": true], "first scheduled backup")
+        subset(second, ["created": false], "within 24 hours")
+    }
+    func testRepositoryAudioGCProtectsPreviousRecoveryIncompleteAndBackup() throws {
+        let documents = directory.appendingPathComponent("Documents", isDirectory: true)
+        let audioRoot = directory.appendingPathComponent("audio", isDirectory: true)
+        let store = AudioStore(directory: audioRoot, legacyDirectory: documents.appendingPathComponent("audio"))
+        let source = directory.appendingPathComponent("source.mp3")
+        try Data([UInt8(1), 2, 3, 4, 5]).write(to: source)
+        for id in ["current", "previous", "recovery", "incomplete", "backup-only", "draft-only", "unused", "uncommitted"] {
+            _ = try store.importFile(source, meta: StoredAudioMeta(id: id, name: "anonymous.mp3", type: "audio/mpeg", size: 5))
+            if id != "uncommitted" { try store.confirmReference(id: id) }
+        }
+        let r = ProjectRepository(databaseURL: directory.appendingPathComponent("repository.sqlite"), documentsURL: documents)
+        defer { r.close() }
+        let create = try initial()
+        let originalJSON = try XCTUnwrap(create["json"] as? String)
+        var p = try RepositoryValidation.object(originalJSON)
+        let meta: (String) -> [String: Any] = { ["id": $0, "name": "anonymous.mp3", "type": "audio/mpeg", "size": 5] }
+        let draftRoot = documents.appendingPathComponent("personal-cloud-drafts", isDirectory: true)
+        try FileManager.default.createDirectory(at: draftRoot, withIntermediateDirectories: true)
+        let draft: [String: Any] = ["cloudProjectId": "anonymous-cloud", "savedAt": "2026-01-01T00:00:00Z", "baseUpdatedAt": NSNull(), "project": ["audio": meta("draft-only")] as [String: Any]]
+        let draftJSON = try RepositoryValidation.json(draft)
+        try Data(draftJSON.utf8).write(to: draftRoot.appendingPathComponent("anonymous-cloud.pending.json"))
+        p["audio"] = meta("previous")
+        var request = create; request["json"] = try RepositoryValidation.json(p)
+        _ = try execute(r, "commitProject", request)
+        p["audio"] = meta("current")
+        request["json"] = try RepositoryValidation.json(p); request["localRevision"] = "2"; request["expectedRepositoryRevision"] = "1"; request["operationId"] = "audio-current"
+        _ = try execute(r, "commitProject", request)
+        p["audio"] = meta("recovery")
+        var candidate = try migrationItem("gc-recovery", disposition: "recovery")
+        candidate["json"] = try RepositoryValidation.json(p)
+        candidate = try advance(r, candidate, state: "discovered", expected: NSNull())
+        candidate = try advance(r, candidate, state: "validated", expected: "discovered")
+        candidate = try advance(r, candidate, state: "written", expected: "validated")
+        candidate = try advance(r, candidate, state: "verified", expected: "written")
+        _ = try advance(r, candidate, state: "completed", expected: "verified")
+        p["audio"] = meta("incomplete")
+        var pending = try migrationItem("gc-incomplete")
+        pending["json"] = try RepositoryValidation.json(p)
+        pending = try advance(r, pending, state: "discovered", expected: NSNull())
+        _ = try advance(r, pending, state: "validated", expected: "discovered")
+        var batch: [String: Any] = ["kind": "batch", "id": "legacy-projects-v1", "state": "discovered", "itemIds": ["gc-recovery"],
+            "sources": [["source": "anonymous", "status": "ok"] as [String: Any]], "issues": [[String: Any]]()]
+        _ = try advance(r, batch, state: "discovered", expected: NSNull())
+        batch["counts"] = ["migratedCount": 0, "recoveryCount": 1, "duplicateCount": 0] as [String: Any]
+        _ = try advance(r, batch, state: "completed", expected: "discovered")
+        _ = try execute(r, "updateMaintenance", ["action": "started"])
+        p["id"] = "backup-project"; p["audio"] = meta("backup-only")
+        _ = try execute(r, "commitProject", ["id": "backup-project", "json": try RepositoryValidation.json(p), "operationId": "backup-project-create", "localRevision": "1", "expectedRepositoryRevision": NSNull()] as [String: Any])
+        _ = try execute(r, "createRecoveryBackup")
+        _ = try execute(r, "removeProject", ["id": "backup-project", "expectedRepositoryRevision": "1", "operationId": "backup-project-remove"])
+        let orphan = audioRoot.appendingPathComponent(UUID().uuidString.lowercased()).appendingPathExtension("partial")
+        try Data([UInt8(1), 2, 3, 4, 5]).write(to: orphan)
+        let stats = try execute(r, "collectUnusedAudio")
+        subset(stats, ["count": 2, "bytes": 10, "skipped": false] as [String: Any], "only unused and partial")
+        for id in ["current", "previous", "recovery", "incomplete", "backup-only", "draft-only", "uncommitted"] { XCTAssertNotNil(try store.resolve(id: id)) }
+        XCTAssertNil(try store.resolve(id: "unused"))
+        let second = try execute(r, "collectUnusedAudio")
+        subset(second, ["skipped": true], "one GC per day")
+    }
     func testErrorClassificationAndIntegrityVectors() {
         for (rc, code) in [(SQLITE_FULL,"NO_SPACE"),(SQLITE_BUSY,"BUSY"),(SQLITE_LOCKED,"BUSY"),(SQLITE_CORRUPT,"CORRUPT"),
                            (SQLITE_NOTADB,"CORRUPT"),(SQLITE_CANTOPEN,"ACCESS_DENIED"),(SQLITE_PERM,"ACCESS_DENIED"),(SQLITE_IOERR,"IO_ERROR")] {

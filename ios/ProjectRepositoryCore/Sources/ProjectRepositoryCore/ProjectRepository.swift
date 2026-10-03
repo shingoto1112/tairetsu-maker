@@ -7,6 +7,7 @@ public final class ProjectRepository {
     private let queue = DispatchQueue(label: "jp.tairetsu.repository", qos: .userInitiated)
     private let url: URL
     private let protectedDataAvailable: () -> Bool
+    private let documentsURL: URL?
     private var db: OpaquePointer?
     private var poisoned = false
     private static let lifecycle = NSLock()
@@ -23,9 +24,10 @@ public final class ProjectRepository {
         return base.appendingPathComponent("TairetsuMaker/v2", isDirectory: true).appendingPathComponent("repository.sqlite")
     }
 
-    public init(databaseURL: URL, protectedDataAvailable: @escaping () -> Bool = { true }) {
+    public init(databaseURL: URL, protectedDataAvailable: @escaping () -> Bool = { true }, documentsURL: URL? = nil) {
         url = databaseURL.standardizedFileURL
         self.protectedDataAvailable = protectedDataAvailable
+        self.documentsURL = documentsURL
     }
     deinit { if let handle = db { sqlite3_close_v2(handle); unregister() } }
 
@@ -314,26 +316,53 @@ public final class ProjectRepository {
     /// Request/response each contain ONE JSON string, no base64 or JS body object.
     public func execute(_ method: String, requestJSON: String = "{}") throws -> String {
         try queue.sync {
+            StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
             do {
                 let input = try RepositoryValidation.object(requestJSON)
-                guard ["initialize","listSummaries","readProject","commitProject","touchOpened","renameProject","removeProject","createRecoveryBackup","readMigration","writeMigration"].contains(method) else {
+                guard ["initialize","listSummaries","readProject","commitProject","touchOpened","renameProject","removeProject","createRecoveryBackup","readMigration","writeMigration", "restoreRecoveryBackup", "readPrevious", "readMaintenance", "updateMaintenance", "collectUnusedAudio", "legacyCleanupStatus", "cleanupLegacyData"].contains(method) else {
                     throw RepositoryError("INVALID_ARGUMENT")
+                }
+                if method == "restoreRecoveryBackup" {
+                    guard input.isEmpty else { throw RepositoryError("INVALID_ARGUMENT") }
+                    try restoreRecoveryBackupLocked(); try connection(); return "null"
                 }
                 try connection()
                 switch method {
                 case "initialize": return try RepositoryValidation.json(["status":"ready", "schemaVersion":1, "errors":[String]()] as [String: Any])
-                case "readProject":
+                case "readProject", "readPrevious":
                     let id = try RepositoryValidation.id(input["id"])
-                    guard let r = try body(id) else { return "null" }
+                    let stored = method == "readPrevious" ? try rows("SELECT * FROM project_previous WHERE id=?", [id]).first : try body(id)
+                    guard let r = stored else { return "null" }
+                    try validateBody(r)
                     return try RepositoryValidation.json(["json":r["json"]!,"repositoryRevision":r["repository_revision"]!,"localRevision":r["local_revision"]!,"sync":NSNull()] as [String: Any])
                 case "listSummaries": return try list(input)
                 case "touchOpened": return try touch(input)
-                case "createRecoveryBackup": try backup(); return "{\"created\":true}"
+                case "createRecoveryBackup":
+                    if input.isEmpty { try backup(); return "{\"created\":true}" }
+                    guard input.count == 1, input["ifDue"] as? Bool == true else { throw RepositoryError("INVALID_ARGUMENT") }
+                    return try RepositoryValidation.json(["created": try backupIfDue()])
+                case "readMaintenance": return try RepositoryValidation.json(maintenanceState())
+                case "updateMaintenance": return try updateMaintenance(input)
+                case "collectUnusedAudio": return try collectUnusedAudio()
+                case "legacyCleanupStatus": return try RepositoryValidation.json(legacyCleanupReasons())
+                case "cleanupLegacyData": try cleanupLegacyData(); return "null"
                 case "readMigration":
                     let id = try RepositoryValidation.id(input["id"])
                     return try migrationEntry(id).map { try RepositoryValidation.json($0) } ?? "null"
                 case "writeMigration": return try writeMigration(input)
-                default: return try mutate(method, input)
+                default:
+                    let result = try mutate(method, input)
+                    if method == "commitProject" {
+                        // After COMMIT only. A catalog failure retains pending bytes
+                        // and must never turn a committed Project into a save failure.
+                        do {
+                            let receipt = try RepositoryValidation.object(result)
+                            if let summary = receipt["summary"] as? [String: Any], let id = summary["audioId"] as? String {
+                                try audioStore().confirmReference(id: id)
+                            }
+                        } catch { print("[audio publication] pending marker retained") }
+                    }
+                    return result
                 }
             } catch {
                 if poisoned { closeConnection(); poisoned = false }
@@ -558,6 +587,202 @@ public final class ProjectRepository {
         }
     }
 
+    private let maintenanceID = "device-maintenance-v1"
+    private let day: Double = 86_400_000
+    private func maintenanceState() throws -> [String: Any] {
+        guard let row = try rows("SELECT state_json FROM migration_items WHERE source_key=?", [maintenanceID]).first,
+              let raw = row["state_json"] else {
+            return ["completedAt": NSNull(), "successfulStarts": 0, "reviewedIds": [String](), "gcAt": NSNull()]
+        }
+        let envelope = try RepositoryValidation.object(raw, code: "CORRUPT")
+        guard let json = envelope["json"] as? String, RepositoryValidation.integer(envelope["byteLength"]) == json.utf8.count,
+              envelope["crc32"] as? String == Integrity.crc32(json) else { throw RepositoryError("CORRUPT") }
+        let state = try RepositoryValidation.object(json, code: "CORRUPT")
+        guard let starts = RepositoryValidation.integer(state["successfulStarts"]), starts >= 0,
+              let reviewed = state["reviewedIds"] as? [String], Set(reviewed).count == reviewed.count else { throw RepositoryError("CORRUPT") }
+        for id in reviewed { _ = try RepositoryValidation.id(id) }
+        for key in ["completedAt", "gcAt"] {
+            guard state[key] is NSNull || (RepositoryValidation.integer(state[key]).map { $0 > 0 } ?? false) else { throw RepositoryError("CORRUPT") }
+        }
+        return state
+    }
+    private func persistMaintenance(_ state: [String: Any]) throws {
+        let json = try RepositoryValidation.json(state)
+        let envelope = try RepositoryValidation.json(["json": json, "byteLength": json.utf8.count, "crc32": Integrity.crc32(json)] as [String: Any])
+        try run("INSERT INTO migration_items(source_key,state_json) VALUES(?,?) ON CONFLICT(source_key) DO UPDATE SET state_json=excluded.state_json", [maintenanceID, envelope])
+    }
+    private func updateMaintenance(_ input: [String: Any]) throws -> String {
+        guard let action = input["action"] as? String, ["started", "reviewed"].contains(action) else { throw RepositoryError("INVALID_ARGUMENT") }
+        return try transaction {
+            var state = try maintenanceState()
+            let batch = try migrationEntry("legacy-projects-v1")
+            if action == "started", batch?["state"] as? String == "completed" {
+                if state["completedAt"] is NSNull { state["completedAt"] = Int(Date().timeIntervalSince1970 * 1000) }
+                state["successfulStarts"] = (RepositoryValidation.integer(state["successfulStarts"]) ?? 0) + 1
+            } else if action == "reviewed" {
+                guard let ids = input["ids"] as? [String], let allowed = batch?["itemIds"] as? [String], ids.allSatisfy({ allowed.contains($0) }) else { throw RepositoryError("INVALID_ARGUMENT") }
+                for id in ids { _ = try RepositoryValidation.id(id) }
+                state["reviewedIds"] = Array(Set((state["reviewedIds"] as? [String] ?? []) + ids)).sorted()
+            }
+            try persistMaintenance(state)
+            return try RepositoryValidation.json(state)
+        }
+    }
+    private func addAudio(_ value: [String: Any], to references: inout [String: StoredAudioMeta]) throws {
+        guard let raw = value["audio"], !(raw is NSNull) else { return }
+        guard let audio = raw as? [String: Any] else { throw RepositoryError("CORRUPT") }
+        let meta = try JSONDecoder().decode(StoredAudioMeta.self, from: JSONSerialization.data(withJSONObject: audio))
+        _ = try RepositoryValidation.id(meta.id)
+        if let previous = references[meta.id], previous.size != meta.size { throw RepositoryError("CORRUPT") }
+        references[meta.id] = meta
+    }
+    private func audioReferences() throws -> [String: StoredAudioMeta] {
+        var references: [String: StoredAudioMeta] = [:]
+        for table in ["project_bodies", "project_previous"] {
+            try scan("SELECT * FROM \(table)") { row in
+                try validateBody(row)
+                try addAudio(RepositoryValidation.object(row["json"]!, code: "CORRUPT"), to: &references)
+            }
+        }
+        try scan("SELECT source_key FROM migration_items") { row in
+            guard let id = row["source_key"] else { throw RepositoryError("CORRUPT") }
+            if id == maintenanceID { _ = try maintenanceState(); return }
+            guard let entry = try migrationEntry(id) else { throw RepositoryError("CORRUPT") }
+            if entry["kind"] as? String == "item", entry["disposition"] as? String == "recovery" || entry["outcome"] as? String == "recovery" || entry["state"] as? String != "completed" {
+                guard let json = entry["json"] as? String else { throw RepositoryError("CORRUPT") }
+                try addAudio(RepositoryValidation.object(json, code: "CORRUPT"), to: &references)
+            }
+        }
+        for (id, meta) in try draftAudioReferences() {
+            if let known = references[id], known.size != meta.size { throw RepositoryError("CORRUPT") }
+            references[id] = meta
+        }
+        return references
+    }
+    /// Existing personal drafts deliberately remain outside migration. Read
+    /// their local primary/pending/backup references without importing or editing
+    /// them, so audio cleanup cannot damage that separate persistence path.
+    private func draftAudioReferences() throws -> [String: StoredAudioMeta] {
+        guard let documents = documentsURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { throw RepositoryError("ACCESS_DENIED") }
+        let root = documents.resolvingSymlinksInPath().standardizedFileURL.appendingPathComponent("personal-cloud-drafts", isDirectory: true)
+        let fm = FileManager.default
+        do {
+            guard (try fm.attributesOfItem(atPath: root.path))[.type] as? FileAttributeType == .typeDirectory,
+                  root.resolvingSymlinksInPath().standardizedFileURL == root.standardizedFileURL else { throw RepositoryError("ACCESS_DENIED") }
+        } catch let error as RepositoryError { throw error
+        } catch let error as NSError {
+            if error.domain == NSCocoaErrorDomain && [NSFileReadNoSuchFileError, NSFileNoSuchFileError].contains(error.code) { return [:] }
+            throw error
+        }
+        var references: [String: StoredAudioMeta] = [:]
+        for file in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) where file.pathExtension == "json" {
+            let attrs = try fm.attributesOfItem(atPath: file.path)
+            guard attrs[.type] as? FileAttributeType == .typeRegular, let bytes = attrs[.size] as? NSNumber, bytes.int64Value <= 64 * 1024 * 1024,
+                  file.resolvingSymlinksInPath().standardizedFileURL == file.standardizedFileURL else { throw RepositoryError("CORRUPT") }
+            guard let text = String(data: try Data(contentsOf: file), encoding: .utf8) else { throw RepositoryError("CORRUPT") }
+            let raw = try RepositoryValidation.object(text, code: "CORRUPT")
+            guard let project = raw["project"] as? [String: Any] else { throw RepositoryError("CORRUPT") }
+            try addAudio(project, to: &references)
+        }
+        return references
+    }
+    private func backupReferences() throws -> [String: StoredAudioMeta] {
+        guard FileManager.default.fileExists(atPath: recoveryURL.path) else { return [:] }
+        let source = ProjectRepository(databaseURL: recoveryURL, protectedDataAvailable: protectedDataAvailable, documentsURL: documentsURL)
+        try source.connection(); defer { source.closeConnection() }
+        try source.validateAll()
+        return try source.audioReferences()
+    }
+    private func audioStore() throws -> AudioStore {
+        guard let documents = documentsURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { throw RepositoryError("ACCESS_DENIED") }
+        return AudioStore(directory: url.deletingLastPathComponent().appendingPathComponent("audio", isDirectory: true),
+                          legacyDirectory: documents.resolvingSymlinksInPath().standardizedFileURL.appendingPathComponent("audio", isDirectory: true))
+    }
+    private func collectUnusedAudio() throws -> String {
+        var state = try maintenanceState()
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let skip: [String: Any] = ["count": 0, "bytes": 0, "skipped": true]
+        guard let batch = try migrationEntry("legacy-projects-v1"), batch["state"] as? String == "completed",
+              !(state["completedAt"] is NSNull), (RepositoryValidation.integer(state["gcAt"]).map { Double(now - $0) >= day } ?? true) else { return try RepositoryValidation.json(skip) }
+        Self.lifecycle.lock(); let exclusive = Self.openCounts[url.path, default: 0] == 1; Self.lifecycle.unlock()
+        guard exclusive else { return try RepositoryValidation.json(skip) }
+        var references = try audioReferences()
+        for (id, meta) in try backupReferences() { references[id] = meta }
+        let stats = try audioStore().collectUnused(referenced: Set(references.keys))
+        state["gcAt"] = now
+        try transaction { try persistMaintenance(state) }
+        // Counts and bytes only; never log logical IDs, paths, titles or media.
+        print("[audio GC] count=\(stats.count) bytes=\(stats.bytes)")
+        return try RepositoryValidation.json(["count": stats.count, "bytes": stats.bytes, "skipped": false] as [String: Any])
+    }
+    private func legacyCleanupReasons() throws -> [String] {
+        let state = try maintenanceState(), batch = try migrationEntry("legacy-projects-v1")
+        var reasons: [String] = []
+        if batch?["state"] as? String != "completed" { reasons.append("古いデータの移行が完了していません。") }
+        if (batch?["issues"] as? [[String: Any]])?.isEmpty != true { reasons.append("移行元に確認できていないデータがあります。") }
+        let reviewed = Set(state["reviewedIds"] as? [String] ?? [])
+        for id in batch?["itemIds"] as? [String] ?? [] {
+            guard let item = try migrationEntry(id), item["state"] as? String == "completed" else {
+                reasons.append("移行結果を確認できません。"); continue
+            }
+            if (item["disposition"] as? String == "recovery" || item["outcome"] as? String == "recovery"), !reviewed.contains(id) { reasons.append("復元候補をすべて確認してください。") }
+        }
+        if RepositoryValidation.integer(state["completedAt"]).map({ Date().timeIntervalSince1970 * 1000 - Double($0) >= 30 * day }) != true {
+            reasons.append("移行完了の確認から30日以上必要です。")
+        }
+        if (RepositoryValidation.integer(state["successfulStarts"]) ?? 0) < 2 { reasons.append("移行後にもう一度正常に起動してください。") }
+        do { try validateAll(); _ = try draftAudioReferences() } catch { reasons.append("現在の保存データ、前の保存または端末の下書きを検証できません。") }
+        do {
+            if !FileManager.default.fileExists(atPath: recoveryURL.path) { reasons.append("検証済みの端末バックアップがありません。") }
+            else { _ = try backupReferences() }
+        } catch { reasons.append("端末バックアップの検証に失敗しました。") }
+        return Array(Set(reasons)).sorted()
+    }
+    private func cleanupLegacyData() throws {
+        guard try legacyCleanupReasons().isEmpty else { throw RepositoryError("CONFLICT") }
+        Self.lifecycle.lock(); let exclusive = Self.openCounts[url.path, default: 0] == 1; Self.lifecycle.unlock()
+        guard exclusive else { throw RepositoryError("BUSY") }
+        var references = try audioReferences()
+        for (id, meta) in try backupReferences() { references[id] = meta }
+        let store = try audioStore()
+        // Copy every protected old audio first. A missing/unreadable source aborts
+        // before any deletion, including when only a recovery item references it.
+        for meta in references.values {
+            guard try store.migrateLegacy(meta: meta) != nil else { throw RepositoryError("CORRUPT") }
+        }
+        guard let documents = documentsURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { throw RepositoryError("ACCESS_DENIED") }
+        // Canonicalize the trusted OS container first (/var may alias
+        // /private/var). Child symlinks must still be rejected below.
+        let documentsRoot = documents.resolvingSymlinksInPath().standardizedFileURL
+        let fm = FileManager.default
+        var targets = ["projects/projects.json", "projects/projects.pending.json", "projects/projects.backup.json"].map { documentsRoot.appendingPathComponent($0) }
+        let audio = documentsRoot.appendingPathComponent("audio", isDirectory: true)
+        if fm.fileExists(atPath: audio.path) {
+            guard audio.resolvingSymlinksInPath().standardizedFileURL == audio.standardizedFileURL else { throw RepositoryError("ACCESS_DENIED") }
+            for file in try fm.contentsOfDirectory(at: audio, includingPropertiesForKeys: nil) {
+                if ["data", "json"].contains(file.pathExtension), AudioStore.safeLegacyID(file.deletingPathExtension().lastPathComponent) { targets.append(file) }
+            }
+        }
+        // Preflight all targets before unlinking. No recursive deletion or user paths.
+        for target in targets where fm.fileExists(atPath: target.path) {
+            guard target.resolvingSymlinksInPath().standardizedFileURL == target.standardizedFileURL,
+                  (try fm.attributesOfItem(atPath: target.path))[.type] as? FileAttributeType == .typeRegular else { throw RepositoryError("ACCESS_DENIED") }
+        }
+        for target in targets where fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
+    }
+    static func recoveryBackupDue(now: Date, last: Date?, freeBytes: Int64, databaseBytes: Int64) -> Bool {
+        (last.map { now.timeIntervalSince($0) >= 86400 } ?? true) && databaseBytes >= 0 &&
+        databaseBytes <= (Int64.max - 16 * 1024 * 1024) / 2 && freeBytes >= databaseBytes * 2 + 16 * 1024 * 1024
+    }
+    private func backupIfDue() throws -> Bool {
+        let fm = FileManager.default
+        let last = (try? fm.attributesOfItem(atPath: recoveryURL.path)[.modificationDate]) as? Date
+        let free = try fm.attributesOfFileSystem(forPath: url.deletingLastPathComponent().path)[.systemFreeSize] as? NSNumber
+        let size = try fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber
+        guard let freeBytes = free?.int64Value, let bytes = size?.int64Value,
+              Self.recoveryBackupDue(now: Date(), last: last, freeBytes: freeBytes, databaseBytes: bytes) else { return false }
+        try backup(); return true
+    }
     private var recoveryURL: URL { url.deletingLastPathComponent().appendingPathComponent("recovery", isDirectory: true).appendingPathComponent("repository.backup.sqlite") }
     private func validateReceipt(_ r: [String: String]) throws -> String {
         let result = try verifiedJSON(r, key: "result_json")
@@ -607,7 +832,9 @@ public final class ProjectRepository {
             _ = try validateReceipt(r)
         }
         try scan("SELECT source_key FROM migration_items") { r in
-            guard let id = r["source_key"], try migrationEntry(id) != nil else { throw RepositoryError("CORRUPT") }
+            guard let id = r["source_key"] else { throw RepositoryError("CORRUPT") }
+            if id == maintenanceID { _ = try maintenanceState() }
+            else if try migrationEntry(id) == nil { throw RepositoryError("CORRUPT") }
         }
     }
     private func backup() throws {
@@ -631,13 +858,22 @@ public final class ProjectRepository {
         try protect(recoveryURL)
     }
 
-    /// Native recovery only, deliberately NOT bridged. Caller must stop writers and close
-    /// all other instances first. In-process open counts enforce that precondition.
+    /// Fixed recovery target; the owning queue closes/restores/reopens atomically.
+    /// In-process open counts enforce that other instances have closed first.
     /// The damaged original is retained as a sibling quarantine file, never erased.
     public func restoreRecoveryBackup() throws {
         try queue.sync {
+            StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
+            do { try restoreRecoveryBackupLocked(); try connection() } catch { throw classified(error) }
+        }
+    }
+    private func restoreRecoveryBackupLocked() throws {
             do {
                 closeConnection()
+                Self.lifecycle.lock()
+                let busy = Self.openCounts[url.path, default: 0] != 0
+                Self.lifecycle.unlock()
+                guard !busy else { throw RepositoryError("BUSY") }
                 let fm = FileManager.default
                 guard fm.fileExists(atPath: recoveryURL.path) else { throw RepositoryError("NOT_FOUND") }
                 let candidateURL = url.deletingLastPathComponent().appendingPathComponent("restore-\(UUID().uuidString).sqlite")
@@ -681,6 +917,5 @@ public final class ProjectRepository {
                     throw error
                 }
             } catch { throw classified(error) }
-        }
     }
 }
