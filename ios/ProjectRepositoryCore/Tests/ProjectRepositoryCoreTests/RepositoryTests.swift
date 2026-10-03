@@ -398,7 +398,10 @@ final class RepositoryTests: XCTestCase {
     private func advance(_ r: ProjectRepository, _ entry: [String: Any], state: String, expected: Any) throws -> [String: Any] {
         var next = entry; next["state"] = state
         if state == "written" && next["outcome"] == nil { next["outcome"] = "imported" }
-        return try XCTUnwrap(try execute(r, "writeMigration", ["entry":next,"expectedState":expected] as [String: Any]) as? [String: Any])
+        // Call outside XCTUnwrap: XCTUnwrap records a thrown error as a failure even when
+        // the caller expects it inside XCTAssertThrowsError.
+        let response = try execute(r, "writeMigration", ["entry":next,"expectedState":expected] as [String: Any])
+        return try XCTUnwrap(response as? [String: Any])
     }
     func testMigrationStateContractAndResponseLossDoesNotOverwriteEdits() throws {
         let r = repo(); defer { r.close() }
