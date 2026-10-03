@@ -1986,7 +1986,9 @@ function App() {
         setSharedAudioNotice(false);
         return true;
       }
-      const blob = await loadAudioBlobFromIndexedDb(meta.id);
+      // Storage distinguishes absence from failure. Keep the existing recovery
+      // notice at this UI boundary until the audio error UI is redesigned.
+      const blob = await loadAudioBlobFromIndexedDb(meta.id).catch(() => null);
       if (!blob) {
         setAudioSource(null, meta.name);
         setSharedAudioNotice(true);
@@ -7235,7 +7237,7 @@ function App() {
     const projectToExport = normalizeProject(source);
     try {
       const audioBlob = includeAudio && projectToExport.audio?.id
-        ? await loadAudioBlobFromIndexedDb(projectToExport.audio.id) : null;
+        ? await loadAudioBlobFromIndexedDb(projectToExport.audio.id).catch(() => null) : null;
       const audioMissing = includeAudio && Boolean(projectToExport.audio?.id) && !audioBlob;
       const blob = await createTairetsuArchive(projectToExport, { audioBlob });
       setCanCopyExport(false);

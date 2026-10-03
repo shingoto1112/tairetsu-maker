@@ -1,5 +1,8 @@
 # Repository 契約（第1回）
 
+第2回のIndexedDB実装・DB構成・試験・第3回への申し送りは
+[INDEXEDDB.md](../INDEXEDDB.md) を参照。Appへの保存接続・移行はまだ行わない。
+
 この回では保存経路を切り替えない。App が使うのは抽出済みの
 `project/normalizeProject.ts` と既存と同じ補助関数だけ。
 codec、Repository、契約fixture、メモリ実装は既存保存には接続しない。

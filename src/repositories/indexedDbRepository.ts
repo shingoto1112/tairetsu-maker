@@ -1,0 +1,288 @@
+// Import this module dynamically at the future platform selection boundary.
+// No application barrel/static import; this phase does not connect App storage.
+import { serializeProject } from "../project/codec";
+import { runIdbTransaction } from "../utils/idbTransaction";
+import { assertStorageId } from "./ids";
+import {
+  PROJECT_DB_NAME, PROJECT_DB_VERSION, PROJECT_STORES, decodeBody, decodeSummary,
+  encodeBody, encodeSummary, object, requestDigest, scalarKey, sortTime, validSummary,
+  type StoredBody,
+} from "./indexedDbFormat";
+import {
+  assertRevision, compareRevisions, incrementRevision, isRevision, RepositoryError,
+  type CommitReceipt, type CommitRequest, type ListQuery, type Page, type ProjectRecord,
+  type ProjectRepository, type ProjectSummary, type RemoveRequest, type RenameRequest,
+} from "./types";
+
+export const classifyIndexedDbError = (error: unknown, operationId?: string): RepositoryError => {
+  if (error instanceof RepositoryError) return new RepositoryError(error.code, operationId ?? error.operationId);
+  const name = object(error) ? error.name : undefined;
+  const code = name === "QuotaExceededError" ? "QUOTA_EXCEEDED"
+    : name === "InvalidStateError" || name === "TransactionInactiveError" ? "BUSY"
+    : name === "SecurityError" || name === "NotAllowedError" ? "ACCESS_DENIED"
+    : name === "VersionError" ? "UNSUPPORTED_SCHEMA"
+    : name === "DataError" || name === "DataCloneError" ? "CORRUPT" : "IO_ERROR";
+  return new RepositoryError(code, operationId);
+};
+type StoredOperation = { operationId: string; signature: string; kind: "commit" | "rename" | "remove"; receipt?: CommitReceipt };
+type Mutation = { kind: "commit"; request: CommitRequest; json: string }
+  | { kind: "rename"; request: RenameRequest } | { kind: "remove"; request: RemoveRequest };
+const capture = <T>(input: T): T => {
+  try { return JSON.parse(JSON.stringify(input)) as T; }
+  catch { throw new RepositoryError("INVALID_ARGUMENT"); }
+};
+
+export class IndexedDbProjectRepository implements ProjectRepository {
+  private db?: IDBDatabase;
+  private opening?: Promise<IDBDatabase>;
+  private invalidated = false;
+  private generation = 0;
+  private readonly factory: IDBFactory | undefined;
+  private readonly name: string;
+  constructor(options: { factory?: IDBFactory; dbName?: string } = {}) {
+    this.factory = options.factory ?? globalThis.indexedDB;
+    this.name = options.dbName ?? PROJECT_DB_NAME;
+  }
+
+  /** Explicit lifecycle for tab shutdown and isolated tests. No DB deletion. */
+  close(): void { this.generation++; this.db?.close(); this.db = undefined; }
+
+  private connection(): Promise<IDBDatabase> {
+    if (this.invalidated) return Promise.reject(new RepositoryError("BUSY"));
+    if (this.db) return Promise.resolve(this.db);
+    if (this.opening) return this.opening;
+    const generation = this.generation;
+    const opening = new Promise<IDBDatabase>((resolve, reject) => {
+      if (!this.factory) { reject(new RepositoryError("ACCESS_DENIED")); return; }
+      let rejected = false;
+      const fail = (error: unknown) => { rejected = true; reject(classifyIndexedDbError(error)); };
+      let request: IDBOpenDBRequest;
+      try { request = this.factory.open(this.name, PROJECT_DB_VERSION); }
+      catch (error) { fail(error); return; }
+      request.onblocked = () => fail(new RepositoryError("BUSY"));
+      request.onupgradeneeded = event => {
+        if (rejected || generation !== this.generation) {
+          fail(new RepositoryError("BUSY")); request.transaction!.abort(); return;
+        }
+        try {
+          if (event.oldVersion !== 0) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+          for (const name of PROJECT_STORES) {
+            const store = request.result.createObjectStore(name, { keyPath: name === "operation_receipts" ? "operationId" : "id" });
+            if (name === "project_summaries") {
+              store.createIndex("by_order", ["sortTime", "sortId"], { unique: true });
+              store.createIndex("by_mode_order", ["summary.mode", "sortTime", "sortId"], { unique: true });
+            }
+          }
+        } catch (error) { fail(error); request.transaction!.abort(); }
+      };
+      request.onerror = () => fail(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        if (rejected || this.invalidated || generation !== this.generation) {
+          db.close(); fail(new RepositoryError("BUSY")); return;
+        }
+        db.onversionchange = () => { this.invalidated = true; this.close(); };
+        db.onclose = () => { this.invalidated = true; this.db = undefined; };
+        try {
+          if (db.version !== PROJECT_DB_VERSION) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+          const tx = db.transaction(PROJECT_STORES, "readonly");
+          for (const name of PROJECT_STORES) {
+            if (tx.objectStore(name).keyPath !== (name === "operation_receipts" ? "operationId" : "id")) throw new RepositoryError("CORRUPT");
+          }
+          const summaries = tx.objectStore("project_summaries");
+          for (const [name, keys] of [["by_order", ["sortTime", "sortId"]], ["by_mode_order", ["summary.mode", "sortTime", "sortId"]]] as const) {
+            const index = summaries.index(name);
+            if (!index.unique || JSON.stringify(index.keyPath) !== JSON.stringify(keys)) throw new RepositoryError("CORRUPT");
+          }
+          // Wait for schema inspection too; an externally closed DB must not
+          // report healthy merely because open() succeeded.
+          tx.oncomplete = () => {
+            if (this.invalidated || generation !== this.generation) { db.close(); fail(new RepositoryError("BUSY")); return; }
+            this.db = db; resolve(db);
+          };
+          tx.onabort = tx.onerror = () => { db.close(); fail(tx.error); };
+        } catch (error) {
+          db.close();
+          fail(object(error) && error.name === "NotFoundError" ? new RepositoryError("CORRUPT") : error);
+        }
+      };
+    });
+    this.opening = opening;
+    void opening.then(() => { this.opening = undefined; }, () => { this.opening = undefined; });
+    return opening;
+  }
+
+  async initialize() {
+    await this.connection();
+    return { status: "ready" as const, schemaVersion: PROJECT_DB_VERSION, errors: [] };
+  }
+
+  private async transaction<T>(stores: string[], mode: IDBTransactionMode,
+    work: Parameters<typeof runIdbTransaction<T>>[3], operationId?: string): Promise<T> {
+    try {
+      const db = await this.connection();
+      return await runIdbTransaction(db, stores, mode, work, error => classifyIndexedDbError(error, operationId));
+    } catch (error) { throw classifyIndexedDbError(error, operationId); }
+  }
+
+  async get(id: string): Promise<ProjectRecord | null> {
+    assertStorageId(id);
+    return this.transaction(["project_bodies"], "readonly", (tx, result, fail) => {
+      const request = tx.objectStore("project_bodies").get(id);
+      request.onsuccess = () => {
+        try { result(request.result === undefined ? null : decodeBody(request.result, id)); }
+        catch (error) { fail(error); }
+      };
+    });
+  }
+
+  async list(query: ListQuery): Promise<Page<ProjectSummary>> {
+    if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100 ||
+        (query.mode !== undefined && query.mode !== "stage" && query.mode !== "parade")) throw new RepositoryError("INVALID_ARGUMENT");
+    // Capture before the asynchronous connection boundary.
+    const { mode, limit, cursor } = query;
+    let after: [number, string] | undefined;
+    if (cursor !== undefined) {
+      try {
+        const parsed: unknown = JSON.parse(cursor);
+        if (!object(parsed) || parsed.version !== 1 || parsed.mode !== mode || typeof parsed.time !== "number" ||
+            !Number.isFinite(parsed.time) || !Number.isInteger(parsed.time) || Math.abs(parsed.time) > 8640000000000000) throw new Error();
+        after = [-parsed.time, scalarKey(assertStorageId(parsed.id))];
+      } catch { throw new RepositoryError("INVALID_ARGUMENT"); }
+    }
+    const range = mode ? IDBKeyRange.bound(after ? [mode, ...after] : [mode], [mode, []], !!after, true)
+      : after ? IDBKeyRange.lowerBound(after, true) : undefined;
+    return this.transaction(["project_summaries"], "readonly", (tx, result, fail) => {
+      const request = tx.objectStore("project_summaries").index(mode ? "by_mode_order" : "by_order").getAll(range, limit + 1);
+      request.onsuccess = () => {
+        try {
+          const all = request.result.map(decodeSummary);
+          const items = all.slice(0, limit);
+          const last = items[items.length - 1];
+          result({ items, nextCursor: all.length > limit ? JSON.stringify({ version: 1, ...(mode ? { mode } : {}), time: sortTime(last), id: last.id }) : null });
+        } catch (error) { fail(error); }
+      };
+    });
+  }
+
+  async commit(input: CommitRequest): Promise<CommitReceipt> {
+    const encoded = serializeProject(input.project);
+    if (!encoded.ok) throw encoded.error;
+    const request = capture(input);
+    assertStorageId(request.project.id);
+    assertStorageId(request.operationId);
+    assertRevision(request.localRevision);
+    if (request.expectedRepositoryRevision !== null) assertRevision(request.expectedRepositoryRevision);
+    return (await this.mutate({ kind: "commit", request, json: encoded.value }))!;
+  }
+
+  async rename(input: RenameRequest): Promise<CommitReceipt> {
+    const request = capture(input);
+    assertStorageId(request.id); assertStorageId(request.operationId);
+    assertRevision(request.localRevision); assertRevision(request.expectedRepositoryRevision);
+    if (typeof request.title !== "string" || !request.title.trim() || !Number.isFinite(Date.parse(request.updatedAt))) throw new RepositoryError("INVALID_ARGUMENT", request.operationId);
+    return (await this.mutate({ kind: "rename", request }))!;
+  }
+
+  async remove(input: RemoveRequest): Promise<void> {
+    const request = capture(input);
+    assertStorageId(request.id); assertStorageId(request.operationId); assertRevision(request.expectedRepositoryRevision);
+    await this.mutate({ kind: "remove", request });
+  }
+
+  private async mutate(mutation: Mutation): Promise<CommitReceipt | undefined> {
+    const { kind, request } = mutation;
+    const id = mutation.kind === "commit" ? mutation.request.project.id! : mutation.request.id;
+    const operationId = request.operationId;
+    // Async crypto finishes BEFORE starting the transaction. No payload copy
+    // per receipt; exact request bytes are fingerprinted by SHA-256.
+    let signature: string;
+    try { signature = await requestDigest(JSON.stringify({ kind, request })); }
+    catch (error) { throw classifyIndexedDbError(error, operationId); }
+    const prepared = kind === "commit" ? encodeBody({ project: mutation.request.project,
+      repositoryRevision: "1", localRevision: mutation.request.localRevision, sync: null }, mutation.json) : undefined;
+    return this.transaction(PROJECT_STORES, "readwrite", (tx, result, fail) => {
+      const operations = tx.objectStore("operation_receipts");
+      const replay = operations.get(operationId);
+      replay.onsuccess = () => {
+        try {
+          if (replay.result !== undefined) {
+            const op: unknown = replay.result;
+            if (!object(op) || op.operationId !== operationId || typeof op.signature !== "string" || !/^[a-f0-9]{64}$/.test(op.signature) ||
+                !["commit", "rename", "remove"].includes(op.kind as string)) throw new RepositoryError("CORRUPT");
+            if (op.signature !== signature || op.kind !== kind) throw new RepositoryError("CONFLICT");
+            if (kind !== "remove") {
+              const r = op.receipt;
+              if (!object(r) || r.id !== id || r.operationId !== operationId || !isRevision(r.repositoryRevision) || !isRevision(r.localRevision) ||
+                  !validSummary(r.summary) || r.summary.id !== id || r.summary.repositoryRevision !== r.repositoryRevision ||
+                  r.localRevision !== (request as CommitRequest | RenameRequest).localRevision) throw new RepositoryError("CORRUPT");
+              result(r as CommitReceipt);
+            } else {
+              if (op.receipt !== undefined) throw new RepositoryError("CORRUPT");
+              result(undefined);
+            }
+            return;
+          }
+          const bodies = tx.objectStore("project_bodies");
+          const read = bodies.get(id);
+          read.onsuccess = () => {
+            try {
+              const raw: StoredBody | undefined = read.result;
+              const current = raw === undefined ? null : decodeBody(raw, id);
+              if (request.expectedRepositoryRevision === null) {
+                if (current) throw new RepositoryError("CONFLICT");
+              } else {
+                if (!current) throw new RepositoryError("NOT_FOUND");
+                if (current.repositoryRevision !== request.expectedRepositoryRevision) throw new RepositoryError("CONFLICT");
+              }
+              if (kind !== "remove" && current && compareRevisions((request as CommitRequest | RenameRequest).localRevision, current.localRevision) <= 0) throw new RepositoryError("CONFLICT");
+              const summaries = tx.objectStore("project_summaries");
+              const previous = tx.objectStore("project_previous");
+              if (kind === "remove") {
+                bodies.delete(id); summaries.delete(id); previous.delete(id);
+                operations.put({ operationId, signature, kind } satisfies StoredOperation);
+                result(undefined);
+                return;
+              }
+              const record: ProjectRecord = kind === "commit" ? {
+                project: mutation.request.project, localRevision: mutation.request.localRevision,
+                repositoryRevision: current ? incrementRevision(current.repositoryRevision) : "1", sync: current?.sync ?? null,
+              } : { ...current!, project: { ...current!.project, title: mutation.request.title, updatedAt: mutation.request.updatedAt },
+                localRevision: mutation.request.localRevision, repositoryRevision: incrementRevision(current!.repositoryRevision) };
+              const body = prepared ? { ...prepared, repositoryRevision: record.repositoryRevision, sync: record.sync } : encodeBody(record);
+              const summary = encodeSummary(record);
+              const receipt: CommitReceipt = { id, operationId, repositoryRevision: record.repositoryRevision,
+                localRevision: record.localRevision, summary: summary.summary };
+              if (raw) previous.put(raw); // Only verified healthy current becomes previous.
+              else previous.delete(id);
+              bodies.put(body); summaries.put(summary);
+              operations.put({ operationId, signature, kind, receipt } satisfies StoredOperation);
+              result(receipt);
+            } catch (error) { fail(error); }
+          };
+        } catch (error) { fail(error); }
+      };
+    }, operationId);
+  }
+
+  async touchOpened(id: string, at: string): Promise<ProjectSummary> {
+    assertStorageId(id);
+    if (!Number.isFinite(Date.parse(at))) throw new RepositoryError("INVALID_ARGUMENT");
+    return this.transaction(["project_bodies", "project_summaries", "project_previous"], "readwrite", (tx, result, fail) => {
+      const bodies = tx.objectStore("project_bodies");
+      const read = bodies.get(id);
+      read.onsuccess = () => {
+        try {
+          if (read.result === undefined) throw new RepositoryError("NOT_FOUND");
+          const current = decodeBody(read.result, id);
+          const record = { ...current, project: { ...current.project, lastOpenedAt: at }, repositoryRevision: incrementRevision(current.repositoryRevision) };
+          const summary = encodeSummary(record);
+          tx.objectStore("project_previous").put(read.result);
+          bodies.put(encodeBody(record));
+          tx.objectStore("project_summaries").put(summary);
+          result(summary.summary);
+        } catch (error) { fail(error); }
+      };
+    });
+  }
+}

@@ -1,5 +1,6 @@
 import { AudioMeta } from "../types";
 import { MAX_AUDIO_FILE_BYTES } from "../config/fileLimits";
+import { runIdbTransaction } from "./idbTransaction";
 import {
   deleteNativeAudioBlob,
   getAppRuntime,
@@ -36,7 +37,16 @@ const openAudioDb = (): Promise<IDBDatabase> =>
         db.createObjectStore(STORE_NAME, { keyPath: "id" });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    let blocked = false;
+    request.onblocked = () => {
+      blocked = true;
+      reject(new Error("音源の保存領域を開けません。再試行してください。"));
+    };
+    request.onsuccess = () => {
+      if (blocked) { request.result.close(); return; }
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error ?? new Error("IndexedDBを開けません。"));
   });
 
@@ -45,18 +55,12 @@ const withAudioStore = async <Result>(
   operation: (store: IDBObjectStore) => IDBRequest<Result>,
 ): Promise<Result> => {
   const db = await openAudioDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, mode);
-    const store = transaction.objectStore(STORE_NAME);
-    const request = operation(store);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("音源データ処理に失敗しました。"));
-    transaction.oncomplete = () => db.close();
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error ?? new Error("音源データ処理に失敗しました。"));
-    };
-  });
+  try {
+    return await runIdbTransaction<Result>(db, STORE_NAME, mode, (transaction, result) => {
+      const request = operation(transaction.objectStore(STORE_NAME));
+      request.onsuccess = () => result(request.result);
+    });
+  } finally { db.close(); }
 };
 
 const readAudioDuration = (file: File): Promise<number | undefined> =>
@@ -131,14 +135,14 @@ export const loadAudioBlobFromIndexedDb = async (
   if (getAppRuntime() === "capacitor-ios") {
     return loadNativeAudioBlob(audioId);
   }
-  try {
-    const record = await withAudioStore<AudioRecord | undefined>("readonly", (store) =>
-      store.get(audioId),
-    );
-    return record?.blob ?? null;
-  } catch {
-    return null;
+  const record = await withAudioStore<AudioRecord | undefined>("readonly", (store) =>
+    store.get(audioId),
+  );
+  if (record === undefined) return null;
+  if (record?.id !== audioId || !(record.blob instanceof Blob)) {
+    throw new Error("保存済み音源データを読み込めません。");
   }
+  return record.blob;
 };
 
 export const deleteAudioBlobFromIndexedDb = async (audioId: string): Promise<void> => {
