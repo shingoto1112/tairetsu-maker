@@ -23,7 +23,14 @@
 .collab-danger-zone { color: #833535; }.collab-dialog button.collab-danger { background: #a52e36; color: #fff; }
 .collab-dialog label.collab-check { flex-direction: row; align-items: center; }.collab-check input { width: 22px; }
 .collab-muted { color: #546772; font-size: 13px; }.collab-error { color: #912d36; background: #fff1f2; border-radius: 8px; padding: 10px; }
-.toolbar .collab-status-pill { flex: 0 0 auto; max-width: min(190px, 30vw); padding: 4px 8px; border-radius: 10px; border: 1px solid #cbd5e1; color: #475569; background: #f1f5f9; font-size: 12px; min-height: 30px; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
+.toolbar .collab-status-pill { flex: 0 1 auto; min-width: 0; max-width: min(190px, 30vw); height: auto; padding: 4px 8px; border-radius: 10px; border: 1px solid #cbd5e1; color: #475569; background: #f1f5f9; font-size: 12px; min-height: 30px; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
+/* A long state must expand the header rather than be clipped by its fixed height. */
+.app-shell[data-workspace-layout="portrait"] .toolbar:has(.collab-status-pill) { height: auto; }
+@media (max-width: 480px) {
+  .toolbar:has(.collab-status-pill) .toolbar__brand { flex-wrap: wrap; }
+  .toolbar:has(.collab-status-pill) .toolbar__title { flex: 1 1 70px; min-width: 70px; }
+  .toolbar .collab-status-pill { max-width: 100%; }
+}
 .collab-status-text { color: #475569; }
 .collab-status-pill[data-tone="success"], .collab-status-text[data-tone="success"] { color: #155e57; background: #edf9f4; border-color: #99c5bc; }
 .collab-status-pill[data-tone="warning"], .collab-status-text[data-tone="warning"] { color: #854d0e; background: #fff5df; border-color: #e9c87e; }

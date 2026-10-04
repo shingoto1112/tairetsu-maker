@@ -13,7 +13,10 @@ describe("session sync status", () => {
     expect(sessionSnapshot("a", { ...provider, held: true }, saved, null).sync).toBe("資格保留");
     expect(sessionSnapshot("a", { ...provider, syncing: true }, saved, null).sync).toBe("接続を確認中");
     expect(sessionSnapshot("a", provider, { ...saved, dirty: true }, null).sync).toBe("送信待ち");
+    expect(sessionSnapshot("a", provider, { ...saved, dirty: true }, null).label).toBe("端末に保存中");
+    expect(sessionSnapshot("a", provider, { ...saved, saving: true }, null).label).toBe("端末に保存中");
     expect(sessionSnapshot("a", { ...provider, pending: 2 }, saved, null).label).toBe("送信待ち 2 件");
+    expect(sessionSnapshot("a", { ...provider, pending: 2 }, { ...saved, dirty: true }, null).label).toBe("送信待ち 2 件（端末保存中）");
   });
   it("uses plain sharing labels and reserves green for fully synced active documents", () => {
     for (const [sharing, label] of [["removed", "共有から外れました"], ["ended", "共有は終了しました"], ["auth-required", "ログインが必要です"], ["membership-changed", "参加し直しが必要です"]] as const) {

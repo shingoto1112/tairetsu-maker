@@ -1,4 +1,5 @@
 import { useSharedSession } from "./hooks/useSharedSession";
+import { useHelpPage } from "./components/HelpPageLoader";
 import { cloudAuthIdentity, subscribeCloudAuth, getValidCloudAuthSession, waitCloudAuthPersistence } from "./cloud/session";
 import { useAppShellScrollGuard } from "./hooks/useAppShellScrollGuard";
 import { scrollWithinContainer } from "./utils/scrollWithinContainer";
@@ -1568,6 +1569,7 @@ const createCloudSceneCellVersionMap = (
   );
 
 function App() {
+  const { openHelpPage, helpPage } = useHelpPage();
   useAppShellScrollGuard();
   const sharedSession = useSharedSession();
   const collaborationUi = useCollaborationUi();
@@ -11890,13 +11892,6 @@ function App() {
             x: center.x + offset * templateSpacing,
             y: center.y + offset * templateSpacing,
           };
-        } else if (template === "v") {
-          const side = index % 2 === 0 ? -1 : 1;
-          const rank = Math.ceil(index / 2);
-          position = {
-            x: center.x + side * rank * templateSpacing,
-            y: center.y + rank * templateSpacing * 0.8,
-          };
         } else {
           position = { x: center.x + offset * templateSpacing, y: center.y };
         }
@@ -12885,6 +12880,7 @@ function App() {
     return (
       <>
         <FormationLibrary
+          onOpenHelp={openHelpPage}
           projects={savedProjects}
           notice={storageStatus ?? storageWarning ?? notice}
           disabled={!storageReady}
@@ -12933,6 +12929,7 @@ function App() {
           onImportProjectFiles={importTairetsuProjectFiles}
           onDeleteProject={deleteStoredProject}
         />
+        {helpPage}
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
         {isCloudPasswordRecoveryOpen && (
           <Suspense fallback={<div role="status">画面を読み込み中…</div>}>
@@ -12979,6 +12976,7 @@ function App() {
     >
       <div className="app-top-region">
       <Toolbar
+        onOpenHelp={openHelpPage}
         title={project.title}
         canEditProject={canEditProjectChrome}
         canEditScene={canEditCurrentScene}
@@ -13757,6 +13755,7 @@ function App() {
         })()}
     </div>
     {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
+    {helpPage}
     {isShareExportOpen && <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}><ShareExportModal
       isOpen={isShareExportOpen}
       projectTitle={project.title}

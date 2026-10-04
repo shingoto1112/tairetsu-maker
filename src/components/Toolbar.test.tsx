@@ -21,6 +21,7 @@ const createHandlers = () => ({
   onOpenShareExport: vi.fn(),
   onSaveProject: vi.fn(),
   onTitleChange: vi.fn(),
+  onOpenHelp: vi.fn(),
 });
 
 const renderToolbar = (options: ToolbarRenderOptions = {}) => {
@@ -52,6 +53,18 @@ const openMenu = async (user: ReturnType<typeof userEvent.setup>) => {
 
 describe("Toolbar", () => {
   afterEach(() => cleanup());
+
+  it("places help first in support and returns focus to the surviving launcher", async () => {
+    const user = userEvent.setup();
+    const handlers = renderToolbar();
+    const menuButton = await openMenu(user);
+    const section = screen.getByText("情報・サポート").closest("section")!;
+    expect(section.querySelector("button, a")?.textContent).toBe("使い方");
+    await user.click(within(section).getByRole("button", { name: "使い方" }));
+    expect(handlers.onOpenHelp).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("メニュー")).toBeNull();
+    expect(document.activeElement).toBe(menuButton);
+  });
 
   it("opens the app menu and focuses the first enabled item", async () => {
     const user = userEvent.setup();

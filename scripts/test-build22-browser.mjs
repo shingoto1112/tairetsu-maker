@@ -2,8 +2,9 @@ import { chromium, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 
-// Existing local server only. ZIPs are read through the app, never logged/written.
-const origin = 'http://127.0.0.1:5179';
+// Local server only. ZIPs are read through the app, never logged/written.
+const origin = process.env.REPOSITORY_TEST_ORIGIN ?? 'http://127.0.0.1:5179';
+assert(new URL(origin).protocol === 'http:' && ['127.0.0.1','localhost'].includes(new URL(origin).hostname));
 const url = `${origin}/?runtime=capacitor-ios`;
 const output = 'output/playwright/build22';
 const portrait = [[744,1133],[810,1080],[820,1180],[834,1210],[1024,1366],[1032,1376]];

@@ -38,6 +38,10 @@ try {
   assert(main, "Missing production app entry");
   assert(!staticGraph(main, normalChunks).some(chunk => Object.keys(chunk.modules).some(id => isYjs(id) || isCollaboration(id))),
     "Collaboration must be absent from the normal production startup graph");
+  const isHelp = id => /\/src\/components\/(HelpPage\.tsx|helpContent\.ts|helpPage\.css)$/.test(id.replaceAll("\\", "/"));
+  assert(!staticGraph(main, normalChunks).some(chunk => Object.keys(chunk.modules).some(isHelp)),
+    "Help text, component and CSS must be absent from the normal startup graph");
+  assert(normalChunks.some(chunk => Object.keys(chunk.modules).some(isHelp)), "Missing lazy help chunk");
   assert(!normalChunks.some(chunk => Object.keys(chunk.modules).some(id => /\/testing\/providerHarness\./.test(id.replaceAll("\\", "/")))),
     "Development provider harness must be absent from every production chunk");
   const mainSize = await measure(normalDir, main);

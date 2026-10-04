@@ -52,6 +52,32 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it.each(["stage", "parade"] as const)("applies the three remaining templates and saves coordinates in %s", async mode => {
+    testProject = { ...createSampleProject(), id: "template-check", title: "整列検証", mode };
+    const members = testProject.members.slice(0, 3);
+    testProject.frames[0].objectAssignments = {};
+    members.forEach((member, index) => { testProject.frames[0].positions[member.id] = { x: 5 + index, y: 4 }; });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "整列検証を開く" }));
+    await screen.findByTestId(mode === "stage" ? "stage-export-dom" : "parade-export-dom");
+    for (const member of members) fireEvent.click(await screen.findByRole("checkbox", { name: `${member.name} を複数選択` }));
+    expect(screen.queryByText("V字")).toBeNull();
+    fireEvent.click(screen.getByText("その他の整列"));
+    for (const template of ["横1列", "縦1列", "斜め1列"]) {
+      fireEvent.click(screen.getAllByRole("button", { name: template })[0]);
+      const frame = canvas.project!.frames.find(frame => frame.id === canvas.selectedFrameId)!;
+      const points = members.map(member => frame.positions[member.id]);
+      if (template === "横1列") expect(new Set(points.map(point => point.y)).size).toBe(1);
+      else if (template === "縦1列") expect(new Set(points.map(point => point.x)).size).toBe(1);
+      else {
+        expect(points[1].x - points[0].x).toBeCloseTo(points[1].y - points[0].y);
+        expect(points[2].x - points[1].x).toBeCloseTo(points[2].y - points[1].y);
+      }
+      expect(template === "縦1列" ? points[1].y : points[1].x).toBeGreaterThan(template === "縦1列" ? points[0].y : points[0].x);
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(async () => expect((await testRepository.get("template-check"))?.project.frames[0].positions).toEqual(frame.positions));
+    }
+  }, INTEGRATION_TIMEOUT_MS);
   it("retains a 600% parade scene view through the app and repository save", async () => {
     testProject = { ...createSampleProject(), id: "zoom-six", title: "倍率保存検証", mode: "parade" };
     render(<App />); fireEvent.click(await screen.findByRole("button", { name: "倍率保存検証を開く" }));

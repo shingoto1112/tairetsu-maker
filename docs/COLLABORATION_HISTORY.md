@@ -55,7 +55,7 @@ foundation: checkpoint_contents（bytes/digest/版）、checkpoints（cut/理由
 一覧は keyset（serverAt,id）最大64、取得、作成者限定削除、参照のなくなったcontentの削除を用意。
 `store_checkpoint` はservice_role限定の土台で、今回クライアント向け作成endpointは公開しない。9bの検証Edgeが必ずDTO生成・検証を済ませて使う。
 
-## 履歴権限（ユーザー確認待ちの既定値）
+## 履歴権限：ユーザー確認済み（2026-10-04）
 
 | 操作 | 参加中の通常／ゲスト／作成者 | 外された人／部外者／未認証anon |
 |---|---|---|
@@ -154,4 +154,4 @@ commit／push／依存追加／workflow実行／本番接続は行っていな�
 - 最終decoderで単体755件×2、追加対象34件×2、指定ブラウザー全種、typecheck、bundle、静的SQL／native／diff確認は成功。メインJSは474,341 B、基準との差0。Swift変更なし。
 - 他の試験終了後のNode単独測定ではCPU p95 281〜1,124ms、計算工程wall p95 140〜522ms、プロセス最大RSS 217〜258MiB。CPU500msは一部、最大メモリ192MBは全ケース未達。HTTP／Auth／DBを含む全工程時間とDeno／実Edgeの無料枠適合は未確認。現行上限での公開保証はせず、実測と安全な上限調整を公開前条件にする。
 - ClaudeはLinux Postgres17で補強後のSQL初回・再適用・実ロール・競争・容量・間引き3区分、Denoの型検査／実行2回／測定、macOS47件を確認する。Codexはcommit／push／workflow実行／本番接続をしていない。
-- 9cは必須直前控えをprotectedにして復元全体を原子的に確定し、世代変更で旧maintenance lease／dueを整理する。9dは手動控え・履歴・容量延期の日本語UIと独立コピーを追加する。履歴権限の確認待ち条件は9aから引き継ぐ。
+- 9cは必須直前控えをprotectedにして復元全体を原子的に確定し、世代変更で旧maintenance lease／dueを整理する。9dは手動控え・履歴・容量延期の日本語UIと独立コピーを追加する。履歴権限は9aの既定値でユーザー確認済み（2026-10-04）。

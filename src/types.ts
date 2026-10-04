@@ -19,7 +19,7 @@ export type ViewerPerspective = "audience" | "performer";
 
 export type MovementPathMode = "all" | "selected" | "focus";
 
-export type FormationTemplate = "horizontal" | "vertical" | "diagonal" | "v";
+export type FormationTemplate = "horizontal" | "vertical" | "diagonal";
 
 export type AlignmentAction =
   | "left"

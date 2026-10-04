@@ -68,6 +68,7 @@ type FormationLibraryProps = {
   disabled?: boolean;
   notice?: string | null;
   storageTools?: ReactNode;
+  onOpenHelp?: () => void;
   collaborationSlot?: ReactNode;
   renderProjectBadge?: (summary: ProjectSummary) => ReactNode;
   onJoinInvitation?: () => void;
@@ -171,6 +172,7 @@ export const FormationLibrary = ({
   disabled = false,
   notice,
   storageTools,
+  onOpenHelp,
   collaborationSlot,
   renderProjectBadge,
   onJoinInvitation,
@@ -871,7 +873,7 @@ export const FormationLibrary = ({
         </p>
       )}
 
-      <LegalLinks className="library-legal-links" />
+      <LegalLinks className="library-legal-links" onOpenHelp={onOpenHelp} />
 
       {libraryMenu && menuProject && (
         <div

@@ -1,0 +1,32 @@
+.help-page-backdrop {
+  position: fixed; inset: 0; z-index: 2000; background: #0f172a75;
+  display: flex; align-items: center; justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.help-page {
+  display: flex; flex-direction: column; width: min(760px, 100%); max-height: 100%;
+  background: white; color: #172c39; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 24px 80px #0f172a45;
+}
+.help-page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #dbe7ee; flex: 0 0 auto; }
+.help-page-header h2 { margin: 0; font-size: 24px; }
+.help-page-header p { margin: 6px 0 0; color: #546772; font-size: 14px; }
+.help-page-header button { width: 44px; min-height: 44px; flex-shrink: 0; }
+.help-page-body { padding: 8px 24px 24px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.help-page-section { border-bottom: 1px solid #dbe7ee; }
+.help-page-section h3 { margin: 0; font-size: 16px; }
+.help-page-section h3 button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 56px; padding: 14px 0; background: transparent; border: 0; color: inherit; font: inherit; font-weight: 700; text-align: left; white-space: normal; }
+.help-page-section h3 svg { flex-shrink: 0; transition: transform 140ms ease; }
+.help-page-section button[aria-expanded="true"] svg { transform: rotate(180deg); }
+.help-page-content { font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; padding-bottom: 14px; }
+.help-page-location { padding: 10px 12px; border-radius: 8px; background: #edf9f4; color: #155e57; margin: 0 0 12px; }
+.help-page-content ul { margin: 0; padding-left: 22px; }
+.help-page-content li + li { margin-top: 10px; }
+.help-page-content a { color: #0f766e; text-decoration: underline; }
+.help-page :focus-visible { outline: 3px solid #0f766e; outline-offset: -3px; border-radius: 6px; }
+@media (max-width: 480px) {
+  .help-page-backdrop { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  .help-page { border-radius: 12px; }
+  .help-page-header { padding: 16px; }
+  .help-page-body { padding: 4px 16px 20px; }
+}

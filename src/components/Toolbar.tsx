@@ -1,5 +1,6 @@
 import {
   ExternalLink,
+  CircleHelp,
   FileText,
   Home,
   LifeBuoy,
@@ -31,6 +32,7 @@ type ToolbarProps = {
   onSaveProject: () => void;
   onOpenShareExport: () => void;
   onOpenRosterManager: () => void;
+  onOpenHelp?: () => void;
 };
 
 type AppMenuItemProps = {
@@ -109,6 +111,7 @@ export const Toolbar = ({
   onSaveProject,
   onOpenShareExport,
   onOpenRosterManager,
+  onOpenHelp,
 }: ToolbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -212,6 +215,14 @@ export const Toolbar = ({
 
                 <section className="app-menu-section app-menu-section--footer">
                   <h3>情報・サポート</h3>
+                  {onOpenHelp && <AppMenuItem
+                    icon={CircleHelp}
+                    label="使い方"
+                    onClick={() => runMenuAction(() => {
+                      menuButtonRef.current?.focus();
+                      onOpenHelp();
+                    })}
+                  />}
                   <AppMenuLink
                     href={PUBLIC_LINKS.privacy}
                     icon={ShieldCheck}

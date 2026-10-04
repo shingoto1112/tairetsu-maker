@@ -35,7 +35,6 @@ const templateLabels: Array<{ id: FormationTemplate; label: string }> = [
   { id: "horizontal", label: "横1列" },
   { id: "vertical", label: "縦1列" },
   { id: "diagonal", label: "斜め1列" },
-  { id: "v", label: "V字" },
 ];
 
 export const GroupToolsPanel = ({
