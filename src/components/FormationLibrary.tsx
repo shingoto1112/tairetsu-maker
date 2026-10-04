@@ -73,6 +73,7 @@ type FormationLibraryProps = {
     error?: string | null;
     isBusy: boolean;
     personalMode?: boolean;
+    legacyEnabled?: boolean;
     pendingInviteToken?: string | null;
     projects: CloudProjectSummary[];
     userDisplayName?: string;
@@ -546,7 +547,7 @@ export const FormationLibrary = ({
                 クラウド
               </h2>
               <p>
-                {cloud.userEmail
+                {cloud.legacyEnabled === false ? "共同編集のアカウントでログインできます。" : cloud.userEmail
                   ? cloud.personalMode
                     ? "自分専用のクラウド隊列表を保存・読み込みできます。"
                     : "クラウド隊列表を開いて、共有管理からメンバーを招待できます。"
@@ -556,7 +557,7 @@ export const FormationLibrary = ({
               </p>
             </div>
             <div className="library-cloud-header-actions">
-              {!cloud.personalMode && (
+              {cloud.legacyEnabled !== false && !cloud.personalMode && (
                 <button
                   className="mini-button"
                   onClick={() => setIsCloudHelpOpen(true)}
@@ -599,7 +600,7 @@ export const FormationLibrary = ({
             </p>
           ) : cloud.userEmail ? (
             <>
-              <div className="library-cloud-actions">
+              {cloud.legacyEnabled !== false && <div className="library-cloud-actions">
                 <button
                   type="button"
                   className="mini-button"
@@ -610,9 +611,9 @@ export const FormationLibrary = ({
                   更新
                 </button>
                 <span>ローカルカードのメニューからクラウドへアップロードできます。</span>
-              </div>
+              </div>}
               {cloud.error && <p className="dialog-error">{cloud.error}</p>}
-              {!cloud.personalMode && (
+              {cloud.legacyEnabled !== false && !cloud.personalMode && (
                 <div className="library-cloud-invite">
                   <label>
                     招待リンク / 招待コード
@@ -632,7 +633,7 @@ export const FormationLibrary = ({
                   </button>
                 </div>
               )}
-              <div className="library-cloud-list">
+              {cloud.legacyEnabled !== false && <div className="library-cloud-list">
                 {visibleCloudProjects.length === 0 ? (
                   <p className="library-cloud-message">
                     {cloud.personalMode
@@ -695,7 +696,7 @@ export const FormationLibrary = ({
                     </article>
                   ))
                 )}
-              </div>
+              </div>}
             </>
           ) : (
             <form
@@ -893,7 +894,7 @@ export const FormationLibrary = ({
             <Download size={15} />
             書き出し
           </button>
-          {cloud?.userEmail && (
+          {cloud?.userEmail && cloud.legacyEnabled !== false && (
             <button
               type="button"
               onClick={() =>

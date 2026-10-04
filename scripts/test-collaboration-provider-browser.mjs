@@ -31,7 +31,11 @@ const state = i => pages[i].evaluate(() => window.harness.state());
 const position = (i, member) => pages[i].evaluate(async m => (await window.harness.read()).project.frames[0].positions[m]?.x, member);
 const synced = async () => waitFor(async () => {
   const states = await Promise.all([state(0), state(1)]);
-  return states.every(s => s.cursor === backend.head && s.pending === 0);
+  // wake() discovers the durable queue asynchronously. Its previous pending=0
+  // cannot prove that the edit just committed has already been sent.
+  const records = await Promise.all(pages.map(page => page.evaluate(() => window.harness.read())));
+  return states.every((s, i) => s.cursor === backend.head && s.pending === 0 &&
+    records[i].collaboration.serverCursor === backend.head && !records[i].collaboration.outbox.some(e => e.status === 'pending'));
 }, 'durable convergence');
 const move = (i, member, x, commit = true) => pages[i].evaluate(args => window.harness.move(...args), [member, x, commit]);
 try {

@@ -142,8 +142,8 @@ export class MockCollabBackend {
   }
 }
 
-export async function startMockServer(backend, createHandler) {
-  const origin = 'http://127.0.0.1:5179';
+export async function startMockServer(backend, createHandler, origin = 'http://127.0.0.1:5179') {
+  if (new URL(origin).hostname !== '127.0.0.1' || new URL(origin).protocol !== 'http:') throw new Error('Loopback test origin only');
   const handler = createHandler(backend, [origin]);
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const server = createServer(async (req, res) => {
@@ -163,6 +163,11 @@ export async function startMockServer(backend, createHandler) {
       let body = ''; for await (const chunk of req) body += chunk;
       if (url.pathname === '/auth/v1/signup') {
         const input = JSON.parse(body); res.end(JSON.stringify(backend.guest(input.data?.display_name))); return;
+      }
+      if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'password') {
+        const input = JSON.parse(body);
+        if (input.email !== 'session-test@example.invalid' || input.password !== 'mock-pass') { res.writeHead(400).end(JSON.stringify({error:'invalid_credentials'})); return; }
+        res.end(JSON.stringify({access_token:actors[0],refresh_token:'mock-login-refresh',expires_in:3600,token_type:'bearer',user:{id:actors[0],email:input.email,user_metadata:{display_name:'試験アカウント'}}})); return;
       }
       const actor = req.headers.authorization?.replace(/^Bearer /, '');
       if (!await backend.authenticate(actor)) { res.writeHead(401).end(JSON.stringify({ error: 'NOT_AUTHENTICATED' })); return; }

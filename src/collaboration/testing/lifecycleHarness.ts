@@ -31,7 +31,10 @@ export async function createLifecycleHarness(options: { url: string; actor?: str
     const record = await repository.get(id); if (!record) throw new Error("Missing test record");
     coordinator = new SaveCoordinator(repository, () => { editor?.receiveDurable(); }); coordinator.activate(record);
     editor = await SharedProjectEditor.create(coordinator, record.project, () => {}, error => { throw error; });
-    provider = new CollaborationProvider(coordinator, transport, { pollMs: 150, backoffMs: 30 }); provider.start();
+    const current = new CollaborationProvider(coordinator, transport, { pollMs: 150, backoffMs: 30 }); provider = current;
+    // Same wiring as SharedSessionController: durable commits refresh the pending count.
+    coordinator.subscribeCommits(event => { if (event.id === id) current.committedPending(event.pendingCount); });
+    current.start();
   };
   if (localId) await activate(localId);
   return {

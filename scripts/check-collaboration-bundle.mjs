@@ -32,7 +32,7 @@ const staticGraph = (entry, chunks) => {
 
 try {
   const normalDir = path.join(temporary, "normal");
-  const normal = outputs(await build({ root, logLevel: "warn", build: { outDir: normalDir, emptyOutDir: true } }));
+  const normal = outputs(await build({ root, envFile: false, logLevel: "warn", build: { outDir: normalDir, emptyOutDir: true } }));
   const normalChunks = normal.filter(item => item.type === "chunk");
   const main = normalChunks.find(chunk => chunk.isEntry && chunk.facadeModuleId?.endsWith("index.html"));
   assert(main, "Missing production app entry");
@@ -46,7 +46,7 @@ try {
   const loaderPath = path.join(root, "src/collaboration/index.ts").replaceAll("\\", "/");
   await writeFile(probe, `import { loadCollaboration } from ${JSON.stringify(loaderPath)};\nexport const ready = loadCollaboration();\n`);
   const probeDir = path.join(temporary, "probe");
-  const probeChunks = outputs(await build({ root, logLevel: "warn", build: {
+  const probeChunks = outputs(await build({ root, envFile: false, logLevel: "warn", build: {
     outDir: probeDir, emptyOutDir: true,
     rollupOptions: { input: { app: path.join(root, "index.html"), "collaboration-probe": probe } },
   } })).filter(item => item.type === "chunk");

@@ -119,10 +119,14 @@ export class SharedProjectEditor {
     const data = this.coordinator.collaborationProjection;
     if (!data) return;
     const durable = hydrateCollaboration(data);
+    let changed = false;
+    const received = () => { changed = true; };
+    this.doc.on("update", received);
     this.syncing = true;
     try { Y.applyUpdate(this.doc, Y.encodeStateAsUpdate(durable), REMOTE_ORIGIN); }
-    finally { this.syncing = false; durable.destroy(); }
-    this.emit();
+    finally { this.syncing = false; this.doc.off("update", received); durable.destroy(); }
+    // ACK/save-status changes do not redraw Project or Canvas.
+    if (changed) this.emit();
   }
   destroy(): void { this.disposed = true; this.doc.off("update", this.updated); this.commands.destroy(); this.doc.destroy(); }
   private emit(): void { const project = this.project; this.remember(project); this.published.add(project); this.publish(project); }

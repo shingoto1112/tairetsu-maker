@@ -1,3 +1,5 @@
+import { useSharedSession } from "./hooks/useSharedSession";
+import { cloudAuthIdentity, subscribeCloudAuth, getValidCloudAuthSession, waitCloudAuthPersistence } from "./cloud/session";
 import { useAppShellScrollGuard } from "./hooks/useAppShellScrollGuard";
 import { scrollWithinContainer } from "./utils/scrollWithinContainer";
 import type { AudioSelection } from "./platform/audioStorage";
@@ -65,7 +67,7 @@ import {
   clearCloudLockTokenFromSession,
   clearCloudAuthSession,
   CLOUD_SCHEMA_VERSION,
-  createCloudApiClient,
+  createCloudApiClient as createLegacyCloudApiBase,
   createCloudAuthClient,
   createCloudLeaseId,
   createCloudLockToken,
@@ -80,7 +82,6 @@ import {
   getCloudConfig,
   getCloudAuthErrorMessage,
   hydrateCloudAuthSessionFromNativeStorage,
-  isCloudAuthSessionExpired,
   readCloudAuthSession,
   readCloudClientIdFromSession,
   readCloudLockTokenFromSession,
@@ -275,6 +276,10 @@ const HISTORY_COALESCE_MS = 1200;
 const FLOATING_MENU_MARGIN_PX = 10;
 const APP_NAME = "隊列メーカー";
 const APP_FEATURES = getAppFeatureFlags();
+const createLegacyCloudApiClient = (...args: Parameters<typeof createLegacyCloudApiBase>) => {
+  if (APP_FEATURES.collaborationV2) throw new Error("この環境では旧クラウド API を使用できません。");
+  return createLegacyCloudApiBase(...args);
+};
 const IPAD_AUTH_REDIRECT_URL = "jp.tairetsu.maker://auth/callback";
 const getCloudEmailRedirectUrl = (): string =>
   APP_FEATURES.nativeFileShare
@@ -1560,6 +1565,7 @@ const createCloudSceneCellVersionMap = (
 
 function App() {
   useAppShellScrollGuard();
+  const sharedSession = useSharedSession();
   const workspaceLayout = useWorkspaceLayout();
   const initial = useMemo(readInitialProject, []);
   const [project, setProjectState] = useState<Project>(initial.project);
@@ -1592,7 +1598,18 @@ function App() {
     stageViewMemoryRef.current = { projectId: project.id, appView, views: new Map() };
   }
   const stageViewStates = stageViewMemoryRef.current.views;
-  const cloudConfig = useMemo(getCloudConfig, []);
+  const cloudConfig = useMemo(() => {
+    if (import.meta.env.DEV) {
+      const mock = (window as Window & { __sharedSessionMock?: { url: string; anonKey: string } }).__sharedSessionMock;
+      if (mock && new URL(mock.url).hostname === "127.0.0.1" && new URL(mock.url).protocol === "http:") return mock;
+    }
+    return getCloudConfig();
+  }, []);
+  const [authRestoring, setAuthRestoring] = useState(cloudAuthIdentity().status === "restoring");
+  useEffect(() => subscribeCloudAuth(() => {
+    setAuthRestoring(cloudAuthIdentity().status === "restoring");
+    const session = readCloudAuthSession(); cloudSessionRef.current = session; setCloudSession(session);
+  }), []);
   const [cloudSession, setCloudSession] = useState<CloudAuthSession | null>(
     () => readCloudAuthSession(),
   );
@@ -1786,6 +1803,38 @@ function App() {
     if (!activeCloudProjectRef.current) saveCoordinatorRef.current?.edit(next);
   }, []);
 
+  const updateLibrarySummary = (summary: ProjectSummary) => {
+    ++libraryLoadGenerationRef.current;
+    setSavedProjects(previous => previous.some(s => s.id === summary.id)
+      ? previous.map(s => s.id === summary.id && compareRevisions(summary.repositoryRevision, s.repositoryRevision) >= 0 ? summary : s)
+      : [...previous, summary]);
+  };
+  const observeSave = (state: SaveState | null) => {
+    setLocalSaveState(state);
+    if (state) { isDirtyRef.current = state.dirty; setIsDirty(state.dirty); setIsSaving(state.saving); }
+    else setIsSaving(false);
+  };
+  const createLocalCoordinator = (repository: ProjectRepository) => {
+    const coordinator = new SaveCoordinator(repository, state => {
+      if (saveCoordinatorRef.current === coordinator) observeSave(state);
+    }, updateLibrarySummary);
+    return coordinator;
+  };
+  const closeSharedSession = async (background = true) => {
+    if (!sharedSession.active) return true;
+    if (!await sharedSession.close(background)) return false;
+    sharedEditorRef.current = null;
+    setAppView("library");
+    if (repositoryRef.current) saveCoordinatorRef.current = createLocalCoordinator(repositoryRef.current);
+    return true;
+  };
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const target = window as Window & { __sharedSession?: unknown };
+    target.__sharedSession = sharedSession;
+    return () => { delete target.__sharedSession; };
+  }, [sharedSession]);
+
   useEffect(() => {
     let cancelled = false;
     let repository: ProjectRepository | null = null;
@@ -1800,20 +1849,7 @@ function App() {
         const failures = prepared.result.failures.map(f => f.code === "INTERRUPTED" ? "移行を中断しました。次回起動時に再開します。" : REPOSITORY_ERROR_MESSAGES[f.code]);
         if (failures.length) setStorageWarning([...new Set(failures)].join(" "));
         if (!prepared.result.canContinue) { setStorageCorrupt(prepared.result.failures.some(f => f.code === "CORRUPT")); setStorageStatus(null); return; }
-        saveCoordinatorRef.current = new SaveCoordinator(repository, state => {
-          if (cancelled) return;
-          setLocalSaveState(state);
-          sharedEditorRef.current?.receiveDurable();
-          if (state) { isDirtyRef.current = state.dirty; setIsDirty(state.dirty); setIsSaving(state.saving); }
-          else setIsSaving(false);
-        }, summary => {
-          if (!cancelled) {
-            ++libraryLoadGenerationRef.current;
-            setSavedProjects(previous => previous.some(s => s.id === summary.id)
-              ? previous.map(s => s.id === summary.id && compareRevisions(summary.repositoryRevision, s.repositoryRevision) >= 0 ? summary : s)
-              : [...previous, summary]);
-          }
-        });
+        saveCoordinatorRef.current = createLocalCoordinator(repository);
         await refreshLocalLibrary();
         if (cancelled) return;
         setStorageReady(true); setStorageStatus(null);
@@ -1828,9 +1864,9 @@ function App() {
     })();
     return () => {
       cancelled = true; ++editorLoadGenerationRef.current;
-      sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
+      const closingShared = sharedSession.shutdown(); sharedEditorRef.current = null;
       const close = () => { if (repository && "close" in repository) (repository as ProjectRepository & { close(): void }).close(); };
-      void (saveCoordinatorRef.current?.flush() ?? Promise.resolve()).finally(close);
+      void closingShared.then(() => saveCoordinatorRef.current?.flush()).finally(close);
     };
   }, [refreshLocalLibrary, storageRetry]);
 
@@ -2026,6 +2062,10 @@ function App() {
   const restoreAudioForProject = useCallback(
     async (targetProject: Project) => {
       const meta = targetProject.audio;
+      if (sharedSession.active?.attached && !sharedSession.active.audioMatches(meta)) {
+        setAudioSource(null, meta?.name ?? null); setSharedAudioNotice(true);
+        setNotice("この隊列表の曲がこの端末の曲と一致しません。音源タブで選び直してください。"); return false;
+      }
       if (!meta?.id) {
         setAudioSource(null, null);
         setSharedAudioNotice(false);
@@ -2251,7 +2291,7 @@ function App() {
   );
 
   const undoProject = useCallback(() => {
-    if (sharedEditorRef.current) { sharedEditorRef.current.undo(); refreshHistoryCounts(); return; }
+    if (sharedEditorRef.current) { sharedSession.active?.historyResult(sharedEditorRef.current.undo()); refreshHistoryCounts(); return; }
     const entry = undoStackRef.current[undoStackRef.current.length - 1];
     if (!entry) {
       return;
@@ -2277,7 +2317,7 @@ function App() {
   }, [allowCloudLockedSceneChange, markLocalEdit, refreshHistoryCounts]);
 
   const redoProject = useCallback(() => {
-    if (sharedEditorRef.current) { sharedEditorRef.current.redo(); refreshHistoryCounts(); return; }
+    if (sharedEditorRef.current) { sharedSession.active?.historyResult(sharedEditorRef.current.redo()); refreshHistoryCounts(); return; }
     const entry = redoStackRef.current[redoStackRef.current.length - 1];
     if (!entry) {
       return;
@@ -2312,6 +2352,7 @@ function App() {
 
   const flushPendingAutoSave = useCallback(async () => {
     clearPendingAutoSave();
+    if (sharedSession.active) return sharedSession.active.flush();
     sharedEditorRef.current?.end();
     if (sharedEditorRef.current && !sharedEditorRef.current.stagePending()) return false;
     return await (saveCoordinatorRef.current?.flush() ?? Promise.resolve(true));
@@ -2343,7 +2384,7 @@ function App() {
 
   useEffect(() => {
     if (
-      APP_FEATURES.collaboration ||
+      !APP_FEATURES.personalCloud || APP_FEATURES.collaboration ||
       appView !== "editor" ||
       !activeCloudProject ||
       activeCloudProject.role !== "owner" ||
@@ -2394,7 +2435,7 @@ function App() {
         }
         return false;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const target = createSceneCellLockTarget(
         lock.sceneId,
         lock.patchType,
@@ -2484,7 +2525,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return false;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.saveSceneCellPatchWithLock(
         cloudState.projectId,
         lock.sceneId,
@@ -2618,7 +2659,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return false;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const lockToken = createCloudLockToken();
       const holderClientId = readCloudClientIdFromSession();
       const leaseId = createCloudLeaseId();
@@ -2870,7 +2911,7 @@ function App() {
       void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) {
           handlePageHide();
-        }
+        } else sharedSession.active?.provider?.wake();
       }).then((listener) => {
         if (disposed) {
           void listener.remove();
@@ -5603,7 +5644,7 @@ function App() {
         setNotice("端末へ保存しました。クラウドへ同期するには再度ログインしてください。");
         return true;
       }
-      api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const remoteParts = await api.loadCloudProjectParts(cloudState.projectId);
       const remoteUpdatedAt = remoteParts.updatedAt ?? null;
       const hasConflict =
@@ -7069,6 +7110,7 @@ function App() {
   const loadAudio = async (file: AudioSelection) => {
     const generation = audioSelectionGeneration;
     if (generation !== editorLoadGenerationRef.current) return;
+    if (sharedSession.active?.attached && !window.confirm("音源を変更すると、共有中の隊列表の曲名・種類・サイズ・長さも全員に反映されます。変更しますか？")) return;
     const nextUrl = file instanceof File ? URL.createObjectURL(file) : await resolveAudioPlaybackURL(file);
     if (generation !== editorLoadGenerationRef.current) {
       if (nextUrl?.startsWith("blob:")) URL.revokeObjectURL(nextUrl);
@@ -7138,20 +7180,34 @@ function App() {
       ...rawProject,
       lastOpenedAt: now,
     });
-    sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
+    if (!await closeSharedSession() || generation !== editorLoadGenerationRef.current) return false;
     if (record) {
-      saveCoordinatorRef.current?.activate({ ...record, project: nextProject });
       if (record.collaboration) {
         if (options.cloudProject) throw new Error("新しい共同編集と旧クラウド編集は併用できません。");
-        const { SharedProjectEditor } = await import("./collaboration/editorSession");
-        const editor = await SharedProjectEditor.create(saveCoordinatorRef.current!, nextProject, projection => {
-          projectRef.current = projection; setProject(projection);
-          const commands = sharedEditorRef.current?.commands;
-          if (commands) setHistoryCounts({ undo: commands.canUndo ? 1 : 0, redo: commands.canRedo ? 1 : 0 });
-        }, error => setNotice(error instanceof Error ? error.message : "共同編集の端末保存に失敗しました。"));
-        if (generation !== editorLoadGenerationRef.current) { editor.destroy(); return false; }
-        sharedEditorRef.current = editor; nextProject = editor.project;
-      }
+        activeCloudProjectRef.current = null; setActiveCloudProject(null);
+        let installed = false;
+        const controller = await sharedSession.open(repositoryRef.current!, { ...record, project: nextProject }, {
+          enabled: APP_FEATURES.collaborationV2, config: cloudConfig, platform: APP_FEATURES.nativeFileShare ? "ipad" : "web",
+          mock: import.meta.env.DEV && !!(window as Window & { __sharedSessionMock?: unknown }).__sharedSessionMock,
+          current: () => installed ? sharedSession.active?.localId === record.project.id && sharedSession.active?.editor === sharedEditorRef.current
+            : generation === editorLoadGenerationRef.current,
+          publish: projection => {
+            projectRef.current = projection; setProject(projection);
+            const commands = sharedEditorRef.current?.commands;
+            if (commands) setHistoryCounts({ undo: commands.canUndo ? 1 : 0, redo: commands.canRedo ? 1 : 0 });
+            if (sharedSession.active?.attached && !sharedSession.active.audioMatches(projection.audio)) {
+              setAudioSource(null, projection.audio?.name ?? null); setSharedAudioNotice(true);
+              setNotice("この隊列表の曲がこの端末の曲と一致しません。音源タブで選び直してください。");
+            }
+          },
+          saved: observeSave, committed: updateLibrarySummary,
+          failed: error => setNotice(error instanceof Error ? error.message : "共同編集の端末保存に失敗しました。"),
+        });
+        if (!controller || generation !== editorLoadGenerationRef.current) return false;
+        saveCoordinatorRef.current = controller.coordinator; sharedEditorRef.current = controller.editor;
+        installed = true;
+        nextProject = controller.editor.project; controller.start();
+      } else saveCoordinatorRef.current?.activate({ ...record, project: nextProject });
     }
     undoStackRef.current = [];
     redoStackRef.current = [];
@@ -7219,8 +7275,8 @@ function App() {
   const returnToLibrary = async () => {
     try {
       if (!activeCloudProjectRef.current && !await flushPendingAutoSave()) return;
+      if (!await closeSharedSession()) return;
       ++editorLoadGenerationRef.current;
-      sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
       if (isSharedProject) {
         setIsSharedProject(false);
         await refreshLocalLibrary();
@@ -7282,7 +7338,8 @@ function App() {
     if (!coordinator || !canLeaveWithoutSaving(coordinator.state)) return;
     if (!window.confirm("未保存の編集が失われます。先に「編集中のデータを ZIP で書き出す」で退避することをおすすめします。保存せずに一覧へ戻りますか？")) return;
     clearPendingAutoSave(); coordinator.discard(); ++editorLoadGenerationRef.current;
-    sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
+    await sharedSession.shutdown(); sharedEditorRef.current = null;
+    if (repositoryRef.current) saveCoordinatorRef.current = createLocalCoordinator(repositoryRef.current);
     setIsDirty(false); isDirtyRef.current = false; setIsPlaying(false); audioRef.current?.pause(); setAppView("library");
     void refreshLocalLibrary().catch(error => setNotice(repositoryError(error).message));
   };
@@ -7301,6 +7358,8 @@ function App() {
     await (audioEditorProtectionRef.current ??= protectAudioEditor());
     const generation = ++editorLoadGenerationRef.current;
     if (!await flushPendingAutoSave()) return;
+    if (!await closeSharedSession()) return;
+    await sharedSession.settle(id);
     await localAction(async repository => {
       let record: ProjectRecord;
       try { record = await readOpenedProject(repository, id); }
@@ -7319,18 +7378,7 @@ function App() {
     if (!summary) throw new RepositoryError("NOT_FOUND");
     const record = await getRequiredProject(repository, id);
     if (record.collaboration) {
-      // Library rename is also a shared title command, never JSON metadata that
-      // disagrees with the durable document. Keep the regular rename unchanged.
-      const { SharedProjectEditor } = await import("./collaboration/editorSession");
-      let editor: SharedProjectEditor | undefined;
-      const coordinator = new SaveCoordinator(repository, () => editor?.receiveDurable());
-      coordinator.activate(record);
-      let failure: unknown;
-      try {
-        editor = await SharedProjectEditor.create(coordinator, record.project, () => {}, error => { failure = error; });
-        editor.edit(project => ({ ...project, title }));
-        if (!editor.stagePending() || !await coordinator.flush()) throw failure ?? coordinator.state?.error ?? new RepositoryError("BUSY");
-      } finally { editor?.destroy(); }
+      setNotice("共有の隊列表名は、隊列表を開いてから変更してください。"); return;
     } else {
       await repository.rename({ id, title, updatedAt: new Date().toISOString(), localRevision: incrementRevision(record.localRevision),
         expectedRepositoryRevision: summary.repositoryRevision, operationId: createProjectId() });
@@ -7482,7 +7530,7 @@ function App() {
       const target = createProjectLockTarget("import");
       const lockToken = createCloudLockToken();
       importLockToken = lockToken;
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const lockResult = await api.acquireEditLock(
         cloudState.projectId,
         target,
@@ -7634,19 +7682,9 @@ function App() {
     if (!cloudConfig) {
       return null;
     }
-    const session = sessionOverride ?? cloudSessionRef.current;
-    if (!session) {
-      return null;
-    }
-    if (!isCloudAuthSessionExpired(session)) {
-      return session;
-    }
-    const auth = createCloudAuthClient(cloudConfig);
-    const refreshed = await auth.refreshSession(session.refreshToken);
-    saveCloudAuthSession(refreshed);
-    cloudSessionRef.current = refreshed;
-    setCloudSession(refreshed);
-    return refreshed;
+    if (sessionOverride && readCloudAuthSession()?.user.id !== sessionOverride.user.id) return null;
+    const session = await getValidCloudAuthSession(cloudConfig);
+    cloudSessionRef.current = session; setCloudSession(session); return session;
   };
 
   const refreshCloudActiveLocks = async (
@@ -7663,7 +7701,7 @@ function App() {
         setCloudActiveLocks([]);
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       setCloudActiveLocks(await api.listActiveEditLocks(cloudState.projectId));
     } catch (error) {
       console.warn("クラウドロック一覧の更新に失敗しました。", error);
@@ -7684,7 +7722,7 @@ function App() {
         setCloudCollaborationItems([]);
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       setCloudCollaborationItems(
         await api.listProjectCollaboration(cloudState.projectId),
       );
@@ -7707,7 +7745,7 @@ function App() {
         setCloudContacts([]);
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       setCloudContacts(await api.listUserContacts());
     } catch (error) {
       setNotice(getCloudErrorMessage(error));
@@ -7734,7 +7772,7 @@ function App() {
     if (!cloudConfig) {
       return { activeProjectLock: null, activeSceneLock: null };
     }
-    const api = createCloudApiClient(cloudConfig, () => session.accessToken);
+    const api = createLegacyCloudApiClient(cloudConfig, () => session.accessToken);
     for (const resourceKey of CLOUD_OWNER_RESOURCE_KEYS) {
       const target = createProjectLockTarget(resourceKey);
       const lockToken = readCloudLockTokenFromSession(projectId, target);
@@ -7821,7 +7859,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return false;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.saveSceneWithLock(
         cloudState.projectId,
         frameId,
@@ -7905,7 +7943,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return false;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const resourceData = extractCloudProjectResourceData(sourceProject, resourceKey);
       const existingSceneIds = new Set(Object.keys(cloudState.sceneVersions));
       const currentSceneIds = new Set(sourceProject.frames.map((frame) => frame.id));
@@ -8385,7 +8423,7 @@ function App() {
       }
       const target = createProjectLockTarget(resourceKey);
       const lockToken = createCloudLockToken();
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await acquireCloudEditLock(
         api,
         cloudState,
@@ -8477,7 +8515,7 @@ function App() {
       }
       const target = createSceneLockTarget(selectedFrame.id);
       const lockToken = createCloudLockToken();
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await acquireCloudEditLock(
         api,
         cloudState,
@@ -8632,7 +8670,7 @@ function App() {
         return false;
       }
       const target = createProjectLockTarget(activeLock.lockKey);
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.releaseEditLock(
         cloudState.projectId,
         target,
@@ -8687,7 +8725,7 @@ function App() {
         return false;
       }
       const target = createSceneLockTarget(activeLock.sceneId);
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.releaseEditLock(
         cloudState.projectId,
         target,
@@ -9101,7 +9139,7 @@ function App() {
           return;
         }
         const target = createSceneLockTarget(lock.sceneId);
-        const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+        const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
         const result = await api.heartbeatEditLock(
           cloudState.projectId,
           target,
@@ -9169,7 +9207,7 @@ function App() {
         if (!activeSession) {
           return;
         }
-        const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+        const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
         const nextLocks: CloudActiveCellLock[] = [];
         for (const lock of locks) {
           const target = createSceneCellLockTarget(
@@ -9234,7 +9272,7 @@ function App() {
           return;
         }
         const target = createProjectLockTarget(lock.lockKey);
-        const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+        const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
         const result = await api.heartbeatEditLock(
           cloudState.projectId,
           target,
@@ -9449,6 +9487,7 @@ function App() {
   const refreshCloudProjects = async (
     sessionOverride?: CloudAuthSession | null,
   ) => {
+    if (APP_FEATURES.collaborationV2) return;
     if (!cloudConfig) {
       setCloudError("Supabase接続が未設定です。");
       return;
@@ -9461,7 +9500,7 @@ function App() {
         setCloudError("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       setCloudProjects(await api.listCloudProjects());
       setCloudError(null);
     } catch (error) {
@@ -9479,12 +9518,17 @@ function App() {
     setIsCloudBusy(true);
     try {
       const auth = createCloudAuthClient(cloudConfig);
+      const expectedEpoch = cloudAuthIdentity().epoch;
       const session = await auth.signInWithPassword(email, password);
+      if (cloudAuthIdentity().epoch !== expectedEpoch) return;
       saveCloudAuthSession(session);
+      await waitCloudAuthPersistence();
       setCloudSession(session);
       setCloudError(null);
-      const api = createCloudApiClient(cloudConfig, () => session.accessToken);
-      setCloudProjects(await api.listCloudProjects());
+      if (!APP_FEATURES.collaborationV2) {
+        const api = createLegacyCloudApiClient(cloudConfig, () => session.accessToken);
+        setCloudProjects(await api.listCloudProjects());
+      }
       setNotice("クラウドにログインしました。");
     } catch (error) {
       setCloudError(getCloudErrorMessage(error));
@@ -9505,17 +9549,22 @@ function App() {
     setIsCloudBusy(true);
     try {
       const auth = createCloudAuthClient(cloudConfig);
+      const expectedEpoch = cloudAuthIdentity().epoch;
       const session = await auth.signUpWithPassword(
         email,
         password,
         displayName,
         APP_FEATURES.nativeFileShare ? IPAD_AUTH_REDIRECT_URL : undefined,
       );
+      if (cloudAuthIdentity().epoch !== expectedEpoch) return;
       if (session) {
         saveCloudAuthSession(session);
+        await waitCloudAuthPersistence();
         setCloudSession(session);
-        const api = createCloudApiClient(cloudConfig, () => session.accessToken);
-        setCloudProjects(await api.listCloudProjects());
+        if (!APP_FEATURES.collaborationV2) {
+          const api = createLegacyCloudApiClient(cloudConfig, () => session.accessToken);
+          setCloudProjects(await api.listCloudProjects());
+        }
         setNotice("クラウドアカウントを作成しました。");
       } else {
         setNotice("確認メールを送信しました。メール確認後にログインしてください。");
@@ -9643,20 +9692,21 @@ function App() {
   };
 
   const signOutFromCloud = async () => {
-    if (cloudConfig && cloudSession?.accessToken) {
-      try {
-        await createCloudAuthClient(cloudConfig).signOut(cloudSession.accessToken);
-      } catch (error) {
-        console.warn("クラウドログアウト通知に失敗しました。", error);
-      }
+    const token = readCloudAuthSession()?.accessToken;
+    clearCloudAuthSession(); cloudSessionRef.current = null;
+    const nativeCleared = waitCloudAuthPersistence();
+    setCloudSession(null); setCloudProjects([]); setCloudContacts([]); setCloudCollaborationItems([]);
+    const hadShared = !!sharedSession.active;
+    const closed = await sharedSession.shutdown();
+    if (hadShared && closed) {
+      sharedEditorRef.current = null; ++editorLoadGenerationRef.current;
+      if (repositoryRef.current) saveCoordinatorRef.current = createLocalCoordinator(repositoryRef.current);
+      setAppView("library"); setIsPlaying(false); audioRef.current?.pause();
     }
-    clearCloudAuthSession();
-    setCloudSession(null);
-    setCloudProjects([]);
-    setCloudContacts([]);
-    setCloudCollaborationItems([]);
-    setCloudError(null);
-    setNotice("クラウドからログアウトしました。");
+    if (!closed) setNotice("ログアウトしました。端末保存に失敗した編集は画面に保持しています。保存を再試行するか、ZIP で退避してください。");
+    const results = await Promise.allSettled([nativeCleared, cloudConfig && token ? createCloudAuthClient(cloudConfig).signOut(token) : Promise.resolve()]);
+    if (results[0].status === "rejected") setCloudError("端末のログイン情報を削除できませんでした。再試行してください。");
+    else { setCloudError(null); if (closed) setNotice("クラウドからログアウトしました。"); }
   };
 
   const deleteCloudAccount = async (
@@ -9680,7 +9730,7 @@ function App() {
       cloudSessionRef.current = verifiedSession;
       setCloudSession(verifiedSession);
 
-      const api = createCloudApiClient(
+      const api = createLegacyCloudApiClient(
         cloudConfig,
         () => verifiedSession.accessToken,
       );
@@ -9746,22 +9796,19 @@ function App() {
     let removeNativeListener: (() => Promise<void>) | undefined;
 
     const activateSession = async (session: CloudAuthSession) => {
-      const activeSession = isCloudAuthSessionExpired(session)
-        ? {
-            ...(await createCloudAuthClient(cloudConfig).refreshSession(
-              session.refreshToken,
-            )),
-            authFlow: session.authFlow,
-          }
-        : session;
-      if (disposed) {
-        return;
-      }
-      saveCloudAuthSession(activeSession);
+      if (disposed) return;
+      saveCloudAuthSession(session);
+      const expectedEpoch = cloudAuthIdentity().epoch;
+      const activeSession = await getValidCloudAuthSession(cloudConfig);
+      if (disposed || !activeSession) return;
+      await waitCloudAuthPersistence();
+      if (disposed || cloudAuthIdentity().epoch !== expectedEpoch) return;
       cloudSessionRef.current = activeSession;
       setCloudSession(activeSession);
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      if (APP_FEATURES.collaborationV2) { setCloudError(null); return; }
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const projects = await api.listCloudProjects();
+      if (disposed || cloudAuthIdentity().epoch !== expectedEpoch) return;
       setCloudProjects(
         APP_FEATURES.collaboration
           ? projects
@@ -9773,7 +9820,7 @@ function App() {
     const restoreSession = async () => {
       try {
         const session = await hydrateCloudAuthSessionFromNativeStorage();
-        if (session) {
+        if (session && readCloudAuthSession()?.accessToken === session.accessToken) {
           await activateSession(session);
           if (session.authFlow === "recovery" && !disposed) {
             setAppView("library");
@@ -9808,9 +9855,11 @@ function App() {
       }
       setIsCloudBusy(true);
       try {
+        const expectedEpoch = cloudAuthIdentity().epoch;
         const session = await createCloudAuthClient(
           cloudConfig,
         ).createSessionFromRedirectUrl(url);
+        if (disposed || cloudAuthIdentity().epoch !== expectedEpoch) return;
         await activateSession(session);
         if (!disposed) {
           if (session.authFlow === "recovery") {
@@ -9875,7 +9924,7 @@ function App() {
         setCloudError("クラウドにログインしてから招待を受け取ってください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.acceptProjectInvite(inviteToken);
       if (!result.success) {
         setCloudError(
@@ -9922,7 +9971,7 @@ function App() {
         return null;
       }
       const inviteToken = createCloudLockToken();
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.createProjectInvite(
         cloudState.projectId,
         email,
@@ -9963,7 +10012,7 @@ function App() {
       if (!activeSession) {
         return { message: "クラウドにログインしてください。", success: false };
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.addContactByEmail(email);
       if (!result.success) {
         const message =
@@ -10010,7 +10059,7 @@ function App() {
       if (!activeSession) {
         return { message: "クラウドにログインしてください。", success: false };
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.addProjectMemberFromContact(
         cloudState.projectId,
         contactUserId,
@@ -10057,7 +10106,7 @@ function App() {
       if (!activeSession) {
         return { message: "クラウドにログインしてください。", success: false };
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.addProjectMemberToContacts(
         cloudState.projectId,
         userId,
@@ -10107,7 +10156,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.updateProjectMemberRole(
         cloudState.projectId,
         userId,
@@ -10143,7 +10192,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.removeProjectMember(cloudState.projectId, userId);
       if (!result.success) {
         setNotice(
@@ -10176,7 +10225,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.revokeProjectInvite(cloudState.projectId, inviteId);
       if (!result.success) {
         setNotice("招待を取り消せませんでした。");
@@ -10203,7 +10252,7 @@ function App() {
         setCloudError("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const draft = createCloudProjectDraft(normalizeProject(source));
       const result = await api.createCloudProject(draft);
       if (!result.success || !result.project_id) {
@@ -10234,7 +10283,7 @@ function App() {
         setCloudError("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const parts = await api.loadCloudProjectParts(cloudProject.id);
       const now = new Date().toISOString();
       let cloudOpenedProject = normalizeProject({
@@ -10352,7 +10401,7 @@ function App() {
         setNotice("クラウドにログインしてください。");
         return false;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const parts = await api.loadCloudProjectParts(cloudState.projectId);
       const now = new Date().toISOString();
       const nextProject = normalizeProject({
@@ -10412,7 +10461,7 @@ function App() {
         setCloudError("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const parts = await api.loadCloudProjectParts(cloudProject.id);
       const now = new Date().toISOString();
       const localCopy = normalizeProject({
@@ -10455,7 +10504,7 @@ function App() {
         setCloudError("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.deleteCloudProject(cloudProject.id);
       if (!result.success) {
         setCloudError(`クラウド隊列表を削除できませんでした: ${result.reason}`);
@@ -10483,7 +10532,7 @@ function App() {
         setCloudError("クラウドにログインしてください。");
         return;
       }
-      const api = createCloudApiClient(cloudConfig, () => activeSession.accessToken);
+      const api = createLegacyCloudApiClient(cloudConfig, () => activeSession.accessToken);
       const result = await api.hideCloudProject(cloudProject.id);
       if (!result.success) {
         setCloudError(`クラウド隊列表を非表示にできませんでした: ${result.reason}`);
@@ -10500,6 +10549,10 @@ function App() {
   };
 
   const togglePlayback = async () => {
+    if (sharedSession.active?.attached && !sharedSession.active.audioMatches(projectRef.current.audio)) {
+      setAudioSource(null, audioName); setSharedAudioNotice(true);
+      setNotice("この隊列表の曲がこの端末の曲と一致しません。音源タブで選び直してください。"); return;
+    }
     const audio = audioRef.current;
     if (!audio || !audio.src) {
       setNotice("音源が読み込まれていません。先にMP3/WAV/M4Aなどを選択してください。");
@@ -12777,7 +12830,8 @@ function App() {
           cloud={{
             configured: Boolean(cloudConfig),
             error: cloudError,
-            isBusy: isCloudBusy || !storageReady,
+            isBusy: isCloudBusy || !storageReady || authRestoring,
+            legacyEnabled: !APP_FEATURES.collaborationV2,
             personalMode: !APP_FEATURES.collaboration,
             pendingInviteToken: cloudInviteToken,
             projects: APP_FEATURES.collaboration
@@ -12798,7 +12852,11 @@ function App() {
             onSignIn: signInToCloud,
             onSignOut: signOutFromCloud,
             onSignUp: signUpToCloud,
-            onUploadProject: id => withStoredProject(id, uploadProjectToCloud),
+            onUploadProject: id => localAction(async repository => {
+              const record = await getRequiredProject(repository, id);
+              if (record.collaboration) { setNotice("共同編集の隊列表は旧クラウドへ保存できません。"); return; }
+              await uploadProjectToCloud(record.project);
+            }),
           }}
           onCreate={createNewFormationProject}
           onOpenProject={openStoredProject}

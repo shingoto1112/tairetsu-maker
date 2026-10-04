@@ -14,6 +14,11 @@ export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!sta
  * One session per ID; an inactive session's completion cannot notify the editor.
  */
 export class SaveCoordinator {
+  private commitListeners = new Set<(event: { id: string; pendingUpdateIds: string[]; pendingCount: number }) => void>();
+  private committedUpdates = new Map<string, Set<string>>();
+  subscribeCommits(listener: (event: { id: string; pendingUpdateIds: string[]; pendingCount: number }) => void) {
+    this.commitListeners.add(listener); return () => { this.commitListeners.delete(listener); };
+  }
   private sessions = new Map<string, Session>();
   private active: Session | null = null;
   private sharedRuntime?: typeof import("../collaboration/saveSession");
@@ -28,6 +33,7 @@ export class SaveCoordinator {
     const session: Session = { id, project: record.project, collaboration: detached(record.collaboration ?? null), repositoryRevision: record.repositoryRevision,
       localRevision: record.localRevision, persistedRevision: record.localRevision, dirty: false, saving: false, error: null };
     this.sessions.set(id, session); this.active = session; this.emit(session);
+    this.committedUpdates.set(id, new Set(record.collaboration?.outbox.map(e => e.updateId)));
   }
   activateUnsaved(request: CommitRequest, error: RepositoryError) {
     this.releaseCleanInactiveSession();
@@ -119,14 +125,14 @@ export class SaveCoordinator {
     // Assign the promise before any asynchronous repository completion.
     s.work = this.drain(s).finally(() => {
       s.work = undefined; s.saving = false; this.emit(s);
-      if (this.active !== s && !s.dirty && this.sessions.get(s.id) === s) this.sessions.delete(s.id);
+      if (this.active !== s && !s.dirty && this.sessions.get(s.id) === s) { this.sessions.delete(s.id); this.committedUpdates.delete(s.id); }
     });
     return s.work;
   }
   /** Explicit discard is allowed only after the user confirms reload. */
   discard() {
     if (this.active?.work) throw new RepositoryError("BUSY");
-    if (this.active) this.sessions.delete(this.active.id);
+    if (this.active) { this.sessions.delete(this.active.id); this.committedUpdates.delete(this.active.id); }
     this.deactivate();
   }
   private async drain(s: Session): Promise<boolean> {
@@ -135,6 +141,7 @@ export class SaveCoordinator {
       while (compareRevisions(s.localRevision, s.persistedRevision) > 0) {
         s.pending ??= { project: detached(s.project), ...(s.collaboration ? { collaboration: detached(s.collaboration) } : {}), localRevision: s.localRevision,
           expectedRepositoryRevision: s.repositoryRevision, operationId: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : createId("save") };
+        const fixedCollaboration = s.pending.collaboration;
         let receipt;
         try { receipt = await this.repository.commit(s.pending); }
         catch (e) {
@@ -153,6 +160,12 @@ export class SaveCoordinator {
         s.pending = undefined; s.error = null;
         s.dirty = compareRevisions(s.localRevision, s.persistedRevision) > 0;
         this.committed(receipt.summary); this.emit(s);
+        const known = this.committedUpdates.get(s.id) ?? new Set<string>();
+        const pendingUpdateIds = (fixedCollaboration?.outbox ?? []).filter(e => e.status === "pending" && !known.has(e.updateId)).map(e => e.updateId);
+        for (const entry of fixedCollaboration?.outbox ?? []) known.add(entry.updateId);
+        this.committedUpdates.set(s.id, known);
+        const pendingCount = (fixedCollaboration?.outbox ?? []).filter(e => e.status === "pending").length;
+        for (const listener of this.commitListeners) { try { listener({ id: s.id, pendingUpdateIds, pendingCount }); } catch { /* Observers do not invalidate durable saves. */ } }
       }
       return true;
     } catch (error) { s.error = repositoryError(error); s.dirty = true; this.emit(s); return false; }
@@ -162,7 +175,7 @@ export class SaveCoordinator {
   }
   private releaseCleanInactiveSession() {
     const s = this.active;
-    if (s && !s.work && !s.dirty) this.sessions.delete(s.id);
+    if (s && !s.work && !s.dirty) { this.sessions.delete(s.id); this.committedUpdates.delete(s.id); }
   }
   private emit(s: Session) { if (this.active === s) this.changed(this.publicState(s)); }
 }

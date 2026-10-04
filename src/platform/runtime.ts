@@ -34,16 +34,19 @@ export const getAppRuntime = (): AppRuntime => {
 
 export type AppFeatureFlags = {
   collaboration: boolean;
+  collaborationV2: boolean;
   nativeFileShare: boolean;
   personalCloud: boolean;
 };
 
 export const getAppFeatureFlags = (
   runtime: AppRuntime = getAppRuntime(),
+  collaborationV2 = import.meta.env.VITE_COLLABORATION_V2 === "1",
 ): AppFeatureFlags => ({
-  collaboration: runtime !== "capacitor-ios",
+  collaboration: !collaborationV2 && runtime !== "capacitor-ios",
+  collaborationV2,
   nativeFileShare: runtime === "capacitor-ios",
-  personalCloud: true,
+  personalCloud: !collaborationV2,
 });
 
 export const isIPadNativeApp = (): boolean => getAppRuntime() === "capacitor-ios";
