@@ -6,6 +6,7 @@ import { createId } from "../utils/ids";
 import { listAllSummaries, getRequiredProject } from "./appRepository";
 import type { Project, AudioMeta } from "../types";
 import type { ProjectRepository } from "../repositories/types";
+import { deviceAudioProject } from "./deviceAudioProject";
 
 export type BackupManifest = { fileType: "tairetsu-backup-set"; version: 1; createdAt: string; count: number;
   exportedCount: number; includesAudio: boolean; files: { name: string; size: number }[]; failedCount: number };
@@ -25,7 +26,7 @@ export const estimateBackup = async (repository: ProjectRepository) => {
   let audioBytes = 0, jsonBytes = 0, unknownCount = 0;
   for (const summary of summaries) {
     try {
-      const { project } = await getRequiredProject(repository, summary.id);
+      const project = await deviceAudioProject(await getRequiredProject(repository, summary.id));
       audioBytes += project.audio?.size ?? 0;
       jsonBytes += new TextEncoder().encode(JSON.stringify(project, null, 2)).byteLength;
     } catch { unknownCount++; }
@@ -43,7 +44,7 @@ export async function* generateBulkBackup(repository: ProjectRepository, include
   for (const [index, summary] of summaries.entries()) {
     let output: GeneratedBackupFile | undefined;
     try {
-      const { project } = await getRequiredProject(repository, summary.id);
+      const project = await deviceAudioProject(await getRequiredProject(repository, summary.id));
       assertBackupSize(project, includeAudio ? project.audio?.size ?? 0 : 0);
       const audioBlob = includeAudio && project.audio ? await loadAudioBlobFromIndexedDb(project.audio.id, project.audio) : null;
       if (includeAudio && project.audio && (!audioBlob || audioBlob.size !== project.audio.size)) throw new Error("音源を読み込めません。");

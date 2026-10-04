@@ -14,6 +14,8 @@
 
 ## JSON契約と原子性
 
+8bでは端末音源対応表付き付属JSONをローカルschema 2へ更新（共有documentSchema/DB版/ZIPは不変）。旧schema 1は読込互換を維持。詳細とGC延期の維持理由は [COLLABORATION_AUDIO.md](./COLLABORATION_AUDIO.md) を参照。下記schema 1は第2回時点の記録。
+
 `ProjectRecord` / `CommitRequest` の `collaboration` は省略/nullが独立文書。
 `sync` は個人同期の予約領域として引き続きnullを要求し、共同編集に流用しない。
 共有中は毎commitに完全な付属データを明示する。黙ったdetachはCONFLICT。

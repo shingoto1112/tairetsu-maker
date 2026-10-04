@@ -12,6 +12,8 @@
 
 ## 全件バックアップと読み込み
 
+共同編集8b：全件の対象が「この端末に保存済みの文書」で未取得クラウド文書を含まないことを画面へ明記。通常ZIP/手動全件ZIPは現在の端末曲だけを取り出して参加資格/CRDT/対応履歴を含めず、音源なしは従来のaudio:null。復旧DBは全対応表/CRDT/outboxを保持し、復旧後は資格再確認。GC延期を維持する理由は [COLLABORATION_AUDIO.md](./COLLABORATION_AUDIO.md) を参照。
+
 - 対象はこの端末の通常一覧。1隊列表＝既存形式の1ZIPで、1000件でも1ZIPのentry数を増やさない。生成・配布/Cacheへの退避を1件ずつ行い、保持する全件情報はsummaryとmanifestだけ。
 - 独立ZIPを入れる外側の巨大ZIPは作らない。音源200MiB、Project JSON 24MiB、展開224MiB（manifest等に4KiB予約）、生成ZIP256MiBを個別確認。限界を超える1件、読めない本文、音源込み指定時の欠落音源は失敗数に記録し、残りを続行。
 - `backup-*.manifest.json` は `fileType=tairetsu-backup-set/version=1`。作成日時、要求件数、成功件数、失敗件数、音源有無、成功した各ファイルの名前/サイズを記録。既存ZIP内部のmanifestとは別物。

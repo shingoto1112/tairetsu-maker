@@ -45,4 +45,6 @@
 
 ## 第8回への申し送り
 
+共同編集8bの対応表はAudioStoreのID→ファイル対応とは別にRepository付属JSONへ原子的に保存する。既存AudioStoreへパスを返さないメタ一覧APIを追加。GCは共有文書/前世代/復旧DBがあれば延期を維持。詳しくは [COLLABORATION_AUDIO.md](./COLLABORATION_AUDIO.md)。
+
 音源本体/ネイティブパスはSupabaseへ送らない。ローカル音源確定とProject CASは独立し、本文競合時も音源を削除しない。第8回のSQL案では既存AudioMeta/共同編集versionを維持し、CAS・snapshot・排他・再送receiptを設計する。本番SQL/RPC適用と新同期有効化は今回の範囲外。第10回で音源GC/対応表復旧/ZIPメモリ対策を合わせて設計する。

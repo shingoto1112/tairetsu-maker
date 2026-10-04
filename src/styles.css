@@ -7980,3 +7980,7 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .storage-tools-dialog > .mini-button { margin: 8px 8px 8px 0; }
 .storage-recovery-item { border-top: 1px solid #dbe3e5; padding: 12px 0; }
 .storage-recovery-item p { margin: 6px 0; }
+.shared-audio-controls { display: grid; gap: 10px; margin: 12px 0; min-width: 0; overflow-wrap: anywhere; }
+.shared-audio-controls p { margin: 0; line-height: 1.5; }
+.shared-audio-controls .file-picker-inline { white-space: normal; min-height: 44px; justify-content: center; text-align: center; }
+.shared-audio-controls select { max-width: 100%; }

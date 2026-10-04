@@ -1,5 +1,5 @@
 import type { AudioSelection } from "../platform/audioStorage";
-import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   AUDIO_FILE_ACCEPT,
   canUseNativeAudioPicker,
@@ -23,9 +23,10 @@ export const AudioFilePickerButton = ({
   onFileSelected,
 }: AudioFilePickerButtonProps) => {
   const [isPicking, setIsPicking] = useState(false);
+  const selectionCallback = useRef<typeof onFileSelected | null>(null);
   const isDisabled = disabled || isPicking;
 
-  const selectFile = async (file: File) => {
+  const selectFile = async (file: File, selected: typeof onFileSelected) => {
     const validationError = validateAudioFile(file);
     if (validationError) {
       onError(validationError);
@@ -33,7 +34,7 @@ export const AudioFilePickerButton = ({
     }
     try {
       setIsPicking(true);
-      await onFileSelected(file);
+      await selected(file);
     } catch (error) {
       onError(
         error instanceof Error
@@ -47,11 +48,12 @@ export const AudioFilePickerButton = ({
 
   const handleWebFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    const selected = selectionCallback.current ?? onFileSelected; selectionCallback.current = null;
     event.target.value = "";
     if (!file) {
       return;
     }
-    await selectFile(file);
+    await selectFile(file, selected);
   };
 
   const handleNativeFile = async () => {
@@ -90,6 +92,7 @@ export const AudioFilePickerButton = ({
       <input
         accept={AUDIO_FILE_ACCEPT}
         disabled={isDisabled}
+        onClick={() => { selectionCallback.current = onFileSelected; }}
         onChange={(event) => void handleWebFile(event)}
         type="file"
       />

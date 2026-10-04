@@ -411,7 +411,11 @@ final class CollaborationTests: XCTestCase {
         var f = try fixture()
         let binding: [String: Any] = ["accountId": "11111111-1111-1111-1111-111111111111", "membershipGeneration": "22222222-2222-2222-2222-222222222222"]
         for key in ["initial", "committed", "acknowledged"] {
-            var data = try XCTUnwrap(f[key] as? [String: Any]); data["transportBinding"] = binding; f[key] = data
+            var data = try XCTUnwrap(f[key] as? [String: Any]); data["transportBinding"] = binding
+            let song: [String: Any] = ["name": "shared.wav", "type": "audio/wav", "size": 100, "duration": 60]
+            let audio: [String: Any] = ["id": "device-\(key)", "name": "device.wav", "type": "audio/wav", "size": 100, "duration": 60]
+            data["schemaVersion"] = 2; data["audioBindings"] = [["song": song, "audio": audio] as [String: Any]]
+            f[key] = data
         }
         let r = repo(); defer { r.close() }
         _ = try call(r, "commitProject", request(f, "initial", 1))
@@ -449,7 +453,18 @@ final class CollaborationTests: XCTestCase {
     }
 
     func testGCAndLegacyCleanupHoldForCurrentPreviousAndBackup() throws {
-        let f = try fixture(), r = repo(); defer { r.close() }
+        var f = try fixture()
+        let r = repo(); defer { r.close() }
+        let song: [String: Any] = ["name": "shared.mp3", "type": "audio/mpeg", "size": 5, "duration": 3]
+        let audio: [String: Any] = ["id": "mapping-only", "name": "device.mp3", "type": "audio/mpeg", "size": 5, "duration": 3]
+        var data = try XCTUnwrap(f["initial"] as? [String: Any])
+        data["schemaVersion"] = 2; data["audioBindings"] = [["song": song, "audio": audio] as [String: Any]]; f["initial"] = data
+        let audioRoot = databaseURL.deletingLastPathComponent().appendingPathComponent("audio", isDirectory: true)
+        let audioStore = AudioStore(directory: audioRoot, legacyDirectory: audioRoot.appendingPathComponent("legacy", isDirectory: true))
+        let source = databaseURL.deletingLastPathComponent().appendingPathComponent("mapping-source.mp3")
+        try Data([UInt8(0), 1, 2, 3, 4]).write(to: source)
+        _ = try audioStore.importFile(source, meta: StoredAudioMeta(id: "mapping-only", name: "device.mp3", type: "audio/mpeg", size: 5, duration: 3))
+        try audioStore.confirmReference(id: "mapping-only")
         let batch: [String: Any] = ["id": "legacy-projects-v1", "kind": "batch", "state": "discovered", "itemIds": [String](), "sources": [[String: Any]](), "issues": [[String: Any]]()]
         _ = try call(r, "writeMigration", ["entry": batch, "expectedState": NSNull()] as [String: Any])
         var completed = batch; completed["state"] = "completed"
@@ -462,6 +477,8 @@ final class CollaborationTests: XCTestCase {
             if stage == 2 { try sql("DELETE FROM project_previous") }
             let gc = try call(r, "collectUnusedAudio")
             XCTAssertEqual((gc as? [String: Any])?["skipped"] as? Bool, true)
+            let resolved = try audioStore.resolve(id: "mapping-only")
+            XCTAssertNotNil(resolved, "mapping-only music retained for current / previous / recovery backup")
             let reasons = try call(r, "legacyCleanupStatus")
             XCTAssertTrue((reasons as? [String])?.contains(where: { $0.contains("共同編集") }) == true)
             error("CONFLICT") { try self.call(r, "cleanupLegacyData") }

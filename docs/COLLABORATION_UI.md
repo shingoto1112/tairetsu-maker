@@ -65,6 +65,8 @@ Windows / Chromium 149 / 全ネットワーク試験は隔離ブラウザー、l
 
 ## Claudeへの確認と8bへの申し送り
 
+8bは [COLLABORATION_AUDIO.md](./COLLABORATION_AUDIO.md) に実装・判断・検証・画像を記録。音源操作の分離、バックアップ範囲表示、V2旧UI入口の非表示、状態文言の切れ対策を実装した。以下は8a-2時点の申し送り。
+
 - Linux：push後、Postgres 17 の `test-cloud-sql.mjs` と Edge/負荷CIを確認。anon・ゲスト・通常・作成者・外された人・部外者の実ロール、安定ページング、題名/seqの原子更新、重複の題名維持、旧ACLの維持を追加済み。WindowsではSQLの実行を行っていない。
 - macOS：`ios/ProjectRepositoryCore` の `swift test`。現在45件。新しい2件は通常保存時だけのsummary生成/旧summaryとバックアップの互換性、破損共有attachmentがopen/list/別文書/個別復旧を妨げず再openでも原本・summary・receiptが不変であること。変数の重複、typed辞書、throwing callをXCTUnwrapの外へ出すこと、raw helperのforeign_keys=ON、/var系の比較追加なし、共通fixture不変を自己レビュー済み。コンパイル・iPad実機Keychain・共有シートは未確認。
 - 公開ゲスト参加は有効化していない。モック成功だけで公開条件を満たさない。第11回の旧API停止後に本番の匿名認証/保護を確認する。

@@ -798,7 +798,7 @@ export const FormationLibrary = ({
         </section>
       )}
 
-      {!cloud?.personalMode && isCloudHelpOpen && (
+      {cloud && cloud.legacyEnabled !== false && !cloud.personalMode && isCloudHelpOpen && (
         <Suspense fallback={<div role="status">使い方を読み込み中…</div>}><CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} /></Suspense>
       )}
 

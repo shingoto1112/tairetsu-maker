@@ -7,6 +7,7 @@ import { getAppRuntime } from "./runtime";
 export type AudioSelection = File | AudioMeta;
 type Resolution = { uri?: string; size?: number; type?: string; legacy?: boolean };
 type NativeAudioPlugin = {
+  listAudioMetadata(): Promise<{ audio: AudioMeta[] }>;
   pickAudioFile(): Promise<{ cancelled?: boolean; audio?: AudioMeta }>;
   resolveAudioURL(options: { id: string; meta?: AudioMeta }): Promise<Resolution>;
   beginAudioUpload(options: { meta: AudioMeta }): Promise<{ token: string }>;

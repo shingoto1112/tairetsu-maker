@@ -28,9 +28,37 @@ enum CollaborationValidation {
     static func parse(_ json: String) throws -> [String: Any] {
         guard json.utf8.count <= jsonBytes else { throw RepositoryError("QUOTA_EXCEEDED") }
         let value = try RepositoryValidation.object(json)
-        guard RepositoryValidation.integer(value["schemaVersion"]) == 1,
+        guard [1, 2].contains(RepositoryValidation.integer(value["schemaVersion"]) ?? -1),
               [1, 2].contains(RepositoryValidation.integer(value["documentSchema"]) ?? -1) else { throw RepositoryError("UNSUPPORTED_SCHEMA") }
         var names = ["schemaVersion", "sharedDocumentId", "documentSchema", "generation", "base", "journal", "outbox", "serverCursor"]
+        if let raw = value["audioBindings"] {
+            guard RepositoryValidation.integer(value["schemaVersion"]) == 2 else { throw RepositoryError("INVALID_ARGUMENT") }
+            names.append("audioBindings")
+            guard let bindings = raw as? [[String: Any]] else { throw RepositoryError("INVALID_ARGUMENT") }
+            guard bindings.count <= entries else { throw RepositoryError("QUOTA_EXCEEDED") }
+            var seen: Set<Data> = []
+            for binding in bindings {
+                guard exact(binding, ["song", "audio"]), let song = binding["song"] as? [String: Any],
+                      let audio = binding["audio"] as? [String: Any] else { throw RepositoryError("INVALID_ARGUMENT") }
+                for (meta, hasID) in [(song, false), (audio, true)] {
+                    var allowed = ["name", "type", "size"]
+                    if meta["duration"] != nil { allowed.append("duration") }
+                    if hasID { allowed.append("id") }
+                    guard exact(meta, allowed), let name = meta["name"] as? String, !name.isEmpty, name.utf16.count <= 4096,
+                          let type = meta["type"] as? String, !type.isEmpty, type.utf16.count <= 4096,
+                          let size = RepositoryValidation.integer(meta["size"]), size > 0, size <= AudioStore.maximumSize,
+                          !hasID || RepositoryValidation.validID(meta["id"]) else { throw RepositoryError("INVALID_ARGUMENT") }
+                    if let rawDuration = meta["duration"] {
+                        guard let duration = rawDuration as? NSNumber, String(cString: duration.objCType) != "c", duration.doubleValue.isFinite,
+                              duration.doubleValue >= 0 else { throw RepositoryError("INVALID_ARGUMENT") }
+                    }
+                }
+                let key: [Any] = [song["name"]!, song["type"]!, song["size"]!, song["duration"] ?? NSNull()]
+                guard seen.insert(try JSONSerialization.data(withJSONObject: key, options: [.sortedKeys])).inserted else {
+                    throw RepositoryError("INVALID_ARGUMENT")
+                }
+            }
+        }
         if let raw = value["transportBinding"] {
             names.append("transportBinding")
             guard let binding = raw as? [String: Any], exact(binding, ["accountId", "membershipGeneration"]) else {
@@ -77,6 +105,9 @@ enum CollaborationValidation {
         let current = try parse(currentJSON)
         guard let nextJSON = nextJSON else { throw RepositoryError("CONFLICT") }
         let next = try parse(nextJSON)
+        if RepositoryValidation.integer(current["schemaVersion"]) == 2 && RepositoryValidation.integer(next["schemaVersion"]) != 2 {
+            throw RepositoryError("CONFLICT")
+        }
         let oldBinding = current["transportBinding"] as? [String: Any]
         let newBinding = next["transportBinding"] as? [String: Any]
         guard same(current["generation"] as? String, next["generation"] as? String),

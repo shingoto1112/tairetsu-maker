@@ -8,7 +8,8 @@ import { projectSharedDocument } from "./projection";
 import { REMOTE_ORIGIN } from "./model";
 import { clone } from "./projectModel";
 import { same, listField } from "./projectModel";
-import { ENTITY_ROOTS } from "./model";
+import { ENTITY_ROOTS, getModel } from "./model";
+import { sameSong, type SongDescriptor } from "../repositories/audioBindings";
 import { SharedNotesAdapter } from "./notesAdapter";
 import { planRecipe, type PlannedWrite } from "./recipeCommands";
 
@@ -25,6 +26,7 @@ export class SharedProjectEditor {
   private readonly sharedDocumentId: string | null;
   acceptsProjection(project: Project): boolean { return this.published.has(project); }
   private noteAdapters = new Map<string, SharedNotesAdapter>();
+  private audioBindingState = "";
   notes(sceneId: string): SharedNotesAdapter {
     let adapter = this.noteAdapters.get(sceneId);
     if (!adapter) { adapter = new SharedNotesAdapter(this.doc, this.commands, sceneId); this.noteAdapters.set(sceneId, adapter); }
@@ -34,6 +36,7 @@ export class SharedProjectEditor {
   private constructor(readonly doc: Y.Doc, private coordinator: SaveCoordinator, project: Project,
     private publish: (project: Project) => void, private failed: (error: unknown) => void) {
     this.local = project; this.commands = new CollaborationCommands(doc);
+    this.audioBindingState = JSON.stringify(coordinator.audioBindingsProjection);
     this.sharedDocumentId = coordinator.collaborationProjection?.sharedDocumentId ?? null;
     doc.on("update", this.updated); this.remember(project);
   }
@@ -120,6 +123,13 @@ export class SharedProjectEditor {
     if (!data) return;
     const durable = hydrateCollaboration(data);
     let changed = false;
+    const bindings = data.audioBindings ?? [], bindingState = JSON.stringify(bindings);
+    if (bindingState !== this.audioBindingState) {
+      this.audioBindingState = bindingState;
+      const song = getModel(durable).settings.get("song") as SongDescriptor | null | undefined;
+      const binding = bindings.find(b => sameSong(b.song, song));
+      if (binding && !same(this.local.audio, binding.audio)) { this.local = { ...this.local, audio: binding.audio }; changed = true; }
+    }
     const received = () => { changed = true; };
     this.doc.on("update", received);
     this.syncing = true;

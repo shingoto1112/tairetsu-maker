@@ -47,6 +47,8 @@ provider の状態だけでは Project/Canvas を更新しない。CRDT が変�
 
 ## 音源と申し送り
 
+8b実装済みの端末対応表・音源操作・ZIP/バックアップ/GC方針は [COLLABORATION_AUDIO.md](./COLLABORATION_AUDIO.md) を参照。以下の8a-1照合/window.confirmは過渡期の記録で、現在はRepository付属schema 2の端末対応表と分離した操作に置き換えた。
+
 共有 `settings.song` の name/type/size/duration と端末 `audio` を照合し、違えば音源を止め、日本語で選び直しを案内する。
 現在の選択経路は `App.loadAudio → updateProject → editor.edit → planRecipe/settingsFields → settings.song`。
 8a-1 はこの変更に確認を出す。8b は共通曲の変更と端末音源の対応付けを別操作にする。

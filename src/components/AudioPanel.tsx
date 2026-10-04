@@ -1,4 +1,5 @@
 import type { AudioSelection } from "../platform/audioStorage";
+import type { AudioMeta } from "../types";
 import { Music, Pause, Play } from "lucide-react";
 import { formatTime } from "../utils/time";
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
@@ -19,6 +20,11 @@ type AudioPanelProps = {
   cloudAudioNotice?: boolean;
   audioReadOnlyMessage?: string;
   onLoadAudio: (file: AudioSelection) => void;
+  sharedSong?: Omit<AudioMeta, "id"> | null;
+  deviceAudioCandidates?: AudioMeta[];
+  audioReady?: boolean;
+  onChangeSharedSong?: (file: AudioSelection) => void | Promise<void>;
+  onChooseDeviceAudio?: (audio: AudioMeta) => void;
   onLoadAudioError?: (message: string) => void;
   onTogglePlayback: () => void;
   onSeek: (time: number) => void;
@@ -44,6 +50,11 @@ export const AudioPanel = ({
   cloudAudioNotice = false,
   audioReadOnlyMessage = "音源設定を編集するには、ownerが音源設定の編集ロックを取得してください。",
   onLoadAudio,
+  sharedSong,
+  deviceAudioCandidates = [],
+  audioReady = true,
+  onChangeSharedSong,
+  onChooseDeviceAudio,
   onLoadAudioError = () => undefined,
   onTogglePlayback,
   onSeek,
@@ -57,7 +68,7 @@ export const AudioPanel = ({
         meta={`${audioName ?? "未読み込み"} / ${formatTime(currentTime)} / ${formatTime(duration)}`}
         actions={
           <>
-            <AudioFilePickerButton
+            {!onChangeSharedSong && <AudioFilePickerButton
               className="mini-button file-picker-inline"
               disabled={!canEditAudio}
               onError={onLoadAudioError}
@@ -65,15 +76,34 @@ export const AudioPanel = ({
             >
               <Music size={15} />
               読み込み
-            </AudioFilePickerButton>
-            <button className="mini-button primary" onClick={onTogglePlayback} type="button">
+            </AudioFilePickerButton>}
+            <button className="mini-button primary" disabled={!audioReady} onClick={onTogglePlayback} type="button">
               {isPlaying ? <Pause size={15} /> : <Play size={15} />}
               {isPlaying ? "停止" : "再生"}
             </button>
           </>
         }
       />
-      {sharedAudioNotice && (
+      {onChangeSharedSong && <div className="shared-audio-controls">
+        <p>共通曲：<strong>{sharedSong?.name ?? "未設定"}</strong>{sharedSong?.duration !== undefined ? `（${formatTime(sharedSong.duration)}）` : ""}</p>
+        <AudioFilePickerButton className="mini-button file-picker-inline" disabled={!canEditAudio} onError={onLoadAudioError} onFileSelected={onChangeSharedSong}>
+          曲を変更（全員に反映）
+        </AudioFilePickerButton>
+        <p>音源ファイルは各端末だけに保存されます。全員が同じ曲を用意してください。</p>
+        <AudioFilePickerButton className="mini-button file-picker-inline" disabled={!sharedSong} onError={onLoadAudioError} onFileSelected={onLoadAudio}>
+          この端末の曲ファイルを選ぶ（自分だけ）
+        </AudioFilePickerButton>
+        {deviceAudioCandidates.length > 0 && <label>この端末に保存済みの曲
+          <select aria-label="この端末に保存済みの曲" value="" disabled={!sharedSong} onChange={event => {
+            const audio = deviceAudioCandidates.find(a => a.id === event.target.value); if (audio) onChooseDeviceAudio?.(audio);
+          }}>
+            <option value="">選んで対応付ける</option>
+            {deviceAudioCandidates.map(a => <option key={a.id} value={a.id}>{a.name} / {a.duration === undefined ? "長さ不明" : formatTime(a.duration)} / {a.size.toLocaleString()} B / {a.type} / {a.id.slice(-8)}</option>)}
+          </select>
+        </label>}
+        <p className={`notice ${audioReady ? "muted" : "warning"}`} role="status">{audioReady ? `この端末の曲：${audioName ?? "選択済み"}` : sharedSong ? "一致する曲がないか、候補が複数あります。この端末の曲ファイルを選んでください。" : "まず共通曲を設定してください。"}</p>
+      </div>}
+      {!onChangeSharedSong && sharedAudioNotice && (
         <p className="notice muted">
           音源ファイルは共有されていません。同じ曲ファイルを読み込んでください。
         </p>

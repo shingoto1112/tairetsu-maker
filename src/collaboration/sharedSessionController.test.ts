@@ -7,6 +7,7 @@ import type { Project } from "../types";
 import { createSharedDocument } from "./model";
 import { createCollaborationData } from "./persistence";
 import { SharedSessionController } from "./sharedSessionController";
+vi.mock("../utils/audioStorage", () => ({ listDeviceAudio: vi.fn(async () => []), resolveAudioPlaybackURL: vi.fn(async () => "file://test") }));
 const setup = async () => {
   const repository = new MemoryProjectRepository();
   const project = projects.stage as Project, doc = createSharedDocument(project);
@@ -20,6 +21,29 @@ const setup = async () => {
   return { owner, repository, project, publish };
 };
 describe("shared document session ownership", () => {
+  it("local binding survives restart/CAS without changing descriptor or creating an outbox update; rescue strips participation", async () => {
+    const { owner, repository, project } = await setup();
+    try {
+      const audio = { id: "device-a", name: "共通曲.wav", type: "audio/wav", size: 100, duration: 60 };
+      owner.changeSong(audio); await owner.flush();
+      const otherSong = { name: "以前の共通曲.wav", type: "audio/wav", size: 100, duration: 90 };
+      owner.coordinator.setAudioBindings([...owner.coordinator.audioBindingsProjection, { song: otherSong, audio: { ...audio, id: "other-song-original" } }]); await owner.flush();
+      const descriptor = owner.song, count = (await repository.get(project.id!))!.collaboration!.outbox.length;
+      const other = { ...audio, id: "device-b", name: "別エンコード.mp3", size: 50, type: "audio/mpeg" };
+      // Another same-origin writer causes CAS; keep the explicit device choice.
+      const saved = (await repository.get(project.id!))!;
+      const concurrent = { ...saved.collaboration!, audioBindings: saved.collaboration!.audioBindings!.map(b => b.song.name === otherSong.name ? { ...b, audio: { ...b.audio, id: "other-song-concurrent" } } : b) };
+      await repository.commit({ project: saved.project, collaboration: concurrent, expectedRepositoryRevision: saved.repositoryRevision,
+        localRevision: String(Number(saved.localRevision) + 1), operationId: "competing-local-writer" });
+      owner.bindAudio(other); expect(await owner.flush()).toBe(true);
+      const next = (await repository.get(project.id!))!;
+      expect(next.project.audio).toEqual(other); expect(next.collaboration!.audioBindings![0].audio).toEqual(other);
+      expect(next.collaboration!.audioBindings![1].audio.id).toBe("other-song-concurrent");
+      expect(next.collaboration!.outbox.length).toBe(count); expect(owner.song).toEqual(descriptor); expect(owner.audioMatches(other)).toBe(true);
+      const rescue = await owner.prepareIndependentCopy(); expect(rescue.project.audio).toEqual(other); expect(rescue.collaboration).toBeNull();
+      expect(() => owner.bindAudio(other, "stale-song")).toThrow("共通曲が変わりました");
+    } finally { owner.dispose(); }
+  });
   it("keeps editor and unsaved rescue after failed batch close, retains attachment when V2 is OFF", async () => {
     const { owner, repository, project } = await setup();
     try {

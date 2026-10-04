@@ -176,7 +176,8 @@ export const runIndexedDbBrowserSuite = async () => {
     tested("shared contract: 2 connections CAS merge / restart outbox / ACK / cursor / compaction / limits");
     {
       const sharedName = name(), sharedProbe: Probe = { scopes: [], durability: [] }, sharedRepo = repo(sharedName, probeFactory(sharedProbe));
-      const initial = initialCollaboration();
+      const initial = { ...initialCollaboration(), schemaVersion: 2 as const, audioBindings: [{ song: { name: "共通曲.wav", type: "audio/wav", size: 100, duration: 60 },
+        audio: { id: "mapped-device-audio", name: "端末曲.wav", type: "audio/wav", size: 100, duration: 60 } }] };
       await sharedRepo.commit({ project: commitProjects.stage as Project, collaboration: initial, operationId: "shared-original", localRevision: "1", expectedRepositoryRevision: null });
       const beforeShared = await snapshot(sharedName);
       const data = appendCollaboration(initial, collaborationUpdates(), "4");
@@ -192,6 +193,7 @@ export const runIndexedDbBrowserSuite = async () => {
       const restarted = repo(sharedName), saved = (await restarted.get("project_a"))!;
       equal(saved.collaboration, data, "successful attachment persists after restart");
       equal((await restarted.getPrevious("project_a"))!.collaboration, initial, "previous keeps matching attachment");
+      equal(saved.collaboration?.audioBindings, initial.audioBindings, "device mappings survive restart and previous without CRDT changes");
       const copy = await restorePreviousAsCopy(restarted, "project_a");
       assert(!(await restarted.get(copy.id))!.collaboration, "shared previous rescued as independent copy");
       const archive = await createTairetsuArchive(saved.project, { audioBlob: null });

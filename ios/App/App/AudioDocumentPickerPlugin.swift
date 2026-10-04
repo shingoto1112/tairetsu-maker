@@ -12,6 +12,7 @@ final class AudioDocumentPickerPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pickAudioFile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resolveAudioURL", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listAudioMetadata", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "beginAudioUpload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "appendAudioUpload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "finishAudioUpload", returnType: CAPPluginReturnPromise),
@@ -75,6 +76,9 @@ final class AudioDocumentPickerPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPi
             let type = UTType(filenameExtension: resolved.pathExtension)?.preferredMIMEType ?? "audio/mpeg"
             return ["uri": resolved.absoluteString, "size": size, "type": type]
         }
+    }
+    @objc func listAudioMetadata(_ call: CAPPluginCall) {
+        perform(call) { [self] store in ["audio": try store.listMetadata().map { try object($0) }] }
     }
     @objc func beginAudioUpload(_ call: CAPPluginCall) {
         perform(call) { [self] in ["token": try $0.beginUpload(meta: metadata(call))] }

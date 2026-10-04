@@ -718,6 +718,9 @@ public final class ProjectRepository {
             try scan("SELECT * FROM \(table)") { row in
                 try validateBody(row)
                 try addAudio(RepositoryValidation.object(row["json"]!, code: "CORRUPT"), to: &references)
+                if let json = row["collaboration_json"], let bindings = try CollaborationValidation.parse(json)["audioBindings"] as? [[String: Any]] {
+                    for binding in bindings { try addAudio(binding, to: &references) }
+                }
             }
         }
         try scan("SELECT source_key FROM migration_items") { row in

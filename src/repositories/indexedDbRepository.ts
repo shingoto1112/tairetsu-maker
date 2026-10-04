@@ -212,14 +212,17 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
               }
             } else {
               const record = decodeBody(cursor.value, String(cursor.key));
-              addAudioReference(record.project, ids); shared ||= !!record.collaboration;
+                addAudioReference(record.project, ids);
+                for (const binding of record.collaboration?.audioBindings ?? []) addAudioReference({ audio: binding.audio }, ids);
+                shared ||= !!record.collaboration;
             }
             cursor.continue();
           } catch (e) { fail(e); } };
         }
       });
-      // Opaque CRDT history has no declared local audio reference contract yet.
-      // Conservatively defer GC until round 6/8 supplies descriptors/mappings.
+        // 8b declares device mappings, but old shared records/opaque history and
+        // all recovery sources have not been proven complete. Keep the whole-GC
+        // deferral: an extra retained file is preferable to losing music.
       if (references.shared) return skipped;
       const stats = await (await import("../utils/audioStorage")).collectWebAudio(references.ids);
       await this.transaction(["migration_items"], "readwrite", (tx, result, fail) => {

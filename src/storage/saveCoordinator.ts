@@ -3,7 +3,7 @@ import { createId } from "../utils/ids";
 import { compareRevisions, incrementRevision, RepositoryError, type CollaborationData, type CollaborationUpdate, type CollaborationOutbox, type CommitRequest, type ProjectRecord, type ProjectRepository, type ProjectSummary, type Revision } from "../repositories/types";
 
 export type SaveState = { id: string; localRevision: Revision; persistedRevision: Revision; dirty: boolean; saving: boolean; error: RepositoryError | null };
-export type Session = SaveState & { project: Project; collaboration?: CollaborationData | null; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
+export type Session = SaveState & { project: Project; collaboration?: CollaborationData | null; audioBindingsBase?: NonNullable<CollaborationData["audioBindings"]>; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
 const detached = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export const repositoryError = (error: unknown): RepositoryError => error instanceof RepositoryError ? error : new RepositoryError("IO_ERROR");
 export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!state?.dirty && !state.saving && !!state.error &&
@@ -30,14 +30,14 @@ export class SaveCoordinator {
     const previous = this.sessions.get(id);
     if (previous?.work || previous?.dirty) throw new RepositoryError("BUSY");
     this.releaseCleanInactiveSession();
-    const session: Session = { id, project: record.project, collaboration: detached(record.collaboration ?? null), repositoryRevision: record.repositoryRevision,
+    const session: Session = { id, project: record.project, collaboration: detached(record.collaboration ?? null), audioBindingsBase: detached(record.collaboration?.audioBindings ?? []), repositoryRevision: record.repositoryRevision,
       localRevision: record.localRevision, persistedRevision: record.localRevision, dirty: false, saving: false, error: null };
     this.sessions.set(id, session); this.active = session; this.emit(session);
     this.committedUpdates.set(id, new Set(record.collaboration?.outbox.map(e => e.updateId)));
   }
   activateUnsaved(request: CommitRequest, error: RepositoryError) {
     this.releaseCleanInactiveSession();
-    const session: Session = { id: request.project.id!, project: request.project, collaboration: detached(request.collaboration ?? null), repositoryRevision: null,
+    const session: Session = { id: request.project.id!, project: request.project, collaboration: detached(request.collaboration ?? null), audioBindingsBase: [], repositoryRevision: null,
       localRevision: request.localRevision, persistedRevision: "0", dirty: true, saving: false, error, pending: detached(request) };
     this.sessions.set(session.id, session); this.active = session; this.emit(session);
   }
@@ -46,6 +46,8 @@ export class SaveCoordinator {
   /** Future UI can read a merged projection after changed() without sharing mutable state. */
   get projectProjection(): Project | null { return this.active ? detached(this.active.project) : null; }
   get collaborationProjection(): CollaborationData | null { return this.active?.collaboration ? detached(this.active.collaboration) : null; }
+  /** Audio UI checks must not copy multi-MiB CRDT bytes on every render. */
+  get audioBindingsProjection(): NonNullable<CollaborationData["audioBindings"]> { return detached(this.active?.collaboration?.audioBindings ?? []); }
   async prepareCollaborationEditing(): Promise<void> { this.sharedRuntime ??= await import("../collaboration/saveSession"); }
   /** Available only after the shared editor's dynamic initialization. Immediate
    * journal staging makes pagehide/flush include the operation without a race. */
@@ -61,6 +63,12 @@ export class SaveCoordinator {
   editCollaborationLocal(project: Project): void {
     // Empty update stages only local fields, then reprojects every shared field.
     this.editCollaborationNow([], project);
+  }
+  setAudioBindings(bindings: NonNullable<CollaborationData["audioBindings"]>): void {
+    const s = this.active;
+    if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+    s.collaboration = { ...s.collaboration, schemaVersion: 2, audioBindings: detached(bindings) };
+    s.localRevision = incrementRevision(s.localRevision); s.dirty = true; this.emit(s);
   }
   edit(project: Project) {
     const s = this.active;
@@ -149,13 +157,15 @@ export class SaveCoordinator {
           const saved = await this.repository.get(s.id);
           if (!saved?.collaboration) throw e;
           const runtime = await import("../collaboration/persistence");
-          const merged = runtime.mergeCollaboration(saved.collaboration, s.collaboration, saved.project);
+          const merged = runtime.mergeCollaboration(saved.collaboration, s.collaboration, { ...saved.project, audio: s.project.audio }, s.audioBindingsBase);
           s.project = merged.project; s.collaboration = merged.collaboration;
+          s.audioBindingsBase = detached(saved.collaboration.audioBindings ?? []);
           s.repositoryRevision = saved.repositoryRevision;
           s.localRevision = incrementRevision(compareRevisions(s.localRevision, saved.localRevision) > 0 ? s.localRevision : saved.localRevision);
           s.pending = undefined; continue;
         }
         s.repositoryRevision = receipt.repositoryRevision;
+        s.audioBindingsBase = detached(fixedCollaboration?.audioBindings ?? []);
         s.persistedRevision = receipt.localRevision;
         s.pending = undefined; s.error = null;
         s.dirty = compareRevisions(s.localRevision, s.persistedRevision) > 0;

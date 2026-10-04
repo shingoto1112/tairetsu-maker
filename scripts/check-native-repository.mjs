@@ -146,8 +146,9 @@ const audioCore = readFileSync(audioCorePath, "utf8");
 const audioTests = readFileSync(audioTestPath, "utf8");
 const audioBridge = readFileSync("ios/App/App/AudioDocumentPickerPlugin.swift", "utf8");
 const audioMethods = [...audioBridge.matchAll(/CAPPluginMethod\(name: "([^"]+)"/g)].map(m => m[1]);
-assert.equal(audioMethods.length, 6);
-assert.equal(new Set(audioMethods).size, 6);
+assert.equal(audioMethods.length, 7);
+assert.equal(new Set(audioMethods).size, 7);
+assert.ok(audioMethods.includes("listAudioMetadata"));
 for (const method of audioMethods) assert.ok(audioBridge.includes(`@objc func ${method}(`));
 for (const name of ["PBXBuildFile", "PBXFileReference", "PBXGroup", "PBXSourcesBuildPhase"]) {
   assert.ok(section(name).includes("AudioDocumentPickerPlugin.swift"), `existing picker reference ${name}`);
@@ -158,7 +159,7 @@ assert.ok(!audioCore.includes("isExcludedFromBackup = true"));
 assert.ok(audioCore.includes("try fm.replaceItemAt(index, withItemAt: pending)"));
 assert.ok(audioCore.includes("try equalFiles(source, staged)"));
 assert.ok(!/Filesystem\.(writeFile|deleteFile)/.test(readFileSync("src/platform/audioStorage.ts", "utf8")));
-assert.equal((audioTests.match(/func test\w+\(/g) ?? []).length, 15);
+assert.equal((audioTests.match(/func test\w+\(/g) ?? []).length, 16);
 assert.ok(core.includes('if method == "restoreRecoveryBackup"'));
 assert.ok(core.includes('try restoreRecoveryBackupLocked(); try connection(); return "null"'));
 assert.ok(core.includes('guard input.isEmpty else'));
@@ -168,7 +169,7 @@ assert.ok(core.includes('try draftAudioReferences()'));
 for (const method of ["testFixedBridgeRecoveryClosesRestoresReopensAndRejectsOtherConnection", "testRecoveryBackupScheduleAndLowSpaceSkip", "testRepositoryAudioGCProtectsPreviousRecoveryIncompleteAndBackup"]) assert.ok(swiftTests.includes(`func ${method}(`));
 assert.ok(audioCore.includes('Self.activeUploadNames'));
 assert.ok(audioCore.includes('record.pending == true'));
-console.log("Audio/maintenance preflight: 6 picker methods / Foundation-only audio core / 15 XCTest cases / pending and active upload protection / fixed restore+reopen: PASS (not Swift compilation)");
+console.log("Audio/maintenance preflight: 7 picker methods / Foundation-only audio core / 16 XCTest cases / pending and active upload protection / fixed restore+reopen: PASS (not Swift compilation)");
 
 const validation = readFileSync("ios/ProjectRepositoryCore/Sources/ProjectRepositoryCore/CollaborationValidation.swift", "utf8");
 assert.deepEqual([...validation.matchAll(/^import (\w+)$/gm)].map(m => m[1]), ["Foundation"]);
@@ -179,4 +180,4 @@ const sharedTests = readFileSync("ios/ProjectRepositoryCore/Tests/ProjectReposit
 assert.equal((sharedTests.match(/func test\w+\(/g) ?? []).length, 13);
 assert.ok(sharedTests.includes('fixture("commitProjects")'));
 assert.ok(!/XCTUnwrap\((?:self\.)?(?:call|read|request|fixture|execute)\(/.test(sharedTests));
-console.log("Collaboration native preflight: matching limits / immutable UUID binding / CRC+digest / 13 additional XCTest cases (45 total): PASS (macOS compilation still required)");
+console.log("Collaboration native preflight: matching limits / immutable UUID binding / device mappings / CRC+digest / 13 collaboration XCTest cases (46 total): PASS (macOS compilation still required)");

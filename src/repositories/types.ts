@@ -1,4 +1,4 @@
-import type { FormationMode, Project } from "../types";
+import type { AudioMeta, FormationMode, Project } from "../types";
 
 /** Canonical unsigned decimal: "0" or [1-9][0-9]*. Never convert to JS Number.
  * Project.version, storage schema version and these revisions are independent.
@@ -72,7 +72,7 @@ export type ProjectRecord = {
 export type CollaborationUpdate = { updateId: string; bytes: string; source: "local" | "remote" };
 export type CollaborationOutbox = { updateId: string; bytes: string; status: "pending" | "sent" };
 export type CollaborationData = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   sharedDocumentId: string | null;
   documentSchema: 1 | 2;
   generation: Revision;
@@ -82,6 +82,9 @@ export type CollaborationData = {
   serverCursor: Revision;
   /** Immutable sender identity for this attachment. Missing old records are held. */
   transportBinding?: { accountId: string; membershipGeneration: string };
+  /** Device-only references, persisted atomically with body/previous/recovery DB.
+   * Never encoded in Yjs or sent to the collaboration transport. */
+  audioBindings?: { song: Omit<AudioMeta, "id">; audio: AudioMeta }[];
 };
 
 export type CommitRequest = {

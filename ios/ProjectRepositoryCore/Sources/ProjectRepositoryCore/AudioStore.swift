@@ -103,6 +103,18 @@ public final class AudioStore {
         guard try size(url) == record.meta.size else { throw RepositoryError("CORRUPT") }
         return url
     }
+    /// Metadata only. A bad individual record must not hide other local music.
+    public func listMetadata() throws -> [StoredAudioMeta] {
+        StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
+        let records = try catalog()
+        return records.compactMap { id, record in
+            do {
+                try validate(record.meta)
+                guard record.meta.id == id, try size(file(record)) == record.meta.size else { return nil }
+                return record.meta
+            } catch { return nil }
+        }
+    }
     public func importFile(_ source: URL, meta: StoredAudioMeta) throws -> StoredAudioMeta {
         StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
         try validate(meta)

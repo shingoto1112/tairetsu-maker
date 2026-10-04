@@ -72,7 +72,7 @@ export const StorageTools = ({ repository, onChanged, damagedId, onDismissDamage
               await repository.updateMaintenance({ action: "reviewed", ids: [candidate.id] }); await refresh();
             })} />この候補を確認しました（元の候補は残ります）</label>
           </article>)}
-        </> : view === "backup" ? <><p>{estimate?.count ?? "…"}件の隊列表を1件ずつZIPで書き出します。復元するときはZIPと一覧ファイルをまとめて選択してください。</p>
+        </> : view === "backup" ? <><p>対象はこの端末に保存されている{estimate?.count ?? "…"}件の隊列表です。まだ取得していないクラウドの隊列表は含まれません。</p><p>1件ずつZIPで書き出します。共有への参加資格は含まれず、復元すると独立した隊列表になります。復元するときはZIPと一覧ファイルをまとめて選択してください。</p>
           <label className="checkbox-row"><input type="checkbox" checked={includeAudio} disabled={busy} onChange={e => setIncludeAudio(e.target.checked)} />音源も含める</label>
           <p>合計サイズの目安（圧縮前）：{estimate ? megabytes(estimate.jsonBytes + (includeAudio ? estimate.audioBytes : 0)) : "計算中…"}</p>
           {!!estimate?.unknownCount && <p className="notice">読み取れない{estimate.unknownCount}件のサイズは含まれていません。読み取れる隊列表の書き出しを続けます。</p>}

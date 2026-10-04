@@ -2084,6 +2084,10 @@ function App() {
         if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
         return false;
       }
+      if (sharedSession.active?.attached && !sharedSession.active.audioMatches(meta)) {
+        if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+        setAudioSource(null, meta.name); setSharedAudioNotice(true); return false;
+      }
       if (!url) {
         setAudioSource(null, meta.name);
         setSharedAudioNotice(true);
@@ -7112,10 +7116,23 @@ function App() {
 
   // The picker callback keeps the render's generation while native copying is pending.
   const audioSelectionGeneration = editorLoadGenerationRef.current;
+  const sharedAudioSelectionKey = JSON.stringify(sharedSession.active?.song ? [sharedSession.active.song.name, sharedSession.active.song.type, sharedSession.active.song.size, sharedSession.active.song.duration ?? null] : null);
+  const loadSharedAudio = async (file: AudioSelection, changeSong = false) => {
+    const controller = sharedSession.active;
+    if (!controller?.attached || audioSelectionGeneration !== editorLoadGenerationRef.current) return;
+    try {
+      const audio = file instanceof File ? await saveAudioFileToIndexedDb(file) : file;
+      if (controller !== sharedSession.active || audioSelectionGeneration !== editorLoadGenerationRef.current) return;
+      if (changeSong) controller.changeSong(audio); else controller.bindAudio(audio, sharedAudioSelectionKey);
+      restoredAudioKeyRef.current = "";
+      await restoreAudioForProject(controller.editor.project);
+      setNotice(changeSong ? "共通曲を変更しました。全員に反映されます。" : "この端末の曲を対応付けました。他の人の共通曲は変わりません。", "success");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "この端末の音源を保存できませんでした。もう一度選んでください。"); }
+  };
   const loadAudio = async (file: AudioSelection) => {
     const generation = audioSelectionGeneration;
     if (generation !== editorLoadGenerationRef.current) return;
-    if (sharedSession.active?.attached && !window.confirm("音源を変更すると、共有中の隊列表の曲名・種類・サイズ・長さも全員に反映されます。変更しますか？")) return;
+    if (sharedSession.active?.attached) { await loadSharedAudio(file); return; }
     const nextUrl = file instanceof File ? URL.createObjectURL(file) : await resolveAudioPlaybackURL(file);
     if (generation !== editorLoadGenerationRef.current) {
       if (nextUrl?.startsWith("blob:")) URL.revokeObjectURL(nextUrl);
@@ -7201,6 +7218,7 @@ function App() {
             const commands = sharedEditorRef.current?.commands;
             if (commands) setHistoryCounts({ undo: commands.canUndo ? 1 : 0, redo: commands.canRedo ? 1 : 0 });
             if (sharedSession.active?.attached && !sharedSession.active.audioMatches(projection.audio)) {
+              restoredAudioKeyRef.current = "";
               setAudioSource(null, projection.audio?.name ?? null); setSharedAudioNotice(true);
               setNotice("この隊列表の曲がこの端末の曲と一致しません。音源タブで選び直してください。");
             }
@@ -7417,6 +7435,7 @@ function App() {
     exportGenerationPending.current = true;
     const projectToExport = normalizeProject(source);
     try {
+      if (sharedSession.active?.attached && !sharedSession.active.audioMatches(projectToExport.audio)) projectToExport.audio = null;
       const audioBlob = includeAudio && projectToExport.audio?.id
         ? await loadAudioBlobFromIndexedDb(projectToExport.audio.id, projectToExport.audio).catch(() => null) : null;
       const audioMissing = includeAudio && Boolean(projectToExport.audio?.id) && !audioBlob;
@@ -12713,6 +12732,11 @@ function App() {
               : "音源設定の編集はownerのみ可能です。"
           }
           onLoadAudio={loadAudio}
+          sharedSong={sharedSession.active?.attached ? sharedSession.active.song ?? null : undefined}
+          deviceAudioCandidates={sharedSession.active?.audioCandidates}
+          audioReady={sharedSession.active?.attached ? !!audioUrl && sharedSession.active.audioMatches(project.audio) : true}
+          onChangeSharedSong={sharedSession.active?.attached ? file => loadSharedAudio(file, true) : undefined}
+          onChooseDeviceAudio={audio => { void loadSharedAudio(audio); }}
           onLoadAudioError={setNotice}
           onTogglePlayback={togglePlayback}
           onSeek={seek}
@@ -13014,7 +13038,7 @@ function App() {
           </div>
         </div>
       )}
-      {activeCloudProject && (
+      {!APP_FEATURES.collaborationV2 && activeCloudProject && (
         <div className="shared-project-banner cloud-project-banner">
           <div>
             <strong>
@@ -13055,14 +13079,14 @@ function App() {
                 {cloudPresenceSummary}
               </span>
             )}
-            {APP_FEATURES.collaboration && (
+            {APP_FEATURES.collaboration && !APP_FEATURES.collaborationV2 && (
               <span className="cloud-project-banner__presence">
                 クラウド共同編集では元に戻す/やり直しは使えません。
               </span>
             )}
           </div>
           <div className="shared-project-banner__actions">
-            {APP_FEATURES.collaboration && (
+            {APP_FEATURES.collaboration && !APP_FEATURES.collaborationV2 && (
               <button
                 className="mini-button"
                 onClick={() => setIsCloudHelpOpen(true)}
@@ -13197,7 +13221,7 @@ function App() {
         </div>
       )}
       <audio ref={audioRef} className="persistent-audio" preload="metadata" />
-      <input
+      {!APP_FEATURES.collaborationV2 && <input
         ref={cloudImportInputRef}
         accept=".json,.zip,.tairetsu,application/json,application/zip,application/octet-stream"
         className="sr-only"
@@ -13209,7 +13233,7 @@ function App() {
             void importCloudProjectFile(file);
           }
         }}
-      />
+      />}
       </div>
 
       <div className={isPanelOpen ? "workspace" : "workspace is-editor-collapsed"}>
@@ -13748,7 +13772,7 @@ function App() {
         currentFrame: selectedFrame ?? null, objectStates: selectedFrame?.objectStates ?? {},
       })}
     /></Suspense>}
-    {APP_FEATURES.collaboration && activeCloudProject?.role === "owner" && isCloudShareOpen && (
+    {APP_FEATURES.collaboration && !APP_FEATURES.collaborationV2 && activeCloudProject?.role === "owner" && isCloudShareOpen && (
       <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}>
       <CloudShareModal
         contacts={cloudContacts}
@@ -13768,7 +13792,7 @@ function App() {
       />
       </Suspense>
     )}
-    {APP_FEATURES.collaboration && isCloudHelpOpen && (
+    {APP_FEATURES.collaboration && !APP_FEATURES.collaborationV2 && isCloudHelpOpen && (
       <Suspense fallback={<div role="status">使い方を読み込み中…</div>}>
       <CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} />
       </Suspense>

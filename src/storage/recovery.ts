@@ -3,6 +3,7 @@ import { createId } from "../utils/ids";
 import { RepositoryError, type CommitRequest } from "../repositories/types";
 import type { MigrationItem } from "../repositories/migrationTypes";
 import type { MaintenanceRepository } from "./maintenanceTypes";
+import { deviceAudioProject } from "./deviceAudioProject";
 
 export type RecoveryCandidate = { id: string; title: string; updatedAt: string | null; memberCount: number | null;
   sceneCount: number | null; source: string; restorable: boolean; reviewed: boolean };
@@ -64,5 +65,5 @@ export const restorePreviousAsCopy = async (repository: MaintenanceRepository, i
   const previous = await repository.getPrevious(id);
   if (!previous) throw new RepositoryError("NOT_FOUND");
   // Keep the damaged original and its previous generation intact.
-  return repository.commit(recoveryRequest(JSON.stringify(previous.project)));
+  return repository.commit(recoveryRequest(JSON.stringify(await deviceAudioProject(previous))));
 };

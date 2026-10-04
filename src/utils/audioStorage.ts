@@ -21,6 +21,7 @@ type AudioRecord = {
   id: string;
   blob: Blob;
   pending?: boolean;
+  meta?: AudioMeta;
 };
 
 const createAudioId = (): string => {
@@ -126,9 +127,12 @@ export const saveAudioBlobToIndexedDb = async (
   if (canUseNativeAudioStorage()) {
     return saveNativeAudioBlob(id, file, file.type || type, meta.name, meta.duration);
   } else {
+    const audioMeta: AudioMeta = { id, name: meta.name || file.name, type: file.type || type, size: file.size,
+      duration: meta.duration ?? (await readAudioDuration(file)) };
     await withStorageWrite(() => withAudioStore("readwrite", (store) =>
-      store.put({ id, blob: file, pending: true } satisfies AudioRecord),
+      store.put({ id, blob: file, pending: true, meta: audioMeta } satisfies AudioRecord),
     ));
+    return audioMeta;
   }
   return {
     id,
@@ -172,6 +176,28 @@ export const resolveAudioPlaybackURL = async (meta: AudioMeta): Promise<string |
   if (canUseNativeAudioStorage()) return resolveNativeAudioURL(meta.id, meta);
   const blob = await loadAudioBlobFromIndexedDb(meta.id);
   return blob ? URL.createObjectURL(blob) : null;
+};
+
+/** Metadata only; no Blob read into JS memory or native paths returned. Old
+ * records are supplemented by Repository references at the shared-session edge. */
+export const listDeviceAudio = async (): Promise<AudioMeta[]> => {
+  if (canUseNativeAudioStorage()) {
+    const { nativeAudio, validateNativeAudioMeta } = await import("../platform/audioStorage");
+    return (await nativeAudio.listAudioMetadata()).audio.map(validateNativeAudioMeta);
+  }
+  const db = await openAudioDb();
+  try {
+    return await runIdbTransaction<AudioMeta[]>(db, STORE_NAME, "readonly", (tx, result) => {
+      const metas: AudioMeta[] = [], request = tx.objectStore(STORE_NAME).openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) { result(metas); return; }
+        const record = cursor.value as AudioRecord;
+        if (record?.meta && record.meta.id === record.id && record.blob instanceof Blob && record.blob.size === record.meta.size) metas.push(record.meta);
+        cursor.continue();
+      };
+    });
+  } finally { db.close(); }
 };
 
 /** Called only while the origin-wide exclusive maintenance lock is held. A new

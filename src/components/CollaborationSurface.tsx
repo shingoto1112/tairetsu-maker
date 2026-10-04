@@ -62,7 +62,7 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
     {service.optionsNow.platform === "ipad" && <button type="button" disabled={ui.busy} onClick={() => share(link)}>共有シートを開く</button>}
   </div>;
   return <>
-    {view === "library" && <section className="collab-home" aria-label="V2 アカウントとクラウドの隊列表" aria-busy={ui.busy || ui.auth.status === "restoring"}>
+    {view === "library" && <section className="collab-home" aria-label="アカウントとクラウドの隊列表" aria-busy={ui.busy || ui.auth.status === "restoring"}>
       <div className="collab-heading"><h2>クラウドの隊列表</h2>
         <div className="collab-actions">{signed ? <><span>{signed.isGuest ? "ゲスト" : "アカウント"}：{signed.displayName || (signed.isGuest ? "ゲスト" : readCloudAuthSession()?.user.email)}</span>
           {!signed.isGuest && <button type="button" disabled={ui.busy} onClick={() => service.account()}>アカウント</button>}
@@ -84,7 +84,7 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
     {view === "editor" && ui.error && !ui.screen && <p className="collab-error" role="alert">{ui.error}</p>}
     {ui.screen && createPortal(<div className="collab-backdrop" onPointerDown={() => service.close()}>
       <section className="collab-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true"
-        aria-label={ui.screen === "manage" ? "みんなで編集" : ui.screen === "invite" ? "招待されています" : "V2 アカウント"}
+        aria-label={ui.screen === "manage" ? "みんなで編集" : ui.screen === "invite" ? "招待されています" : "アカウント"}
         onPointerDown={event => event.stopPropagation()} onKeyDown={focus}>
         <header><h2>{ui.screen === "manage" ? "みんなで編集" : ui.screen === "invite" ? "招待されています" : "アカウント"}</h2>
           <button type="button" disabled={ui.busy} aria-label="共同編集画面を閉じる" onClick={() => service.close()}>閉じる</button></header>

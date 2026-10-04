@@ -1,4 +1,5 @@
 import { isValidStorageId } from "./ids";
+import { validateAudioBindings } from "./audioBindings";
 import { compareRevisions, isRevision, RepositoryError, type CollaborationData } from "./types";
 
 export const COLLABORATION_LIMITS = Object.freeze({ updateBytes: 256 * 1024, baseBytes: 8 * 1024 * 1024,
@@ -17,8 +18,12 @@ export const base64Bytes = (value: unknown, max: number): number => {
 };
 export function validateCollaboration(value: unknown): CollaborationData {
   if (!object(value)) throw new RepositoryError("INVALID_ARGUMENT");
-  if (value.schemaVersion !== 1 || ![1, 2].includes(value.documentSchema as number)) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+  if (![1, 2].includes(value.schemaVersion as number) || ![1, 2].includes(value.documentSchema as number)) throw new RepositoryError("UNSUPPORTED_SCHEMA");
   const names = ["schemaVersion", "sharedDocumentId", "documentSchema", "generation", "base", "journal", "outbox", "serverCursor"];
+  if ("audioBindings" in value) {
+    if (value.schemaVersion !== 2) throw new RepositoryError("INVALID_ARGUMENT");
+    names.push("audioBindings"); validateAudioBindings(value.audioBindings);
+  }
   if ("transportBinding" in value) {
     names.push("transportBinding");
     const binding = value.transportBinding;
@@ -51,7 +56,7 @@ export function validateCollaboration(value: unknown): CollaborationData {
 /** No implicit detach, epoch switch, cursor rollback, ID/bytes mutation or ACK rollback. */
 export function validateCollaborationTransition(current: CollaborationData | null | undefined, next: CollaborationData | null | undefined) {
   if (!current) return;
-  if (!next || current.generation !== next.generation || current.documentSchema !== next.documentSchema ||
+  if (!next || current.schemaVersion === 2 && next.schemaVersion !== 2 || current.generation !== next.generation || current.documentSchema !== next.documentSchema ||
     ((current.transportBinding || current.sharedDocumentId !== null) &&
       (current.transportBinding?.accountId !== next.transportBinding?.accountId || current.transportBinding?.membershipGeneration !== next.transportBinding?.membershipGeneration)) ||
     (current.sharedDocumentId !== null && current.sharedDocumentId !== next.sharedDocumentId) ||

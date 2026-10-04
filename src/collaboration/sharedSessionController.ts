@@ -13,6 +13,8 @@ import { createManagementTransport } from "./managementTransport";
 import { getModel } from "./model";
 import type { HistoryResult } from "./commands";
 import type { CollaborationTransport } from "./transport";
+import { describeAudio, mergeAudioBindings, sameSong, songKey, validateAudioBindings } from "../repositories/audioBindings";
+import { chooseDeviceAudio, deviceAudioCandidates } from "./deviceAudio";
 
 export type SharedSessionOptions = {
   enabled: boolean; config: CloudConfig | null; platform: "web" | "ipad"; mock?: boolean;
@@ -35,6 +37,9 @@ export class SharedSessionController {
   private drainTimer?: ReturnType<typeof setTimeout>;
   private finishDrain?: () => void;
   private transport: CollaborationTransport | null = null;
+  audioCandidates: AudioMeta[] = [];
+  private reviewedSong?: string;
+  private audioReview = 0;
   private constructor(private repository: ProjectRepository, readonly localId: string, private options: SharedSessionOptions) {
     this.coordinator = new SaveCoordinator(repository, state => {
       this.editor?.receiveDurable(); this.update();
@@ -57,6 +62,7 @@ export class SharedSessionController {
       owner.attached = !!record.collaboration?.sharedDocumentId;
       owner.editor = await SharedProjectEditor.create(owner.coordinator, record.project, project => {
         if (owner.current()) options.publish(project);
+        void owner.reviewAudio();
       }, options.failed);
       owner.update();
       if (record.collaboration?.sharedDocumentId && options.enabled && options.config) {
@@ -79,6 +85,7 @@ export class SharedSessionController {
           } else owner.provider?.wake();
         }));
       }
+      await owner.reviewAudio();
       return owner;
     } catch (error) { owner.dispose(); throw error; }
   }
@@ -94,7 +101,43 @@ export class SharedSessionController {
   get song(): Omit<AudioMeta, "id"> | null | undefined { return getModel(this.editor.doc).settings.get("song") as Omit<AudioMeta, "id"> | null | undefined; }
   audioMatches(meta: AudioMeta | null | undefined): boolean {
     const song = this.song;
-    return !song ? !meta : !!meta && ["name", "type", "size", "duration"].every(key => song[key as keyof typeof song] === meta[key as keyof AudioMeta]);
+    return !song ? !meta : !!meta && this.coordinator.audioBindingsProjection.some(b =>
+      sameSong(b.song, song) && b.audio.id === meta.id && sameSong(b.audio, meta));
+  }
+  /** Explicit local choice also supports a different encoding of the same song.
+   * Capture descriptor at picker start; never attach a late reply to a new song. */
+  bindAudio(audio: AudioMeta, expectedSong = songKey(this.song)): void {
+    if (this.disposed || expectedSong !== songKey(this.song) || !this.song) throw new Error("共通曲が変わりました。曲を確認して、もう一度この端末のファイルを選んでください。");
+    const bindings = mergeAudioBindings(this.coordinator.audioBindingsProjection, [{ song: this.song, audio }]);
+    validateAudioBindings(bindings);
+    ++this.audioReview; this.reviewedSong = songKey(this.song);
+    this.coordinator.setAudioBindings(bindings);
+    this.editor.setLocal({ ...this.editor.project, audio });
+  }
+  changeSong(audio: AudioMeta): void {
+    this.editor.edit(previous => ({ ...previous, audio }));
+    this.bindAudio(audio);
+  }
+  private async reviewAudio(): Promise<void> {
+    if (!this.editor || this.disposed) return;
+    const song = this.song, key = songKey(song);
+    if (this.reviewedSong === key) return;
+    this.reviewedSong = key;
+    const review = ++this.audioReview;
+    if (!song) { this.audioCandidates = []; if (this.editor.project.audio) this.editor.setLocal({ ...this.editor.project, audio: null }); return; }
+    try {
+      const bindings = this.coordinator.audioBindingsProjection;
+      const candidates = await deviceAudioCandidates(this.repository, bindings, this.editor.project.audio);
+      const audio = await chooseDeviceAudio(song, bindings, candidates);
+      if (this.disposed || review !== this.audioReview || key !== songKey(this.song)) return;
+      this.audioCandidates = candidates;
+      if (audio) this.bindAudio(audio, key);
+      else this.editor.setLocal({ ...this.editor.project, audio: null });
+    } catch (error) {
+      if (this.disposed || review !== this.audioReview) return;
+      this.editor.setLocal({ ...this.editor.project, audio: null }); this.options.failed(error);
+      this.reviewedSong = undefined; // A later explicit retry can inspect storage again.
+    }
   }
   async flush(): Promise<boolean> { this.editor.end(); return this.editor.stagePending() && await this.coordinator.flush(); }
   /** UI awaits device durability, never network drain. Caller retains this owner
@@ -125,14 +168,16 @@ export class SharedSessionController {
   }
   async prepareIndependentCopy() {
     this.editor.end(); this.editor.stagePending();
+    const live = this.editor.project;
+    const safeProject = { ...live, audio: this.audioMatches(live.audio) ? live.audio : null };
     // Rescue uses live projection even when the original cannot be saved.
     if (!this.options.config || !this.transport) {
-      const project = { ...structuredClone(this.editor.project), id: crypto.randomUUID(), updatedAt: new Date().toISOString() };
+      const project = { ...structuredClone(safeProject), id: crypto.randomUUID(), updatedAt: new Date().toISOString() };
       return { project, collaboration: null, expectedRepositoryRevision: null, localRevision: "1", operationId: crypto.randomUUID() } as const;
     }
     const lifecycle = new CollaborationLifecycle(this.repository, createManagementTransport(this.options.config), this.transport,
       { platform: this.options.platform, invitationBaseUrl: window.location.origin, allowedOrigins: [window.location.origin] });
-    return lifecycle.prepareIndependentCopy(this.localId, this.editor.project);
+    return lifecycle.prepareIndependentCopy(this.localId, safeProject);
   }
   dispose() {
     if (this.disposed) return;

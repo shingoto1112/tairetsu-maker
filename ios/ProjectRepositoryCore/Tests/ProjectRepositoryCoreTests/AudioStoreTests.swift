@@ -3,6 +3,15 @@ import XCTest
 @testable import ProjectRepositoryCore
 
 final class AudioStoreTests: XCTestCase {
+    func testMetadataListReturnsNoPathsAndRetainsFiles() throws {
+        _ = try store.importFile(source, meta: meta("metadata-only"))
+        let result = try store.listMetadata()
+        XCTAssertEqual(result, [meta("metadata-only")])
+        let encoded = try JSONEncoder().encode(result)
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertFalse(text.contains(directory.path)); XCTAssertFalse(text.contains("file://"))
+        XCTAssertNotNil(try store.resolve(id: "metadata-only"))
+    }
     private var directory: URL!
     private var root: URL { directory.appendingPathComponent("v2/audio", isDirectory: true) }
     private var legacy: URL { directory.appendingPathComponent("Documents/audio", isDirectory: true) }

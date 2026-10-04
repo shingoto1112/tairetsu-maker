@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { mergeAudioBindings, sameSong, type AudioBinding, type SongDescriptor } from "../repositories/audioBindings";
 import type { Project } from "../types";
 import { COLLABORATION_LIMITS, base64Bytes, validateCollaboration } from "../repositories/collaborationData";
 import { compareRevisions, RepositoryError, type CollaborationData, type CollaborationUpdate } from "../repositories/types";
@@ -76,7 +77,7 @@ export function appendCollaboration(input: CollaborationData, updates: Collabora
   return compactCollaboration(data);
 }
 /** Rebase local state onto durable state, including its compaction and ACK tombstones. */
-export function mergeCollaboration(saved: CollaborationData, local: CollaborationData, base: Project): { project: Project; collaboration: CollaborationData } {
+export function mergeCollaboration(saved: CollaborationData, local: CollaborationData, base: Project, audioBaseline?: AudioBinding[]): { project: Project; collaboration: CollaborationData } {
   if (saved.generation !== local.generation || saved.documentSchema !== local.documentSchema ||
     saved.transportBinding?.accountId !== local.transportBinding?.accountId || saved.transportBinding?.membershipGeneration !== local.transportBinding?.membershipGeneration ||
     (local.sharedDocumentId !== null && saved.sharedDocumentId !== null && saved.sharedDocumentId !== local.sharedDocumentId)) throw new RepositoryError("CONFLICT");
@@ -89,9 +90,12 @@ export function mergeCollaboration(saved: CollaborationData, local: Collaboratio
       if (old && old.bytes !== e.bytes) throw new RepositoryError("CONFLICT");
       outbox.set(e.updateId, { ...e, status: old?.status === "sent" ? "sent" : e.status });
     }
-    const collaboration = validateCollaboration({ ...saved, sharedDocumentId: saved.sharedDocumentId ?? local.sharedDocumentId,
+    const collaboration = validateCollaboration({ ...saved, schemaVersion: Math.max(saved.schemaVersion, local.schemaVersion),
+      ...((saved.audioBindings || local.audioBindings) ? { audioBindings: mergeAudioBindings(saved.audioBindings, local.audioBindings, audioBaseline) } : {}), sharedDocumentId: saved.sharedDocumentId ?? local.sharedDocumentId,
       base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], outbox: [...outbox.values()],
       serverCursor: compareRevisions(saved.serverCursor, local.serverCursor) >= 0 ? saved.serverCursor : local.serverCursor });
-    return { project: projectSharedDocument(doc, base, collaboration.sharedDocumentId), collaboration };
+    const song = getModel(doc).settings.get("song") as SongDescriptor | null | undefined;
+    const binding = collaboration.audioBindings?.find(b => sameSong(b.song, song));
+    return { project: projectSharedDocument(doc, binding ? { ...base, audio: binding.audio } : base, collaboration.sharedDocumentId), collaboration };
   } finally { doc.destroy(); mine.destroy(); }
 }
