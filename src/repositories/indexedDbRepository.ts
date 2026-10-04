@@ -72,7 +72,7 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
         try {
           if (event.oldVersion > 2) throw new RepositoryError("UNSUPPORTED_SCHEMA");
           const existingStores = event.oldVersion === 1 ? PROJECT_STORES.filter(n => n !== "migration_items")
-            : event.oldVersion === 2 ? PROJECT_STORES : [];
+            : event.oldVersion >= 2 ? PROJECT_STORES : [];
           if (existingStores.some(n => !request.result.objectStoreNames.contains(n))) throw new RepositoryError("CORRUPT");
           for (const name of PROJECT_STORES) {
             if (request.result.objectStoreNames.contains(name)) continue;
@@ -82,6 +82,9 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
               store.createIndex("by_mode_order", ["summary.mode", "sortTime", "sortId"], { unique: true });
             }
           }
+          // Optional sharing metadata is written with normal saves. V2 has
+          // never been public: no badge migration or body scan is necessary.
+          // A damaged attachment must remain a per-document recovery issue.
         } catch (error) { fail(error); request.transaction!.abort(); }
       };
       request.onerror = () => fail(request.error);

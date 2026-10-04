@@ -30,6 +30,7 @@ import {
   Trash2,
   Upload,
   UserRoundCog,
+  Users,
   X,
 } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
@@ -67,6 +68,9 @@ type FormationLibraryProps = {
   disabled?: boolean;
   notice?: string | null;
   storageTools?: ReactNode;
+  collaborationSlot?: ReactNode;
+  renderProjectBadge?: (summary: ProjectSummary) => ReactNode;
+  onJoinInvitation?: () => void;
   onImportProjectFiles?: (files: File[]) => void | Promise<void>;
   cloud?: {
     configured: boolean;
@@ -167,6 +171,9 @@ export const FormationLibrary = ({
   disabled = false,
   notice,
   storageTools,
+  collaborationSlot,
+  renderProjectBadge,
+  onJoinInvitation,
   onImportProjectFiles,
   cloud,
   onCreate,
@@ -537,6 +544,7 @@ export const FormationLibrary = ({
 
       {notice && <p className="library-notice" role="status">{notice}</p>}
       {storageTools}
+      {collaborationSlot}
 
       {cloud && (
         <section className="library-cloud-panel" aria-label="クラウド">
@@ -850,7 +858,7 @@ export const FormationLibrary = ({
             >
               <Folder size={56} />
             </span>
-            <span className="formation-card__badge">ローカル</span>
+            <span className="formation-card__badge">{renderProjectBadge?.(project) ?? "ローカル"}</span>
             <strong>{project.title || "名称未設定"}</strong>
             <small>最終使用: {formatProjectDate(project)}</small>
           </article>
@@ -952,6 +960,9 @@ export const FormationLibrary = ({
               </button>
             </header>
             <div className="library-add-options">
+              {onJoinInvitation && <button type="button" onClick={() => { setIsAddDialogOpen(false); onJoinInvitation(); }}>
+                <Users size={22} /><span><strong>招待リンクで参加</strong><small>招待リンクを貼り付けて参加します。</small></span>
+              </button>}
               <button type="button" onClick={openCreateTypeDialog}>
                 <Plus size={22} />
                 <span>

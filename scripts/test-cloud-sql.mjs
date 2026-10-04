@@ -103,6 +103,34 @@ const rejoined = join(2, invite(1, id).token); assert.notEqual(rejoined.membersh
 assert.equal(json(asUser(3, `select public.collab_v2_access_status(${q(id)})`)).status, 'removed');
 assert.equal(json(asUser(9, `select public.collab_v2_access_status(${q(id)})`)).status, 'unavailable');
 const listed = json(asUser(10, `select public.collab_v2_list_members(${q(id)})`));
+// Actual SQL roles: anon, guest, member, creator, removed, outsider.
+const listMine = (n, args = '') => json(asUser(n, `select public.collab_v2_list_my_documents(${args})`));
+const titleDoc = json(service(`select public.collab_v2_create_document(${q(uid(1))},'paging','\\x0001'::bytea,'SQL一覧題名')`));
+run(`update public.collab_v2_documents set created_at='2026-10-04T00:00:00Z' where id in (${q(id)},${q(titleDoc.documentId)});`);
+const firstList = listMine(1,'1'); assert.equal(firstList.items.length,1); assert(firstList.nextCursor);
+const nextList = listMine(1,`1,${q(firstList.nextCursor.createdAt)},${q(firstList.nextCursor.documentId)}`);
+assert.equal(nextList.items.length,1); assert.equal(nextList.nextCursor,null);
+assert.notEqual(firstList.items[0].documentId,nextList.items[0].documentId);
+assert([firstList.items[0],nextList.items[0]].some(row=>row.title==='SQL一覧題名'));
+asUser(1,`select public.collab_v2_delete_document(${q(titleDoc.documentId)})`);
+assert.equal(listMine(1).items.length,1,'deleted documents excluded');
+for (const n of [1, 2, 10]) {
+  const page = listMine(n); assert.equal(page.items.length, 1); assert.equal(page.nextCursor, null);
+  assert.deepEqual(Object.keys(page.items[0]).sort(), ['createdAt','documentId','documentSchema','isCreator','memberCount','title']);
+  assert.equal(page.items[0].isCreator, n === 1); assert.equal(page.items[0].memberCount, 7);
+  assert.equal(json(asUser(n, `select public.collab_v2_open_existing(${q(id)})`)).membershipGeneration, membership(id, n));
+  const inviteStates = json(asUser(n, `select public.collab_v2_list_invites(${q(id)})`));
+  assert(inviteStates.some(i => i.status === 'expired')); assert(inviteStates.some(i => i.status === 'revoked')); assert(inviteStates.some(i => i.status === 'used'));
+  assert(inviteStates.every(i => Object.keys(i).sort().join() === 'expiresAt,inviteId,status'));
+}
+for (const n of [3, 9]) {
+  assert.deepEqual(listMine(n).items, []);
+  deny(n, `select public.collab_v2_open_existing(${q(id)})`, 'NOT_MEMBER');
+  deny(n, `select public.collab_v2_list_invites(${q(id)})`, 'NOT_MEMBER');
+}
+deny(null, 'select public.collab_v2_list_my_documents()', 'permission denied', 'anon');
+for (const fn of ['open_existing','list_invites']) deny(null, `select public.collab_v2_${fn}(${q(id)})`, 'permission denied', 'anon');
+for (const args of ['null', '0', '101', `1,null,${q(id)}`]) deny(1, `select public.collab_v2_list_my_documents(${args})`, 'INVALID_ARGUMENT');
 assert.equal(listed.length, 7); assert.equal(listed.filter(m => m.isCreator).length, 1);
 assert.equal(listed.find(m => m.userId === uid(10)).isGuest, true);
 assert.equal(listed.find(m => m.userId === uid(1)).isGuest, false);
@@ -142,8 +170,8 @@ for (const args of [`null,1,0`, `${q(id)},null,0`, `${q(id)},1,null`, `${q(id)},
 deny(1, `select public.collab_v2_get_updates(${q(id)},2,0)`, 'STALE_GENERATION');
 deny(1, `select public.collab_v2_get_updates(${q(id)},1,9)`, 'INVALID_CURSOR');
 
-const appendSql = (updateId, head = 0, actor = 1, member = membership(id, actor), bytes = '\\x0000', digest = null) =>
-  `select public.collab_v2_append(${q(id)},${q(uid(actor))},1,${q(member)},${head},${q(updateId)},${bytes === null ? 'null' : q(bytes)}::bytea,${digest ?? `extensions.digest(${bytes === null ? 'null' : q(bytes)}::bytea,'sha256')`})`;
+const appendSql = (updateId, head = 0, actor = 1, member = membership(id, actor), bytes = '\\x0000', digest = null, title = '隊列表') =>
+  `select public.collab_v2_append(${q(id)},${q(uid(actor))},1,${q(member)},${head},${q(updateId)},${bytes === null ? 'null' : q(bytes)}::bytea,${digest ?? `extensions.digest(${bytes === null ? 'null' : q(bytes)}::bytea,'sha256')`},${q(title)})`;
 for (const n of [1,2,9,null]) {
   deny(n, appendSql('forged'), 'permission denied');
   deny(n, `select public.collab_v2_ingest_state(${q(id)},${q(uid(1))},1,${q(d.membershipGeneration)})`, 'permission denied');
@@ -179,8 +207,10 @@ assert(barrier, 'append transaction must hold lock before racing');
 assert.equal(json(asUser(1, `select public.collab_v2_get_updates(${q(id)},1,0)`)).headSeq, '0', 'uncommitted seq must not be advertised');
 const second = concurrent(`begin; ${identity(null,'service_role')} ${appendSql('parallel-b')}; commit;`);
 const results = await Promise.all([first, second]); assert.equal(results[0].code, 0); assert.match(results[1].stderr, /HEAD_CONFLICT/);
-assert.equal(json(service(appendSql('parallel-b',1))).seq, '2');
+assert.equal(json(service(appendSql('parallel-b',1,1,d.membershipGeneration,'\\x0000',null,'更新済み題名'))).seq, '2');
+assert.equal(scalar(`title_seq=head_seq and list_title='更新済み題名' from public.collab_v2_documents where id=${q(id)}`),'t');
 assert.equal(json(service(appendSql('parallel-a',0))).duplicate, true);
+assert.equal(scalar(`title_seq=2 and list_title='更新済み題名' from public.collab_v2_documents where id=${q(id)}`),'t','duplicate never regresses the display title');
 deny(null, appendSql('parallel-a',2,1,d.membershipGeneration,'\\x0100'), 'UPDATE_ID_CONFLICT', 'service_role');
 deny(null, appendSql('parallel-a',2,2,rejoined.membershipGeneration), 'ACTOR_MISMATCH', 'service_role');
 const page = json(asUser(1, `select public.collab_v2_get_updates(${q(id)},1,0,1)`));

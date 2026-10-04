@@ -55,6 +55,8 @@ export type ProjectSummary = {
   audioId?: string;
   repositoryRevision: Revision;
   syncStatus: "local" | "pending" | "synced" | "conflict" | "error";
+  /** Lightweight attachment identity, never CRDT bytes or cached member count. */
+  sharing?: { documentId: string; accountId?: string; membershipGeneration?: string };
 };
 
 export type ProjectRecord = {

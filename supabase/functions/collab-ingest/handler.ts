@@ -78,8 +78,8 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
         if (!fields(input, ['action', 'displayName', 'bytes']) || typeof input.displayName !== 'string' ||
           !input.displayName.trim() || [...input.displayName].length > 80) invalid();
         const bytes = decodeBase64(input.bytes, SERVER_LIMITS.snapshotBytes);
-        validateState(bytes, [], undefined, 2);
-        const result = await backend.rpc('collab_v2_create_document', { p_actor: user.id, p_display_name: input.displayName, p_bytes: hex(bytes) });
+        const validated = validateState(bytes, [], undefined, 2);
+        const result = await backend.rpc('collab_v2_create_document', { p_actor: user.id, p_display_name: input.displayName, p_bytes: hex(bytes), p_title: validated.title });
         return response(200, result);
       }
       if (input.action !== 'append' || !fields(input, ['action', 'documentId', 'generation', 'membershipGeneration', 'updateId', 'bytes']) ||
@@ -93,11 +93,12 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
         if (![1, 2].includes(state.documentSchema) || !state.snapshot || !Array.isArray(state.updates)) throw new ValidationError('UNSUPPORTED_SCHEMA');
         const snapshot = decodeBase64(state.snapshot.bytes, SERVER_LIMITS.snapshotBytes);
         const updates = state.updates.map(u => decodeBase64(u.bytes, SERVER_LIMITS.updateBytes));
-        validationTime += validateState(snapshot, updates, bytes, state.documentSchema as 1 | 2).elapsedMs;
+        const validated = validateState(snapshot, updates, bytes, state.documentSchema as 1 | 2);
+        validationTime += validated.elapsedMs;
         if (validationTime > SERVER_LIMITS.validationMs) throw new ValidationError('VALIDATION_BUDGET');
         try {
           const ack = await backend.rpc('collab_v2_append', { ...args, p_expected_head: state.headSeq,
-            p_update_id: input.updateId, p_bytes: hex(bytes), p_digest: hex(digest) });
+            p_update_id: input.updateId, p_bytes: hex(bytes), p_digest: hex(digest), p_title: validated.title });
           return response(200, { documentId: input.documentId, generation: input.generation, updateId: input.updateId, ...ack as object });
         } catch (error) {
           if (!(error instanceof RpcError) || error.message !== 'HEAD_CONFLICT') throw error;

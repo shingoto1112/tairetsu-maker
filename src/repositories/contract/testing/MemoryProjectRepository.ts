@@ -49,7 +49,7 @@ export class MemoryProjectRepository implements ProjectRepository {
         after = { id: parsed.id, updatedAt: new Date(parsed.time).toISOString() } as ProjectSummary;
       } catch { throw new RepositoryError("INVALID_ARGUMENT"); }
     }
-    const all = [...this.records.values()].map(r => createProjectSummary(r.project, r.repositoryRevision, r.sync))
+    const all = [...this.records.values()].map(r => createProjectSummary(r.project, r.repositoryRevision, r.sync, r.collaboration))
       .filter(s => (!query.mode || s.mode === query.mode) && (!after || order(s, after) > 0)).sort(order);
     const items = all.slice(0, query.limit);
     const last = items[items.length - 1];
@@ -98,7 +98,7 @@ export class MemoryProjectRepository implements ProjectRepository {
     const record: ProjectRecord = { project: request.project, localRevision: request.localRevision,
       repositoryRevision, sync: current?.sync ?? null, ...(request.collaboration ? { collaboration: request.collaboration } : {}) };
     const receipt = { id, operationId: request.operationId, repositoryRevision,
-      localRevision: request.localRevision, summary: createProjectSummary(record.project, repositoryRevision, record.sync) };
+      localRevision: request.localRevision, summary: createProjectSummary(record.project, repositoryRevision, record.sync, record.collaboration) };
     this.records.set(id, record);
     this.operations.set(request.operationId, { signature, receipt });
     return clone(receipt);
@@ -116,7 +116,7 @@ export class MemoryProjectRepository implements ProjectRepository {
     const record = { ...current, project: { ...current.project, title: request.title, updatedAt: request.updatedAt },
       localRevision: request.localRevision, repositoryRevision: incrementRevision(current.repositoryRevision) };
     const receipt = { id: request.id, operationId: request.operationId, repositoryRevision: record.repositoryRevision,
-      localRevision: record.localRevision, summary: createProjectSummary(record.project, record.repositoryRevision, record.sync) };
+      localRevision: record.localRevision, summary: createProjectSummary(record.project, record.repositoryRevision, record.sync, record.collaboration) };
     this.records.set(request.id, record);
     this.operations.set(request.operationId, { signature, receipt });
     return clone(receipt);
@@ -129,7 +129,7 @@ export class MemoryProjectRepository implements ProjectRepository {
     if (!current) throw new RepositoryError("NOT_FOUND");
     const record = { ...current, project: { ...current.project, lastOpenedAt: at }, repositoryRevision: incrementRevision(current.repositoryRevision) };
     this.records.set(id, record);
-    return clone(createProjectSummary(record.project, record.repositoryRevision, record.sync));
+    return clone(createProjectSummary(record.project, record.repositoryRevision, record.sync, record.collaboration));
   }
 
   async remove(input: RemoveRequest): Promise<void> {

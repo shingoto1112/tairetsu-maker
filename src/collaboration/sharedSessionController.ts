@@ -30,6 +30,7 @@ export class SharedSessionController {
   private disposed = false;
   private authEpoch = cloudAuthIdentity().epoch;
   private history: HistoryResult | null = null;
+  private historyEvent = 0;
   private releases: (() => void)[] = [];
   private drainTimer?: ReturnType<typeof setTimeout>;
   private finishDrain?: () => void;
@@ -87,9 +88,9 @@ export class SharedSessionController {
   private update() {
     let state = this.provider?.snapshot ?? null;
     if (state && !this.authValid()) state = { ...state, held: true, credentialConfirmed: false, sharing: "auth-required" };
-    this.store.set(sessionSnapshot(this.localId, state, this.coordinator.state, this.history));
+    this.store.set({ ...sessionSnapshot(this.localId, state, this.coordinator.state, this.history), historyEvent: this.historyEvent });
   }
-  historyResult(result: HistoryResult) { this.history = result; this.update(); }
+  historyResult(result: HistoryResult) { this.history = result; this.historyEvent++; this.update(); }
   get song(): Omit<AudioMeta, "id"> | null | undefined { return getModel(this.editor.doc).settings.get("song") as Omit<AudioMeta, "id"> | null | undefined; }
   audioMatches(meta: AudioMeta | null | undefined): boolean {
     const song = this.song;

@@ -31,6 +31,7 @@ export async function createProviderHarness(options: { url: string; actor: strin
       return () => events.close();
     });
   const provider = new CollaborationProvider(coordinator, transport, { pollMs: 200, backoffMs: 30, lifecycle: true });
+  coordinator.subscribeCommits(event => { provider.committedPending(event.pendingCount); if (event.pendingUpdateIds.length) provider.wakeSend(); });
   return {
     start: () => provider.start(), stop: () => provider.stop(), online: (value: boolean) => provider.setOnline(value),
     wake: () => provider.wake(), state: () => provider.snapshot,

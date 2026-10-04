@@ -146,7 +146,7 @@ export function inspectWire(bytes: Uint8Array): void {
   if (offset !== bytes.length) fail();
 }
 
-export function validateState(snapshot: Uint8Array, updates: readonly Uint8Array[] = [], incoming?: Uint8Array, expectedSchema?: 1 | 2): { stateBytes: number; elapsedMs: number } {
+export function validateState(snapshot: Uint8Array, updates: readonly Uint8Array[] = [], incoming?: Uint8Array, expectedSchema?: 1 | 2): { stateBytes: number; elapsedMs: number; title: string } {
   const start = performance.now();
   if (!snapshot.length || snapshot.length > SERVER_LIMITS.snapshotBytes || updates.length > SERVER_LIMITS.entries ||
     updates.reduce((n, b) => n + b.length, 0) > SERVER_LIMITS.logBytes || incoming && (!incoming.length || incoming.length > SERVER_LIMITS.updateBytes)) fail("QUOTA_EXCEEDED");
@@ -168,7 +168,7 @@ export function validateState(snapshot: Uint8Array, updates: readonly Uint8Array
     for (const update of updates) apply(update, SERVER_LIMITS.updateBytes);
     if (expectedSchema !== undefined && doc.getMap("metadata").get("schemaVersion") !== expectedSchema) fail("UNSUPPORTED_SCHEMA");
     if (doc.getMap("metadata").get("schemaVersion") === 1) {
-      try { return validateLegacy(snapshot, updates, incoming); }
+      try { return { ...validateLegacy(snapshot, updates, incoming), title: "隊列表" }; }
       catch (e) { throw new ValidationError(e instanceof Error ? e.message : "INVALID_UPDATE"); }
     }
     assertFullState(doc);
@@ -181,7 +181,11 @@ export function validateState(snapshot: Uint8Array, updates: readonly Uint8Array
     const stateBytes = Y.encodeStateAsUpdate(doc).length;
     if (stateBytes > SERVER_LIMITS.snapshotBytes) fail("QUOTA_EXCEEDED");
     if (performance.now() - start > SERVER_LIMITS.validationMs) fail("VALIDATION_BUDGET");
-    return { stateBytes, elapsedMs: performance.now() - start };
+    // Read the validated visible atom from this same Doc. Never accept a hint
+    // from the caller or alter the full title stored in the CRDT.
+    const atom = doc.getMap("settings").get("title") as { title: string };
+    const title = Array.from(atom.title.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").trim()).slice(0, 120).join("") || "名称未設定";
+    return { stateBytes, elapsedMs: performance.now() - start, title };
   } catch (error) {
     if (error instanceof ValidationError) throw error;
     if (error instanceof Error && ["QUOTA_EXCEEDED", "UNSUPPORTED_SCHEMA", "MISSING_DEPENDENCIES"].includes(error.message)) fail(error.message);

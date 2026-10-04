@@ -71,7 +71,7 @@ try {
     if (record.project.frames[0].positions.m_001.x !== 10 || record.project.frames[0].positions.m_002.x !== 11 || record.collaboration.outbox.length !== 2) throw new Error("Two-page merge lost updates/outbox");
     return { revision: record.repositoryRevision, outbox: record.collaboration.outbox.length };
   });
-  // Native blocked open: hold an existing connection in page 2 and request v2
+  // Native blocked open: hold an existing connection in page 2 and request a newer version
   // in page 1. The adapter's blocked mapping is tested in the browser suite.
   await second.evaluate(async name => {
     window.testRepository.close();
@@ -82,8 +82,9 @@ try {
   }, dbName);
   await page.evaluate(async name => {
     window.testRepository.close();
+    const { PROJECT_DB_VERSION } = await import('/src/repositories/indexedDbFormat.ts');
     await new Promise((resolve, reject) => {
-      const request = indexedDB.open(name, 4);
+      const request = indexedDB.open(name, PROJECT_DB_VERSION + 1);
       request.onblocked = () => { window.blockedUpgrade = request; resolve(); };
       request.onerror = () => reject(request.error);
       request.onsuccess = () => { request.result.close(); reject(new Error("expected actual blocked event")); };

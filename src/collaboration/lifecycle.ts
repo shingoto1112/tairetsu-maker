@@ -8,7 +8,7 @@ import { projectSharedDocument } from "./projection";
 import { newSharedLocalId } from "./identity";
 import { displayName, invitationLink, invitationToken } from "./invitations";
 import { TransportError, parsePage, type CollaborationTransport, type Credential } from "./transport";
-import type { ManagementTransport, AccessStatus } from "./managementTransport";
+import type { ManagementTransport, AccessStatus, MembershipReceipt, DocumentCursor } from "./managementTransport";
 import type { createParticipantAuth } from "./guestAuth";
 
 export type SharingState = { status: "active" | "removed" | "ended" | "unavailable" | "membership-changed" | "auth-required";
@@ -53,6 +53,7 @@ export class CollaborationLifecycle {
     if (record.collaboration?.documentSchema !== 2) throw new TransportError("validation", "UNSUPPORTED_SCHEMA");
     const receipt = await this.management.create(record.collaboration.base, normalizedName, auth, signal);
     if (receipt.generation !== record.collaboration.generation) throw new TransportError("generation", "STALE_GENERATION");
+    await this.confirmAccess(receipt, auth, signal);
     const coordinator = new SaveCoordinator(this.repository, () => {}); coordinator.activate(record);
     if (!await coordinator.bindSharedDocument(receipt.documentId, { accountId: auth.accountId, membershipGeneration: receipt.membershipGeneration }))
       throw coordinator.state?.error ?? new RepositoryError("IO_ERROR");
@@ -75,6 +76,39 @@ export class CollaborationLifecycle {
     }
     if (!auth) throw new TransportError("auth", this.options.platform === "ipad" ? "IPAD_ACCOUNT_REQUIRED" : "AUTH_REQUIRED");
     const receipt = await this.management.join(token, normalizedName, auth, signal);
+    return this.prepareDownload(receipt, auth, signal);
+  }
+  async listMyDocuments(limit = 32, cursor: DocumentCursor | null = null, signal = new AbortController().signal) {
+    return this.management.listMyDocuments(limit, cursor, await this.credential(signal), signal);
+  }
+  /** No invitation is consumed. Resume only the exact immutable attachment;
+   * never replace its pending edits with a server projection. */
+  async openExisting(documentId: string, signal = new AbortController().signal): Promise<{ record: ProjectRecord } | { request: CommitRequest }> {
+    const auth = await this.credential(signal), receipt = await this.management.openExisting(documentId, auth, signal);
+    if (receipt.documentId !== documentId) throw new TransportError("protocol", "DOCUMENT_MISMATCH");
+    let cursor: string | undefined;
+    do {
+      const page = await this.repository.list({ limit: 100, cursor });
+      for (const item of page.items) {
+        const shared = item.sharing;
+        if (shared?.documentId !== documentId || shared.accountId !== auth.accountId || shared.membershipGeneration !== receipt.membershipGeneration) continue;
+        const record = await this.record(item.id), data = record.collaboration;
+        if (data?.sharedDocumentId === documentId && data.generation === receipt.generation && data.transportBinding?.accountId === auth.accountId &&
+          data.transportBinding.membershipGeneration === receipt.membershipGeneration) {
+          await this.confirmAccess(receipt, auth, signal); return { record };
+        }
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    return { request: await this.prepareDownload(receipt, auth, signal) };
+  }
+  private async confirmAccess(receipt: MembershipReceipt, auth: Credential, signal: AbortSignal) {
+    if (signal.aborted || (await this.credential(signal)).accountId !== auth.accountId) throw new TransportError("auth", "ACCOUNT_CHANGED");
+    const current = await this.management.openExisting(receipt.documentId, auth, signal);
+    if (current.membershipGeneration !== receipt.membershipGeneration) throw new TransportError("permission", "MEMBERSHIP_CHANGED");
+    if (current.generation !== receipt.generation) throw new TransportError("generation", "STALE_GENERATION");
+  }
+  private async prepareDownload(receipt: MembershipReceipt, auth: Credential, signal: AbortSignal): Promise<CommitRequest> {
     const localId = newSharedLocalId(receipt.documentId);
     let data: ReturnType<typeof createCollaborationData> | null = null, cursor = "0";
     // Server log is bounded to 4096. A busy document cannot create an unbounded
@@ -105,6 +139,7 @@ export class CollaborationLifecycle {
         // Full state validation, including missing binary dependencies.
         const checked = hydrateCollaboration(data); checked.destroy();
         if (cursor === page.headSeq) {
+          await this.confirmAccess(receipt, auth, signal);
           const now = new Date().toISOString();
           const base = { id: localId, updatedAt: now, stage: {}, frames: [] } as unknown as Project;
           const project = projectSharedDocument(doc, base, receipt.documentId);
@@ -129,6 +164,7 @@ export class CollaborationLifecycle {
     return sharingState(access.status === "active" && access.membershipGeneration !== data.transportBinding.membershipGeneration ? "membership-changed" : access.status);
   }
   async members(documentId: string, signal = new AbortController().signal) { return this.management.members(documentId, await this.credential(signal), signal); }
+  async invites(documentId: string, signal = new AbortController().signal) { return this.management.invites(documentId, await this.credential(signal), signal); }
   async revokeInvite(documentId: string, inviteId: string, signal = new AbortController().signal) { await this.management.revoke(documentId, inviteId, await this.credential(signal), signal); }
   async removeMember(documentId: string, userId: string, signal = new AbortController().signal) { await this.management.remove(documentId, userId, await this.credential(signal), signal); }
   async leave(documentId: string, signal = new AbortController().signal) { await this.management.leave(documentId, await this.credential(signal), signal); }

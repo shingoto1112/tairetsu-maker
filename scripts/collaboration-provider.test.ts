@@ -40,6 +40,7 @@ async function setup() {
     },
   };
   const provider = new CollaborationProvider(coordinator, transport, { pollMs: 60_000, backoffMs: 10, random: () => 0, lifecycle: false });
+  coordinator.subscribeCommits(event => provider.committedPending(event.pendingCount));
   const move = async (x: number, commit = true) => {
     const doc = hydrateCollaboration((await coordinator.getCommittedCollaboration())!), before = Y.encodeStateVector(doc), commands = new CollaborationCommands(doc);
     commands.moveMembers([{ sceneId: 'f_001', memberId: 'm_001', position: { x, y: 2 } }]);

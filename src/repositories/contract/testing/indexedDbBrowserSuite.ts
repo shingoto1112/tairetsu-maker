@@ -4,7 +4,8 @@ import projects from "../fixtures/projects.json";
 import commitProjects from "../fixtures/commitProjects.json";
 import { runRepositoryContract } from "../runRepositoryContract";
 import { runCollaborationContract, initialCollaboration, collaborationUpdates, collaborationProjection } from "../runCollaborationContract";
-import { appendCollaboration } from "../../../collaboration/persistence";
+import { appendCollaboration, createCollaborationData } from "../../../collaboration/persistence";
+import { createSharedDocument } from "../../../collaboration/model";
 import { restorePreviousAsCopy } from "../../../storage/recovery";
 import { createTairetsuArchive, readTairetsuArchive } from "../../../utils/tairetsuFile";
 import { IndexedDbProjectRepository } from "../../indexedDbRepository";
@@ -492,6 +493,57 @@ export const runIndexedDbBrowserSuite = async () => {
       equal(await upgraded.get("project_a"), record, "v2 current unchanged"); equal(await upgraded.getPrevious("project_a"), record, "v2 previous unchanged");
       equal(await upgraded.readMaintenance(), initialMaintenance(), "v2 maintenance retained");
       tested("schema 2 -> 3 preserves current/previous/summary/receipts/migration ledger without rewriting");
+    }
+    {
+      const upgradeName = name(), request = nativeIndexedDb.open(upgradeName, 2);
+      const collaboration = { ...initialCollaboration(), sharedDocumentId: "shared-fixture", transportBinding: {
+        accountId: "00000000-0000-0000-0000-000000000001", membershipGeneration: "00000000-0000-0000-0000-000000000002",
+      } };
+      const record = { project: commitProjects.stage as Project, repositoryRevision: "7", localRevision: "4", sync: null, collaboration };
+      const legacySummary = encodeSummary(record); delete legacySummary.summary.sharing;
+      const healthyBase = { ...record.project, id: "project_b" }, healthyDoc = createSharedDocument(healthyBase);
+      const healthyCollaboration = { ...createCollaborationData(healthyDoc), sharedDocumentId: "shared-fixture", transportBinding: collaboration.transportBinding };
+      healthyDoc.destroy();
+      const healthy = { ...record, project: collaborationProjection(healthyCollaboration, healthyBase), collaboration: healthyCollaboration };
+      const healthySummary = encodeSummary(healthy); delete healthySummary.summary.sharing;
+      const invalidCollaboration = { ...collaboration, base: "AAAA" };
+      const damagedBody = { ...encodeBody(record), collaboration: invalidCollaboration,
+        collaborationIntegrity: jsonIntegrity(JSON.stringify(invalidCollaboration)) };
+      request.onupgradeneeded = () => {
+        for (const storeName of PROJECT_STORES) {
+          const store = request.result.createObjectStore(storeName, { keyPath: storeName === "operation_receipts" ? "operationId" : "id" });
+          if (storeName === "project_summaries") {
+            store.createIndex("by_order", ["sortTime", "sortId"], { unique: true });
+            store.createIndex("by_mode_order", ["summary.mode", "sortTime", "sortId"], { unique: true });
+          }
+        }
+        const tx = request.transaction!;
+        tx.objectStore("project_bodies").put(damagedBody); tx.objectStore("project_previous").put(encodeBody(record));
+        tx.objectStore("project_bodies").put(encodeBody(healthy));
+        tx.objectStore("project_summaries").put(legacySummary);
+        tx.objectStore("project_summaries").put(healthySummary);
+        tx.objectStore("operation_receipts").put({ operationId: "v3-shared-marker", marker: true });
+      };
+      await new Promise<void>((resolve, reject) => { request.onsuccess = () => { request.result.close(); resolve(); }; request.onerror = () => reject(request.error); });
+      const before = await snapshot(upgradeName);
+      const upgraded = repo(upgradeName); await upgraded.initialize();
+      const listed = await upgraded.list({ limit: 100 });
+      assert(listed.items.length === 2 && listed.items.every(item => !item.sharing), "legacy summary stays unchanged without badge");
+      equal(await snapshot(upgradeName), before, "opening does not rewrite any body, summary, revision, previous or receipt");
+      await rejectCode(upgraded.get("project_a"), "CORRUPT");
+      equal(await upgraded.get("project_b"), healthy, "one damaged attachment does not affect another shared document");
+      upgraded.close();
+      const reopened = repo(upgradeName); await reopened.initialize();
+      equal(await snapshot(upgradeName), before, "second open also never scans or rewrites attachments");
+      equal(await reopened.getPrevious("project_a"), record, "healthy previous remains readable for individual recovery");
+      await restorePreviousAsCopy(reopened, "project_a");
+      const rescue = (await reopened.list({ limit: 100 })).items.find(item => !["project_a", "project_b"].includes(item.id))!;
+      assert(!rescue.sharing && !(await reopened.get(rescue.id))!.collaboration, "individual rescue opens as independent copy");
+      await reopened.commit({ project: healthy.project, collaboration: healthyCollaboration, localRevision: "5", expectedRepositoryRevision: "7", operationId: "normal-sharing-summary-save" });
+      equal((await reopened.list({ limit: 100 })).items.find(item => item.id === "project_b")!.sharing,
+        { documentId: "shared-fixture", ...collaboration.transportBinding }, "normal save atomically adds sharing summary");
+      equal(await rawTransaction(upgradeName, "readonly", tx => tx.objectStore("project_bodies").get("project_a")), damagedBody, "damaged original retained after recovery");
+      tested("v2 -> v3 and repeated open tolerate damaged shared attachment; legacy summaries untouched; individual previous rescue and normal-save badge work");
     }
     {
       const corruptUpgradeName = name(), request = nativeIndexedDb.open(corruptUpgradeName, 2);

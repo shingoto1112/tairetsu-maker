@@ -25,6 +25,27 @@ function request(value: unknown, auth = true, origin = 'https://app.example.inva
   }, body: JSON.stringify(value) });
 }
 describe('Edge ingest contract with a stub backend', () => {
+  it('projects bounded titles from the validated Doc for create and append, rejecting independent hints', async () => {
+    const doc = createSharedDocument({ ...createSampleProject(), id: 'title-test', title: '😀'.repeat(140) });
+    const base = Y.encodeStateAsUpdate(doc), vector = Y.encodeStateVector(doc);
+    doc.getMap('settings').set('title', { title: '  更新\nした題名  ' });
+    const delta = Y.encodeStateAsUpdate(doc, vector); doc.destroy();
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    const backend: Backend = { authenticate: async () => ({ id: userId, is_anonymous: false }), rpc: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'collab_v2_ingest_state') return { documentSchema: 2, headSeq: '0', snapshot: { bytes: encodeBase64(base), uptoSeq: '0' }, updates: [] };
+      return { seq: '1', duplicate: false };
+    } };
+    const handler = createHandler(backend, ['https://app.example.invalid']);
+    const create = { action: 'create', displayName: '作成者', bytes: encodeBase64(base) };
+    expect((await handler(request(create))).status).toBe(200);
+    expect(calls[0].args.p_title).toBe('😀'.repeat(120));
+    expect((await handler(request({ ...create, title: '偽の題名' }))).status).toBe(400);
+    expect((await handler(request(input(delta)))).status).toBe(200);
+    expect(calls.at(-1)?.args.p_title).toBe('更新 した題名');
+    expect((await handler(request({ ...input(delta), title: '偽の題名' }))).status).toBe(400);
+    expect(calls.filter(c => c.name === 'collab_v2_append')).toHaveLength(1);
+  });
   it('bounds active request memory per worker and asks concurrent clients to retry', async () => {
     let release!: (user: { id: string; is_anonymous: boolean }) => void;
     const backend: Backend = { authenticate: () => new Promise(resolve => { release = resolve; }), rpc: async () => ({}) };

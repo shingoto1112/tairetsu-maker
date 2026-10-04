@@ -15,6 +15,7 @@ export class MockCollabBackend {
     this.details = new Map(actors.map(id => [id, { displayName: '通常利用者', isGuest: false }]));
     this.creator = actors[0]; this.deleted = false; this.created = !fresh;
     this.invites = new Map(); this.departures = new Map(); this.attempts = new Map();
+    this.title = '隊列表'; this.titleSeq = '0'; this.createdAt = new Date().toISOString(); this.managementCalls = [];
     if (fresh) this.members.clear();
   }
   fail(code, message) { throw new this.RpcError(code, message); }
@@ -43,11 +44,17 @@ export class MockCollabBackend {
       updates: this.log.filter(u => BigInt(u.seq) > BigInt(cursor)).slice(0, limit).map(u => ({ ...u })) };
   }
   rpc = async (name, args) => {
+    this.managementCalls.push(name);
+    if (name === 'collab_v2_list_my_documents') {
+      return { items: this.created && !this.deleted && this.members.has(args.p_actor) && !args.p_before_id ? [{ documentId, title: this.title,
+        createdAt: this.createdAt, isCreator: args.p_actor === this.creator, memberCount: this.members.size, documentSchema: 2 }] : [], nextCursor: null };
+    }
     if (name === 'collab_v2_create_document') {
       if (!this.users.has(args.p_actor) || this.users.get(args.p_actor).is_anonymous) this.fail('42501', 'PERMANENT_ACCOUNT_REQUIRED');
       const base = Buffer.from(args.p_bytes.slice(2), 'hex').toString('base64');
       if (this.deleted) this.fail('42501', 'DOCUMENT_DELETED');
       if (!this.created) {
+        this.title = args.p_title ?? '隊列表'; this.titleSeq = '0';
         this.base = base; this.creator = args.p_actor; this.created = true; this.members.set(args.p_actor, randomUUID());
         this.details.set(args.p_actor, { displayName: args.p_display_name, isGuest: false }); this.rotate(args.p_actor);
       } else if (this.base !== base || this.creator !== args.p_actor) this.fail('54000', 'QUOTA_EXCEEDED');
@@ -72,6 +79,12 @@ export class MockCollabBackend {
     }
     if (args.p_document !== documentId) this.fail('42501', 'NOT_MEMBER');
     if (name === 'collab_v2_access_status') return this.access(args.p_actor);
+    if (name === 'collab_v2_open_existing') { this.requireMember(args.p_actor); return this.receipt(args.p_actor); }
+    if (name === 'collab_v2_list_invites') {
+      this.requireMember(args.p_actor);
+      return [...this.invites.values()].map(invite => ({ inviteId: invite.inviteId, expiresAt: new Date(invite.expiresAt).toISOString(),
+        status: invite.revoked ? 'revoked' : invite.usedBy ? 'used' : invite.expiresAt <= Date.now() ? 'expired' : 'active' }));
+    }
     if (name === 'collab_v2_list_members') {
       this.requireMember(args.p_actor);
       return [...this.members.keys()].map(userId => ({ userId, ...this.details.get(userId), isCreator: userId === this.creator }));
@@ -120,6 +133,7 @@ export class MockCollabBackend {
     if (args.p_expected_head !== this.head) this.fail('40001', 'HEAD_CONFLICT');
     if (this.capacity || this.receipts.size >= 4096 || this.log.reduce((sum, u) => sum + Buffer.from(u.bytes, 'base64').length, 0) + bytes.length > 4194304) this.fail('54000', 'QUOTA_EXCEEDED');
     this.head = String(BigInt(this.head) + 1n);
+    this.title = args.p_title ?? '隊列表'; this.titleSeq = this.head;
     this.log.push({ seq: this.head, updateId: args.p_update_id, actor: args.p_actor, bytes: bytes.toString('base64') });
     this.receipts.set(args.p_update_id, { seq: this.head, digest, actor: args.p_actor });
     const notice = { documentId, generation: this.generation, headSeq: this.head, aclGeneration: this.acl };
@@ -142,7 +156,7 @@ export class MockCollabBackend {
   }
 }
 
-export async function startMockServer(backend, createHandler, origin = 'http://127.0.0.1:5179') {
+export async function startMockServer(backend, createHandler, origin = process.env.COLLABORATION_TEST_ORIGIN ?? 'http://127.0.0.1:5179') {
   if (new URL(origin).hostname !== '127.0.0.1' || new URL(origin).protocol !== 'http:') throw new Error('Loopback test origin only');
   const handler = createHandler(backend, [origin]);
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -162,7 +176,13 @@ export async function startMockServer(backend, createHandler, origin = 'http://1
     try {
       let body = ''; for await (const chunk of req) body += chunk;
       if (url.pathname === '/auth/v1/signup') {
-        const input = JSON.parse(body); res.end(JSON.stringify(backend.guest(input.data?.display_name))); return;
+        const input = JSON.parse(body), session = backend.guest(input.data?.display_name);
+        if (input.email) {
+          backend.users.get(session.user.id).is_anonymous = false;
+          backend.details.get(session.user.id).isGuest = false;
+          session.user.is_anonymous = false; session.user.email = input.email;
+        }
+        res.end(JSON.stringify(session)); return;
       }
       if (url.pathname === '/auth/v1/token' && url.searchParams.get('grant_type') === 'password') {
         const input = JSON.parse(body);
@@ -171,6 +191,13 @@ export async function startMockServer(backend, createHandler, origin = 'http://1
       }
       const actor = req.headers.authorization?.replace(/^Bearer /, '');
       if (!await backend.authenticate(actor)) { res.writeHead(401).end(JSON.stringify({ error: 'NOT_AUTHENTICATED' })); return; }
+      if (url.pathname === '/auth/v1/logout') { res.writeHead(204).end(); return; }
+      if (url.pathname === '/rest/v1/rpc/delete_current_account') {
+        const input = JSON.parse(body);
+        if (input.p_confirmation !== 'DELETE_MY_ACCOUNT') { res.writeHead(400).end(); return; }
+        backend.deleteAccount(actor);
+        res.end(JSON.stringify([{ success: true, reason: 'DELETED', deleted_project_count: 0, transferred_project_count: 0 }])); return;
+      }
       if (url.pathname === '/rest/v1/collab_v2_members') {
         const id = url.searchParams.get('document_id'), user = url.searchParams.get('user_id');
         const membership = id === `eq.${documentId}` && user === `eq.${actor}` ? backend.members.get(actor) : null;

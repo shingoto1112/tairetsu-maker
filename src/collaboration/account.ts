@@ -1,6 +1,7 @@
 import type { CloudConfig } from "../cloud/config";
 import { createCloudAuthClient, type CloudAuthSession } from "../cloud/auth";
-import { createCloudApiClient, type CloudAccountDeleteResult } from "../cloud/api";
+import type { CloudAccountDeleteResult } from "../cloud/api";
+import { deleteCurrentAccount } from "../cloud/account";
 import { readCloudAuthSession, saveCloudAuthSession, clearCloudAuthSession } from "../cloud/session";
 import { TransportError } from "./transport";
 
@@ -15,12 +16,13 @@ export function createCollaborationAccountApi(config: CloudConfig, options: {
     async deleteAccountWithPassword(password: string, confirmation: "DELETE_MY_ACCOUNT") {
       if (confirmation !== "DELETE_MY_ACCOUNT" || !password) throw new TransportError("validation", "CONFIRMATION_REQUIRED");
       const read = options.read ?? readCloudAuthSession, current = read();
-      if (!current?.user.email) throw new TransportError("auth", "PERMANENT_ACCOUNT_REQUIRED");
+      if (!current?.user.email || (current as CloudAuthSession & { collaborationGuest?: boolean }).collaborationGuest) throw new TransportError("auth", "PERMANENT_ACCOUNT_REQUIRED");
       const fresh = await (options.reauthenticate ?? createCloudAuthClient(config).signInWithPassword)(current.user.email, password);
       if (fresh.user.id !== current.user.id || read()?.user.id !== current.user.id) throw new TransportError("auth", "ACCOUNT_CHANGED");
       (options.save ?? saveCloudAuthSession)(fresh);
-      const result = await (options.deleteCurrentAccount ?? (token => createCloudApiClient(config, () => token).deleteCurrentAccount()))(fresh.accessToken);
+      const result = await (options.deleteCurrentAccount ?? (token => deleteCurrentAccount(config, token)))(fresh.accessToken);
       if (!result.success) throw new TransportError("validation", `ACCOUNT_DELETE_${result.reason}`);
+      if (read()?.user.id !== current.user.id) throw new TransportError("auth", "ACCOUNT_CHANGED");
       (options.clear ?? clearCloudAuthSession)();
       return { ...result, localCopiesRetained: true as const };
     },

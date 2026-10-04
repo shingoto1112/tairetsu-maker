@@ -50,6 +50,55 @@ async function setup() {
 }
 
 describe("sharing lifecycle API", () => {
+  it("lists lightweight current membership and resumes exact local attachments without consuming invitations", async () => {
+    const s = await setup(); const record = await s.creator.lifecycle.startSharing("project_a", "作成者");
+    expect((await s.creator.lifecycle.listMyDocuments()).items[0]).toMatchObject({ documentId, isCreator: true, memberCount: 1, title: record.project.title });
+    const coordinator = new SaveCoordinator(s.repository, () => {}); coordinator.activate(record);
+    const editor = await SharedProjectEditor.create(coordinator, record.project, () => {}, () => {});
+    editor.edit(p => ({ ...p, title: "まだ送信していない題名" })); await coordinator.flush(); editor.destroy();
+    const before = s.calls.filter(c => c.path.endsWith("collab_v2_join")).length;
+    const resumed = await s.creator.lifecycle.openExisting(documentId);
+    expect("record" in resumed && resumed.record.project.title).toBe("まだ送信していない題名");
+    expect(s.calls.filter(c => c.path.endsWith("collab_v2_join"))).toHaveLength(before);
+    expect(await s.client(actors[1]).lifecycle.listMyDocuments()).toMatchObject({ items: [] });
+    await expect(s.client(actors[1]).lifecycle.openExisting(documentId)).rejects.toMatchObject({ code: "NOT_MEMBER" });
+  });
+  it("creates a new fixed alias on a new device and holds it across commit failure", async () => {
+    const s = await setup(); await s.creator.lifecycle.startSharing("project_a", "作成者");
+    const repository = new MemoryProjectRepository(); await repository.initialize();
+    const management = createManagementTransport(config, (async (url, init) => {
+      const body = JSON.parse(init!.body as string); return Response.json(await s.backend.rpc(new URL(String(url)).pathname.split('/').at(-1), { ...body, p_actor: actors[0] }));
+    }) as typeof fetch);
+    const lifecycle = new CollaborationLifecycle(repository, management, s.creator.transport, { platform: "web", invitationBaseUrl: "https://app.example.invalid", allowedOrigins: ["https://app.example.invalid"] });
+    const prepared = await lifecycle.openExisting(documentId); if (!("request" in prepared)) throw new Error("Expected request");
+    const fixed = prepared.request; expect(fixed.project.id).not.toBe("project_a");
+    const commit = vi.spyOn(repository, "commit").mockRejectedValueOnce(new RepositoryError("IO_ERROR"));
+    await expect(lifecycle.saveJoinedProject(fixed)).rejects.toMatchObject({ code: "IO_ERROR" });
+    const saved = await lifecycle.saveJoinedProject(fixed); expect(commit.mock.calls[0][0]).toEqual(commit.mock.calls[1][0]);
+    expect(await lifecycle.openExisting(documentId)).toMatchObject({ record: { project: { id: saved.project.id } } });
+    expect(s.backend.managementCalls.filter(n => n === "collab_v2_join")).toHaveLength(0);
+  });
+  it("rejects removal, account replacement and generation changes during existing-document retrieval", async () => {
+    for (const change of ["removed", "membership", "generation", "account"] as const) {
+      const s = await setup(); await s.creator.lifecycle.startSharing("project_a", "作成者");
+      const repository = new MemoryProjectRepository(); await repository.initialize();
+      const transport = { ...s.creator.transport, pull: async (...args: Parameters<typeof s.creator.transport.pull>) => {
+        const page = await s.creator.transport.pull(...args);
+        if (change === "removed") s.backend.members.delete(actors[0]);
+        if (change === "membership") s.backend.rotate(actors[0], true);
+        if (change === "generation") s.backend.generation = "2";
+        if (change === "account") s.creator.forgetSession();
+        return page;
+      } };
+      const management = createManagementTransport(config, (async (url, init) => {
+        const body = JSON.parse(init!.body as string);
+        try { return Response.json(await s.backend.rpc(new URL(String(url)).pathname.split('/').at(-1), { ...body, p_actor: actors[0] })); }
+        catch { return Response.json({message:'NOT_MEMBER'}, {status:403}); }
+      }) as typeof fetch);
+      const lifecycle = new CollaborationLifecycle(repository, management, transport, { platform: "web", invitationBaseUrl: "https://app.example.invalid", allowedOrigins: ["https://app.example.invalid"] });
+      await expect(lifecycle.openExisting(documentId)).rejects.toBeInstanceOf(Error); expect((await repository.list({limit:100})).items).toEqual([]);
+    }
+  });
   it("creates through validated Edge, durably binds, reuses initial bytes after a lost reply", async () => {
     const s = await setup(), create = s.creator.lifecycle.startSharing("project_a", "作成者");
     const record = await create;

@@ -5,7 +5,13 @@ import { parseNotice, TransportError, uuid, type Credential } from "./transport"
 export type MembershipReceipt = { documentId: string; generation: string; headSeq: string; aclGeneration: string; topic: string; membershipGeneration: string };
 export type SharedMember = { userId: string; displayName: string; isGuest: boolean; isCreator: boolean };
 export type AccessStatus = { status: "active"; membershipGeneration: string } | { status: "removed" | "ended" | "unavailable" };
+export type DocumentCursor = { createdAt: string; documentId: string };
+export type SharedDocumentSummary = { documentId: string; title: string; createdAt: string; isCreator: boolean; memberCount: number; documentSchema: 1 | 2 };
+export type SharedInvite = { inviteId: string; expiresAt: string; status: "active" | "used" | "expired" | "revoked" };
 export interface ManagementTransport {
+  listMyDocuments(limit: number, cursor: DocumentCursor | null, auth: Credential, signal: AbortSignal): Promise<{ items: SharedDocumentSummary[]; nextCursor: DocumentCursor | null }>;
+  openExisting(documentId: string, auth: Credential, signal: AbortSignal): Promise<MembershipReceipt>;
+  invites(documentId: string, auth: Credential, signal: AbortSignal): Promise<SharedInvite[]>;
   create(bytes: string, displayName: string, auth: Credential, signal: AbortSignal): Promise<MembershipReceipt>;
   invite(documentId: string, auth: Credential, signal: AbortSignal): Promise<{ inviteId: string; token: string; expiresAt: string }>;
   join(token: string, displayName: string, auth: Credential, signal: AbortSignal): Promise<MembershipReceipt>;
@@ -36,6 +42,22 @@ export function createManagementTransport(config: CloudConfig, fetcher: typeof f
     return result;
   };
   return {
+    listMyDocuments: async (limit, cursor, auth, signal) => {
+      const result = await rpc("list_my_documents", { p_limit: limit, p_before_created_at: cursor?.createdAt ?? null, p_before_id: cursor?.documentId ?? null }, auth, signal);
+      const validCursor = (v: unknown) => obj(v) && uuid(v.documentId) && typeof v.createdAt === "string" && Number.isFinite(Date.parse(v.createdAt));
+      if (!obj(result) || !Array.isArray(result.items) || result.items.length > limit || result.items.some(v => !obj(v) || !validCursor(v) ||
+        typeof v.title !== "string" || [...v.title].length > 120 || typeof v.isCreator !== "boolean" || !Number.isInteger(v.memberCount) ||
+        (v.memberCount as number) < 1 || (v.memberCount as number) > 8 || ![1, 2].includes(v.documentSchema as number)) ||
+        result.nextCursor !== null && !validCursor(result.nextCursor)) invalid();
+      return result as { items: SharedDocumentSummary[]; nextCursor: DocumentCursor | null };
+    },
+    openExisting: async (documentId, auth, signal) => parseMembershipReceipt(await rpc("open_existing", { p_document: documentId }, auth, signal)),
+    invites: async (documentId, auth, signal) => {
+      const result = await rpc("list_invites", { p_document: documentId }, auth, signal);
+      if (!Array.isArray(result) || result.length > 256 || result.some(v => !obj(v) || !uuid(v.inviteId) || typeof v.expiresAt !== "string" ||
+        !Number.isFinite(Date.parse(v.expiresAt)) || !["active", "used", "expired", "revoked"].includes(v.status as string))) invalid();
+      return result as SharedInvite[];
+    },
     create: async (bytes, displayName, auth, signal) => parseMembershipReceipt(await request("/functions/v1/collab-ingest", auth, signal, { action: "create", bytes, displayName })),
     invite: async (documentId, auth, signal) => {
       const result = await rpc("create_invite", { p_document: documentId }, auth, signal);

@@ -10,7 +10,7 @@ import {
   Table2,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PUBLIC_LINKS } from "../config/publicLinks";
 
 type ToolbarProps = {
@@ -21,6 +21,8 @@ type ToolbarProps = {
   canSaveProject?: boolean;
   isDirty?: boolean;
   isSaving?: boolean;
+  localSaveOnly?: boolean;
+  collaborationStatus?: ReactNode;
   projectReadOnlyMessage?: string;
   readOnlyMessage?: string;
   sceneReadOnlyMessage?: string;
@@ -97,6 +99,8 @@ export const Toolbar = ({
   canSaveProject = true,
   isDirty = false,
   isSaving = false,
+  localSaveOnly = false,
+  collaborationStatus,
   projectReadOnlyMessage,
   readOnlyMessage,
   sceneReadOnlyMessage,
@@ -120,7 +124,7 @@ export const Toolbar = ({
     "編集するには、このシーンの編集ロックを取得してください。";
   const saveDisabled = isSaving || !canSaveProject;
   const saveTitle = canSaveProject
-    ? isDirty
+    ? localSaveOnly ? "この端末に保存" : isDirty
       ? "変更を保存"
       : "隊列表を保存"
     : sceneEditMessage;
@@ -194,7 +198,7 @@ export const Toolbar = ({
                   />
                   <AppMenuItem
                     icon={Save}
-                    label="隊列表を保存"
+                    label={localSaveOnly ? "この端末に保存" : "隊列表を保存"}
                     onClick={() => runMenuAction(onSaveProject)}
                     disabled={saveDisabled}
                     title={saveTitle}
@@ -249,7 +253,7 @@ export const Toolbar = ({
           title={saveTitle}
         >
           <Save size={15} />
-          {isSaving ? "保存中" : "保存"}
+          {isSaving ? "保存中" : localSaveOnly ? "この端末に保存" : "保存"}
         </button>
         <button
           className="mini-button toolbar-label-button"
@@ -269,6 +273,7 @@ export const Toolbar = ({
           title={!canEditProject ? projectEditMessage : undefined}
           aria-label="隊列表名"
         />
+        {collaborationStatus}
       </div>
     </header>
   );

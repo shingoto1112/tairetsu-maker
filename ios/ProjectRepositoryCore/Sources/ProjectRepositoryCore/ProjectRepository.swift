@@ -121,6 +121,9 @@ public final class ProjectRepository {
                     try fault?("migrationAfterVersion")
                 }
                 try schemaCheck()
+                // Sharing summary is optional and written by normal saves.
+                // Never validate every attachment here: one damaged document
+                // must not prevent opening the repository for local recovery.
             }
             try protect(url)
             Self.openCounts[url.path, default: 0] += 1
@@ -266,7 +269,18 @@ public final class ProjectRepository {
         }
         return p
     }
-    private func summary(_ p: [String: Any], revision: String) throws -> [String: Any] {
+    private func sharingSummary(_ collaboration: String?) throws -> [String: Any]? {
+        guard let json = collaboration else { return nil }
+        let data = try CollaborationValidation.parse(json)
+        guard let document = data["sharedDocumentId"] as? String else { return nil }
+        var result: [String: Any] = ["documentId": document]
+        if let binding = data["transportBinding"] as? [String: Any] {
+            result["accountId"] = binding["accountId"]
+            result["membershipGeneration"] = binding["membershipGeneration"]
+        }
+        return result
+    }
+    private func summary(_ p: [String: Any], revision: String, collaboration: String? = nil) throws -> [String: Any] {
         var result: [String: Any] = [
             "id": try RepositoryValidation.id(p["id"]), "title": p["title"] as? String ?? "",
             "mode": p["mode"] as? String ?? "stage", "createdAt": p["createdAt"] ?? p["updatedAt"] ?? "",
@@ -275,6 +289,7 @@ public final class ProjectRepository {
         ]
         if let opened = p["lastOpenedAt"] { result["lastOpenedAt"] = opened }
         if let a = p["audio"] as? [String: Any] { result["audioId"] = try RepositoryValidation.id(a["id"]) }
+        if let shared = try sharingSummary(collaboration) { result["sharing"] = shared }
         return result
     }
     private func sortTime(_ s: [String: Any]) -> Int64 {
@@ -317,10 +332,18 @@ public final class ProjectRepository {
               s["lastOpenedAt"] == nil || s["lastOpenedAt"] is String,
               s["audioId"] == nil || RepositoryValidation.validID(s["audioId"]) else { throw RepositoryError("CORRUPT") }
         do { _ = try RepositoryValidation.revision(s["repositoryRevision"]) } catch { throw RepositoryError("CORRUPT") }
+        if let value = s["sharing"] {
+            guard let shared = value as? [String: Any], RepositoryValidation.validID(shared["documentId"]),
+                  Set(shared.keys).isSubset(of: Set(["documentId", "accountId", "membershipGeneration"])) else { throw RepositoryError("CORRUPT") }
+            if shared["accountId"] != nil || shared["membershipGeneration"] != nil {
+                guard let account = shared["accountId"] as? String, let member = shared["membershipGeneration"] as? String,
+                      UUID(uuidString: account) != nil, UUID(uuidString: member) != nil else { throw RepositoryError("CORRUPT") }
+            }
+        }
         return s
     }
     private func save(_ id: String, json: String, revision: String, local: String, collaboration: String? = nil) throws -> [String: Any] {
-        let s = try summary(project(json), revision: revision)
+        let s = try summary(project(json), revision: revision, collaboration: collaboration)
         // Keep the previous valid record before overwriting; cascading removal deletes it.
         try run("INSERT OR REPLACE INTO project_previous SELECT * FROM project_bodies WHERE id=?", [id])
         try fault?("afterPrevious")
@@ -893,9 +916,12 @@ public final class ProjectRepository {
               try rows("SELECT id FROM personal_sync LIMIT 1").isEmpty else { throw RepositoryError("CORRUPT") }
         try scan("SELECT * FROM project_bodies") { r in
             try validateBody(r)
-            let generated = try summary(project(r["json"]!), revision: r["repository_revision"]!)
-            guard let stored = try rows("SELECT * FROM project_summaries WHERE id=?", [r["id"]]).first,
-                  try RepositoryValidation.json(decodedSummary(stored)) == RepositoryValidation.json(generated) else { throw RepositoryError("CORRUPT") }
+            var generated = try summary(project(r["json"]!), revision: r["repository_revision"]!, collaboration: r["collaboration_json"])
+            guard let stored = try rows("SELECT * FROM project_summaries WHERE id=?", [r["id"]]).first else { throw RepositoryError("CORRUPT") }
+            let decoded = try decodedSummary(stored)
+            // Backups created before this optional projection remain readable.
+            if decoded["sharing"] == nil { generated.removeValue(forKey: "sharing") }
+            guard try RepositoryValidation.json(decoded) == RepositoryValidation.json(generated) else { throw RepositoryError("CORRUPT") }
         }
         try scan("SELECT * FROM project_previous") { try validateBody($0) }
         try scan("SELECT * FROM operation_receipts") { r in

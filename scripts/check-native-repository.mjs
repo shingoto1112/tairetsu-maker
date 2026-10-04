@@ -176,7 +176,7 @@ for (const fragment of ['24 * 1024 * 1024', '8 * 1024 * 1024', '256 * 1024', '16
 for (const phase of ['afterPrevious', 'afterBody', 'afterCollaboration', 'afterSummary', 'afterReceipt']) assert.ok(core.includes(`try fault?("${phase}")`));
 assert.ok(core.includes('try !hasCollaboration(), try !backupHasCollaboration()'));
 const sharedTests = readFileSync("ios/ProjectRepositoryCore/Tests/ProjectRepositoryCoreTests/CollaborationTests.swift", "utf8");
-assert.equal((sharedTests.match(/func test\w+\(/g) ?? []).length, 11);
+assert.equal((sharedTests.match(/func test\w+\(/g) ?? []).length, 13);
 assert.ok(sharedTests.includes('fixture("commitProjects")'));
 assert.ok(!/XCTUnwrap\((?:self\.)?(?:call|read|request|fixture|execute)\(/.test(sharedTests));
-console.log("Collaboration native preflight: matching limits / immutable UUID binding / CRC+digest / 11 additional XCTest cases (43 total): PASS (macOS compilation still required)");
+console.log("Collaboration native preflight: matching limits / immutable UUID binding / CRC+digest / 13 additional XCTest cases (45 total): PASS (macOS compilation still required)");

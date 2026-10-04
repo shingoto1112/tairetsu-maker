@@ -35,6 +35,7 @@ type ShareExportModalProps = {
   currentSceneLabel: string;
   hasAudio?: boolean;
   onClose: () => void;
+  onOpenCollaboration?: () => void;
   onExport: (request: ShareExportRequest) => void | Promise<void>;
   onExportZip?: (includeAudio: boolean) => void | Promise<void>;
   getMobileExportSource?: () => ExportSource;
@@ -77,6 +78,7 @@ export const ShareExportModal = ({
   currentSceneLabel,
   hasAudio = false,
   onClose,
+  onOpenCollaboration,
   onExport,
   onExportZip,
   getMobileExportSource,
@@ -204,6 +206,9 @@ export const ShareExportModal = ({
 
         {!scope ? (
           <div className="share-export-home">
+            {onOpenCollaboration && <section className="share-export-section"><button className="share-export-row" type="button" onClick={onOpenCollaboration}>
+              <Users size={26} /><span><strong>みんなで編集</strong><small>クラウド保存・招待・参加メンバー</small></span>
+            </button></section>}
             <section className="share-export-section">
               <h3>印刷・PDF</h3>
               <button

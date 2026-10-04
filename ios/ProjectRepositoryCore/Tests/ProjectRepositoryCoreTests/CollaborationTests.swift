@@ -4,6 +4,100 @@ import XCTest
 @testable import ProjectRepositoryCore
 
 final class CollaborationTests: XCTestCase {
+    func testLightweightSharingSummaryOnlyChangesOnSave() throws {
+        let f = try fixture(), r = repo()
+        _ = try call(r, "commitProject", request(f, "initial", 1))
+        var req = try request(f, "committed", 2)
+        var data = try XCTUnwrap(f["committed"] as? [String: Any])
+        let account = "11111111-1111-4111-8111-111111111111"
+        let membership = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        data["transportBinding"] = ["accountId": account, "membershipGeneration": membership] as [String: Any]
+        req["collaborationJSON"] = try RepositoryValidation.json(data)
+        _ = try call(r, "commitProject", req)
+        let pageValue = try call(r, "listSummaries", ["limit": 100] as [String: Any])
+        let page = try XCTUnwrap(pageValue as? [String: Any])
+        let items = try XCTUnwrap(page["items"] as? [[String: Any]])
+        let shared = try XCTUnwrap(items.first?["sharing"] as? [String: Any])
+        XCTAssertEqual(shared["documentId"] as? String, data["sharedDocumentId"] as? String)
+        XCTAssertEqual(shared["accountId"] as? String, account)
+        XCTAssertEqual(shared["membershipGeneration"] as? String, membership)
+        XCTAssertNil(shared["base"]); XCTAssertNil(shared["memberCount"])
+        let before = try read(r); r.close()
+        // Simulate a pre-8a-2 optional summary while preserving its integrity.
+        var oldSummary = try XCTUnwrap(items.first)
+        oldSummary.removeValue(forKey: "sharing")
+        let json = try RepositoryValidation.json(oldSummary)
+        let escaped = json.replacingOccurrences(of: "'", with: "''")
+        try sql("UPDATE project_summaries SET json='\(escaped)',byte_length=\(json.utf8.count),crc32='\(Integrity.crc32(json))' WHERE id='project_a'")
+        let reopened = repo(); defer { reopened.close() }
+        _ = try call(reopened, "initialize")
+        let after = try read(reopened)
+        XCTAssertEqual(try RepositoryValidation.json(before), try RepositoryValidation.json(after))
+        let repairedValue = try call(reopened, "listSummaries", ["limit": 100] as [String: Any])
+        let repaired = try XCTUnwrap(repairedValue as? [String: Any])
+        let repairedItems = try XCTUnwrap(repaired["items"] as? [[String: Any]])
+        XCTAssertNil(repairedItems.first?["sharing"])
+        _ = try call(reopened, "createRecoveryBackup")
+        var next = req
+        next["operationId"] = "normal-summary-save"
+        next["localRevision"] = "3"
+        next["expectedRepositoryRevision"] = "2"
+        _ = try call(reopened, "commitProject", next)
+        let savedValue = try call(reopened, "listSummaries", ["limit": 100] as [String: Any])
+        let saved = try XCTUnwrap(savedValue as? [String: Any])
+        let savedItems = try XCTUnwrap(saved["items"] as? [[String: Any]])
+        let savedShared = try XCTUnwrap(savedItems.first?["sharing"] as? [String: Any])
+        XCTAssertEqual(try RepositoryValidation.json(shared), try RepositoryValidation.json(savedShared))
+    }
+    func testDamagedSharedAttachmentDoesNotBlockOpenListOrIndividualRecovery() throws {
+        let f = try fixture(), r = repo()
+        _ = try call(r, "commitProject", request(f, "initial", 1))
+        _ = try call(r, "commitProject", request(f, "committed", 2))
+        let projects = try fixture("commitProjects")
+        var healthy = try XCTUnwrap(projects["stage"] as? [String: Any])
+        healthy["id"] = "project_b"
+        let healthyJSON = try RepositoryValidation.json(healthy)
+        _ = try call(r, "commitProject", ["id": "project_b", "json": healthyJSON, "operationId": "healthy-row", "localRevision": "1", "expectedRepositoryRevision": NSNull()] as [String: Any])
+        let pageValue = try call(r, "listSummaries", ["limit": 100] as [String: Any])
+        let page = try XCTUnwrap(pageValue as? [String: Any])
+        let items = try XCTUnwrap(page["items"] as? [[String: Any]])
+        var oldSummary = try XCTUnwrap(items.first { $0["id"] as? String == "project_a" })
+        oldSummary.removeValue(forKey: "sharing")
+        let summaryJSON = try RepositoryValidation.json(oldSummary)
+        let escaped = summaryJSON.replacingOccurrences(of: "'", with: "''")
+        r.close()
+        try sql("UPDATE project_summaries SET json='\(escaped)',byte_length=\(summaryJSON.utf8.count),crc32='\(Integrity.crc32(summaryJSON))' WHERE id='project_a'")
+        // Structurally invalid, but valid CRC/length: parsing one attachment
+        // must be deferred to that document's read, never repository open.
+        try sql("UPDATE project_bodies SET collaboration_json='{}',collaboration_byte_length=2,collaboration_crc32='\(Integrity.crc32("{}"))' WHERE id='project_a'")
+        let summariesBefore = try values("SELECT json FROM project_summaries ORDER BY id")
+        let receiptsBefore = try values("SELECT signature FROM operation_receipts ORDER BY operation_id")
+        let bodiesBefore = try values("SELECT json||repository_revision||local_revision||collaboration_json FROM project_bodies WHERE id='project_a'")
+        for attempt in 0..<2 {
+            let reopened = repo()
+            _ = try call(reopened, "initialize")
+            let listedValue = try call(reopened, "listSummaries", ["limit": 100] as [String: Any])
+            let listed = try XCTUnwrap(listedValue as? [String: Any])
+            let listedItems = try XCTUnwrap(listed["items"] as? [[String: Any]])
+            XCTAssertEqual(listedItems.count, 2 + attempt)
+            XCTAssertNil(listedItems.first { $0["id"] as? String == "project_a" }?["sharing"])
+            _ = try call(reopened, "readProject", ["id": "project_b"] as [String: Any])
+            error("CORRUPT") { try self.read(reopened) }
+            let previous = try read(reopened, "readPrevious")
+            let previousJSON = try XCTUnwrap(previous["json"] as? String)
+            var copy = try RepositoryValidation.object(previousJSON, code: "CORRUPT")
+            copy["id"] = "rescued"
+            let copyJSON = try RepositoryValidation.json(copy)
+            if (try values("SELECT id FROM project_bodies WHERE id='rescued'")).isEmpty {
+                _ = try call(reopened, "commitProject", ["id": "rescued", "json": copyJSON, "operationId": "individual-rescue", "localRevision": "1", "expectedRepositoryRevision": NSNull()] as [String: Any])
+            }
+            _ = try call(reopened, "readProject", ["id": "rescued"] as [String: Any])
+            reopened.close()
+        }
+        XCTAssertEqual(try values("SELECT json FROM project_summaries WHERE id<>'rescued' ORDER BY id"), summariesBefore)
+        XCTAssertEqual(try values("SELECT signature FROM operation_receipts WHERE operation_id<>'individual-rescue' ORDER BY operation_id"), receiptsBefore)
+        XCTAssertEqual(try values("SELECT json||repository_revision||local_revision||collaboration_json FROM project_bodies WHERE id='project_a'"), bodiesBefore)
+    }
     private var directory: URL!
     private var databaseURL: URL { directory.appendingPathComponent("repository.sqlite") }
     override func setUpWithError() throws {

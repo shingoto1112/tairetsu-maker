@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { SharedSessionController, SharedSessionOptions } from "../collaboration/sharedSessionController";
 import type { ProjectRecord, ProjectRepository } from "../repositories/types";
 import { SharedSessionStore } from "../storage/sharedSessionState";
+import type { Project } from "../types";
 
 /** Stable imperative session host. No effect watches or writes Project. The
  * status store is subscribed by a separate UI in 8a-2, not by the Canvas owner. */
@@ -18,6 +19,12 @@ function createHost() {
   const host = {
     store,
     get active() { return active; },
+    /** Only after a durable independent copy exists. Refuse a stale rescue
+     * while newer edits remain in the live editor. Original disk copy stays. */
+    releaseRescued(localId: string, projection: Project) {
+      if (!active || active.localId !== localId || JSON.stringify(active.editor.project) !== JSON.stringify(projection)) return false;
+      ++generation; active.dispose(); active = null; unsubscribe(); unsubscribe = () => {}; return true;
+    },
     async settle(localId: string) {
       const background = backgrounds.get(localId);
       if (background) { background.controller.dispose(); await background.done; backgrounds.delete(localId); }

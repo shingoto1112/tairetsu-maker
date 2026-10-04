@@ -2,6 +2,7 @@ import type { Project } from "../types";
 import { createProjectSummary, serializeProject } from "../project/codec";
 import { isValidStorageId } from "./ids";
 import { validateCollaboration } from "./collaborationData";
+import { validSharingSummary } from "./sharingSummary";
 import { isRevision, RepositoryError, type ProjectRecord, type ProjectSummary } from "./types";
 
 export const PROJECT_DB_NAME = "tairetsu-maker-projects";
@@ -48,7 +49,7 @@ export const encodeBody = (record: ProjectRecord, json?: string): StoredBody => 
     repositoryRevision: record.repositoryRevision, localRevision: record.localRevision, sync: record.sync };
 };
 export const encodeSummary = (record: ProjectRecord): StoredSummary => {
-  const summary = createProjectSummary(record.project, record.repositoryRevision, record.sync);
+  const summary = createProjectSummary(record.project, record.repositoryRevision, record.sync, record.collaboration);
   return { id: summary.id, summary, sortTime: -sortTime(summary), sortId: scalarKey(summary.id) };
 };
 export const decodeBody = (raw: unknown, id: string): ProjectRecord => {
@@ -85,7 +86,7 @@ export const validSummary = (s: unknown): s is ProjectSummary => object(s) &&
   Number.isInteger(s.memberCount) && (s.memberCount as number) >= 0 &&
   Number.isInteger(s.sceneCount) && (s.sceneCount as number) >= 0 &&
   (s.audioId === undefined || isValidStorageId(s.audioId)) && isRevision(s.repositoryRevision) &&
-  ["local", "pending", "synced", "conflict", "error"].includes(s.syncStatus as string);
+  ["local", "pending", "synced", "conflict", "error"].includes(s.syncStatus as string) && validSharingSummary(s.sharing);
 
 export const decodeSummary = (raw: unknown): ProjectSummary => {
   if (!object(raw) || !validSummary(raw.summary) || raw.id !== raw.summary.id ||

@@ -1,6 +1,6 @@
 const DEFAULT_PUBLIC_SITE_URL = "https://tairetsu-maker.vercel.app";
 
-const publicSiteUrl =
+export const publicSiteUrl =
   import.meta.env.VITE_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ||
   DEFAULT_PUBLIC_SITE_URL;
 

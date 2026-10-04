@@ -22,6 +22,11 @@ create table if not exists public.collab_v2_documents (
   created_at timestamptz not null default pg_catalog.now(),
   unique (creator_id, initial_digest)
 );
+-- Display-only projection written by validated Edge in the append transaction.
+alter table public.collab_v2_documents add column if not exists list_title text not null default '隊列表'
+  check (pg_catalog.char_length(list_title) between 1 and 120);
+alter table public.collab_v2_documents add column if not exists title_seq bigint not null default 0 check (title_seq >= 0);
+create index if not exists collab_v2_documents_list_order on public.collab_v2_documents(created_at desc, id desc) where deleted_at is null;
 create table if not exists public.collab_v2_members (
   document_id uuid not null references public.collab_v2_documents(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -199,12 +204,13 @@ begin
 end $$;
 
 -- Creation must go through Edge validation too, not an authenticated bytea RPC.
-create or replace function public.collab_v2_create_document(p_actor uuid, p_display_name text, p_bytes bytea)
+drop function if exists public.collab_v2_create_document(uuid, text, bytea);
+create or replace function public.collab_v2_create_document(p_actor uuid, p_display_name text, p_bytes bytea, p_title text default '隊列表')
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_id uuid; v_snapshot uuid; v_guest boolean; v_digest bytea;
 begin
   perform collab_v2_private.require_service();
-  if p_actor is null or p_display_name is null or p_bytes is null
+  if p_title is null or pg_catalog.char_length(p_title) not between 1 and 120 or p_actor is null or p_display_name is null or p_bytes is null
     or pg_catalog.char_length(p_display_name) not between 1 and 80 or pg_catalog.btrim(p_display_name) = '' then
     raise exception using errcode = '22023', message = 'INVALID_ARGUMENT';
   end if;
@@ -229,7 +235,7 @@ begin
     or (select count(*) from public.collab_v2_documents) >= 100 then
     raise exception using errcode = '54000', message = 'QUOTA_EXCEEDED';
   end if;
-  insert into public.collab_v2_documents(creator_id, initial_digest) values (p_actor, v_digest) returning id into v_id;
+  insert into public.collab_v2_documents(creator_id, initial_digest, list_title) values (p_actor, v_digest, p_title) returning id into v_id;
   insert into public.collab_v2_sync_snapshots(document_id, generation, upto_seq, bytes, digest)
     values (v_id, 1, 0, p_bytes, extensions.digest(p_bytes, 'sha256')) returning id into v_snapshot;
   update public.collab_v2_documents set latest_snapshot_id = v_snapshot where id = v_id;
@@ -395,6 +401,57 @@ begin
     from public.collab_v2_members m join public.collab_v2_documents d on d.id = m.document_id where d.id = p_document);
 end $$;
 
+-- Current membership only. No CRDT, topic, names or emails in the home listing.
+create or replace function public.collab_v2_list_my_documents(p_limit integer default 32,
+  p_before_created_at timestamptz default null, p_before_id uuid default null)
+returns jsonb language plpgsql stable security invoker set search_path = '' as $$
+declare v_user uuid := collab_v2_private.require_user(); v_rows jsonb; v_last jsonb;
+begin
+  if p_limit is null or p_limit not between 1 and 100 or (p_before_created_at is null) <> (p_before_id is null) then
+    raise exception using errcode = '22023', message = 'INVALID_ARGUMENT';
+  end if;
+  select coalesce(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('documentId', d.id, 'title', d.list_title,
+    'createdAt', d.created_at, 'isCreator', d.creator_id = v_user, 'memberCount',
+    (select count(*) from public.collab_v2_members m where m.document_id = d.id), 'documentSchema', d.document_schema)
+    order by d.created_at desc, d.id desc), '[]'::jsonb) into v_rows
+    from (select d.* from public.collab_v2_documents d where d.deleted_at is null
+      and exists (select 1 from public.collab_v2_members mine where mine.document_id = d.id and mine.user_id = v_user)
+      and (p_before_id is null or (d.created_at, d.id) < (p_before_created_at, p_before_id))
+      order by d.created_at desc, d.id desc limit p_limit + 1) d;
+  if pg_catalog.jsonb_array_length(v_rows) > p_limit then v_rows := v_rows - p_limit; v_last := v_rows -> (p_limit - 1); end if;
+  return pg_catalog.jsonb_build_object('items', v_rows, 'nextCursor', case when v_last is null then null else
+    pg_catalog.jsonb_build_object('createdAt', v_last->>'createdAt', 'documentId', v_last->>'documentId') end);
+end $$;
+
+create or replace function public.collab_v2_open_existing(p_document uuid)
+returns jsonb language plpgsql stable security invoker set search_path = '' as $$
+declare v_user uuid := collab_v2_private.require_user(); v_receipt jsonb;
+begin
+  select pg_catalog.jsonb_build_object('documentId', d.id, 'generation', d.generation::text,
+    'headSeq', d.head_seq::text, 'aclGeneration', d.acl_generation::text, 'topic', d.private_topic,
+    'membershipGeneration', m.membership_generation) into v_receipt
+    from public.collab_v2_documents d join public.collab_v2_members m on m.document_id = d.id
+    where d.id = p_document and d.deleted_at is null and m.user_id = v_user;
+  if v_receipt is null then raise exception using errcode = '42501', message = 'NOT_MEMBER'; end if;
+  return v_receipt;
+end $$;
+
+-- Invites are private; expose expiry/state after current membership check.
+-- Never return tokens/hashes after issuance.
+create or replace function public.collab_v2_list_invites(p_document uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform collab_v2_private.require_user();
+  if not collab_v2_private.is_member(p_document) or not exists
+    (select 1 from public.collab_v2_documents where id = p_document and deleted_at is null) then
+    raise exception using errcode = '42501', message = 'NOT_MEMBER';
+  end if;
+  return (select coalesce(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('inviteId', id, 'expiresAt', expires_at,
+    'status', case when revoked_at is not null then 'revoked' when used_at is not null then 'used'
+      when expires_at <= pg_catalog.now() then 'expired' else 'active' end) order by issued_at desc, id), '[]'::jsonb)
+    from public.collab_v2_invites where document_id = p_document);
+end $$;
+
 -- One SELECT = one MVCC snapshot. Never mix a newer head with an older page.
 create or replace function collab_v2_private.read_state(p_document uuid, p_cursor bigint, p_limit integer)
 returns jsonb language sql stable security invoker set search_path = '' as $$
@@ -449,13 +506,14 @@ end $$;
 
 -- Only Edge's server credential can execute this. p_actor comes from Auth getUser,
 -- never from payload or Yjs client ID. All checks repeated under document lock.
+drop function if exists public.collab_v2_append(uuid, uuid, bigint, uuid, bigint, text, bytea, bytea);
 create or replace function public.collab_v2_append(p_document uuid, p_actor uuid, p_generation bigint,
-  p_membership uuid, p_expected_head bigint, p_update_id text, p_bytes bytea, p_digest bytea)
+  p_membership uuid, p_expected_head bigint, p_update_id text, p_bytes bytea, p_digest bytea, p_title text default '隊列表')
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_doc public.collab_v2_documents%rowtype; v_receipt public.collab_v2_update_receipts%rowtype; v_seq bigint;
 begin
   perform collab_v2_private.require_service();
-  if p_document is null or p_actor is null or p_generation is null or p_membership is null
+  if p_title is null or pg_catalog.char_length(p_title) not between 1 and 120 or p_document is null or p_actor is null or p_generation is null or p_membership is null
     or p_expected_head is null or p_update_id is null or p_bytes is null or p_digest is null
     or p_generation <= 0 or p_expected_head < 0 or pg_catalog.octet_length(p_update_id) not between 1 and 255
     or pg_catalog.octet_length(p_digest) <> 32 then
@@ -492,7 +550,7 @@ begin
   insert into public.collab_v2_update_receipts(document_id, generation, client_update_id, seq, actor_id, digest, byte_length)
     values (p_document, p_generation, p_update_id, v_seq, p_actor, p_digest, pg_catalog.octet_length(p_bytes));
   update public.collab_v2_documents set head_seq = v_seq, log_bytes = log_bytes + pg_catalog.octet_length(p_bytes),
-    receipt_count = receipt_count + 1 where id = p_document;
+    receipt_count = receipt_count + 1, list_title = p_title, title_seq = v_seq where id = p_document;
   -- Transactional notification: only the current topic, no binary/document data.
   perform realtime.send(pg_catalog.jsonb_build_object('documentId', p_document, 'generation', p_generation::text,
     'headSeq', v_seq::text, 'aclGeneration', v_doc.acl_generation::text), 'update', v_doc.private_topic, true);

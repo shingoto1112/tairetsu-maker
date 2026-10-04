@@ -5,6 +5,7 @@ import type { Project } from "../types";
 import { validateMaintenance, type MaintenanceRepository, type MaintenanceAction, type GCResult } from "../storage/maintenanceTypes";
 import { assertStorageId } from "./ids";
 import { validateCollaboration, validateCollaborationTransition } from "./collaborationData";
+import { validSharingSummary } from "./sharingSummary";
 import { validateMigrationEntry, type MigrationEntry, type MigrationRepository } from "./migrationTypes";
 import {
   assertRevision, isRevision, RepositoryError, REPOSITORY_ERROR_MESSAGES,
@@ -26,7 +27,7 @@ const validSummary = (s: unknown): s is ProjectSummary => object(s) &&
   Number.isInteger(s.memberCount) && (s.memberCount as number) >= 0 &&
   Number.isInteger(s.sceneCount) && (s.sceneCount as number) >= 0 &&
   isRevision(s.repositoryRevision) && s.syncStatus === "local" &&
-  (s.audioId === undefined || typeof s.audioId === "string");
+  (s.audioId === undefined || typeof s.audioId === "string") && validSharingSummary(s.sharing);
 const summary = (value: unknown): ProjectSummary => {
   if (!validSummary(value)) throw new RepositoryError("CORRUPT");
   try { assertStorageId(value.id); if (value.audioId !== undefined) assertStorageId(value.audioId); }

@@ -26,6 +26,10 @@ import { createVisibilityMemory } from "./utils/sceneVisibility";
 import { selectionScrollBounds } from "./utils/selectionScrollBounds";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useNotice, type NoticeKind } from "./hooks/useNotice";
+import { useCollaborationUi } from "./hooks/useCollaborationUi";
+const CollaborationSurface = lazy(() => import("./components/CollaborationSurface"));
+const CollaborationBadge = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationBadge })));
+const CollaborationStatus = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationStatus })));
 import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
 const AssignmentPanel = lazy(() => import("./components/AssignmentPanel").then(module => ({ default: module.AssignmentPanel })));
@@ -1566,6 +1570,7 @@ const createCloudSceneCellVersionMap = (
 function App() {
   useAppShellScrollGuard();
   const sharedSession = useSharedSession();
+  const collaborationUi = useCollaborationUi();
   const workspaceLayout = useWorkspaceLayout();
   const initial = useMemo(readInitialProject, []);
   const [project, setProjectState] = useState<Project>(initial.project);
@@ -12815,6 +12820,40 @@ function App() {
     );
   })();
 
+  collaborationUi.options = {
+    config: cloudConfig, platform: APP_FEATURES.nativeFileShare ? "ipad" : "web",
+    mock: import.meta.env.DEV && !!(window as Window & { __sharedSessionMock?: unknown }).__sharedSessionMock,
+    repository: () => repositoryRef.current, active: () => sharedSession.active, store: sharedSession.store, summaries: () => savedProjects,
+    open: async (record, rescued) => {
+      if (rescued) {
+        if (!sharedSession.releaseRescued(rescued.localId, rescued.projection)) { await refreshLocalLibrary(); return false; }
+        sharedEditorRef.current = null;
+        saveCoordinatorRef.current = createLocalCoordinator(repositoryRef.current!);
+      }
+      await sharedSession.settle(record.project.id!);
+      const latest = await repositoryRef.current!.get(record.project.id!);
+      if (!latest) return false;
+      return openProjectInEditor(latest.project, "隊列表を開きました。", { record: latest });
+    },
+    transform: async action => {
+      const id = projectRef.current.id;
+      if (!id || appView !== "editor") throw new Error("隊列表を開いてから操作してください。");
+      if (!await flushPendingAutoSave() || !await closeSharedSession(false)) throw new Error("この端末に保存できませんでした。編集内容は画面に残っています。");
+      try {
+        const record = await action(id);
+        if (await repositoryRef.current!.get(record.project.id!)) await openProjectInEditor(record.project, undefined, { record });
+      } catch (error) {
+        const source = await repositoryRef.current!.get(id);
+        if (source) await openProjectInEditor(source.project, undefined, { record: source });
+        throw error;
+      }
+    },
+    localRemoved: async () => {
+      clearPendingAutoSave(); saveCoordinatorRef.current?.discard(); saveCoordinatorRef.current?.deactivate();
+      setAppView("library"); await refreshLocalLibrary();
+    },
+  };
+
   if (storageCorrupt && !storageReady) return <Suspense fallback={<div role="status">復旧画面を準備中…</div>}><StorageRecoveryScreen
     repository={repositoryRef.current as MaintenanceRepository | null} onRestored={() => { setStorageCorrupt(false); setStorageWarning(null); setStorageStatus("隊列表を準備しています…"); setStorageRetry(value => value + 1); }} /></Suspense>;
 
@@ -12825,9 +12864,12 @@ function App() {
           projects={savedProjects}
           notice={storageStatus ?? storageWarning ?? notice}
           disabled={!storageReady}
+          collaborationSlot={APP_FEATURES.collaborationV2 && storageReady ? <Suspense fallback={<p role="status">共同編集を準備中…</p>}><CollaborationSurface bridge={collaborationUi} view="library" /></Suspense> : undefined}
+          renderProjectBadge={APP_FEATURES.collaborationV2 ? summary => summary.sharing ? <Suspense fallback="共有中"><CollaborationBadge bridge={collaborationUi} summary={summary} /></Suspense> : "ローカル" : undefined}
+          onJoinInvitation={APP_FEATURES.collaborationV2 ? () => { void collaborationUi.get().then(ui => ui.invitation("")); } : undefined}
           storageTools={storageReady && repositoryRef.current && "readMaintenance" in repositoryRef.current ? <Suspense fallback={null}><StorageTools
             repository={repositoryRef.current as MaintenanceRepository} onChanged={refreshLocalLibrary} damagedId={damagedProjectId} onDismissDamaged={() => setDamagedProjectId(null)} /></Suspense> : null}
-          cloud={{
+          cloud={APP_FEATURES.collaborationV2 ? undefined : {
             configured: Boolean(cloudConfig),
             error: cloudError,
             isBusy: isCloudBusy || !storageReady || authRestoring,
@@ -12926,12 +12968,15 @@ function App() {
         onTitleChange={updateTitle}
         isDirty={isDirty}
         isSaving={isSaving}
+        localSaveOnly={APP_FEATURES.collaborationV2 && !!sharedSession.active?.attached}
+        collaborationStatus={APP_FEATURES.collaborationV2 && sharedSession.active?.attached ? <Suspense fallback={null}><CollaborationStatus bridge={collaborationUi} localId={project.id!} /></Suspense> : undefined}
         onBackToLibrary={() => void returnToLibrary()}
         onSaveProject={() => void saveProjectManually()}
         onOpenShareExport={() => setIsShareExportOpen(true)}
         canOpenRosterManager={canOpenRosterManager}
         onOpenRosterManager={() => openRosterManager()}
       />
+      {APP_FEATURES.collaborationV2 && <Suspense fallback={null}><CollaborationSurface bridge={collaborationUi} view="editor" localId={project.id} attached={!!sharedSession.active?.attached} /></Suspense>}
       {localSaveState?.error && !activeCloudProject && (
         <div className="shared-project-banner" role="alert" aria-label="端末保存エラー">
           <span>{localSaveState.error.message}</span>
@@ -13694,6 +13739,7 @@ function App() {
       currentSceneLabel={displayFrame?.label ?? selectedFrame?.label ?? "現在シーン"}
       hasAudio={Boolean(project.audio?.id)}
       onClose={() => setIsShareExportOpen(false)}
+      onOpenCollaboration={APP_FEATURES.collaborationV2 ? () => { setIsShareExportOpen(false); void collaborationUi.get().then(ui => ui.manageLocal(projectRef.current.id!)); } : undefined}
       onExport={handleShareExport}
       onExportZip={handleShareExportZip}
       getMobileExportSource={() => structuredClone({

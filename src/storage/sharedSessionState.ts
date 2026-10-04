@@ -9,6 +9,7 @@ export type SharedSessionSnapshot = {
   pending: number;
   label: string;
   history: HistoryResult | null;
+  historyEvent?: number;
   error?: { kind: string; code: string } | null;
 };
 export function sessionSnapshot(localId: string, provider: ProviderState | null, save: SaveState | null, history: HistoryResult | null): SharedSessionSnapshot {
@@ -17,10 +18,15 @@ export function sessionSnapshot(localId: string, provider: ProviderState | null,
     !provider || provider.held || ["auth-required", "membership-changed", "removed", "ended"].includes(provider.sharing) ? "資格保留" :
     !provider.online ? "オフライン" : provider.error || !provider.credentialConfirmed || !provider.pullConfirmed ? "接続を確認中" :
     pending || save?.dirty || save?.saving ? "送信待ち" : provider.syncing ? "接続を確認中" : "同期済み";
-  return { localId, sharing: provider?.sharing ?? "auth-required", sync, pending,
-    label: sync === "送信待ち" ? `送信待ち ${pending} 件${save?.dirty ? "（端末保存中）" : ""}` : sync, history,
+  const sharing = provider?.sharing ?? "auth-required";
+  const sharingLabels = { removed: "共有から外れました", ended: "共有は終了しました", "auth-required": "ログインが必要です", "membership-changed": "参加し直しが必要です" };
+  const label = sync === "保存失敗" ? sync : sharing !== "active" ? sharingLabels[sharing] :
+    sync === "資格保留" ? "接続を確認中" : sync === "送信待ち" ? `送信待ち ${pending} 件${save?.dirty ? "（端末保存中）" : ""}` : sync;
+  return { localId, sharing, sync, pending, label, history,
     error: save?.error ? { kind: "storage", code: save.error.code } : provider?.error ?? null };
 }
+export const sessionTone = (snapshot: SharedSessionSnapshot): "success" | "neutral" | "warning" =>
+  snapshot.sync === "保存失敗" || snapshot.sharing !== "active" ? "warning" : snapshot.sync === "同期済み" ? "success" : "neutral";
 /** Status-only subscriptions never require a Project/Canvas render. */
 export class SharedSessionStore {
   private value: SharedSessionSnapshot = { localId: null, sharing: "active", sync: "接続を確認中", pending: 0, label: "接続を確認中", history: null };

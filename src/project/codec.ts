@@ -2,7 +2,7 @@ import type { Project } from "../types";
 import { assertStorageId, isValidStorageId } from "../repositories/ids";
 import {
   assertRevision, RepositoryError,
-  type PersonalSyncState, type ProjectSummary, type RepositoryResult, type Revision,
+  type PersonalSyncState, type ProjectSummary, type RepositoryResult, type Revision, type CollaborationData,
 } from "../repositories/types";
 import { normalizeProject, normalizeProjectWithContext, type NormalizationContext } from "./normalizeProject";
 
@@ -137,9 +137,11 @@ export const projectSummaryFields = (project: Project): ProjectSummaryFields => 
 });
 
 export const createProjectSummary = (
-  project: Project, repositoryRevision: Revision, sync: PersonalSyncState | null = null,
+  project: Project, repositoryRevision: Revision, sync: PersonalSyncState | null = null, collaboration?: CollaborationData | null,
 ): ProjectSummary => ({
   ...projectSummaryFields(project),
   repositoryRevision: assertRevision(repositoryRevision),
   syncStatus: sync === null ? "local" : sync.status === "auth-required" ? "error" : sync.status,
+  ...(collaboration?.sharedDocumentId ? { sharing: { documentId: collaboration.sharedDocumentId,
+    ...(collaboration.transportBinding ?? {}) } } : {}),
 });

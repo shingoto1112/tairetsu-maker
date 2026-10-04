@@ -749,10 +749,8 @@ export const createCloudApiClient = (
         p_project_id: projectId,
       }),
 
-    deleteCurrentAccount: () =>
-      rpcOne<CloudAccountDeleteResult>("delete_current_account", {
-        p_confirmation: "DELETE_MY_ACCOUNT",
-      }),
+    deleteCurrentAccount: () => import("./account").then(module =>
+      module.deleteCurrentAccount(config, getAccessToken() ?? config.anonKey)),
 
     removeProjectMember: (projectId: string, userId: string) =>
       rpcOne<CloudActionResult>("remove_project_member", {

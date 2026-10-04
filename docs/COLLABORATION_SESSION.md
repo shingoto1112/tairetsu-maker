@@ -35,6 +35,8 @@ provider の状態だけでは Project/Canvas を更新しない。CRDT が変�
 
 ## 8a-2 が使う入口
 
+8a-2 の実装・検証・変更ファイル・画像・Linux/macOS確認事項は [COLLABORATION_UI.md](./COLLABORATION_UI.md) に記録。以下は8a-1時点の入口と申し送り。
+
 - `sharedSession.store.subscribe/getSnapshot`: Project と別に購読。試験では DEV の `window.__sharedSession` から読める。
   `sharing`、`sync`、`pending`、`label`、`error`、`history` を公開。
   初期は「接続を確認中」。端末未保存、pull 未成功/失敗、資格未確認、held は「同期済み」にしない。

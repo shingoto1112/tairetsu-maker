@@ -148,6 +148,7 @@ try {
   assert.equal((await read(0)).collaboration.transportBinding.accountId,actors[0]);
   checks.push('failed remote logout clears local credentials; another account cannot use old binding');
   await back(0); await pages[0].getByRole('button',{name:'ログアウト',exact:true}).click();
+  await pages[0].getByRole('button',{name:'ログイン / 新規登録',exact:true}).click();
   await expect(pages[0].locator('.library-cloud-login')).toBeVisible();
   await pages[0].locator('.library-cloud-login input[type="email"]').fill('session-test@example.invalid');
   await pages[0].locator('.library-cloud-login input[type="password"]').fill('mock-pass');
