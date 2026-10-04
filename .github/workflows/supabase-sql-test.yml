@@ -67,8 +67,9 @@ jobs:
           deno check --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/index.ts
       - name: Deno maintenance execution (offline fixtures, twice)
         run: |
-          deno test --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/handler.deno.ts
-          deno test --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/handler.deno.ts
+          # lib0 (Yjs) reads optional env vars at import; the Edge runtime allows env access.
+          deno test --allow-env --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/handler.deno.ts
+          deno test --allow-env --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/handler.deno.ts
       - name: Maintenance load estimate
         run: node --expose-gc scripts/bench-collab-maintenance.mjs
       - name: Native Deno maintenance load estimate (separate process per case)
@@ -76,7 +77,7 @@ jobs:
           node --expose-gc scripts/bench-collab-maintenance.mjs --fixtures-only
           for workload in regular accumulated boundary; do
             for operation in compact automatic; do
-              deno run --allow-read=.tmp-maintenance-inputs --config supabase/functions/collab-maintenance/deno.json scripts/bench-collab-maintenance.deno.ts "$workload" "$operation"
+              deno run --allow-env --allow-read=.tmp-maintenance-inputs --config supabase/functions/collab-maintenance/deno.json scripts/bench-collab-maintenance.deno.ts "$workload" "$operation"
             done
           done
           rm -r -- .tmp-maintenance-inputs
