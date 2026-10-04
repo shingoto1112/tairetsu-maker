@@ -117,11 +117,11 @@ export class CollaborationLifecycle {
       const access = await this.management.access(receipt.documentId, auth, signal);
       if (access.status !== "active" || access.membershipGeneration !== receipt.membershipGeneration)
         throw new TransportError("permission", access.status === "ended" ? "DOCUMENT_DELETED" : "MEMBERSHIP_CHANGED");
-      const page = parsePage(await this.transport.pull(receipt.documentId, receipt.generation, cursor, 32, auth, signal), receipt.documentId, receipt.generation);
+      const page = parsePage(await this.transport.pull(receipt.documentId, receipt.generation, cursor, 32, auth, signal, data?.knownSnapshotId), receipt.documentId, receipt.generation);
       if (page.deleted) throw new TransportError("permission", "DOCUMENT_DELETED");
       if (page.documentSchema !== 2 || (!data && !page.snapshot)) throw new TransportError("protocol", "INITIAL_STATE_REQUIRED");
       if (!data) data = { schemaVersion: 1, sharedDocumentId: receipt.documentId, generation: receipt.generation, documentSchema: 2,
-        base: page.snapshot!.bytes, journal: [], outbox: [], serverCursor: page.snapshot!.uptoSeq,
+        base: page.snapshot!.bytes, journal: [], outbox: [], serverCursor: page.snapshot!.uptoSeq, knownSnapshotId: page.snapshot!.id,
         transportBinding: { accountId: auth.accountId, membershipGeneration: receipt.membershipGeneration } };
       const doc = hydrateCollaboration(data);
       try {
@@ -135,7 +135,7 @@ export class CollaborationLifecycle {
           Y.applyUpdate(doc, decodeUpdate(update.bytes)); cursor = update.seq;
         }
         if (BigInt(cursor) > BigInt(page.headSeq) || (cursor !== page.headSeq && !page.updates.length)) throw new TransportError("protocol", "INVALID_CURSOR");
-        data = { ...data, base: encodeUpdate(Y.encodeStateAsUpdate(doc)), serverCursor: cursor };
+        data = { ...data, ...(page.snapshot ? { knownSnapshotId: page.snapshot.id } : {}), base: encodeUpdate(Y.encodeStateAsUpdate(doc)), serverCursor: cursor };
         // Full state validation, including missing binary dependencies.
         const checked = hydrateCollaboration(data); checked.destroy();
         if (cursor === page.headSeq) {

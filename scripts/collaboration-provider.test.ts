@@ -29,7 +29,8 @@ async function setup() {
   const transport: CollaborationTransport = {
     credential: async () => ({ accountId: actors[0], accessToken: actors[0] }),
     membership: async () => { if (!backend.members.has(actors[0])) throw new TransportError('permission', 'NOT_MEMBER'); return backend.members.get(actors[0])!; },
-    pull: async (_id, generation, cursor, limit) => backend.rpc('collab_v2_get_updates', { p_document: documentId, p_actor: actors[0], p_generation: generation, p_cursor: cursor, p_limit: limit }),
+    pull: async (_id, generation, cursor, limit, _auth, _signal, knownSnapshotId) => backend.rpc('collab_v2_get_updates', { p_document: documentId, p_actor: actors[0], p_generation: generation, p_cursor: cursor, p_limit: limit, p_known_snapshot_id: knownSnapshotId }),
+    confirm: async input => backend.rpc('collab_v2_confirm_writer', { p_document: documentId, p_actor: actors[0], p_generation: input.generation, p_membership: input.membershipGeneration, p_writer: input.writerId, p_ack_through: input.ackThrough }),
     append: async input => {
       backend.requests.push(input); const response = await handler(request(input)); const value = await response.json();
       if (!response.ok) throw httpError(response.status, value.error); return value;
@@ -58,8 +59,8 @@ describe('round-3 contract oracle with real Edge ingest', () => {
     expect(await (await s.handler(request(input))).json()).toEqual({ documentId, generation: '1', updateId: input.updateId, seq: '1', duplicate: true });
     const page = await s.transport.pull(documentId, '1', '0', 1, { accountId: actors[0], accessToken: actors[0] }, new AbortController().signal);
     expect(page).toEqual({ documentId, documentSchema: 2, generation: '1', headSeq: '1', aclGeneration: '1', topic: s.backend.topic, deleted: false,
-      snapshot: { uptoSeq: '0', bytes: fixture.initial.base }, updates: [{ seq: '1', updateId: input.updateId, actor: actors[0], bytes: input.bytes }] });
-    expect(s.backend.page('1', 32)).toMatchObject({ snapshot: null, updates: [] });
+      snapshot: { id: s.backend.snapshotId, uptoSeq: '0', bytes: fixture.initial.base }, updates: [{ seq: '1', updateId: input.updateId, actor: actors[0], bytes: input.bytes }] });
+    expect(s.backend.page('1', 32, s.backend.snapshotId)).toMatchObject({ snapshot: null, updates: [] });
     expect(s.backend.notices[0].notice).toEqual({ documentId, generation: '1', headSeq: '1', aclGeneration: '1' });
     // Keep the independently authored mock's key names and boundary anchored to SQL.
     const sql = await readFile('supabase/migrations/20261004000000_collab_v2_foundation.sql', 'utf8');
@@ -79,6 +80,77 @@ describe('round-3 contract oracle with real Edge ingest', () => {
   });
 });
 describe('provider durable boundaries and failure states', () => {
+  it('remembers the initial snapshot ID even at head=0 and does not download it on every pull', async () => {
+    const s=await setup(), pages: unknown[]=[]; const pull=s.transport.pull;
+    s.transport.pull=async(...args)=>{const page=await pull(...args);pages.push(page);return page;};
+    s.provider.start();
+    try {
+      await until(()=>s.provider.snapshot.pullConfirmed);
+      for(let n=0;n<4;n++){const count=pages.length;s.provider.wake();await until(()=>pages.length>count && s.provider.snapshot.pullConfirmed);}
+      expect(pages.filter(p=>(p as {snapshot:unknown}).snapshot)).toHaveLength(1);
+      expect((await s.coordinator.getCommittedCollaboration())!.knownSnapshotId).toBe(s.backend.snapshotId);
+    } finally{s.provider.stop();}
+  });
+  it('keeps an edit made while the initial snapshot is in flight', async () => {
+    const s=await setup();let release!:()=>void, entered=false;const gate=new Promise<void>(r=>{release=r;});const pull=s.transport.pull;
+    s.transport.pull=async(...args)=>{const page=await pull(...args);if(!entered){entered=true;await gate;}return page;};
+    s.transport.append=async()=>{throw new TransportError('capacity','QUOTA_EXCEEDED');};s.provider.start();
+    try {
+      await until(()=>entered);await s.move(99,false);release();await until(()=>s.provider.snapshot.pullConfirmed);
+      expect(s.coordinator.projectProjection!.frames[0].positions.m_001.x).toBe(99);
+      expect((await s.coordinator.getCommittedCollaboration())!.outbox.some(e=>e.status==='pending')).toBe(true);
+    }finally{release();s.provider.stop();}
+  });
+  it('resends already committed pending after reopen with dirty device audio/view review', async()=>{
+    const s=await setup();await s.move(12);await s.coordinator.prepareCollaborationEditing();
+    s.coordinator.editCollaborationLocal({...s.coordinator.projectProjection!,viewerPerspective:'performer'});
+    expect(s.coordinator.state!.dirty).toBe(true);s.provider.start();
+    try{await until(()=>s.backend.head==='1' && s.provider.snapshot.pending===0);expect(s.backend.requests.length).toBe(1);}
+    finally{s.provider.stop();}
+  });
+  it('holds a reclaimed old request without ACK/reassignment and retains bytes through wake and reads', async () => {
+    const s=await setup();await s.move(42);expect(await s.coordinator.prepareCollaborationWriter()).toBe(true);
+    const data=(await s.coordinator.getCommittedCollaboration())!, old=data.outbox[0];
+    await s.transport.append({action:'append',documentId,generation:'1',membershipGeneration:memberships[0],writerId:data.writer!.id,writerSeq:old.writerSeq,updateId:old.updateId,bytes:old.bytes},
+      {accountId:actors[0],accessToken:actors[0]},new AbortController().signal);
+    await s.transport.confirm({documentId,generation:'1',membershipGeneration:memberships[0],writerId:data.writer!.id,ackThrough:'1'},
+      {accountId:actors[0],accessToken:actors[0]},new AbortController().signal);
+    const count=s.backend.requests.length;s.provider.start();
+    try{
+      await until(()=>s.provider.snapshot.error?.code==='RECEIPT_RECLAIMED');
+      s.provider.wake();await tick();await tick();
+      expect(s.provider.snapshot.held).toBe(true);expect(s.backend.requests.length).toBe(count+1);
+      expect((await s.coordinator.getCommittedCollaboration())!.outbox[0]).toEqual(old);
+      expect(s.coordinator.projectProjection!.frames[0].positions.m_001.x).toBe(42);
+    }finally{s.provider.stop();}
+  });
+  it('never reports ACK to the server until the local ACK commit succeeds', async () => {
+    const s=await setup();await s.move(12);const commit=s.repository.commit.bind(s.repository);let fail=true;
+    s.repository.commit=async input=>{if(fail && input.collaboration?.writer?.ackThrough==='1')throw new RepositoryError('NO_SPACE');return commit(input);};
+    s.provider.start();
+    try{
+      await until(()=>s.provider.snapshot.error?.code==='LOCAL_ACK_COMMIT_FAILED');
+      expect(s.backend.receipts.size).toBe(1);expect((await s.coordinator.getCommittedCollaboration())!.writer!.ackThrough).toBe('0');
+      fail=false;expect(await s.coordinator.flush()).toBe(true);s.provider.wake();await until(()=>s.backend.receipts.size===0);
+      expect((await s.coordinator.getCommittedCollaboration())!.outbox).toEqual([]);
+    }finally{s.provider.stop();}
+  });
+  it('adopts an ACK-lost legacy request without appending and refuses an old unsequenced retry after collection', async()=>{
+    const s=await setup(), original=await s.move(12);
+    expect((await s.handler(request(original))).status).toBe(200);s.provider.start();
+    try{
+      await until(()=>s.provider.snapshot.pending===0 && s.backend.receipts.size===0);
+      expect(s.backend.head).toBe('1');expect((await s.coordinator.getCommittedCollaboration())!.writer!.ackThrough).toBe('1');
+      const stale=await s.handler(request(original));expect(stale.status).toBe(400);expect(await stale.json()).toEqual({error:'WRITER_REQUIRED'});expect(s.backend.head).toBe('1');
+    }finally{s.provider.stop();}
+  });
+  it('holds whole-database recovery including old pre-writer backups without sending', async () => {
+    const s=await setup();await s.move(12);const record=(await s.repository.get('project_a'))!;
+    await s.repository.commit({project:record.project,collaboration:{...record.collaboration!,recoveryRequired:true},operationId:'recovered',localRevision:'3',expectedRepositoryRevision:record.repositoryRevision});
+    s.coordinator.activate((await s.repository.get('project_a'))!);s.provider.start();
+    try{await until(()=>s.provider.snapshot.error?.code==='RECOVERY_CONFIRMATION_REQUIRED');expect(s.backend.requests).toEqual([]);expect((await s.coordinator.getCommittedCollaboration())!.outbox).toHaveLength(1);}
+    finally{s.provider.stop();}
+  });
   it('accepts old attachments, binds only at initial sharing, rejects implicit sender changes', async () => {
     expect(validateCollaboration(fixture.initial).transportBinding).toBeUndefined();
     const old = { ...fixture.initial, sharedDocumentId: null } as CollaborationData;
@@ -102,10 +174,11 @@ describe('provider durable boundaries and failure states', () => {
     };
     s.provider.start(); try {
       await until(() => s.provider.snapshot.pending === 0 && attempts.length === 3);
-      expect(attempts.every(a => JSON.stringify(a.input) === JSON.stringify(input))).toBe(true);
+      expect(attempts.every(a => JSON.stringify(a.input) === JSON.stringify(attempts[0].input))).toBe(true);
+      expect(attempts[0].input).toMatchObject(input);
       expect(attempts[1].time - attempts[0].time).toBeGreaterThanOrEqual(15);
       expect(attempts[2].time - attempts[1].time).toBeGreaterThanOrEqual(15);
-      expect(s.backend.receipts.size).toBe(1);
+      await until(() => s.backend.receipts.size === 0);
     } finally { s.provider.stop(); }
   });
   it('recovers MISSING_DEPENDENCIES by pull and resumes auth with explicit wake', async () => {
@@ -182,7 +255,10 @@ describe('provider durable boundaries and failure states', () => {
     const realPull = s.transport.pull;
     const pull = vi.fn(async (...args: Parameters<CollaborationTransport['pull']>) => {
       const page = await realPull(...args);
-      if (args[2] === '0') await s.handler(request(await s.move(200)));
+      if (args[2] === '0') {
+        const edit=await s.move(200);
+        await s.handler(request({...edit,updateId:'remote-during-pull',membershipGeneration:memberships[1],writerId:crypto.randomUUID(),writerSeq:'1'},actors[1]));
+      }
       return page;
     }); s.transport.pull = pull; s.provider.start();
     try { await until(() => s.provider.snapshot.cursor === '36'); expect(pull.mock.calls.some(c => c[2] === '32')).toBe(true); }
@@ -211,7 +287,7 @@ describe('provider durable boundaries and failure states', () => {
     expect(calls[0].url).toContain('/rpc/collab_v2_access_status');
     expect(JSON.parse(calls[0].init!.body as string)).toEqual({ p_document: documentId });
     expect(calls[1].init?.headers).toMatchObject({ Authorization: 'Bearer injected-token', apikey: 'public-only' });
-    expect(JSON.parse(calls[1].init!.body as string)).toEqual({ p_document: documentId, p_generation: '1', p_cursor: '9007199254740993', p_limit: 32 });
+    expect(JSON.parse(calls[1].init!.body as string)).toEqual({ p_document: documentId, p_generation: '1', p_cursor: '9007199254740993', p_limit: 32, p_known_snapshot_id: null });
     expect(httpError(429, 'VALIDATION_BUDGET').kind).toBe('validation'); expect(httpError(400, 'MISSING_DEPENDENCIES').kind).toBe('temporary');
   });
 });

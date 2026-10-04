@@ -88,13 +88,14 @@ try {
   backend.dropNotices = false; backend.delayPullMs = 0;
 
   backend.delayAckMs = 1500;
-  const before = backend.receipts.size, update = await move(0, 'm_001', 80);
+  const before = backend.head, update = await move(0, 'm_001', 80);
   await waitFor(() => backend.receipts.has(update.updateId), 'DB commit before ACK');
   await pages[0].evaluate(() => window.harness.stop()); // Abort after DB commit, before ACK recording.
   assert.equal((await pages[0].evaluate(() => window.harness.read())).collaboration.outbox.find(u => u.updateId === update.updateId).status, 'pending');
   await pages[0].evaluate(() => window.harness.close());
   backend.delayAckMs = 0; await load(0); await pages[0].evaluate(() => window.harness.start()); await synced();
-  assert.equal(backend.receipts.size, before + 1);
+  await waitFor(() => backend.receipts.size === 0, 'receipt collected after durable ACK');
+  assert.equal(backend.head, String(BigInt(before) + 1n));
   const retries = backend.requests.filter(u => u.updateId === update.updateId);
   assert(retries.length >= 2); assert(retries.every(u => u.bytes === update.bytes)); checks.push('lost ACK + restart retries identical ID/bytes without double append');
 

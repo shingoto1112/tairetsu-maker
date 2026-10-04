@@ -7,6 +7,7 @@ import { runCollaborationContract, initialCollaboration, collaborationUpdates, c
 import { appendCollaboration, createCollaborationData } from "../../../collaboration/persistence";
 import { createSharedDocument } from "../../../collaboration/model";
 import { restorePreviousAsCopy } from "../../../storage/recovery";
+import { SaveCoordinator } from "../../../storage/saveCoordinator";
 import { createTairetsuArchive, readTairetsuArchive } from "../../../utils/tairetsuFile";
 import { IndexedDbProjectRepository } from "../../indexedDbRepository";
 import { PROJECT_STORES, PROJECT_DB_VERSION, encodeBody, encodeSummary, jsonIntegrity } from "../../indexedDbFormat";
@@ -174,6 +175,31 @@ export const runIndexedDbBrowserSuite = async () => {
       const original = old as IndexedDbProjectRepository; original.close(); return repo(repositoryNames.get(original)!);
     }, old => repo(repositoryNames.get(old as IndexedDbProjectRepository)!));
     tested("shared contract: 2 connections CAS merge / restart outbox / ACK / cursor / compaction / limits");
+    {
+      const writerName = name(), aRepo = repo(writerName), bRepo = repo(writerName);
+      const initial = { ...initialCollaboration(), transportBinding: { accountId: "11111111-1111-4111-8111-111111111111", membershipGeneration: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } };
+      await aRepo.commit({ project: commitProjects.stage as Project, collaboration: initial, operationId: "writer-initial", localRevision: "1", expectedRepositoryRevision: null });
+      const a = new SaveCoordinator(aRepo, () => {}), b = new SaveCoordinator(bRepo, () => {});
+      a.activate((await aRepo.get("project_a"))!); b.activate((await bRepo.get("project_a"))!);
+      await a.editCollaboration([collaborationUpdates()[0]]); await b.editCollaboration([collaborationUpdates()[1]]);
+      assert(await a.flush() && await b.flush(), "two writer edits commit");
+      assert(await a.prepareCollaborationWriter() && await b.prepareCollaborationWriter(), "CAS writer allocation commits");
+      const assigned = (await aRepo.get("project_a"))!;
+      equal(assigned.collaboration!.outbox.map(e => e.writerSeq).sort(), ["1", "2"], "contiguous two-connection writer sequences");
+      // Same ACK commits bytes removal, base, collection boundary and previous.
+      assert(await b.markOutboxSent(assigned.collaboration!.outbox.map(e => e.updateId)), "writer ACK committed");
+      const collected = (await aRepo.get("project_a"))!;
+      assert(collected.collaboration!.outbox.length === 0 && collected.collaboration!.writer!.reclaimedThrough === "2", "sent bytes reclaimed with fence");
+      equal((await aRepo.getPrevious("project_a"))!.collaboration, assigned.collaboration, "previous retains old writer/outbox");
+      // A stale tab cannot reintroduce an old pending sequence or ACK it implicitly.
+      await a.editCollaboration([]);
+      assert(!await a.flush() && a.state?.error?.code === "CONFLICT", "old tab preserves ambiguous pending and reports conflict");
+      await rejectCode(aRepo.commit({ project: assigned.project, collaboration: assigned.collaboration, operationId: "old-backup-reinsert", localRevision: "99",
+        expectedRepositoryRevision: collected.repositoryRevision }), "CONFLICT");
+      const recovered = await restorePreviousAsCopy(aRepo, "project_a");
+      assert(!(await aRepo.get(recovered.id))!.collaboration, "old shared previous becomes independent copy");
+      tested("9a: durable writer CAS / atomic ACK-byte collection / old tab and previous-backup fences / independent rescue");
+    }
     {
       const sharedName = name(), sharedProbe: Probe = { scopes: [], durability: [] }, sharedRepo = repo(sharedName, probeFactory(sharedProbe));
       const initial = { ...initialCollaboration(), schemaVersion: 2 as const, audioBindings: [{ song: { name: "共通曲.wav", type: "audio/wav", size: 100, duration: 60 },

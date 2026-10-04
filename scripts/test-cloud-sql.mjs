@@ -226,6 +226,8 @@ run(`begin; update public.collab_v2_sync_snapshots set upto_seq=1 where document
 assert.equal(json(service(appendSql('parallel-a',0))).seq, '1');
 const compacted = json(asUser(1, `select public.collab_v2_get_updates(${q(id)},1,0)`));
 assert.equal(compacted.snapshot.uptoSeq,'1'); assert.deepEqual(compacted.updates.map(u=>u.seq),['2']);
+assert.equal(json(asUser(1, `select public.collab_v2_get_updates(${q(id)},1,1,32,${q(compacted.snapshot.id)})`)).snapshot,null,'known snapshot suppresses repeat download');
+assert.notEqual(json(asUser(1, `select public.collab_v2_get_updates(${q(id)},1,0,32,${q(compacted.snapshot.id)})`)).snapshot,null,'known ID cannot bypass a required newer cut');
 for (const mutation of ['log_bytes=4194304', 'receipt_count=4096']) {
   try { run(`begin; update public.collab_v2_documents set ${mutation} where id=${q(id)}; ${identity(null,'service_role')} ${appendSql('quota',2)}; commit;`); assert.fail('quota'); }
   catch (error) { assert.match(error.stderr ?? error.message, /QUOTA_EXCEEDED/); }
@@ -266,6 +268,95 @@ denyJoin(9, `select public.collab_v2_join(${q(accountInvite.token)},'deleted iss
 deny(20, `select public.collab_v2_create_invite(${q(id)})`, 'NOT_AUTHENTICATED');
 const cascade = create(22); run(`delete from auth.users where id=${q(uid(22))};`);
 assert.equal(scalar(`count(*) from public.collab_v2_documents where id=${q(cascade.documentId)}`),'0');
+
+// 9a: real-role writer/receipt collection and checkpoint foundation.
+const history = create(24), hid = history.documentId, writer = uid(924);
+join(25,invite(24,hid).token); join(10,invite(24,hid).token);
+const hmember = membership(hid,24);
+const happend = (updateId, seq, head=0) => `select public.collab_v2_append(${q(hid)},${q(uid(24))},1,${q(hmember)},${head},${q(updateId)},'\\x0000'::bytea,extensions.digest('\\x0000'::bytea,'sha256'),'履歴',${q(writer)},${seq})`;
+const hconfirm = seq => `select public.collab_v2_confirm_writer(${q(hid)},1,${q(hmember)},${q(writer)},${seq})`;
+assert.equal(json(asUser(24,hconfirm(0))).reclaimedThrough,'0');
+deny(25,hconfirm(0),'NOT_MEMBER'); deny(null,hconfirm(0),'permission denied','anon');
+const wraces = await Promise.all(['writer-race-a','writer-race-b'].map(u=>concurrent(`begin; ${identity(null,'service_role')} ${happend(u,1)}; commit;`)));
+assert.equal(wraces.filter(r=>r.code===0).length,1,'one winner for writer seq 1');
+assert.match(wraces.find(r=>r.code!==0).stderr,/WRITER_SEQUENCE_CONFLICT/);
+const historyWinner = wraces[0].code===0 ? 'writer-race-a' : 'writer-race-b';
+assert.equal(json(service(happend(historyWinner,1))).duplicate,true,'ACK-loss retry before collection');
+deny(24,hconfirm(2),'ACK_AHEAD');
+assert.equal(json(asUser(24,hconfirm(1))).reclaimedThrough,'1');
+assert.equal(scalar(`receipt_count from public.collab_v2_documents where id=${q(hid)}`),'0');
+assert.equal(json(service(happend(historyWinner,1))).result,'RECEIPT_RECLAIMED','old request cannot append after collection');
+assert.equal(json(service(happend('new-id-old-seq',1))).result,'RECEIPT_RECLAIMED','changed ID below boundary cannot append either');
+assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(hid)}`),'1');
+assert.equal(json(service(happend('writer-next',2,1))).seq,'2');
+assert.equal(json(asUser(24,hconfirm(2))).reclaimedThrough,'2');
+// Due contract freezes the pre-append cut, and preserves it on later appends.
+run(`update public.collab_v2_documents set last_checkpoint_at=now()-interval '11 minutes' where id=${q(hid)}`);
+assert.equal(json(service(happend('due-first',3,2))).seq,'3');
+assert.equal(scalar(`cut_seq from collab_v2_private.history_due where document_id=${q(hid)}`),'2');
+assert.equal(json(service(happend('due-later',4,3))).seq,'4');
+assert.equal(scalar(`cut_seq from collab_v2_private.history_due where document_id=${q(hid)}`),'2');
+asUser(24,hconfirm(4));
+const payload = JSON.stringify({formatVersion:1,sharedSchemaVersion:2,content:{roots:{},hasSong:false},song:null});
+// SQL tests exercise storage/RLS; validating the logical DTO is Edge's boundary.
+const pbytes = `convert_to(${q(payload)},'UTF8')`;
+const storeHistory = (actor=24, reason='manual') => `select public.collab_v2_store_checkpoint(${q(hid)},${q(uid(actor))},1,2,${pbytes},extensions.digest(${pbytes},'sha256'),${q(reason)})`;
+const point = json(service(storeHistory()));
+assert.equal(json(service(storeHistory(10))).contentId,point.contentId,'same-document content dedupe');
+assert.equal(scalar(`count(*) from public.collab_v2_checkpoint_contents where document_id=${q(hid)}`),'1');
+join(26,invite(24,hid).token); // This participant joins AFTER both checkpoints.
+for (const actor of [24,25,10,26]) {
+  assert.equal(json(asUser(actor,`select public.collab_v2_get_checkpoint(${q(hid)},${q(point.id)})`)).confirmedSeq,'2');
+  assert.equal(json(asUser(actor,`select public.collab_v2_list_checkpoints(${q(hid)})`)).length,2);
+  assert.equal(asUser(actor,`select count(*) from public.collab_v2_checkpoint_contents where document_id=${q(hid)}`),'1');
+  deny(actor,storeHistory(actor),'permission denied');
+}
+for (const actor of [25,10]) deny(actor,`select public.collab_v2_delete_checkpoint(${q(hid)},${q(point.id)})`,'CREATOR_ONLY');
+deny(null,`select public.collab_v2_get_checkpoint(${q(hid)},${q(point.id)})`,'permission denied','anon');
+deny(9,`select public.collab_v2_get_checkpoint(${q(hid)},${q(point.id)})`,'NOT_MEMBER');
+assert.equal(asUser(9,`select count(*) from public.collab_v2_checkpoints where document_id=${q(hid)}`),'0');
+asUser(25,`select public.collab_v2_remove_member(${q(hid)},${q(uid(26))})`);
+deny(26,`select public.collab_v2_get_checkpoint(${q(hid)},${q(point.id)})`,'NOT_MEMBER');
+deny(null,storeHistory(26),'NOT_MEMBER','service_role');
+assert.equal(asUser(26,`select count(*) from public.collab_v2_checkpoint_contents where document_id=${q(hid)}`),'0');
+for (const table of ['writers','checkpoints','checkpoint_contents']) {
+  deny(24,`delete from public.collab_v2_${table}`,'permission denied');
+  deny(null,`select * from public.collab_v2_${table}`,'permission denied','anon');
+}
+// Quotas are changed only inside rollback-only fixture transactions.
+for (const pool of ['state','checkpoint','work']) {
+  try { run(`begin; select collab_v2_private.require_budget(134217728,${q(pool)}); rollback;`); assert.fail('pool capacity'); }
+  catch(error) { assert.match(error.stderr??error.message,/PROJECT_QUOTA_EXCEEDED/); }
+}
+run(`begin; update collab_v2_private.budget_settings set state_bytes=1;
+  select collab_v2_private.require_budget(1000,'state',1001); rollback;`); // shrinking/replace delta accepted even after lowering limits
+try { run(`begin; update collab_v2_private.budget_settings set document_checkpoint_bytes=1; ${identity(null,'service_role')} ${storeHistory()}; commit;`); assert.fail('manual capacity'); }
+catch(error) { assert.match(error.stderr??error.message,/CHECKPOINT_QUOTA_EXCEEDED/); }
+try { run(`begin; update collab_v2_private.budget_settings set checkpoint_bytes=1; ${identity(null,'service_role')} ${storeHistory(24,'before-restore')}; commit;`); assert.fail('mandatory capacity'); }
+catch(error) { assert.match(error.stderr??error.message,/PROJECT_QUOTA_EXCEEDED/); }
+assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(hid)}`),'4','mandatory failure changes neither head nor current state');
+assert.equal(json(run(`begin; update collab_v2_private.budget_settings set document_checkpoint_bytes=1; ${identity(null,'service_role')} ${storeHistory(24,'automatic')}; rollback;`)).result,'DEFERRED_CAPACITY');
+try { run(`begin; update collab_v2_private.budget_settings set mandatory_checkpoint_bytes=2097152;
+  insert into collab_v2_private.work_reservations(document_id,lease_id,bytes,expires_at) values(${q(hid)},${q(uid(930))},16777216,now()-interval '1 minute');
+  select collab_v2_private.require_budget(1,'work'); rollback;`); assert.fail('expired reservations count until deleted'); }
+catch(error) { assert.match(error.stderr??error.message,/PROJECT_QUOTA_EXCEEDED/); }
+asUser(24,`select public.collab_v2_delete_checkpoint(${q(hid)},${q(point.id)})`);
+assert.equal(scalar(`count(*) from public.collab_v2_checkpoint_contents where document_id=${q(hid)}`),'1','content survives while another checkpoint references it');
+const stateUsed = scalar(`(select coalesce(sum(log_bytes+receipt_count*512::bigint+512),0) from public.collab_v2_documents)+
+  (select count(*)*512 from public.collab_v2_updates)+(select coalesce(sum(octet_length(bytes)+512),0) from public.collab_v2_sync_snapshots)+
+  (select count(*)*512 from public.collab_v2_writers)+(select count(*)*512 from collab_v2_private.history_due)`);
+try { run(`begin; insert into public.collab_v2_sync_snapshots(id,document_id,generation,upto_seq,bytes,digest)
+  values(${q(uid(940))},${q(hid)},1,2,${q(initial)}::bytea,extensions.digest(${q(initial)}::bytea,'sha256'));
+  update public.collab_v2_documents set previous_snapshot_id=${q(uid(940))} where id=${q(hid)};
+  update collab_v2_private.budget_settings set state_bytes=${stateUsed}; select collab_v2_private.require_budget(1); rollback;`); assert.fail('previous snapshot budget'); }
+catch(error) { assert.match(error.stderr??error.message,/PROJECT_QUOTA_EXCEEDED/); }
+const legacyLost=create(27), lid=legacyLost.documentId, lm=membership(lid,27), lw=uid(927);
+const legacyAppend=(sequenced=false)=>`select public.collab_v2_append(${q(lid)},${q(uid(27))},1,${q(lm)},0,'legacy-ack-lost','\\x0000'::bytea,extensions.digest('\\x0000'::bytea,'sha256'),'legacy'${sequenced ? `,${q(lw)},1` : ''})`;
+assert.equal(json(service(legacyAppend())).seq,'1');
+assert.equal(json(service(legacyAppend(true))).duplicate,true,'upgrade binds a same-digest, same-actor ACK-lost legacy receipt instead of appending');
+asUser(27,`select public.collab_v2_confirm_writer(${q(lid)},1,${q(lm)},${q(lw)},1)`);
+deny(null,legacyAppend(),'WRITER_REQUIRED','service_role');
+assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(lid)}`),'1');
 
 // Rerun with populated v2 tables. Confirm content, state, legacy function ACLs.
 const before = scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`);

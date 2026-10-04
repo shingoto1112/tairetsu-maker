@@ -20,7 +20,7 @@ export function sessionSnapshot(localId: string, provider: ProviderState | null,
     pending || save?.dirty || save?.saving ? "送信待ち" : provider.syncing ? "接続を確認中" : "同期済み";
   const sharing = provider?.sharing ?? "auth-required";
   const sharingLabels = { removed: "共有から外れました", ended: "共有は終了しました", "auth-required": "ログインが必要です", "membership-changed": "参加し直しが必要です" };
-  const label = sync === "保存失敗" ? sync : sharing !== "active" ? sharingLabels[sharing] :
+  const label = ["RECEIPT_RECLAIMED", "RECOVERY_CONFIRMATION_REQUIRED"].includes(provider?.error?.code ?? "") ? "古い送信記録です。編集内容を残して再同期・確認が必要です" : sync === "保存失敗" ? sync : sharing !== "active" ? sharingLabels[sharing] :
     sync === "資格保留" ? "接続を確認中" : sync === "送信待ち" ? `送信待ち ${pending} 件${save?.dirty ? "（端末保存中）" : ""}` : sync;
   return { localId, sharing, sync, pending, label, history,
     error: save?.error ? { kind: "storage", code: save.error.code } : provider?.error ?? null };

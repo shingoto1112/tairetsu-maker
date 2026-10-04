@@ -15,6 +15,7 @@ export class CollaborationProvider {
   private running = new Set<"send" | "pull">();
   private requested = new Set<"send" | "pull">();
   private attempts = { send: 0, pull: 0 };
+  private resyncRequired = false;
   private errors: Partial<Record<"send" | "pull", ProviderError>> = {};
   private blocked = new Set<"send" | "pull">();
   private topicKey = "";
@@ -106,11 +107,12 @@ export class CollaborationProvider {
       const membership = await this.transport.membership(data.sharedDocumentId, credential, signal);
       if (!this.valid(epoch)) return;
       if (!uuid(membership)) throw new TransportError("protocol", "INVALID_MEMBERSHIP");
-      this.state.held = membership !== data.transportBinding.membershipGeneration;
+      const membershipChanged = membership !== data.transportBinding.membershipGeneration;
+      this.state.held = this.resyncRequired || !!data.recoveryRequired || membershipChanged;
       this.state.credentialConfirmed = true;
-      this.state.sharing = this.state.held ? "membership-changed" : "active";
+      this.state.sharing = membershipChanged ? "membership-changed" : "active";
       if (lane === "send" && this.state.held) {
-        this.errors.send = { kind: "membership", code: "MEMBERSHIP_CHANGED" }; this.blocked.add("send"); return;
+        this.errors.send = { kind: "membership", code: data.recoveryRequired ? "RECOVERY_CONFIRMATION_REQUIRED" : this.resyncRequired ? "RECEIPT_RECLAIMED" : "MEMBERSHIP_CHANGED" }; this.blocked.add("send"); return;
       }
       if (lane === "send") await this.send(data, credential, epoch, signal);
       else { const caughtUp = await this.pull(data, credential, epoch, signal); if (this.valid(epoch)) this.state.pullConfirmed = caughtUp; }
@@ -124,6 +126,7 @@ export class CollaborationProvider {
       if (["auth", "permission", "generation"].includes(e.kind)) this.state.credentialConfirmed = false;
       if (e.kind === "auth") this.state.sharing = "auth-required";
       if (e.code === "MEMBERSHIP_CHANGED") this.state.sharing = "membership-changed";
+      if (e.code === "RECEIPT_RECLAIMED") { this.resyncRequired = true; this.state.held = true; this.kick("pull"); }
       if (["DOCUMENT_DELETED", "NOT_MEMBER"].includes(e.code)) {
         this.state.sharing = e.code === "DOCUMENT_DELETED" ? "ended" : "removed";
         this.state.held = true; this.blocked.add("send"); this.blocked.add("pull");
@@ -145,6 +148,15 @@ export class CollaborationProvider {
     }
   }
   private async send(data: CollaborationData, credential: Credential, epoch: number, signal: AbortSignal) {
+    // Do not expose new, uncommitted shared updates. Local audio/view review may
+    // be dirty on reopen while the shared outbox was already durably committed.
+    if (this.coordinator.state?.saving) return;
+    if (this.coordinator.state?.dirty && this.coordinator.collaborationProjection?.outbox.some(e => e.status === "pending" &&
+      !data.outbox.some(saved => saved.updateId === e.updateId && saved.bytes === e.bytes))) return;
+    if (!await this.coordinator.prepareCollaborationWriter()) throw new TransportError("validation", "LOCAL_WRITER_COMMIT_FAILED");
+    if (!this.valid(epoch)) return;
+    data = (await this.coordinator.getCommittedCollaboration())!;
+    await this.confirmWriter(data, credential, signal);
     const outbox = await this.coordinator.getSendableOutbox();
     for (const update of outbox) {
       if (!this.valid(epoch)) return;
@@ -153,11 +165,16 @@ export class CollaborationProvider {
       if (!this.valid(epoch)) return;
       if (membership !== data.transportBinding!.membershipGeneration) { this.state.held = true; throw new TransportError("permission", "MEMBERSHIP_CHANGED"); }
       const request = { action: "append" as const, documentId: data.sharedDocumentId!, generation: data.generation,
-        membershipGeneration: data.transportBinding!.membershipGeneration, updateId: update.updateId, bytes: update.bytes };
+        membershipGeneration: data.transportBinding!.membershipGeneration, updateId: update.updateId, bytes: update.bytes,
+        writerId: data.writer!.id, writerSeq: update.writerSeq! };
       parseAck(await this.transport.append(request, credential, signal), request);
       if (!this.valid(epoch)) return;
       this.state.pullConfirmed = false; this.kick("pull");
       if (!await this.coordinator.markOutboxSent([update.updateId])) throw new TransportError("validation", "LOCAL_ACK_COMMIT_FAILED");
+      if (!this.valid(epoch)) return;
+      const committed = await this.coordinator.getCommittedCollaboration();
+      if (!this.valid(epoch)) return;
+      await this.confirmWriter(committed!, credential, signal);
       const queueVersion = this.queueVersion;
       const remaining = await this.coordinator.getSendableOutbox();
       if (!this.valid(epoch)) return;
@@ -165,11 +182,19 @@ export class CollaborationProvider {
       this.emit();
     }
   }
+  private async confirmWriter(data: CollaborationData, credential: Credential, signal: AbortSignal) {
+    const writer = data.writer!;
+    const result = await this.transport.confirm({ documentId: data.sharedDocumentId!, generation: data.generation,
+      membershipGeneration: data.transportBinding!.membershipGeneration, writerId: writer.id, ackThrough: writer.ackThrough }, credential, signal) as { writerId?: string; reclaimedThrough?: string };
+    if (result?.writerId !== writer.id || typeof result.reclaimedThrough !== "string" || !/^(0|[1-9][0-9]*)$/.test(result.reclaimedThrough) || compareRevisions(result.reclaimedThrough, writer.ackThrough) < 0)
+      throw new TransportError("protocol", "INVALID_CONFIRMATION");
+  }
   private async pull(data: CollaborationData, credential: Credential, epoch: number, signal: AbortSignal) {
     let cursor = data.serverCursor;
+    let knownSnapshotId = data.knownSnapshotId;
     // Bound each turn; a busy document yields before catching up further.
     for (let pageIndex = 0; pageIndex < 8; pageIndex++) {
-      const page = parsePage(await this.transport.pull(data.sharedDocumentId!, data.generation, cursor, 32, credential, signal), data.sharedDocumentId!, data.generation);
+      const page = parsePage(await this.transport.pull(data.sharedDocumentId!, data.generation, cursor, 32, credential, signal, knownSnapshotId), data.sharedDocumentId!, data.generation);
       if (page.documentSchema !== data.documentSchema) throw new TransportError("validation", "UNSUPPORTED_SCHEMA");
       if (!this.valid(epoch)) return false;
       if (page.deleted) throw new TransportError("permission", "DOCUMENT_DELETED");
@@ -190,14 +215,14 @@ export class CollaborationProvider {
         // Flush a previously failed receive first; never roll back an in-memory cursor.
         if (this.coordinator.state?.error && !await this.coordinator.flush()) throw new TransportError("validation", "LOCAL_COMMIT_FAILED");
         if (page.snapshot) {
-          if (!await this.coordinator.receiveCollaborationSnapshot(page.snapshot.bytes, updates, next)) throw new TransportError("validation", "LOCAL_COMMIT_FAILED");
+          if (!await this.coordinator.receiveCollaborationSnapshot(page.snapshot.bytes, updates, next, page.snapshot.id)) throw new TransportError("validation", "LOCAL_COMMIT_FAILED");
         } else await this.coordinator.editCollaboration(updates, next);
         if (!this.valid(epoch)) return false;
         if (!await this.coordinator.flush()) throw new TransportError("validation", "LOCAL_COMMIT_FAILED");
         const committed = await this.coordinator.getCommittedCollaboration();
         if (!this.valid(epoch)) return false;
         if (!committed || compareRevisions(committed.serverCursor, next) < 0) throw new TransportError("protocol", "CURSOR_NOT_COMMITTED");
-        cursor = committed.serverCursor; this.state.cursor = cursor;
+        cursor = committed.serverCursor; knownSnapshotId = committed.knownSnapshotId; this.state.cursor = cursor;
       }
       await this.channel(page, credential, epoch);
       if (!this.valid(epoch)) return false;

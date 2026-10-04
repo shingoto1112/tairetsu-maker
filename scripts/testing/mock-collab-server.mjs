@@ -9,7 +9,7 @@ export class MockCollabBackend {
   constructor(base, RpcError, { fresh = false } = {}) {
     this.base = base; this.RpcError = RpcError; this.generation = '1'; this.head = '0'; this.acl = '1';
     this.topic = `collab-v2:${randomUUID()}`; this.members = new Map(actors.map((a, i) => [a, memberships[i]]));
-    this.log = []; this.receipts = new Map(); this.notices = []; this.sinks = new Set(); this.requests = [];
+    this.log = []; this.receipts = new Map(); this.writers = new Map(); this.snapshotId = randomUUID(); this.snapshotSeq = '0'; this.notices = []; this.sinks = new Set(); this.requests = [];
     this.dropNotices = false; this.delayAckMs = 0; this.delayPullMs = 0; this.failNext = null; this.authExpired = false; this.capacity = false;
     this.users = new Map(actors.map(id => [id, { id, is_anonymous: false }]));
     this.details = new Map(actors.map(id => [id, { displayName: '通常利用者', isGuest: false }]));
@@ -38,10 +38,10 @@ export class MockCollabBackend {
     if (!this.members.has(actor) || (membership !== undefined && this.members.get(actor) !== membership)) this.fail('42501', 'NOT_MEMBER');
     if (generation !== this.generation) this.fail('40001', 'STALE_GENERATION');
   }
-  page(cursor, limit) {
+  page(cursor, limit, knownSnapshotId = null) {
     return { documentId, documentSchema: 2, generation: this.generation, headSeq: this.head, aclGeneration: this.acl,
-      topic: this.topic, deleted: false, snapshot: cursor === '0' ? { uptoSeq: '0', bytes: this.base } : null,
-      updates: this.log.filter(u => BigInt(u.seq) > BigInt(cursor)).slice(0, limit).map(u => ({ ...u })) };
+      topic: this.topic, deleted: false, snapshot: BigInt(cursor) < BigInt(this.snapshotSeq) || knownSnapshotId !== this.snapshotId ? { id: this.snapshotId, uptoSeq: this.snapshotSeq, bytes: this.base } : null,
+      updates: this.log.filter(u => BigInt(u.seq) > BigInt(cursor) && BigInt(u.seq) > BigInt(this.snapshotSeq)).slice(0, limit).map(u => ({ ...u })) };
   }
   rpc = async (name, args) => {
     this.managementCalls.push(name);
@@ -114,28 +114,59 @@ export class MockCollabBackend {
       for (const user of this.departures.keys()) this.departures.set(user, 'ended'); return null;
     }
     this.check(args.p_actor, args.p_generation, args.p_membership);
+    if (name === 'collab_v2_confirm_writer' || name === 'collab_v2_probe_writer') {
+      let writer = this.writers.get(args.p_writer);
+      if (writer && (writer.actor !== args.p_actor || writer.membership !== args.p_membership)) this.fail('42501', 'WRITER_MISMATCH');
+      if (name === 'collab_v2_probe_writer') return writer && BigInt(args.p_writer_seq) <= BigInt(writer.reclaimed) ?
+        { result: 'RECEIPT_RECLAIMED', writerId: args.p_writer, reclaimedThrough: writer.reclaimed } : null;
+      if (!writer) {
+        if (args.p_ack_through !== '0') this.fail('22023', 'ACK_AHEAD');
+        writer = { actor: args.p_actor, membership: args.p_membership, accepted: '0', reclaimed: '0' }; this.writers.set(args.p_writer, writer);
+      }
+      if (BigInt(args.p_ack_through) > BigInt(writer.accepted)) this.fail('22023', 'ACK_AHEAD');
+      if (BigInt(args.p_ack_through) > BigInt(writer.reclaimed)) {
+        writer.reclaimed = args.p_ack_through;
+        for (const [id, receipt] of this.receipts) if (receipt.writer === args.p_writer && BigInt(receipt.writerSeq) <= BigInt(writer.reclaimed)) this.receipts.delete(id);
+      }
+      return { writerId: args.p_writer, reclaimedThrough: writer.reclaimed };
+    }
     if (name === 'collab_v2_ingest_state') return this.page('0', 4096);
     if (name === 'collab_v2_get_updates') {
       if (!Number.isInteger(args.p_limit) || args.p_limit < 1 || args.p_limit > 32 || !/^(0|[1-9][0-9]*)$/.test(args.p_cursor)) this.fail('22023', 'INVALID_ARGUMENT');
       if (BigInt(args.p_cursor) > BigInt(this.head)) this.fail('22023', 'INVALID_CURSOR');
-      return this.page(args.p_cursor, args.p_limit);
+      return this.page(args.p_cursor, args.p_limit, args.p_known_snapshot_id);
     }
     if (name !== 'collab_v2_append') throw new Error(`Unexpected RPC ${name}`);
     const bytes = Buffer.from(args.p_bytes.slice(2), 'hex');
     const digest = createHash('sha256').update(bytes).digest('hex');
     if (`\\x${digest}` !== args.p_digest) this.fail('22023', 'DIGEST_MISMATCH');
+    let writer;
+    if (args.p_writer) {
+      writer = this.writers.get(args.p_writer);
+      if (!writer) { writer = { actor: args.p_actor, membership: args.p_membership, accepted: '0', reclaimed: '0' }; this.writers.set(args.p_writer, writer); }
+      if (writer.actor !== args.p_actor || writer.membership !== args.p_membership) this.fail('42501', 'WRITER_MISMATCH');
+      if (BigInt(args.p_writer_seq) <= BigInt(writer.reclaimed)) return { result: 'RECEIPT_RECLAIMED', writerId: args.p_writer, reclaimedThrough: writer.reclaimed };
+    }
     const old = this.receipts.get(args.p_update_id);
     if (old) {
       if (old.digest !== digest) this.fail('22023', 'UPDATE_ID_CONFLICT');
       if (old.actor !== args.p_actor) this.fail('42501', 'ACTOR_MISMATCH');
+      if (writer && !old.writer) {
+        if (BigInt(args.p_writer_seq) !== BigInt(writer.accepted)+1n) this.fail('40001','WRITER_SEQUENCE_CONFLICT');
+        old.writer=args.p_writer;old.writerSeq=args.p_writer_seq;writer.accepted=args.p_writer_seq;
+      } else if ((old.writer??null)!==(args.p_writer??null) || (old.writerSeq??null)!==(args.p_writer_seq??null)) this.fail('22023','WRITER_SEQUENCE_CONFLICT');
       return { seq: old.seq, duplicate: true };
     }
+    if (!writer && this.writers.size) this.fail('22023','WRITER_REQUIRED');
+    if (writer && BigInt(args.p_writer_seq) !== BigInt(writer.accepted) + 1n) this.fail('40001', 'WRITER_SEQUENCE_CONFLICT');
+    if (this.log.some(u => u.updateId === args.p_update_id)) this.fail('22023', 'UPDATE_ID_CONFLICT');
     if (args.p_expected_head !== this.head) this.fail('40001', 'HEAD_CONFLICT');
     if (this.capacity || this.receipts.size >= 4096 || this.log.reduce((sum, u) => sum + Buffer.from(u.bytes, 'base64').length, 0) + bytes.length > 4194304) this.fail('54000', 'QUOTA_EXCEEDED');
     this.head = String(BigInt(this.head) + 1n);
     this.title = args.p_title ?? '隊列表'; this.titleSeq = this.head;
     this.log.push({ seq: this.head, updateId: args.p_update_id, actor: args.p_actor, bytes: bytes.toString('base64') });
-    this.receipts.set(args.p_update_id, { seq: this.head, digest, actor: args.p_actor });
+    this.receipts.set(args.p_update_id, { seq: this.head, digest, actor: args.p_actor, writer: args.p_writer, writerSeq: args.p_writer_seq });
+    if (writer) writer.accepted = args.p_writer_seq;
     const notice = { documentId, generation: this.generation, headSeq: this.head, aclGeneration: this.acl };
     this.notices.push({ topic: this.topic, notice });
     if (!this.dropNotices) this.deliver(this.notices.at(-1));

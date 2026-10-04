@@ -5,7 +5,19 @@ import { incrementRevision, RepositoryError, type CollaborationOutbox, type Coll
 import * as Y from "yjs";
 import { validateCollaboration, base64Bytes, COLLABORATION_LIMITS } from "../repositories/collaborationData";
 import { compareRevisions } from "../repositories/types";
-import { appendCollaboration, hydrateCollaboration, projectSharedDocument, decodeUpdate, encodeUpdate } from "./persistence";
+import { appendCollaboration, compactCollaboration, hydrateCollaboration, projectSharedDocument, decodeUpdate, encodeUpdate } from "./persistence";
+import { prepareWriter, reclaimSent } from "./writer";
+
+export function prepareSharedWriter(s: Session) {
+  if (!s.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+  if (s.collaboration.writer && s.collaboration.outbox.every(e => e.writerSeq)) return;
+  // Retired legacy/journal bytes are already merged into base, in the same commit.
+  const prepared = prepareWriter(compactCollaboration(s.collaboration, true));
+  if (JSON.stringify(prepared.data) === JSON.stringify(s.collaboration)) return;
+  s.writerAllocation = { ...(s.writerAllocation?.createdId ? { createdId: s.writerAllocation.createdId } : prepared.allocation.createdId ? { createdId: prepared.allocation.createdId } : {}),
+    updateIds: [...new Set([...(s.writerAllocation?.updateIds ?? []), ...prepared.allocation.updateIds])] };
+  s.collaboration = validateCollaboration(prepared.data); s.localRevision = incrementRevision(s.localRevision); s.dirty = true;
+}
 
 export function editSharedSession(s: Session, updates: CollaborationUpdate[], cursor?: Revision) {
   if (!s.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
@@ -30,7 +42,7 @@ export function bindSharedSession(s: Session, sharedDocumentId: string, binding?
   s.collaboration = validateCollaboration({ ...s.collaboration, sharedDocumentId, ...(binding ? { transportBinding: binding } : {}) });
   s.localRevision = incrementRevision(s.localRevision); s.dirty = true;
 }
-export function receiveSharedSnapshot(s: Session, bytes: string, updates: CollaborationUpdate[], cursor: string) {
+export function receiveSharedSnapshot(s: Session, bytes: string, updates: CollaborationUpdate[], cursor: string, snapshotId?: string) {
   if (!s.collaboration || compareRevisions(cursor, s.collaboration.serverCursor) < 0 || updates.some(u => u.source !== "remote")) throw new RepositoryError("CONFLICT");
   base64Bytes(bytes, COLLABORATION_LIMITS.baseBytes);
   for (const update of updates) {
@@ -42,9 +54,9 @@ export function receiveSharedSnapshot(s: Session, bytes: string, updates: Collab
     const before = encodeUpdate(Y.encodeStateAsUpdate(doc));
     Y.applyUpdate(doc, decodeUpdate(bytes));
     for (const update of updates) { base64Bytes(update.bytes, COLLABORATION_LIMITS.updateBytes); Y.applyUpdate(doc, decodeUpdate(update.bytes)); }
-    const collaboration = validateCollaboration({ ...s.collaboration, base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], serverCursor: cursor });
+    const collaboration = validateCollaboration({ ...s.collaboration, ...(snapshotId ? { knownSnapshotId: snapshotId } : {}), base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], serverCursor: cursor });
     const checked = hydrateCollaboration(collaboration); checked.destroy();
-    if (collaboration.base === before && cursor === s.collaboration.serverCursor) return;
+    if (collaboration.base === before && cursor === s.collaboration.serverCursor && collaboration.knownSnapshotId === s.collaboration.knownSnapshotId) return;
     const project = projectSharedDocument(doc, s.project, collaboration.sharedDocumentId);
     s.project = project; s.collaboration = collaboration; s.localRevision = incrementRevision(s.localRevision); s.dirty = true;
   } finally { doc.destroy(); }
@@ -57,5 +69,6 @@ export async function acknowledgeSharedSession(s: Session, repository: ProjectRe
   if (!saved?.collaboration || saved.collaboration.sharedDocumentId !== s.collaboration.sharedDocumentId ||
     [...ids].some(id => !saved.collaboration!.outbox.some(e => e.updateId === id && s.collaboration!.outbox.some(local => local.updateId === id && local.bytes === e.bytes)))) throw new RepositoryError("INVALID_ARGUMENT");
   s.collaboration = { ...s.collaboration, outbox: s.collaboration.outbox.map(e => ids.has(e.updateId) ? { ...e, status: "sent" } : e) };
+  if (s.collaboration.writer) s.collaboration = validateCollaboration(reclaimSent(compactCollaboration(s.collaboration, true)));
   s.localRevision = incrementRevision(s.localRevision); s.dirty = true;
 }

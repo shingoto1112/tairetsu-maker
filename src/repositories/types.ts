@@ -70,9 +70,12 @@ export type ProjectRecord = {
 
 /** JSON bridge contract: canonical base64 Yjs V1 state updates, not Y.Snapshot. */
 export type CollaborationUpdate = { updateId: string; bytes: string; source: "local" | "remote" };
-export type CollaborationOutbox = { updateId: string; bytes: string; status: "pending" | "sent" };
+export type CollaborationOutbox = { updateId: string; bytes: string; status: "pending" | "sent"; writerSeq?: Revision };
+export type CollaborationWriter = { id: string; allocatedThrough: Revision; ackThrough: Revision; reclaimedThrough: Revision;
+  /** Bounded migration tombstones for pre-sequence sent entries; never CRDT bytes. */
+  legacySentIds: string[] };
 export type CollaborationData = {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   sharedDocumentId: string | null;
   documentSchema: 1 | 2;
   generation: Revision;
@@ -80,6 +83,10 @@ export type CollaborationData = {
   journal: CollaborationUpdate[];
   outbox: CollaborationOutbox[];
   serverCursor: Revision;
+  knownSnapshotId?: string;
+  /** Whole database recovery may predate collection; never resume its writer automatically. */
+  recoveryRequired?: true;
+  writer?: CollaborationWriter;
   /** Immutable sender identity for this attachment. Missing old records are held. */
   transportBinding?: { accountId: string; membershipGeneration: string };
   /** Device-only references, persisted atomically with body/previous/recovery DB.

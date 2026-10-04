@@ -54,9 +54,11 @@ export function createHttpTransport(config: CloudConfig, credential: Collaborati
       if (!uuid(membership)) throw new TransportError("protocol", "INVALID_MEMBERSHIP");
       return membership;
     },
-    pull: (documentId, generation, cursor, limit, auth, signal) => request("/rest/v1/rpc/collab_v2_get_updates", auth, signal,
-      { p_document: documentId, p_generation: generation, p_cursor: cursor, p_limit: limit }),
+    pull: (documentId, generation, cursor, limit, auth, signal, knownSnapshotId) => request("/rest/v1/rpc/collab_v2_get_updates", auth, signal,
+      { p_document: documentId, p_generation: generation, p_cursor: cursor, p_limit: limit, p_known_snapshot_id: knownSnapshotId ?? null }),
     append: (body, auth, signal) => request("/functions/v1/collab-ingest", auth, signal, body),
+    confirm: (body, auth, signal) => request("/rest/v1/rpc/collab_v2_confirm_writer", auth, signal,
+      { p_document: body.documentId, p_generation: body.generation, p_membership: body.membershipGeneration, p_writer: body.writerId, p_ack_through: body.ackThrough }),
   };
 }
 export function createSupabaseTransport(config: CloudConfig, credential: CollaborationTransport["credential"]): CollaborationTransport {

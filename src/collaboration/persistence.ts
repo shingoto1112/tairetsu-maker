@@ -6,6 +6,7 @@ import { compareRevisions, RepositoryError, type CollaborationData, type Collabo
 import { assertDocument, getModel } from "./model";
 import { projectSharedDocument } from "./projection";
 import { same } from "./projectModel";
+import { mergeWriterOutbox, type WriterAllocation } from "./writer";
 export { projectSharedDocument } from "./projection";
 
 export const encodeUpdate = (bytes: Uint8Array): string => {
@@ -77,22 +78,19 @@ export function appendCollaboration(input: CollaborationData, updates: Collabora
   return compactCollaboration(data);
 }
 /** Rebase local state onto durable state, including its compaction and ACK tombstones. */
-export function mergeCollaboration(saved: CollaborationData, local: CollaborationData, base: Project, audioBaseline?: AudioBinding[]): { project: Project; collaboration: CollaborationData } {
+export function mergeCollaboration(saved: CollaborationData, local: CollaborationData, base: Project, audioBaseline?: AudioBinding[], allocation?: WriterAllocation): { project: Project; collaboration: CollaborationData } {
   if (saved.generation !== local.generation || saved.documentSchema !== local.documentSchema ||
     saved.transportBinding?.accountId !== local.transportBinding?.accountId || saved.transportBinding?.membershipGeneration !== local.transportBinding?.membershipGeneration ||
     (local.sharedDocumentId !== null && saved.sharedDocumentId !== null && saved.sharedDocumentId !== local.sharedDocumentId)) throw new RepositoryError("CONFLICT");
   const doc = hydrateCollaboration(saved), mine = hydrateCollaboration(local);
   try {
     Y.applyUpdate(doc, Y.encodeStateAsUpdate(mine));
-    const outbox = new Map(saved.outbox.map(e => [e.updateId, { ...e }]));
-    for (const e of local.outbox) {
-      const old = outbox.get(e.updateId);
-      if (old && old.bytes !== e.bytes) throw new RepositoryError("CONFLICT");
-      outbox.set(e.updateId, { ...e, status: old?.status === "sent" ? "sent" : e.status });
-    }
+    const writerState = mergeWriterOutbox(saved, local, allocation);
     const collaboration = validateCollaboration({ ...saved, schemaVersion: Math.max(saved.schemaVersion, local.schemaVersion),
+      ...(saved.recoveryRequired || local.recoveryRequired ? { recoveryRequired: true } : {}),
       ...((saved.audioBindings || local.audioBindings) ? { audioBindings: mergeAudioBindings(saved.audioBindings, local.audioBindings, audioBaseline) } : {}), sharedDocumentId: saved.sharedDocumentId ?? local.sharedDocumentId,
-      base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], outbox: [...outbox.values()],
+      ...(local.knownSnapshotId && compareRevisions(local.serverCursor, saved.serverCursor) >= 0 ? { knownSnapshotId: local.knownSnapshotId } : {}),
+      ...writerState, base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [],
       serverCursor: compareRevisions(saved.serverCursor, local.serverCursor) >= 0 ? saved.serverCursor : local.serverCursor });
     const song = getModel(doc).settings.get("song") as SongDescriptor | null | undefined;
     const binding = collaboration.audioBindings?.find(b => sameSong(b.song, song));

@@ -1,3 +1,4 @@
+// @ts-ignore Deno source import; also exercised by the client contract tests.
 import { decodeBase64, validId, validateState, ValidationError, SERVER_LIMITS } from '../../../src/collaboration/serverValidation.ts';
 
 type User = { id: string; is_anonymous: boolean };
@@ -82,15 +83,29 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
         const result = await backend.rpc('collab_v2_create_document', { p_actor: user.id, p_display_name: input.displayName, p_bytes: hex(bytes), p_title: validated.title });
         return response(200, result);
       }
-      if (input.action !== 'append' || !fields(input, ['action', 'documentId', 'generation', 'membershipGeneration', 'updateId', 'bytes']) ||
+      const hasWriter = 'writerId' in input || 'writerSeq' in input;
+      if (input.action !== 'append' || !fields(input, ['action', 'documentId', 'generation', 'membershipGeneration', 'updateId', 'bytes', ...(hasWriter ? ['writerId','writerSeq'] : [])]) ||
+        hasWriter && (!uuid(input.writerId) || !revision(input.writerSeq)) ||
         !uuid(input.documentId) || !uuid(input.membershipGeneration) || !revision(input.generation) || !validId(input.updateId)) invalid();
       const bytes = decodeBase64(input.bytes, SERVER_LIMITS.updateBytes);
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes).buffer));
       const args = { p_document: input.documentId, p_actor: user.id, p_generation: input.generation, p_membership: input.membershipGeneration };
+      const envelope = { documentId: input.documentId, generation: input.generation, updateId: input.updateId };
+      if (hasWriter) {
+        const result = await backend.rpc('collab_v2_probe_writer', { ...args, p_writer: input.writerId, p_writer_seq: input.writerSeq });
+        if (result) return response(200, { ...envelope, ...result as object });
+      }
       let validationTime = 0;
       for (let attempt = 0; attempt < 3; attempt++) {
         const state = await backend.rpc('collab_v2_ingest_state', args) as State;
         if (![1, 2].includes(state.documentSchema) || !state.snapshot || !Array.isArray(state.updates)) throw new ValidationError('UNSUPPORTED_SCHEMA');
+        const seqValue = (v: unknown): v is string => v === '0' || revision(v);
+        if (!seqValue(state.headSeq) || !seqValue(state.snapshot.uptoSeq)) throw new ValidationError('INCOMPLETE_SERVER_STATE');
+        let replayed = BigInt(state.snapshot.uptoSeq);
+        for (const update of state.updates) {
+          if (!revision(update.seq) || BigInt(update.seq) !== ++replayed) throw new ValidationError('INCOMPLETE_SERVER_STATE');
+        }
+        if (replayed !== BigInt(state.headSeq)) throw new ValidationError(state.updates.length === SERVER_LIMITS.entries ? 'LOG_QUOTA_EXCEEDED' : 'INCOMPLETE_SERVER_STATE');
         const snapshot = decodeBase64(state.snapshot.bytes, SERVER_LIMITS.snapshotBytes);
         const updates = state.updates.map(u => decodeBase64(u.bytes, SERVER_LIMITS.updateBytes));
         const validated = validateState(snapshot, updates, bytes, state.documentSchema as 1 | 2);
@@ -98,8 +113,9 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
         if (validationTime > SERVER_LIMITS.validationMs) throw new ValidationError('VALIDATION_BUDGET');
         try {
           const ack = await backend.rpc('collab_v2_append', { ...args, p_expected_head: state.headSeq,
-            p_update_id: input.updateId, p_bytes: hex(bytes), p_digest: hex(digest), p_title: validated.title });
-          return response(200, { documentId: input.documentId, generation: input.generation, updateId: input.updateId, ...ack as object });
+            p_update_id: input.updateId, p_bytes: hex(bytes), p_digest: hex(digest), p_title: validated.title,
+            ...(hasWriter ? { p_writer: input.writerId, p_writer_seq: input.writerSeq } : {}) });
+          return response(200, { ...envelope, ...ack as object });
         } catch (error) {
           if (!(error instanceof RpcError) || error.message !== 'HEAD_CONFLICT') throw error;
         }

@@ -422,16 +422,58 @@ final class CollaborationTests: XCTestCase {
         let committed = try request(f, "committed", 2)
         let receipt = try call(r, "commitProject", committed)
         _ = try call(r, "createRecoveryBackup")
-        let before = try snapshot()
         _ = try call(r, "commitProject", request(f, "acknowledged", 3))
         _ = try call(r, "restoreRecoveryBackup")
-        XCTAssertEqual(try snapshot(), before)
         let record = try read(r), data = try attachment(record)
-        XCTAssertEqual(try RepositoryValidation.json(data), try RepositoryValidation.json(f["committed"]!))
+        var expectedData = try XCTUnwrap(f["committed"] as? [String: Any]); expectedData["recoveryRequired"] = true
+        XCTAssertEqual(try RepositoryValidation.json(data), try RepositoryValidation.json(expectedData))
+        let previousRecord = try read(r, "readPrevious"), previousData = try attachment(previousRecord)
+        XCTAssertEqual(previousData["recoveryRequired"] as? Bool, true)
         let replay = try call(r, "commitProject", committed)
         XCTAssertEqual(try RepositoryValidation.json(receipt), try RepositoryValidation.json(replay))
         // Binding is identity history, never a persisted authentication grant.
         // TS provider must re-check account and membership before each append.
+    }
+
+    func testWriterCollectionTransitionPreviousRecoveryAndLegacyRead() throws {
+        var f = try fixture()
+        let binding: [String: Any] = ["accountId": "11111111-1111-4111-8111-111111111111", "membershipGeneration": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]
+        var initialData = try XCTUnwrap(f["initial"] as? [String: Any]); initialData["transportBinding"] = binding; f["initial"] = initialData
+        var assigned = try XCTUnwrap(f["compacted"] as? [String: Any])
+        assigned["transportBinding"] = binding; assigned["schemaVersion"] = 3
+        var outbox = try XCTUnwrap(assigned["outbox"] as? [[String: Any]])
+        XCTAssertEqual(outbox.count, 2)
+        for index in outbox.indices { outbox[index]["writerSeq"] = String(index + 1) }
+        assigned["outbox"] = outbox
+        let writer: [String: Any] = ["id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "allocatedThrough": "2", "ackThrough": "0", "reclaimedThrough": "0", "legacySentIds": [String]()]
+        assigned["writer"] = writer; assigned["knownSnapshotId"] = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        f["assigned"] = assigned
+        var collected = assigned, collectedWriter = writer
+        collectedWriter["ackThrough"] = "1"; collectedWriter["reclaimedThrough"] = "1"
+        collected["writer"] = collectedWriter; collected["outbox"] = [outbox[1]]; f["collected"] = collected
+        let assignedJSON = try RepositoryValidation.json(assigned), collectedJSON = try RepositoryValidation.json(collected)
+        try CollaborationValidation.transition(assignedJSON, collectedJSON)
+        error("CONFLICT") { try CollaborationValidation.transition(collectedJSON, assignedJSON); return 0 }
+        var reintroduced = collected; reintroduced["outbox"] = outbox
+        let reintroducedJSON = try RepositoryValidation.json(reintroduced)
+        error("INVALID_ARGUMENT") { try CollaborationValidation.parse(reintroducedJSON) }
+        let r = repo(); defer { r.close() }
+        _ = try call(r, "commitProject", request(f, "initial", 1))
+        _ = try call(r, "commitProject", request(f, "assigned", 2))
+        _ = try call(r, "createRecoveryBackup")
+        _ = try call(r, "commitProject", request(f, "collected", 3))
+        let previousRecord = try read(r, "readPrevious"), previousData = try attachment(previousRecord)
+        XCTAssertEqual(try RepositoryValidation.json(previousData), assignedJSON)
+        _ = try call(r, "restoreRecoveryBackup")
+        let restoredRecord = try read(r), restoredData = try attachment(restoredRecord)
+        XCTAssertEqual(restoredData["recoveryRequired"] as? Bool, true)
+        XCTAssertEqual((restoredData["outbox"] as? [[String: Any]])?.count, 2)
+        XCTAssertEqual(try RepositoryValidation.json(restoredData["writer"]!), try RepositoryValidation.json(writer))
+        var unheld = restoredData; unheld.removeValue(forKey: "recoveryRequired")
+        let restoredJSON = try RepositoryValidation.json(restoredData), unheldJSON = try RepositoryValidation.json(unheld)
+        error("CONFLICT") { try CollaborationValidation.transition(restoredJSON, unheldJSON); return 0 }
+        // Old format is parsed per row; opening never eagerly scans attachments.
+        _ = try CollaborationValidation.parse(RepositoryValidation.json(initialData))
     }
 
     func testCorruptAttachmentReadPreviousAndBackupFailClosed() throws {

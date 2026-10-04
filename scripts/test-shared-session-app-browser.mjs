@@ -63,7 +63,8 @@ try {
   }
   await until(async () => (await Promise.all([state(0),state(1)])).every(s=>s.sync==='同期済み'),'initial connection');
   const started = Date.now(); await edit(0,'即時送信'); await expect(title(1)).toHaveValue('即時送信',{timeout:10000});
-  assert(Date.now()-started<12000); assert((await read(0)).collaboration.outbox.some(e=>e.status==='sent'));
+  assert(Date.now()-started<12000);
+  await until(async()=>{const data=(await read(0)).collaboration;return data.writer?.ackThrough!=='0' && data.outbox.length===0;},'atomic sent collection');
   checks.push('real App durable edit -> immediate send -> realtime B (no 30s poll)');
   // Compound command + concurrent overwrite, Undo goes through actual App shortcut.
   await pages[0].evaluate(() => window.__sharedSession.active.editor.edit(p=>({...p,title:'複合操作',stage:{...p.stage,gridSizeMeters:p.stage.gridSizeMeters===0.5?1:0.5}})));

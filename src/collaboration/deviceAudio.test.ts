@@ -32,7 +32,7 @@ describe("device song bindings", () => {
     const binding = { song: describeAudio(audio), audio }, data = { ...initialCollaboration(), schemaVersion: 2 as const, audioBindings: [binding] };
     expect(validateCollaboration(data).audioBindings).toEqual([binding]);
     expect(() => validateCollaboration({ ...data, schemaVersion: 1 })).toThrow();
-    expect(() => validateCollaboration({ ...data, schemaVersion: 3 })).toThrow(expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }));
+    expect(() => validateCollaboration({ ...data, schemaVersion: 4 })).toThrow(expect.objectContaining({ code: "UNSUPPORTED_SCHEMA" }));
     expect(() => validateCollaborationTransition(initialCollaboration(), data)).not.toThrow();
     expect(() => validateCollaborationTransition(data, initialCollaboration())).toThrow(expect.objectContaining({ code: "CONFLICT" }));
     const record = { project: fixture.stage as Project, collaboration: data, repositoryRevision: "1", localRevision: "1", sync: null };

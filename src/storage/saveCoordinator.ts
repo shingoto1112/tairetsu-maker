@@ -3,7 +3,7 @@ import { createId } from "../utils/ids";
 import { compareRevisions, incrementRevision, RepositoryError, type CollaborationData, type CollaborationUpdate, type CollaborationOutbox, type CommitRequest, type ProjectRecord, type ProjectRepository, type ProjectSummary, type Revision } from "../repositories/types";
 
 export type SaveState = { id: string; localRevision: Revision; persistedRevision: Revision; dirty: boolean; saving: boolean; error: RepositoryError | null };
-export type Session = SaveState & { project: Project; collaboration?: CollaborationData | null; audioBindingsBase?: NonNullable<CollaborationData["audioBindings"]>; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
+export type Session = SaveState & { project: Project; collaboration?: CollaborationData | null; writerAllocation?: { createdId?: string; updateIds: string[] }; audioBindingsBase?: NonNullable<CollaborationData["audioBindings"]>; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
 const detached = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export const repositoryError = (error: unknown): RepositoryError => error instanceof RepositoryError ? error : new RepositoryError("IO_ERROR");
 export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!state?.dirty && !state.saving && !!state.error &&
@@ -67,7 +67,7 @@ export class SaveCoordinator {
   setAudioBindings(bindings: NonNullable<CollaborationData["audioBindings"]>): void {
     const s = this.active;
     if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
-    s.collaboration = { ...s.collaboration, schemaVersion: 2, audioBindings: detached(bindings) };
+    s.collaboration = { ...s.collaboration, schemaVersion: s.collaboration.schemaVersion === 3 ? 3 : 2, audioBindings: detached(bindings) };
     s.localRevision = incrementRevision(s.localRevision); s.dirty = true; this.emit(s);
   }
   edit(project: Project) {
@@ -97,6 +97,15 @@ export class SaveCoordinator {
     if (this.active !== s) throw new RepositoryError("BUSY");
     return detached(record?.collaboration ?? null);
   }
+  async prepareCollaborationWriter(): Promise<boolean> {
+    const s = this.active;
+    if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+    const runtime = await import("../collaboration/saveSession");
+    if (this.active !== s) throw new RepositoryError("BUSY");
+    // Finish any lost/failed fixed commit before staging a new allocation.
+    if (!await this.flush()) return false;
+    runtime.prepareSharedWriter(s); this.emit(s); return this.flush();
+  }
   /** Persist the ID returned by server create before exposing the initial outbox. */
   async bindSharedDocument(sharedDocumentId: string, binding?: CollaborationData["transportBinding"]): Promise<boolean> {
     const s = this.active;
@@ -107,12 +116,12 @@ export class SaveCoordinator {
     return this.flush();
   }
   /** Full server state can exceed the per-update journal limit; merge into base. */
-  async receiveCollaborationSnapshot(bytes: string, updates: CollaborationUpdate[], cursor: Revision): Promise<boolean> {
+  async receiveCollaborationSnapshot(bytes: string, updates: CollaborationUpdate[], cursor: Revision, snapshotId?: string): Promise<boolean> {
     const s = this.active;
     if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
     const fixed = detached(updates), runtime = await import("../collaboration/saveSession");
     if (this.active !== s) throw new RepositoryError("BUSY");
-    runtime.receiveSharedSnapshot(s, bytes, fixed, cursor); this.emit(s); return this.flush();
+    runtime.receiveSharedSnapshot(s, bytes, fixed, cursor, snapshotId); this.emit(s); return this.flush();
   }
   /** Call after durable server ACK; ACK state itself must commit before disappearing. */
   async markOutboxSent(updateIds: string[]): Promise<boolean> {
@@ -157,7 +166,7 @@ export class SaveCoordinator {
           const saved = await this.repository.get(s.id);
           if (!saved?.collaboration) throw e;
           const runtime = await import("../collaboration/persistence");
-          const merged = runtime.mergeCollaboration(saved.collaboration, s.collaboration, { ...saved.project, audio: s.project.audio }, s.audioBindingsBase);
+          const merged = runtime.mergeCollaboration(saved.collaboration, s.collaboration, { ...saved.project, audio: s.project.audio }, s.audioBindingsBase, s.writerAllocation);
           s.project = merged.project; s.collaboration = merged.collaboration;
           s.audioBindingsBase = detached(saved.collaboration.audioBindings ?? []);
           s.repositoryRevision = saved.repositoryRevision;
@@ -168,12 +177,17 @@ export class SaveCoordinator {
         s.audioBindingsBase = detached(fixedCollaboration?.audioBindings ?? []);
         s.persistedRevision = receipt.localRevision;
         s.pending = undefined; s.error = null;
+        if (s.writerAllocation) {
+          s.writerAllocation.updateIds = s.writerAllocation.updateIds.filter(id => !fixedCollaboration?.outbox.some(e => e.updateId === id && e.writerSeq));
+          if (fixedCollaboration?.writer?.id === s.writerAllocation.createdId) delete s.writerAllocation.createdId;
+        }
         s.dirty = compareRevisions(s.localRevision, s.persistedRevision) > 0;
         this.committed(receipt.summary); this.emit(s);
         const known = this.committedUpdates.get(s.id) ?? new Set<string>();
         const pendingUpdateIds = (fixedCollaboration?.outbox ?? []).filter(e => e.status === "pending" && !known.has(e.updateId)).map(e => e.updateId);
-        for (const entry of fixedCollaboration?.outbox ?? []) known.add(entry.updateId);
-        this.committedUpdates.set(s.id, known);
+        // Collection also releases observer IDs; only the currently durable
+        // queue is needed to distinguish a new pending commit from an ACK.
+        this.committedUpdates.set(s.id, new Set(fixedCollaboration?.outbox.map(e => e.updateId)));
         const pendingCount = (fixedCollaboration?.outbox ?? []).filter(e => e.status === "pending").length;
         for (const listener of this.commitListeners) { try { listener({ id: s.id, pendingUpdateIds, pendingCount }); } catch { /* Observers do not invalidate durable saves. */ } }
       }

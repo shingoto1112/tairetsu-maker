@@ -14,7 +14,7 @@ export function preflight() {
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');
   const functions = [...sql.matchAll(/create or replace function ([\w.]+)\([\s\S]*?\n(?:\$\$;|end \$\$;)/g)];
-  assert.equal(functions.length, 23, 'Reviewed: list_my_documents, open_existing, list_invites');
+  assert.equal(functions.length, 30, 'Reviewed 9a: writer confirmation/probe; history authorization, store, list, get, delete');
   for (const [, name] of functions) assert(name.startsWith('public.collab_v2_') || name.startsWith('collab_v2_private.'));
   for (const [body] of functions) {
     assert.match(body, /security (invoker|definer) set search_path = ''/i);

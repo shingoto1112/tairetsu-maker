@@ -983,6 +983,10 @@ public final class ProjectRepository {
                 try source.validateAll()
                 try candidate.connection(); defer { candidate.closeConnection() }
                 try copyDatabase(from: source.db!, to: candidate.db!)
+                // A whole DB backup can predate the server's receipt collection.
+                // Keep body/outbox/old boundaries intact, but require explicit rescue
+                // before this recovered writer can ever send or allocate a new ID.
+                try candidate.holdRecoveredCollaboration()
                 try candidate.validateAll()
                 source.closeConnection(); candidate.closeConnection()
                 Self.lifecycle.lock(); defer { Self.lifecycle.unlock() }
@@ -1016,5 +1020,20 @@ public final class ProjectRepository {
                     throw error
                 }
             } catch { throw classified(error) }
+    }
+    private func holdRecoveredCollaboration() throws {
+        try transaction {
+            for table in ["project_bodies", "project_previous"] {
+                for row in try rows("SELECT id,collaboration_json FROM \(table) WHERE collaboration_json IS NOT NULL") {
+                    var value = try CollaborationValidation.parse(row["collaboration_json"]!)
+                    if value["sharedDocumentId"] is NSNull { continue }
+                    value["recoveryRequired"] = true
+                    let json = try RepositoryValidation.json(value)
+                    _ = try CollaborationValidation.parse(json)
+                    try run("UPDATE \(table) SET collaboration_json=?,collaboration_byte_length=?,collaboration_crc32=? WHERE id=?",
+                            [json, String(json.utf8.count), Integrity.crc32(json), row["id"]!])
+                }
+            }
+        }
     }
 }

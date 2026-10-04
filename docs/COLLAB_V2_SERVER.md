@@ -1,5 +1,8 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第9回-1で未適用foundationを改訂。writer連番・ACK境界によるreceipt/sent回収、knownSnapshotId、checkpoint DTO/権限、80/32/16MiB配分を追加した。
+下記は第3回時点の記録。永続receipt4,096件の累積停止、cursor=0ごとのsnapshot、旧容量表は [現行9a契約](COLLABORATION_HISTORY.md) に置き換わる。本番適用前の実DB使用量確認が必要。
+
 第7回で未適用 foundation を改訂。[現行 API・変更点・適用前の設定](COLLABORATION_LIFECYCLE.md)を参照。
 list_members/access_status、private 試行制限・終了記録、同世代の招待応答再取得、Auth 削除前の
 招待失効 trigger を追加した。旧11 migration・旧関数は変更なし。以下は第3回時点の記録。
