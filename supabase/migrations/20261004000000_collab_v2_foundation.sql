@@ -785,7 +785,7 @@ begin
   v_used := v_used + (v_count + 1) * c.row_overhead + v_new_bytes;
   v_mandatory := p_reason in ('before-restore','before-generation');
   begin
-    if v_count >= c.document_checkpoint_count + case when v_mandatory then 2 else 0 end or v_used > case when v_mandatory then c.mandatory_checkpoint_bytes else c.document_checkpoint_bytes end then
+    if v_count >= c.document_checkpoint_count + (case when v_mandatory then 2 else 0 end) or v_used > (case when v_mandatory then c.mandatory_checkpoint_bytes else c.document_checkpoint_bytes end) then
       raise exception using errcode='54000',message='CHECKPOINT_QUOTA_EXCEEDED';
     end if;
     perform collab_v2_private.require_budget(v_new_bytes + c.row_overhead,'checkpoint');
