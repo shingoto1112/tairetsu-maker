@@ -75,6 +75,7 @@ export function appendCollaboration(input: CollaborationData, updates: Collabora
 /** Rebase local state onto durable state, including its compaction and ACK tombstones. */
 export function mergeCollaboration(saved: CollaborationData, local: CollaborationData, base: Project): { project: Project; collaboration: CollaborationData } {
   if (saved.generation !== local.generation || saved.documentSchema !== local.documentSchema ||
+    saved.transportBinding?.accountId !== local.transportBinding?.accountId || saved.transportBinding?.membershipGeneration !== local.transportBinding?.membershipGeneration ||
     (local.sharedDocumentId !== null && saved.sharedDocumentId !== null && saved.sharedDocumentId !== local.sharedDocumentId)) throw new RepositoryError("CONFLICT");
   const doc = hydrateCollaboration(saved), mine = hydrateCollaboration(local);
   try {

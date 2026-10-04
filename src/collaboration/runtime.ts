@@ -6,3 +6,6 @@ export type { MemberMove, PositionTarget, HistoryResult } from "./commands";
 export { encodeStateAsUpdate, encodeStateVector, applyUpdate } from "yjs";
 export { REMOTE_ORIGIN } from "./model";
 export { createCollaborationData, hydrateCollaboration, encodeUpdate, decodeUpdate, compactCollaboration } from "./persistence";
+export { CollaborationProvider } from "./provider";
+export { createSupabaseTransport } from "./supabaseTransport";
+export type { ProviderState, ProviderError } from "./provider";

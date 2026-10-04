@@ -18,7 +18,14 @@ export const base64Bytes = (value: unknown, max: number): number => {
 export function validateCollaboration(value: unknown): CollaborationData {
   if (!object(value)) throw new RepositoryError("INVALID_ARGUMENT");
   if (value.schemaVersion !== 1 || value.documentSchema !== 1) throw new RepositoryError("UNSUPPORTED_SCHEMA");
-  if (!keys(value, ["schemaVersion", "sharedDocumentId", "documentSchema", "generation", "base", "journal", "outbox", "serverCursor"]) ||
+  const names = ["schemaVersion", "sharedDocumentId", "documentSchema", "generation", "base", "journal", "outbox", "serverCursor"];
+  if ("transportBinding" in value) {
+    names.push("transportBinding");
+    const binding = value.transportBinding;
+    const uuid = (v: unknown) => typeof v === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
+    if (!object(binding) || !keys(binding, ["accountId", "membershipGeneration"]) || !uuid(binding.accountId) || !uuid(binding.membershipGeneration)) throw new RepositoryError("INVALID_ARGUMENT");
+  }
+  if (!keys(value, names) ||
     (value.sharedDocumentId !== null && !isValidStorageId(value.sharedDocumentId)) || !isRevision(value.generation) || value.generation === "0" ||
     !isRevision(value.serverCursor) || !Array.isArray(value.journal) || !Array.isArray(value.outbox)) throw new RepositoryError("INVALID_ARGUMENT");
   if (value.journal.length > COLLABORATION_LIMITS.entries || value.outbox.length > COLLABORATION_LIMITS.entries) throw new RepositoryError("QUOTA_EXCEEDED");
@@ -45,6 +52,8 @@ export function validateCollaboration(value: unknown): CollaborationData {
 export function validateCollaborationTransition(current: CollaborationData | null | undefined, next: CollaborationData | null | undefined) {
   if (!current) return;
   if (!next || current.generation !== next.generation || current.documentSchema !== next.documentSchema ||
+    ((current.transportBinding || current.sharedDocumentId !== null) &&
+      (current.transportBinding?.accountId !== next.transportBinding?.accountId || current.transportBinding?.membershipGeneration !== next.transportBinding?.membershipGeneration)) ||
     (current.sharedDocumentId !== null && current.sharedDocumentId !== next.sharedDocumentId) ||
     compareRevisions(next.serverCursor, current.serverCursor) < 0) throw new RepositoryError("CONFLICT");
   const entries = new Map(next.outbox.map(e => [e.updateId, e]));

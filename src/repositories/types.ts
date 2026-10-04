@@ -78,6 +78,8 @@ export type CollaborationData = {
   journal: CollaborationUpdate[];
   outbox: CollaborationOutbox[];
   serverCursor: Revision;
+  /** Immutable sender identity for this attachment. Missing old records are held. */
+  transportBinding?: { accountId: string; membershipGeneration: string };
 };
 
 export type CommitRequest = {

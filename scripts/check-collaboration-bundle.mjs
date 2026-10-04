@@ -38,6 +38,8 @@ try {
   assert(main, "Missing production app entry");
   assert(!staticGraph(main, normalChunks).some(chunk => Object.keys(chunk.modules).some(id => isYjs(id) || isCollaboration(id))),
     "Collaboration must be absent from the normal production startup graph");
+  assert(!normalChunks.some(chunk => Object.keys(chunk.modules).some(id => /\/testing\/providerHarness\./.test(id.replaceAll("\\", "/")))),
+    "Development provider harness must be absent from every production chunk");
   const mainSize = await measure(normalDir, main);
 
   const probe = path.join(temporary, "probe.js");
@@ -58,8 +60,13 @@ try {
     isYjs(id) || (isCollaboration(id) && !id.replaceAll("\\", "/").endsWith("/index.ts"))));
   assert(additional.some(chunk => Object.keys(chunk.modules).some(isYjs)), "Probe must actually bundle Yjs");
   assert(!additional.some(chunk => startup.includes(chunk)), "Runtime leaked into startup graph");
+  assert(additional.some(chunk => Object.keys(chunk.modules).some(id => /\/collaboration\/provider\.ts$/.test(id.replaceAll("\\", "/")))), "Probe must actually include provider");
+  assert(!probeChunks.some(chunk => Object.keys(chunk.modules).some(id => /\/testing\//.test(id.replaceAll("\\", "/")))), "Test helpers leaked into provider bundle");
   const additionalSizes = await Promise.all(additional.map(chunk => measure(probeDir, chunk)));
+  const dependencies = [...new Set(additional.flatMap(chunk => staticGraph(chunk, probeChunks)))].filter(chunk => !additional.includes(chunk));
+  const dependencySizes = await Promise.all(dependencies.map(chunk => measure(probeDir, chunk)));
   console.log("COLLAB_BUNDLE", JSON.stringify({ normalMain: mainSize, additionalChunks: additionalSizes,
+    dynamicDependencyChunks: dependencySizes,
     normalStartupHasCollaboration: false, probeLoadsYjsDynamically: true }));
 } finally {
   const relative = path.relative(root, temporary);

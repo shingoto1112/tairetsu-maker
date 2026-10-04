@@ -1,5 +1,8 @@
 # 新しい共同編集 第2回：端末保存契約
 
+第4回のprovider・任意transportBinding・snapshot受信保存APIの追加契約は
+[COLLABORATION_PROVIDER.md](COLLABORATION_PROVIDER.md) を参照。第5回Swiftへ合わせて引き継ぐ。
+
 編集担当はCodexのみ。App/UI・Swift・クラウド・Project型・ZIP形式は変更しない。
 第1回と同じ座標だけの縦切りであり、全ProjectのCRDT化は第6回、UI接続は第8回。
 

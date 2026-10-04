@@ -57,14 +57,30 @@ export class SaveCoordinator {
   async getSendableOutbox(id = this.active?.id): Promise<CollaborationOutbox[]> {
     return (await import("../collaboration/saveSession")).readSendableOutbox(this.repository, id);
   }
+  /** Provider reads durable cursor/identity, never a dirty in-memory attachment. */
+  async getCommittedCollaboration(): Promise<CollaborationData | null> {
+    const s = this.active;
+    if (!s) return null;
+    const record = await this.repository.get(s.id);
+    if (this.active !== s) throw new RepositoryError("BUSY");
+    return detached(record?.collaboration ?? null);
+  }
   /** Persist the ID returned by server create before exposing the initial outbox. */
-  async bindSharedDocument(sharedDocumentId: string): Promise<boolean> {
+  async bindSharedDocument(sharedDocumentId: string, binding?: CollaborationData["transportBinding"]): Promise<boolean> {
     const s = this.active;
     if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
     const runtime = await import("../collaboration/saveSession");
     if (this.active !== s) throw new RepositoryError("BUSY");
-    runtime.bindSharedSession(s, sharedDocumentId); this.emit(s);
+    runtime.bindSharedSession(s, sharedDocumentId, binding); this.emit(s);
     return this.flush();
+  }
+  /** Full server state can exceed the per-update journal limit; merge into base. */
+  async receiveCollaborationSnapshot(bytes: string, updates: CollaborationUpdate[], cursor: Revision): Promise<boolean> {
+    const s = this.active;
+    if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
+    const fixed = detached(updates), runtime = await import("../collaboration/saveSession");
+    if (this.active !== s) throw new RepositoryError("BUSY");
+    runtime.receiveSharedSnapshot(s, bytes, fixed, cursor); this.emit(s); return this.flush();
   }
   /** Call after durable server ACK; ACK state itself must commit before disappearing. */
   async markOutboxSent(updateIds: string[]): Promise<boolean> {
