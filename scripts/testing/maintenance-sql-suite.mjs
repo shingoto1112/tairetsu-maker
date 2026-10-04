@@ -123,7 +123,8 @@ export async function runMaintenanceSqlSuite(h) {
   assert.equal(scalar(`compaction_required from public.collab_v2_documents where id=${q(tid)}`),'f');
   assert.equal(json(tappend(64)).maintenance.compactionRequired,true);
   run(`update public.collab_v2_documents set compaction_required=false where id=${q(tid)};
-    update collab_v2_private.budget_settings set compact_updates=1000,compact_bytes=256;`);
+    update collab_v2_private.budget_settings set compact_updates=1000,compact_bytes=128;`);
+  // 65 updates x 2 bytes = 130 bytes: below the 1000-update count, above the 128-byte limit.
   assert.equal(json(tappend(65)).maintenance.compactionRequired,true,'byte threshold is independent of the count threshold');
   run(`update collab_v2_private.budget_settings set compact_updates=64,compact_bytes=262144`);
   asUser(31,`select public.collab_v2_delete_document(${q(tid)})`);
