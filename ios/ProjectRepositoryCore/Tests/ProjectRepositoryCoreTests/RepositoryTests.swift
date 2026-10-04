@@ -28,7 +28,9 @@ final class RepositoryTests: XCTestCase {
         return try Data(contentsOf: root.appendingPathComponent("src/repositories/contract/fixtures/\(name).json"))
     }
     private func fixtureObject(_ name: String) throws -> [String: Any] {
-        try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(name)) as? [String: Any])
+        let data = try fixture(name)
+        let value = try JSONSerialization.jsonObject(with: data)
+        return try XCTUnwrap(value as? [String: Any])
     }
     private func execute(_ r: ProjectRepository, _ method: String, _ input: [String: Any] = [:]) throws -> Any {
         let text = try r.execute(method, requestJSON: RepositoryValidation.json(input))
@@ -64,7 +66,8 @@ final class RepositoryTests: XCTestCase {
         }
     }
     private func verifySummary(_ r: ProjectRepository, _ s: [String: Any]) throws {
-        let obj = try XCTUnwrap(record(r, s["id"] as! String) as? [String: Any])
+        let value = try record(r, s["id"] as! String)
+        let obj = try XCTUnwrap(value as? [String: Any])
         let p = obj["project"] as! [String: Any]
         var expected: [String: Any] = ["id":p["id"]!,"title":p["title"]!,"mode":p["mode"] ?? "stage",
             "createdAt":p["createdAt"] ?? p["updatedAt"]!,"updatedAt":p["updatedAt"]!,
@@ -167,7 +170,8 @@ final class RepositoryTests: XCTestCase {
     }
 
     func testUnmodifiedIDFixture() throws {
-        let text = try XCTUnwrap(String(data: fixture("ids"), encoding: .utf8))
+        let data = try fixture("ids")
+        let text = try XCTUnwrap(String(data: data, encoding: .utf8))
         // Foundation cannot decode lone UTF-16 surrogates into Swift Strings.
         // Read each original object separately so those two negative cases do not
         // prevent all the remaining fixture cases from being decoded.

@@ -79,8 +79,9 @@ Realtime受領をACKとみなさない。再起動をまたぐUndo履歴は保�
 ただし共有CRDTの不透明な履歴にはまだ端末音源参照契約がないため、currentかpreviousに共有付属データがあれば
 GC全体を延期する。内容をID文字列の推測で解析して誤削除しない。第6/8回でdescriptorと端末対応表の参照範囲を定義する。
 
-Swiftはまだschema1。TS native adapterは共有commit/readをUNSUPPORTED_SCHEMAで拒否する。
-第5回はschema2のJSON bridge・SQLite原子保存・前世代・復旧DBバックアップの検査を同時に更新する。
+第5回でSwift schema2のJSON bridge・SQLite原子保存・前世代・復旧DBバックアップの検査を実装した。
+詳細とmacOSの検証引継ぎは [COLLABORATION_NATIVE_STORAGE.md](COLLABORATION_NATIVE_STORAGE.md) を参照。
+旧schema1 pluginへの共有commitは引き続きUNSUPPORTED_SCHEMAで拒否する。
 復旧DBバックアップは通常ZIPとは異なりCRDT/outboxを保持し、復旧後の資格確認前に送らない。
 任意SQL/任意パスを受理するAPIは追加しない。旧3種fixtureは変更せず、
 `contract/fixtures/collaboration.json`をSwift schema2用の追加fixtureとする。

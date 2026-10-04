@@ -4,6 +4,7 @@ import { serializeProject, validateProjectStructure } from "../project/codec";
 import type { Project } from "../types";
 import { validateMaintenance, type MaintenanceRepository, type MaintenanceAction, type GCResult } from "../storage/maintenanceTypes";
 import { assertStorageId } from "./ids";
+import { validateCollaboration, validateCollaborationTransition } from "./collaborationData";
 import { validateMigrationEntry, type MigrationEntry, type MigrationRepository } from "./migrationTypes";
 import {
   assertRevision, isRevision, RepositoryError, REPOSITORY_ERROR_MESSAGES,
@@ -16,7 +17,7 @@ type JsonCall = (input: { json: string }) => Promise<{ json: string }>;
 export type NativeRepositoryPlugin = Record<
   "initialize" | "listSummaries" | "readProject" | "commitProject" | "touchOpened" |
   "renameProject" | "removeProject" | "createRecoveryBackup" | "readMigration" | "writeMigration", JsonCall> & Partial<Record<
-  "restoreRecoveryBackup" | "readPrevious" | "readMaintenance" | "updateMaintenance" | "collectUnusedAudio" | "legacyCleanupStatus" | "cleanupLegacyData", JsonCall>>;
+  "readCommitReceipt" | "restoreRecoveryBackup" | "readPrevious" | "readMaintenance" | "updateMaintenance" | "collectUnusedAudio" | "legacyCleanupStatus" | "cleanupLegacyData", JsonCall>>;
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const validSummary = (s: unknown): s is ProjectSummary => object(s) &&
   typeof s.id === "string" && typeof s.title === "string" && ["stage", "parade"].includes(s.mode as string) &&
@@ -53,6 +54,7 @@ let defaultPlugin: NativeRepositoryPlugin | undefined;
 const nativeRepositoryPlugin = () => (defaultPlugin ??= registerPlugin<NativeRepositoryPlugin>("ProjectRepository"));
 
 export class NativeSqliteProjectRepository implements ProjectRepository, MigrationRepository, MaintenanceRepository {
+  private nativeSchema: number | undefined;
   constructor(private readonly plugin: NativeRepositoryPlugin = nativeRepositoryPlugin()) {}
 
   private async invoke(method: keyof NativeRepositoryPlugin, input: unknown = {}, operationId?: string): Promise<unknown> {
@@ -69,7 +71,8 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
   }
   async initialize(): Promise<RepositoryHealth> {
     const v = await this.invoke("initialize");
-    if (!object(v) || v.status !== "ready" || v.schemaVersion !== 1 || !Array.isArray(v.errors) || v.errors.length) throw new RepositoryError("CORRUPT");
+    if (!object(v) || v.status !== "ready" || ![1, 2].includes(v.schemaVersion as number) || !Array.isArray(v.errors) || v.errors.length) throw new RepositoryError("CORRUPT");
+    this.nativeSchema = v.schemaVersion as number;
     return v as RepositoryHealth;
   }
   async list(query: ListQuery): Promise<Page<ProjectSummary>> {
@@ -87,10 +90,10 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
     const v = await this.invoke("readProject", { id });
     return this.decodeRecord(v, id);
   }
-  private decodeRecord(v: unknown, id: string): ProjectRecord | null {
+  private async decodeRecord(v: unknown, id: string): Promise<ProjectRecord | null> {
     if (v === null) return null;
     if (!object(v) || typeof v.json !== "string" || !isRevision(v.repositoryRevision) || !isRevision(v.localRevision) || v.sync !== null) throw new RepositoryError("CORRUPT");
-    if (v.collaboration != null) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+    if (v.collaboration != null) throw new RepositoryError("CORRUPT"); // Only the string bridge is supported.
     let project: Project;
     try {
       const checked = validateProjectStructure(JSON.parse(v.json));
@@ -100,18 +103,47 @@ export class NativeSqliteProjectRepository implements ProjectRepository, Migrati
       // Repository bodies are already normalized. Do not generate IDs/defaults at read time.
       project = checked.value;
     } catch { throw new RepositoryError("CORRUPT"); }
-    return { project, repositoryRevision: v.repositoryRevision, localRevision: v.localRevision, sync: null };
+    let collaboration;
+    if (v.collaborationJSON != null) {
+      try {
+        if (typeof v.collaborationJSON !== "string") throw new Error();
+        collaboration = validateCollaboration(JSON.parse(v.collaborationJSON));
+        (await import("../collaboration/persistence")).validateCollaborationProject(collaboration, project);
+      } catch (e) { if (e instanceof RepositoryError && e.code === "UNSUPPORTED_SCHEMA") throw e; throw new RepositoryError("CORRUPT"); }
+    }
+    return { project, repositoryRevision: v.repositoryRevision, localRevision: v.localRevision, sync: null,
+      ...(collaboration ? { collaboration } : {}) };
   }
   async commit(input: CommitRequest): Promise<CommitReceipt> {
-    // Swift schema 1 cannot persist the round-2 attachment. Never silently drop it.
-    if (input.collaboration != null) throw new RepositoryError("UNSUPPORTED_SCHEMA", input.operationId);
     const encoded = serializeProject(input.project);
     if (!encoded.ok) throw encoded.error;
     const id = assertStorageId(input.project.id), op = assertStorageId(input.operationId);
     assertRevision(input.localRevision);
     if (input.expectedRepositoryRevision !== null) assertRevision(input.expectedRepositoryRevision);
-    const v = await this.invoke("commitProject", { id, json: encoded.value, localRevision: input.localRevision,
-      expectedRepositoryRevision: input.expectedRepositoryRevision, operationId: op }, op);
+    // Capture before any await, including lazy Yjs import and schema discovery.
+    const request = { id, json: encoded.value, localRevision: input.localRevision,
+      expectedRepositoryRevision: input.expectedRepositoryRevision, operationId: op,
+      collaborationJSON: input.collaboration == null ? null : JSON.stringify(validateCollaboration(input.collaboration)) };
+    if (request.collaborationJSON !== null) {
+      if (this.nativeSchema === undefined) await this.initialize();
+      if (this.nativeSchema !== 2) throw new RepositoryError("UNSUPPORTED_SCHEMA", op);
+      const data = validateCollaboration(JSON.parse(request.collaborationJSON));
+      const runtime = await import("../collaboration/persistence");
+      runtime.validateCollaborationProject(data, JSON.parse(request.json) as Project);
+      // Response-loss retries must return their receipt even if the current body
+      // was later deleted, corrupted or advanced to another document state.
+      const replay = await this.invoke("readCommitReceipt", request, op);
+      if (replay !== null) return receipt(replay, op, id);
+      const saved = await this.get(id);
+      // Native rechecks CAS under BEGIN IMMEDIATE. If another writer wins after
+      // this read, commit rejects and the coordinator hydrates/merges/retries.
+      // A replay may legitimately refer to an older revision; native owns receipts.
+      if (saved?.repositoryRevision === request.expectedRepositoryRevision) {
+        validateCollaborationTransition(saved.collaboration, data);
+        if (saved.collaboration) runtime.assertCollaborationExtends(saved.collaboration, data);
+      }
+    }
+    const v = await this.invoke("commitProject", request, op);
     return receipt(v, op, id);
   }
   async touchOpened(id: string, at: string): Promise<ProjectSummary> {

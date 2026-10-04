@@ -91,7 +91,7 @@ public final class ProjectRepository {
             // Detect NOTADB before any schema creation; never delete/recreate on failure.
             if existed { try physicalCheck() }
             let initialVersion = try rows("PRAGMA user_version").first?["user_version"]
-            if let version = initialVersion.flatMap(Int.init), version > 1 { throw RepositoryError("UNSUPPORTED_SCHEMA") }
+            if let version = initialVersion.flatMap(Int.init), version > 2 { throw RepositoryError("UNSUPPORTED_SCHEMA") }
             if existed && initialVersion == "0" {
                 // A crash between sqlite3_open and the schema COMMIT can leave
                 // zero bytes or a valid empty SQLite file. Only these are new.
@@ -106,14 +106,20 @@ public final class ProjectRepository {
             try run("PRAGMA temp_store=MEMORY")
             guard try rows("PRAGMA synchronous").first?["synchronous"] == "3",
                   try rows("PRAGMA foreign_keys").first?["foreign_keys"] == "1" else { throw RepositoryError("IO_ERROR") }
-            // Migration dispatcher: only 0 -> 1 exists. Later versions must add explicit migrations.
+            // DDL and version publication share one rollback-journal transaction.
             try transaction {
                 let version = try rows("PRAGMA user_version").first?["user_version"]
                 if version == "0" {
                     try createSchema()
                     try run("PRAGMA application_id=\(Self.applicationID)")
                     try run("PRAGMA user_version=1")
-                } else if version != "1" { throw RepositoryError("UNSUPPORTED_SCHEMA") }
+                } else if version != "1" && version != "2" { throw RepositoryError("UNSUPPORTED_SCHEMA") }
+                if version == "0" || version == "1" {
+                    try schemaCheck(version: "1")
+                    try migrateCollaborationSchema()
+                    try run("PRAGMA user_version=2")
+                    try fault?("migrationAfterVersion")
+                }
                 try schemaCheck()
             }
             try protect(url)
@@ -154,16 +160,32 @@ public final class ProjectRepository {
         try run("CREATE TABLE migration_items (source_key TEXT PRIMARY KEY, state_json TEXT NOT NULL)")
     }
 
-    private func schemaCheck() throws {
+    private func migrateCollaborationSchema() throws {
+        // Additive: payloads, receipts and ledger remain byte-for-byte. Body
+        // schema_version=1 describes Project encoding, not the database schema.
+        for table in ["project_bodies", "project_previous"] {
+            try run("ALTER TABLE \(table) ADD COLUMN collaboration_json TEXT")
+            try run("ALTER TABLE \(table) ADD COLUMN collaboration_byte_length INTEGER")
+            try run("ALTER TABLE \(table) ADD COLUMN collaboration_crc32 TEXT")
+            try fault?("migrationAfter-\(table)")
+        }
+    }
+
+    private func schemaCheck(version: String = "2") throws {
         guard try rows("PRAGMA application_id").first?["application_id"] == Self.applicationID,
-              try rows("PRAGMA user_version").first?["user_version"] == "1" else { throw RepositoryError("CORRUPT") }
-        let expected: [String: Set<String>] = [
+              try rows("PRAGMA user_version").first?["user_version"] == version else { throw RepositoryError("CORRUPT") }
+        var expected: [String: Set<String>] = [
             "project_bodies": ["id","json","byte_length","crc32","repository_revision","local_revision","schema_version","sync_json"],
             "project_previous": ["id","json","byte_length","crc32","repository_revision","local_revision","schema_version","sync_json"],
             "project_summaries": ["id","json","byte_length","crc32","sort_time","mode"],
             "operation_receipts": ["operation_id","signature","kind","result_json","byte_length","crc32"],
             "personal_sync": ["id","state_json"], "migration_items": ["source_key","state_json"]
         ]
+        if version == "2" {
+            for table in ["project_bodies", "project_previous"] {
+                expected[table]?.formUnion(["collaboration_json", "collaboration_byte_length", "collaboration_crc32"])
+            }
+        }
         for (table, columns) in expected {
             guard Set(try rows("PRAGMA table_info(\(table))").compactMap { $0["name"] }) == columns else { throw RepositoryError("CORRUPT") }
         }
@@ -229,6 +251,7 @@ public final class ProjectRepository {
     }
 
     private func project(_ json: String, code: String = "CORRUPT") throws -> [String: Any] {
+        guard json.utf8.count <= CollaborationValidation.jsonBytes else { throw RepositoryError(code == "CORRUPT" ? code : "QUOTA_EXCEEDED") }
         let p = try RepositoryValidation.object(json, code: code)
         _ = try RepositoryValidation.id(p["id"])
         guard ProjectValidation.valid(p), p["title"] is String, p["updatedAt"] is String, p["version"] is NSNumber,
@@ -275,6 +298,12 @@ public final class ProjectRepository {
                   r["schema_version"] == "1", r["sync_json"] == nil else { throw RepositoryError("CORRUPT") }
             _ = try RepositoryValidation.revision(r["repository_revision"])
             _ = try RepositoryValidation.revision(r["local_revision"])
+            if let collaboration = r["collaboration_json"] {
+                guard r["collaboration_byte_length"] == String(collaboration.utf8.count),
+                      r["collaboration_crc32"] == Integrity.crc32(collaboration) else { throw RepositoryError("CORRUPT") }
+                _ = try CollaborationValidation.parse(collaboration)
+            } else if r["collaboration_byte_length"] != nil || r["collaboration_crc32"] != nil { throw RepositoryError("CORRUPT") }
+        } catch let error as RepositoryError where error.code == "UNSUPPORTED_SCHEMA" { throw error
         } catch { throw RepositoryError("CORRUPT") }
     }
     private func decodedSummary(_ r: [String: String]) throws -> [String: Any] {
@@ -290,7 +319,7 @@ public final class ProjectRepository {
         do { _ = try RepositoryValidation.revision(s["repositoryRevision"]) } catch { throw RepositoryError("CORRUPT") }
         return s
     }
-    private func save(_ id: String, json: String, revision: String, local: String) throws -> [String: Any] {
+    private func save(_ id: String, json: String, revision: String, local: String, collaboration: String? = nil) throws -> [String: Any] {
         let s = try summary(project(json), revision: revision)
         // Keep the previous valid record before overwriting; cascading removal deletes it.
         try run("INSERT OR REPLACE INTO project_previous SELECT * FROM project_bodies WHERE id=?", [id])
@@ -302,6 +331,9 @@ public final class ProjectRepository {
             repository_revision=excluded.repository_revision,local_revision=excluded.local_revision
             """, [id,json,String(json.utf8.count),Integrity.crc32(json),revision,local])
         try fault?("afterBody")
+        try run("UPDATE project_bodies SET collaboration_json=?,collaboration_byte_length=?,collaboration_crc32=? WHERE id=?",
+                [collaboration, collaboration.map { String($0.utf8.count) }, collaboration.map { Integrity.crc32($0) }, id])
+        try fault?("afterCollaboration")
         let sj = try RepositoryValidation.json(s)
         try run("""
             INSERT INTO project_summaries(id,json,byte_length,crc32,sort_time,mode) VALUES(?,?,?,?,?,?)
@@ -313,13 +345,15 @@ public final class ProjectRepository {
     }
 
     /// Synchronous core entry point. Plugin calls it off the main thread.
-    /// Request/response each contain ONE JSON string, no base64 or JS body object.
+    /// One JSON string; collaborationJSON contains opaque canonical base64.
+    public static let maxRequestBytes = 128 * 1024 * 1024
     public func execute(_ method: String, requestJSON: String = "{}") throws -> String {
         try queue.sync {
             StorageMaintenance.lock.lock(); defer { StorageMaintenance.lock.unlock() }
             do {
+                guard requestJSON.utf8.count <= Self.maxRequestBytes else { throw RepositoryError("QUOTA_EXCEEDED") }
                 let input = try RepositoryValidation.object(requestJSON)
-                guard ["initialize","listSummaries","readProject","commitProject","touchOpened","renameProject","removeProject","createRecoveryBackup","readMigration","writeMigration", "restoreRecoveryBackup", "readPrevious", "readMaintenance", "updateMaintenance", "collectUnusedAudio", "legacyCleanupStatus", "cleanupLegacyData"].contains(method) else {
+                guard ["initialize","listSummaries","readProject","commitProject","readCommitReceipt","touchOpened","renameProject","removeProject","createRecoveryBackup","readMigration","writeMigration", "restoreRecoveryBackup", "readPrevious", "readMaintenance", "updateMaintenance", "collectUnusedAudio", "legacyCleanupStatus", "cleanupLegacyData"].contains(method) else {
                     throw RepositoryError("INVALID_ARGUMENT")
                 }
                 if method == "restoreRecoveryBackup" {
@@ -328,13 +362,13 @@ public final class ProjectRepository {
                 }
                 try connection()
                 switch method {
-                case "initialize": return try RepositoryValidation.json(["status":"ready", "schemaVersion":1, "errors":[String]()] as [String: Any])
+                case "initialize": return try RepositoryValidation.json(["status":"ready", "schemaVersion":2, "errors":[String]()] as [String: Any])
                 case "readProject", "readPrevious":
                     let id = try RepositoryValidation.id(input["id"])
                     let stored = method == "readPrevious" ? try rows("SELECT * FROM project_previous WHERE id=?", [id]).first : try body(id)
                     guard let r = stored else { return "null" }
                     try validateBody(r)
-                    return try RepositoryValidation.json(["json":r["json"]!,"repositoryRevision":r["repository_revision"]!,"localRevision":r["local_revision"]!,"sync":NSNull()] as [String: Any])
+                    return try RepositoryValidation.json(["json":r["json"]!,"repositoryRevision":r["repository_revision"]!,"localRevision":r["local_revision"]!,"sync":NSNull(),"collaborationJSON":r["collaboration_json"].map { $0 as Any } ?? NSNull()] as [String: Any])
                 case "listSummaries": return try list(input)
                 case "touchOpened": return try touch(input)
                 case "createRecoveryBackup":
@@ -350,6 +384,7 @@ public final class ProjectRepository {
                     let id = try RepositoryValidation.id(input["id"])
                     return try migrationEntry(id).map { try RepositoryValidation.json($0) } ?? "null"
                 case "writeMigration": return try writeMigration(input)
+                case "readCommitReceipt": return try mutate("commitProject", input, receiptOnly: true)
                 default:
                     let result = try mutate(method, input)
                     if method == "commitProject" {
@@ -534,10 +569,10 @@ public final class ProjectRepository {
             guard let r = try body(id) else { throw RepositoryError("NOT_FOUND") }
             var p = try project(r["json"]!)
             p["lastOpenedAt"] = at
-            return try RepositoryValidation.json(save(id, json: RepositoryValidation.json(p), revision: RepositoryValidation.increment(r["repository_revision"]!), local: r["local_revision"]!))
+            return try RepositoryValidation.json(save(id, json: RepositoryValidation.json(p), revision: RepositoryValidation.increment(r["repository_revision"]!), local: r["local_revision"]!, collaboration: r["collaboration_json"]))
         }
     }
-    private func mutate(_ method: String, _ input: [String: Any]) throws -> String {
+    private func mutate(_ method: String, _ input: [String: Any], receiptOnly: Bool = false) throws -> String {
         let id = try RepositoryValidation.id(input["id"])
         let operation = try RepositoryValidation.id(input["operationId"])
         let expected: String?
@@ -545,6 +580,7 @@ public final class ProjectRepository {
         else { expected = try RepositoryValidation.revision(input["expectedRepositoryRevision"]) }
         let local = method == "removeProject" ? nil : try RepositoryValidation.revision(input["localRevision"])
         if method == "commitProject" {
+            if let text = input["json"] as? String, text.utf8.count > CollaborationValidation.jsonBytes { throw RepositoryError("QUOTA_EXCEEDED") }
             guard let json = input["json"] as? String,
                   let pid = try project(json)["id"] as? String, pid.utf8.elementsEqual(id.utf8) else { throw RepositoryError("CORRUPT") }
         }
@@ -552,13 +588,28 @@ public final class ProjectRepository {
             guard let title = input["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   let at = input["updatedAt"] as? String, RepositoryValidation.time(at) != nil else { throw RepositoryError("INVALID_ARGUMENT") }
         }
-        let signature = Integrity.sha256(try RepositoryValidation.json(["kind":method,"request":input] as [String: Any]))
+        let collaboration: String?
+        if method == "commitProject" {
+            if input["collaborationJSON"] == nil || input["collaborationJSON"] is NSNull { collaboration = nil }
+            else {
+                guard let text = input["collaborationJSON"] as? String else { throw RepositoryError("INVALID_ARGUMENT") }
+                _ = try CollaborationValidation.parse(text)
+                collaboration = text
+            }
+            guard input["sync"] == nil || input["sync"] is NSNull else { throw RepositoryError("INVALID_ARGUMENT") }
+        } else { collaboration = nil }
+        var digestInput = input
+        if let collaboration = collaboration {
+            digestInput["collaborationJSON"] = try CollaborationValidation.parse(collaboration)
+        } else { digestInput.removeValue(forKey: "collaborationJSON") }
+        let signature = Integrity.sha256(try RepositoryValidation.json(["kind":method,"request":digestInput] as [String: Any]))
         return try transaction {
             if let previous = try rows("SELECT * FROM operation_receipts WHERE operation_id=?", [operation]).first {
                 let result = try validateReceipt(previous)
                 guard previous["signature"] == signature, previous["kind"] == method else { throw RepositoryError("CONFLICT") }
                 return result
             }
+            if receiptOnly { return "null" }
             let current = try body(id)
             if let expect = expected {
                 guard let r = current else { throw RepositoryError("NOT_FOUND") }
@@ -577,8 +628,10 @@ public final class ProjectRepository {
                     p["title"] = input["title"]; p["updatedAt"] = input["updatedAt"]
                     json = try RepositoryValidation.json(p)
                 }
+                let nextCollaboration = method == "commitProject" ? collaboration : current?["collaboration_json"]
+                try CollaborationValidation.transition(current?["collaboration_json"], nextCollaboration)
                 let revision = current.map { RepositoryValidation.increment($0["repository_revision"]!) } ?? "1"
-                let s = try save(id, json: json, revision: revision, local: local!)
+                let s = try save(id, json: json, revision: revision, local: local!, collaboration: nextCollaboration)
                 result = try RepositoryValidation.json(["id":id,"operationId":operation,"repositoryRevision":revision,"localRevision":local!,"summary":s] as [String: Any])
             }
             try run("INSERT INTO operation_receipts VALUES(?,?,?,?,?,?)", [operation,signature,method,result,String(result.utf8.count),Integrity.crc32(result)])
@@ -693,6 +746,19 @@ public final class ProjectRepository {
         try source.validateAll()
         return try source.audioReferences()
     }
+    private func hasCollaboration() throws -> Bool {
+        for table in ["project_bodies", "project_previous"] {
+            if try !rows("SELECT id FROM \(table) WHERE collaboration_json IS NOT NULL LIMIT 1").isEmpty { return true }
+        }
+        return false
+    }
+    private func backupHasCollaboration() throws -> Bool {
+        guard FileManager.default.fileExists(atPath: recoveryURL.path) else { return false }
+        let source = ProjectRepository(databaseURL: recoveryURL, protectedDataAvailable: protectedDataAvailable)
+        try source.connection(); defer { source.closeConnection() }
+        try source.validateAll()
+        return try source.hasCollaboration()
+    }
     private func audioStore() throws -> AudioStore {
         guard let documents = documentsURL ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { throw RepositoryError("ACCESS_DENIED") }
         return AudioStore(directory: url.deletingLastPathComponent().appendingPathComponent("audio", isDirectory: true),
@@ -706,6 +772,7 @@ public final class ProjectRepository {
               !(state["completedAt"] is NSNull), (RepositoryValidation.integer(state["gcAt"]).map { Double(now - $0) >= day } ?? true) else { return try RepositoryValidation.json(skip) }
         Self.lifecycle.lock(); let exclusive = Self.openCounts[url.path, default: 0] == 1; Self.lifecycle.unlock()
         guard exclusive else { return try RepositoryValidation.json(skip) }
+        guard try !hasCollaboration(), try !backupHasCollaboration() else { return try RepositoryValidation.json(skip) }
         var references = try audioReferences()
         for (id, meta) in try backupReferences() { references[id] = meta }
         let stats = try audioStore().collectUnused(referenced: Set(references.keys))
@@ -736,6 +803,9 @@ public final class ProjectRepository {
             if !FileManager.default.fileExists(atPath: recoveryURL.path) { reasons.append("検証済みの端末バックアップがありません。") }
             else { _ = try backupReferences() }
         } catch { reasons.append("端末バックアップの検証に失敗しました。") }
+        do {
+            if try hasCollaboration() || backupHasCollaboration() { reasons.append("共同編集の履歴があるため、古い音源の整理を保留しています。") }
+        } catch { reasons.append("共同編集の保護対象を検証できません。") }
         return Array(Set(reasons)).sorted()
     }
     private func cleanupLegacyData() throws {

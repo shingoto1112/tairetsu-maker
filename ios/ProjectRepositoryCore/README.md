@@ -1,4 +1,9 @@
-# iPad ProjectRepository（第3〜4回）
+# iPad ProjectRepository（共同編集 第5回対応）
+
+共同編集 schema 2 の移行・JSON/base64 bridge・復旧・GC・macOS の検証引継ぎは
+[COLLABORATION_NATIVE_STORAGE.md](../../docs/COLLABORATION_NATIVE_STORAGE.md) を参照。
+XCTest は43件（既存32件＋共同編集11件）。以下の従来仕様に加え、付属 JSON を
+Project/summary/receipt と同じ transaction で保存する。
 
 App の保存先はまだ切り替えていません。既存の localStorage、IndexedDB、ZIP、音源、クラウドは変更していません。
 
@@ -6,8 +11,8 @@ App の保存先はまだ切り替えていません。既存の localStorage、
 
 - Foundation と OS 内蔵 SQLite3 のみ。Swift tools 5.7 / Swift 5 言語モード、iOS 15 / macOS 12 以上。外部 package はゼロ。
 - App.xcodeproj から `../ProjectRepositoryCore` を local Swift package としてリンク。App に core のソースを重複登録する方法と比べ、App と XCTest が同じモジュールを使え、コンパイル設定の分岐を避けられる。CapApp-SPM は変更しない。
-- `ProjectRepositoryPlugin` は既存 BridgeViewController で instance 登録。任意 SQL、任意パス、復元 API は JS に公開しない。
-- bridge の10操作は `{ json: string }` を受け、`{ json: string }` を返す。第4回で `readMigration` / `writeMigration` を追加。commit の本文は request 内の `json` 文字列、read の本文は response 内の `json` 文字列。巨大な Project オブジェクトや base64 を渡さない。エラーは固定メッセージと code / retryable。
+- `ProjectRepositoryPlugin` は既存 BridgeViewController で instance 登録。任意 SQL・任意パスは公開せず、復元も固定対象だけ。
+- bridge の18固定操作は `{ json: string }` を受け、`{ json: string }` を返す。本文は内部の `json` 文字列、共同編集は `collaborationJSON` 文字列（binary は canonical base64）。エラーは固定メッセージと code / retryable。
 - native adapter は将来の runtime 選択地点から動的 import する。現在 App / barrel への import はない。
 
 ## 保存・整合性
@@ -18,7 +23,7 @@ iOS のディレクトリ・DB・backup・復元候補には `completeUntilFirst
 
 各 instance は単一接続と専用直列 queue。`journal_mode=DELETE`、`synchronous=EXTRA`、`foreign_keys=ON`、`fullfsync=ON`、`trusted_schema=OFF`、`temp_store=MEMORY`、busy timeout 3秒。主要 PRAGMA は読み返す。別 instance の write も `BEGIN IMMEDIATE` の SQLite ロックで直列化する。
 
-`application_id=0x544d5632`、SQLite `user_version=1`。v2 ディレクトリ名、Project.version、ZIP formatVersion、Repository schema は別物。0→1 の schema 作成のみ実装し、既存ファイルの version 0 や NOTADB を空 DB に作り直さない。将来 version は `UNSUPPORTED_SCHEMA`。
+`application_id=0x544d5632`、SQLite `user_version=2`。v2 ディレクトリ名、Project.version、ZIP formatVersion、body の schema_version=1、Repository schema は別物。0→1→2 の作成と1→2の列追加移行を原子的に実行し、不明な既存 version 0 や NOTADB を空 DB に作り直さない。将来 version は `UNSUPPORTED_SCHEMA`。
 
 テーブルは bodies / summaries / previous / operation_receipts と、未使用の最小枠 personal_sync / migration_items。同期更新の API や sync_operations は今回は作らない。revision は桁数制限のない10進 TEXT、比較と increment は文字列で行う。
 

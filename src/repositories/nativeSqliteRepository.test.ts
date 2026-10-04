@@ -7,7 +7,7 @@ import { REPOSITORY_ERROR_MESSAGES, RepositoryError, type CommitRequest, type Re
 import projects from "./contract/fixtures/commitProjects.json";
 import type { Project } from "../types";
 import { runMigrationContract } from "../storage/testing/migrationContract";
-import { initialCollaboration } from "./contract/runCollaborationContract";
+import { initialCollaboration, runCollaborationContract } from "./contract/runCollaborationContract";
 
 // Adapter mapping oracle only. SQLite persistence is tested by the actual Swift core.
 const fakePlugin = (): NativeRepositoryPlugin => {
@@ -20,17 +20,20 @@ const fakePlugin = (): NativeRepositoryPlugin => {
     }
   };
   return {
-    initialize: wrap(() => memory.initialize()), listSummaries: wrap(input => memory.list(input as { limit: number })),
+    initialize: wrap(async () => ({ ...await memory.initialize(), schemaVersion: 2 })), listSummaries: wrap(input => memory.list(input as { limit: number })),
     readProject: wrap(async input => {
       const r = await memory.get(input.id as string);
-      return r ? { json: JSON.stringify(r.project), repositoryRevision: r.repositoryRevision, localRevision: r.localRevision, sync: r.sync } : null;
+      return r ? { json: JSON.stringify(r.project), repositoryRevision: r.repositoryRevision, localRevision: r.localRevision, sync: r.sync,
+        collaborationJSON: r.collaboration ? JSON.stringify(r.collaboration) : null } : null;
     }),
     commitProject: wrap(input => memory.commit({ project: JSON.parse(input.json as string),
+      collaboration: input.collaborationJSON ? JSON.parse(input.collaborationJSON as string) : null,
       operationId: input.operationId, localRevision: input.localRevision, expectedRepositoryRevision: input.expectedRepositoryRevision } as CommitRequest)),
     touchOpened: wrap(input => memory.touchOpened(input.id as string, input.openedAt as string)),
     renameProject: wrap(input => memory.rename(input as RenameRequest)),
     removeProject: wrap(async input => { await memory.remove(input as RemoveRequest); return null; }),
     createRecoveryBackup: wrap(async () => ({ created: true })),
+    readCommitReceipt: wrap(async () => null),
     readMigration: wrap(input => memory.readMigration(input.id as string)),
     writeMigration: wrap(input => memory.writeMigration(input.entry as MigrationEntry, input.expectedState as MigrationEntry["state"] | null)),
   };
@@ -38,9 +41,47 @@ const fakePlugin = (): NativeRepositoryPlugin => {
 describe("native SQLite adapter mapping", () => {
   it("rejects shared attachments before the schema-1 bridge can silently drop them", async () => {
     const plugin = fakePlugin(), call = vi.spyOn(plugin, "commitProject");
+    plugin.initialize = async () => ({ json: '{"status":"ready","schemaVersion":1,"errors":[]}' });
     await expect(new NativeSqliteProjectRepository(plugin).commit({ project: projects.stage as Project, collaboration: initialCollaboration(),
       localRevision: "1", expectedRepositoryRevision: null, operationId: "shared-create" })).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA" });
     expect(call).not.toHaveBeenCalled();
+  });
+  it("passes the collaboration contract through the string/base64 bridge", async () => {
+    const plugin = fakePlugin();
+    expect(await runCollaborationContract(() => new NativeSqliteProjectRepository(plugin),
+      () => new NativeSqliteProjectRepository(plugin), () => new NativeSqliteProjectRepository(plugin))).toEqual({ scenarios: 15 });
+  });
+  it("captures shared data before awaiting and rejects corrupt attachment reads", async () => {
+    const plugin = fakePlugin(), repository = new NativeSqliteProjectRepository(plugin);
+    const data = initialCollaboration();
+    const pending = repository.commit({ project: projects.stage as Project, collaboration: data,
+      localRevision: "1", expectedRepositoryRevision: null, operationId: "capture-shared" });
+    data.base = "AAAA";
+    await pending;
+    expect((await repository.get("project_a"))?.collaboration?.base).not.toBe("AAAA");
+    const read = plugin.readProject;
+    plugin.readProject = async input => {
+      const raw = JSON.parse((await read(input)).json);
+      raw.collaborationJSON = JSON.stringify({ ...initialCollaboration(), base: "AAAA" });
+      return { json: JSON.stringify(raw) };
+    };
+    await expect(repository.get("project_a")).rejects.toMatchObject({ code: "CORRUPT" });
+    plugin.readProject = async input => {
+      const raw = JSON.parse((await read(input)).json);
+      raw.collaborationJSON = JSON.stringify({ ...initialCollaboration(), documentSchema: 2 });
+      return { json: JSON.stringify(raw) };
+    };
+    await expect(repository.get("project_a")).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA" });
+  });
+  it("returns the durable shared receipt before reading a subsequently corrupt body", async () => {
+    const plugin = fakePlugin(), repository = new NativeSqliteProjectRepository(plugin);
+    const request: CommitRequest = { project: projects.stage as Project, collaboration: initialCollaboration(),
+      localRevision: "1", expectedRepositoryRevision: null, operationId: "lost-response" };
+    const saved = await repository.commit(request);
+    plugin.readProject = vi.fn(async () => { throw { code: "CORRUPT" }; });
+    plugin.readCommitReceipt = async () => ({ json: JSON.stringify(saved) });
+    expect(await repository.commit(request)).toEqual(saved);
+    expect(plugin.readProject).not.toHaveBeenCalled();
   });
   it("uses fixed recovery/maintenance operations with no paths and validates responses", async () => {
     const plugin = fakePlugin();

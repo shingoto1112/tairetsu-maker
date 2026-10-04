@@ -91,7 +91,7 @@ get_updatesはmembershipGenerationを返さない。新SQLを変更する代わ�
 同じuserの再参加では受信は可能、古いoutboxはheld。アカウント不一致/資格情報なしは受信も保留。
 topic/ACL変更だけでは参加世代を付け替えず、現在世代一致なら通常送信を継続する。
 
-Swiftは引き続き共有schema未対応。第5回は任意bindingのUUID検証・保存・前世代・CRC/digest・復旧backupを
+第5回でSwift schema2を実装した（[保存・復旧とmacOS引継ぎ](COLLABORATION_NATIVE_STORAGE.md)）。任意bindingのUUID検証・保存・前世代・CRC/digest・復旧backupを
 base/journal/outbox/cursorと同じSQLite COMMITで扱う。binding不変条件と旧field省略fixtureも検証する。
 ID/bytes、sent tombstone、cursor単調増加、同じY.Docへのsnapshot統合を保つ。
 bridgeはHTTP/任意SQL/任意パスを受理せず、端末commit成功以降だけ送信可能にする。

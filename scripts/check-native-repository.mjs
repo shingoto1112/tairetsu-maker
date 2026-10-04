@@ -43,8 +43,11 @@ for (const value of [collaborationFixture.initial.base, ...collaborationFixture.
   assert.equal(Buffer.from(value, "base64").toString("base64"), value, "canonical shared base64 fixture");
 }
 const adapter = readFileSync("src/repositories/nativeSqliteRepository.ts", "utf8");
-assert.ok(adapter.includes('if (input.collaboration != null) throw new RepositoryError("UNSUPPORTED_SCHEMA"'), "Swift schema 1 must reject shared commits");
-console.log("Round-2 shared JSON fixture: canonical base64; requires future Swift schema 2; schema-1 adapter refuses shared commits: PASS");
+assert.ok(adapter.includes('this.nativeSchema !== 2'), "old native bridges must still reject shared commits");
+assert.ok(adapter.includes('runtime.validateCollaborationProject'));
+assert.ok(adapter.includes('runtime.assertCollaborationExtends'));
+assert.ok(adapter.includes('collaborationJSON:'));
+console.log("Shared JSON fixture / schema-2 string bridge / TS Yjs validation / old bridge guard: PASS");
 const workflow = readFileSync(".github/workflows/ios-build.yml", "utf8");
 assert.ok(!/^\s+push:/m.test(workflow), "push trigger must be absent");
 assert.ok(workflow.includes("swift test --package-path ios/ProjectRepositoryCore"));
@@ -59,7 +62,7 @@ console.log(`Native preflight: ${definitions.length} unique/resolved pbxproj UUI
 const core = readFileSync("ios/ProjectRepositoryCore/Sources/ProjectRepositoryCore/ProjectRepository.swift", "utf8");
 const bridge = readFileSync("ios/App/App/ProjectRepositoryPlugin.swift", "utf8");
 const methods = [...bridge.matchAll(/CAPPluginMethod\(name: "([^"]+)"/g)].map(m => m[1]);
-assert.equal(methods.length, 17);
+assert.equal(methods.length, 18);
 assert.equal(new Set(methods).size, methods.length);
 for (const method of methods) {
   assert.ok(bridge.includes(`@objc func ${method}(`), `bridge method ${method}`);
@@ -86,7 +89,11 @@ const appStorage = readFileSync("src/storage/appRepository.ts", "utf8");
 assert.ok(appStorage.includes('import("./bootstrap")'));
 assert.ok(appStorage.includes("includeDrafts: false"));
 assert.ok(readFileSync("src/App.tsx", "utf8").includes("await prepareAppRepository("));
-console.log("Migration/maintenance preflight: 17 fixed bridge methods; reserved SQLite schema 1; empty DB guard; connected lazy bootstrap; read-only readers: PASS");
+assert.ok(core.includes('PRAGMA user_version=2'));
+assert.ok(core.includes('try schemaCheck(version: "1")'));
+assert.ok(core.includes('try fault?("migrationAfterVersion")'));
+assert.ok(bridge.includes('ProjectRepository.maxRequestBytes'));
+console.log("Migration/maintenance preflight: 18 fixed bridge methods including receipt-only replay; additive schema 2; empty DB guard; connected lazy bootstrap; read-only readers: PASS");
 const database = new DatabaseSync(":memory:");
 try {
   database.exec("PRAGMA foreign_keys=ON");
@@ -97,6 +104,26 @@ try {
   }
   database.exec(blocks[1]);
   for (const match of core.matchAll(/try run\("(CREATE (?:INDEX|TABLE).*?)"\)/g)) database.exec(match[1]);
+  const legacyTables = database.prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name").all();
+  const alter = [...core.matchAll(/try run\("(ALTER TABLE .*?)"\)/g)].map(m => m[1]);
+  assert.equal(alter.length, 3);
+  for (const failure of [0, 1, 2]) {
+    database.exec("BEGIN IMMEDIATE");
+    for (const table of ["project_bodies", "project_previous"]) {
+      for (const sql of alter) database.exec(sql.replaceAll("\\(table)", table));
+      if (failure === (table === "project_bodies" ? 0 : 1)) break;
+    }
+    if (failure === 2) database.exec("PRAGMA user_version=2");
+    database.exec("ROLLBACK");
+    assert.deepEqual(database.prepare("SELECT name,sql FROM sqlite_master WHERE type='table' ORDER BY name").all(), legacyTables);
+    assert.equal(database.prepare("PRAGMA user_version").get().user_version, 0);
+  }
+  database.exec("BEGIN IMMEDIATE");
+  for (const table of ["project_bodies", "project_previous"]) {
+    for (const sql of alter) database.exec(sql.replaceAll("\\(table)", table));
+  }
+  database.exec("PRAGMA user_version=2; COMMIT");
+  assert.equal(database.prepare("PRAGMA user_version").get().user_version, 2);
   for (const sql of blocks.slice(2)) {
     if (sql.startsWith("CREATE ")) database.exec(sql); else database.prepare(sql);
   }
@@ -109,7 +136,7 @@ try {
   assert.equal(0x544d5632, 1414354482);
   const ids = JSON.parse(readFileSync("src/repositories/contract/fixtures/ids.json", "utf8"));
   assert.equal(ids.length, 24);
-  console.log(`SQLite SQL preflight: 6 tables / 2 explicit indexes; mutation blocks + ${count} literal statements prepare; 24 ID fixture entries: PASS (not a Swift runtime test)`);
+  console.log(`SQLite SQL preflight: schema 2 additive DDL rollback/retry; 6 tables / 2 explicit indexes; mutation blocks + ${count} literal statements prepare; 24 ID fixture entries: PASS (not a Swift runtime test)`);
 } finally { database.close(); }
 
 // Audio lives in the same local package; its bridge extends the already-linked picker.
@@ -142,3 +169,14 @@ for (const method of ["testFixedBridgeRecoveryClosesRestoresReopensAndRejectsOth
 assert.ok(audioCore.includes('Self.activeUploadNames'));
 assert.ok(audioCore.includes('record.pending == true'));
 console.log("Audio/maintenance preflight: 6 picker methods / Foundation-only audio core / 15 XCTest cases / pending and active upload protection / fixed restore+reopen: PASS (not Swift compilation)");
+
+const validation = readFileSync("ios/ProjectRepositoryCore/Sources/ProjectRepositoryCore/CollaborationValidation.swift", "utf8");
+assert.deepEqual([...validation.matchAll(/^import (\w+)$/gm)].map(m => m[1]), ["Foundation"]);
+for (const fragment of ['24 * 1024 * 1024', '8 * 1024 * 1024', '256 * 1024', '16 * 1024 * 1024', '4096', 'membershipGeneration', 'data.base64EncodedString() == text']) assert.ok(validation.includes(fragment));
+for (const phase of ['afterPrevious', 'afterBody', 'afterCollaboration', 'afterSummary', 'afterReceipt']) assert.ok(core.includes(`try fault?("${phase}")`));
+assert.ok(core.includes('try !hasCollaboration(), try !backupHasCollaboration()'));
+const sharedTests = readFileSync("ios/ProjectRepositoryCore/Tests/ProjectRepositoryCoreTests/CollaborationTests.swift", "utf8");
+assert.equal((sharedTests.match(/func test\w+\(/g) ?? []).length, 11);
+assert.ok(sharedTests.includes('fixture("commitProjects")'));
+assert.ok(!/XCTUnwrap\((?:self\.)?(?:call|read|request|fixture|execute)\(/.test(sharedTests));
+console.log("Collaboration native preflight: matching limits / immutable UUID binding / CRC+digest / 11 additional XCTest cases (43 total): PASS (macOS compilation still required)");

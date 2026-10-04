@@ -12,6 +12,7 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "listSummaries", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readProject", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "commitProject", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readCommitReceipt", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "touchOpened", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "renameProject", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeProject", returnType: CAPPluginReturnPromise),
@@ -32,6 +33,10 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
     private func perform(_ method: String, _ call: CAPPluginCall) {
         guard let json = call.getString("json") else {
             call.reject("保存処理に必要な情報が不正です。", "INVALID_ARGUMENT", nil, ["retryable": false])
+            return
+        }
+        guard json.utf8.count <= ProjectRepository.maxRequestBytes else {
+            call.reject("保存データが容量上限を超えています。", "QUOTA_EXCEEDED", nil, ["retryable": false])
             return
         }
         worker.async { [self] in
@@ -58,6 +63,7 @@ final class ProjectRepositoryPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func listSummaries(_ call: CAPPluginCall) { perform("listSummaries", call) }
     @objc func readProject(_ call: CAPPluginCall) { perform("readProject", call) }
     @objc func commitProject(_ call: CAPPluginCall) { perform("commitProject", call) }
+    @objc func readCommitReceipt(_ call: CAPPluginCall) { perform("readCommitReceipt", call) }
     @objc func touchOpened(_ call: CAPPluginCall) { perform("touchOpened", call) }
     @objc func renameProject(_ call: CAPPluginCall) { perform("renameProject", call) }
     @objc func removeProject(_ call: CAPPluginCall) { perform("removeProject", call) }
