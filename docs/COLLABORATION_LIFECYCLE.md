@@ -1,5 +1,11 @@
 # 共同編集 第7回 — 共有開始・招待・参加・終了 API
 
+第11回-1（11a）は [旧クラウド停止と救出契約](LEGACY_CLOUD_SHUTDOWN.md)を追加。
+共通削除RPCは停止せず、NULL確認・不存在/匿名拒否・空search_path・EXECUTE限定を修正する。
+旧文書の削除/共同ownerへの移譲とV2 Auth cascadeを保つ。旧方式の操作を全面停止し、
+期限付きexportは現在ownerの実在恒久アカウントだけに限定する。11bの画面は未変更。
+V2 OFF時の「端末だけ（ローカル専用）」と明示取り込み台帳は11bで接続する。
+
 第10回-transportのユーザー決定（2026-10-05）：ドラッグ中の位置とプレゼンスは派生private topicへの直接Broadcastとする。解除/退出/文書削除/参加世代変更のcommitで、サーバーは旧確定通知topicへ内容なしの `acl_changed` を送る。残るクライアントは同期的に一時送信と表示を止め、最新資格・topicへ移る。外されたクライアントは送受信を停止し一時表示を消す。通知が届かなければ既存30秒poll・前面復帰で回復する。
 
 直接Broadcastの認可は接続/JWT更新時にキャッシュされる。解除commit後、残るメンバーが新topicへ移るまで旧接続の外された人にpreview（開始座標、対象ID、累積差分、シーン/選択）が届く可能性をユーザーが受け入れた。数秒〜で、休止/通知欠落等もあるため厳密な30秒保証はない。悪意の残留socketの強制停止をクライアントの協力に依存して保証しない。topic回転は旧topicへの新規参加/発行認可を拒否する。確定した編集は従来どおりサーバー側で現在資格と世代を厳密に検査する。
@@ -153,9 +159,10 @@ CAPTCHA/Auth の IP 制限の代わりにはならない。
 本番操作は今回ゼロ。以下は Claude の Linux 確認後、UI と公開前の対策が揃ってから行う。
 
 1. 使用する Supabase プロジェクトを確認し、現在の DB と設定をバックアップする。
-2. **旧 API の匿名拒否・停止を先に確認する**。匿名 guest も authenticated ロールなので、
-   旧 RPC（SECURITY DEFINER を含む）・旧 Storage の権限がそのままでは安全に公開できない。
-   今回の制約で旧 src/cloud は変更していない。旧 API 停止は第11回の作業であり、公開ゲスト招待の前提。
+2. **11aの旧API停止手順を完了する**。匿名guestもauthenticatedロールなので、
+   [実DBの棚卸し・backup・停止migration・旧通信確認](LEGACY_CLOUD_SHUTDOWN.md)を公開前に行う。
+   V2 foundation→停止migrationの順を推奨する。RealtimeのAllow public access OFFもこの段階で行う。
+   旧src/cloudと画面の切替は11b。未保存編集を持つ旧利用者はいない前提で停止時間を設ける。
 3. [サーバー手順](COLLAB_V2_SERVER.md)に従い、改訂 foundation 全体を1 transaction で適用。
    private schema は Data API の公開対象に加えない。エラーなら途中から再実行しない。
 4. 同手順で collab-ingest と依存ファイルを配備する。service key を端末・Git・URL に置かない。
@@ -192,7 +199,8 @@ CAPTCHA/Auth の IP 制限の代わりにはならない。
 - 独立コピー/再参加の旧 outbox を自動採用しない。編集を拾うには明示的 import を新 session に行う。
 - CAPTCHA/旧 API 匿名拒否が済むまで public guest 招待を公開しない。Web のリリース案内は今回は不要。
 - Linux：既存 workflow の Postgres17 実ロール、attempt counter commit/race、招待 receipt replay、
-  Auth FK/trigger、終了理由、再適用、旧関数/ACL 不変、Deno check を Claude が確認。
+  Auth FK/trigger、終了理由、再適用、foundation単体の旧関数/ACL非干渉、
+  11a停止による期待権限変更・救出snapshot・共通削除、Deno checkをClaudeが確認。
 - macOS：Swift と共通 fixture は変更なし。新 alias レコードの native commit/再読込、
   Keychain の登録・参加・再起動・削除、実 iPad origin/foreground を確認する。
 - 実 Supabase の JWT/Realtime 認可 cache・Edge 制限・RLS はモックでは保証しない。

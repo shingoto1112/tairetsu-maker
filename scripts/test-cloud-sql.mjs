@@ -365,6 +365,8 @@ asUser(27,`select public.collab_v2_confirm_writer(${q(lid)},1,${q(lm)},${q(lw)},
 deny(null,legacyAppend(),'WRITER_REQUIRED','service_role');
 assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(lid)}`),'1');
 
+// Foundation noninterference remains a distinct oracle. 11a's intentional
+// shutdown ACL changes are checked separately by test-legacy-cloud-sql.mjs.
 // Rerun with populated v2 tables. Confirm content, state, legacy function ACLs.
 await runMaintenanceSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});
 await runRestoreSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});

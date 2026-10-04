@@ -1,5 +1,12 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第11回-1（11a）：[旧クラウド停止・期限付き救出の手順](LEGACY_CLOUD_SHUTDOWN.md)を追加。
+旧11 SQLとV2 foundationは変更せず、独立した停止migrationを追加した。
+本番推奨順はV2 foundation→停止migration→Realtimeの **Allow public access OFF**→
+旧通信停止の確認→匿名ログイン有効化。既定export期限は初回本番停止適用から30日（サーバー設定）。
+共通 `delete_current_account` のNULL確認・実在恒久アカウント検査・search_path・EXECUTEも修正する。
+画面は11bで更新するため、11aだけで新版クライアントの切替が完了したとは扱わない。
+
 第10回-transport（2026-10-05）は、ユーザー選択の直接 private Broadcast を追加。未適用foundationの改訂で、適用済み本番への操作は行っていない。詳細は [配信・認可・予算・実測手順](COLLABORATION_PRESENCE.md) を参照。
 
 本番適用時の追加操作：
@@ -106,9 +113,9 @@ from pg_policies where schemaname = 'realtime' and tablename = 'messages';
 Realtime関数や既存ポリシーの権限差異があれば、SQLを勝手に書き換えて適用せずClaudeに相談してください。
 
 **公開前の必須確認**：匿名ログインしたゲストも `authenticated` ロールです。
-新SQLは旧APIを変更しないため、匿名ログイン有効化で旧APIにも到達できる可能性があります。
-旧クラウドが未使用でもAPI自体は残っています。公開ゲスト招待を始める前に、旧APIの停止／匿名拒否を別作業で確認してください。
-保管ブランチの旧認可hotfixは今回に混ぜていません。既存削除RPCのNULL確認の旧不備も今回の変更対象外です。
+V2 foundation単体は旧APIを変更しません。公開ゲスト招待の前に、11aの停止migrationと
+[棚卸し・停止確認](LEGACY_CLOUD_SHUTDOWN.md)を必ず完了してください。
+保管ブランチの旧認可hotfixは混ぜていません。共通削除RPCの旧不備は11aで修正します。
 
 ## 利用者が SQL Editor に貼る手順
 
@@ -117,6 +124,10 @@ Realtime関数や既存ポリシーの権限差異があれば、SQLを勝手に
 3. `begin;` から `commit;` までを一度にRunします。途中だけを選択実行しません。
 4. エラーならtransactionは確定しません。エラー全文をClaudeへ渡し、続きだけを適用しません。
 5. 新migrationは再適用可能です。今回は既存11本を貼り直しません。CLIの `db push` も不要です。
+
+この後、11aの停止migrationを同様に全体実行します。エラーは全体rollbackです。
+再適用でexport期限は延長されません。停止対象・実DB追加object・Storageの扱い・
+Realtime設定と旧版の閉鎖は [切替手順](LEGACY_CLOUD_SHUTDOWN.md)に従ってください。
 
 ## Edge Function の配備（CLIを推奨）
 

@@ -12,6 +12,9 @@ on:
       - 'scripts/testing/maintenance-sql-suite.mjs'
       - 'scripts/testing/restore-sql-suite.mjs'
       - 'scripts/testing/ephemeral-sql-suite.mjs'
+      - 'scripts/testing/legacy-shutdown-sql-suite.mjs'
+      - 'scripts/test-legacy-cloud-sql.mjs'
+      - 'scripts/legacy-export-contract.test.ts'
       - 'scripts/test-collaboration-lifecycle-browser.mjs'
       - 'scripts/check-collab-v2.mjs'
       - 'scripts/test-cloud-sql.mjs'
@@ -55,8 +58,10 @@ jobs:
         run: node scripts/check-collab-v2.mjs
       - name: PostgreSQL migrations, authorization, races, rerun
         run: node scripts/test-cloud-sql.mjs
+      - name: Legacy shutdown orders, export snapshot contract, account cascade
+        run: node scripts/test-legacy-cloud-sql.mjs
       - name: Pure validation and ingest contract
-        run: npm test -- src/collaboration/serverValidation.test.ts src/collaboration/maintenance.test.ts src/collaboration/restore.test.ts src/collaboration/supabaseEphemeralTransport.test.ts src/collaboration/supabaseEphemeralSdk.test.ts src/collaboration/ephemeralSession.test.ts supabase/functions/collab-ingest/handler.test.ts scripts/collaboration-lifecycle.test.ts scripts/collaboration-provider.test.ts --maxWorkers 2 --silent=false
+        run: npm test -- src/collaboration/serverValidation.test.ts src/collaboration/maintenance.test.ts src/collaboration/restore.test.ts src/collaboration/supabaseEphemeralTransport.test.ts src/collaboration/supabaseEphemeralSdk.test.ts src/collaboration/ephemeralSession.test.ts supabase/functions/collab-ingest/handler.test.ts scripts/collaboration-lifecycle.test.ts scripts/collaboration-provider.test.ts scripts/legacy-export-contract.test.ts --maxWorkers 2 --silent=false
       - name: Application typecheck
         run: npm run typecheck
       - name: Synthetic load estimate (no hosted-performance claim)

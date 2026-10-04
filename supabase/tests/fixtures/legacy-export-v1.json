@@ -1,0 +1,22 @@
+{
+  "contractVersion": 1,
+  "project": {
+    "id": "11000000-0000-0000-0000-000000000001",
+    "title": "Synthetic legacy fixture",
+    "mode": "stage",
+    "schema_version": 1,
+    "legacy_project_id": "synthetic-local-source",
+    "created_at": "2026-10-05T00:00:00+00:00",
+    "updated_at": "2026-10-05T00:00:00+00:00"
+  },
+  "resources": [
+    { "resource_key": "audio", "data": { "audio": null }, "version": 1, "schema_version": 1 },
+    { "resource_key": "members", "data": { "members": [], "memberGroups": [] }, "version": 1, "schema_version": 1 },
+    { "resource_key": "objects", "data": { "stageObjects": [], "objectGroups": [] }, "version": 1, "schema_version": 1 },
+    { "resource_key": "sceneOrder", "data": { "frames": [{ "id": "scene-fixture", "label": "Scene fixture", "timeSec": 0 }] }, "version": 1, "schema_version": 1 },
+    { "resource_key": "settings", "data": { "stage": { "widthMeters": 10, "depthMeters": 8, "gridSizeMeters": 1, "showGrid": true, "showCenterLine": true, "audienceSide": "bottom", "showStageLabels": true } }, "version": 1, "schema_version": 1 }
+  ],
+  "scenes": [
+    { "scene_id": "scene-fixture", "data": { "positions": {}, "objectStates": {}, "notes": "Synthetic notes" }, "version": 1, "schema_version": 1 }
+  ]
+}

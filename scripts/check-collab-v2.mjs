@@ -5,11 +5,12 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const migration = 'supabase/migrations/20261004000000_collab_v2_foundation.sql';
+export const shutdownMigration = 'supabase/migrations/20261005000000_legacy_cloud_shutdown.sql';
 export function preflight() {
   process.chdir(fileURLToPath(new URL('../', import.meta.url)));
   const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort();
   assert.equal(files.filter(f => f < '20261004').length, 11, 'Exactly 11 legacy migrations');
-  assert.equal(files.filter(f => f >= '20261004').length, 1, 'Exactly one v2 migration');
+  assert.deepEqual(files.filter(f => f >= '20261004'), [migration.split('/').at(-1), shutdownMigration.split('/').at(-1)], 'v2 foundation plus independent 11a shutdown');
   const sql = readFileSync(migration, 'utf8');
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');
@@ -45,6 +46,29 @@ export function preflight() {
   assert.match(sql, /before delete on auth.users/);
   assert.match(sql, /before delete on public.collab_v2_documents/);
   assert(!/alter table realtime.messages/i.test(sql), 'Supabase owns realtime.messages; only add policies');
+  const shutdown = readFileSync(shutdownMigration, 'utf8');
+  assert.match(shutdown, /^begin;$/m); assert.match(shutdown, /commit;\s*$/);
+  assert(!/^\s*(?:drop table|drop schema|truncate|drop [^;]* cascade)\b/im.test(shutdown), 'Shutdown retains data');
+  assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?(?:public\.collab_v2_|collab_v2_private\.)/i.test(shutdown), 'No v2 mutations');
+  assert(!/alter table realtime.messages/i.test(shutdown));
+  assert.match(shutdown, /as restrictive for all to anon, authenticated/);
+  assert.match(shutdown, /p_confirmation is distinct from 'DELETE_MY_ACCOUNT'/);
+  assert.match(shutdown, /on conflict do nothing/);
+  // Every legacy table/function signature must be explicitly inventoried. This
+  // check is independent of the migration's catalog loops and catches omissions.
+  for (const f of files.filter(f => f < '20261004')) {
+    const old = readFileSync(`supabase/migrations/${f}`, 'utf8');
+    for (const [,name] of old.matchAll(/create table if not exists public\.(\w+)/gi)) assert(shutdown.includes(`'${name}'`),name);
+    for (const [,name,args] of old.matchAll(/create (?:or replace )?function public\.(\w+)\(([^)]*)\)/gi)) {
+      if (name === 'delete_current_account') continue;
+      const types = args.split(',').map(a=>a.trim()).filter(Boolean).map(a=>a.split(/\s+/)[1]);
+      assert(shutdown.includes(`'public.${name}(${types.join(',')})'`),`Missing legacy signature ${name}`);
+    }
+  }
+  for (const [,condition] of shutdown.matchAll(/\b(?:if|elsif|while)\s+([^;]*?)\bthen/gi)) {
+    assert(!/(?<!\()\bcase\b/i.test(condition), 'Parenthesized CASE required');
+  }
+  for (const [,body] of shutdown.matchAll(/create or replace function ([\s\S]*?)end \$\$;/g)) assert.match(body,/security (invoker|definer) set search_path = ''/i);
   const config = JSON.parse(readFileSync('supabase/functions/collab-ingest/deno.json', 'utf8'));
   assert.equal(config.imports.yjs, 'npm:yjs@13.6.33');
   const pkg = JSON.parse(readFileSync('package.json', 'utf8')); assert.equal(pkg.dependencies.yjs, '13.6.33');
@@ -56,7 +80,10 @@ export function preflight() {
     const edge = readFileSync(`supabase/functions/collab-ingest/${file}`, 'utf8');
     assert(!/console\.(?:log|error)\(/.test(edge), 'Never log tokens, document data or credentials');
   }
-  for (const path of [migration, '.github/workflows/supabase-sql-test.yml', 'supabase/tests/bootstrap.sql',
+  for (const path of [migration, shutdownMigration, 'scripts/testing/legacy-shutdown-sql-suite.mjs',
+    'scripts/test-legacy-cloud-sql.mjs', 'scripts/legacy-export-contract.test.ts',
+    'supabase/tests/fixtures/legacy-export-v1.json', 'docs/LEGACY_CLOUD_SHUTDOWN.md',
+    '.github/workflows/supabase-sql-test.yml', 'supabase/tests/bootstrap.sql',
     'scripts/check-collab-v2.mjs', 'scripts/test-cloud-sql.mjs', 'scripts/bench-collab-v2.mjs',
     'src/collaboration/serverValidation.ts', 'src/collaboration/serverValidation.test.ts',
     'supabase/functions/collab-ingest/index.ts', 'supabase/functions/collab-ingest/handler.ts',
