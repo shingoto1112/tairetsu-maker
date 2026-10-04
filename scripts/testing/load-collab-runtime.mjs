@@ -16,6 +16,9 @@ export async function loadCollabRuntime() {
     let source = ts.transpileModule(await readFile(input, "utf8"), {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
     }).outputText;
+    // Vite replaces import.meta.env at build time; plain Node has none. Use a
+    // production-like, flag-OFF environment for this offline CLI.
+    source = source.replaceAll("import.meta.env", '({ DEV: false, PROD: true, MODE: "test" })');
     for (const match of [...source.matchAll(/(?:from\s*|import\s*\(\s*)(["'])(\.[^"']+)\1/g)]) {
       const specifier = match[2], dependency = path.resolve(path.dirname(input), specifier.endsWith(".ts") ? specifier : `${specifier}.ts`);
       const target = await compile(dependency);
