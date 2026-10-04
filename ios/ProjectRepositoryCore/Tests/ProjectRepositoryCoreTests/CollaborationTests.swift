@@ -6,12 +6,18 @@ import XCTest
 final class CollaborationTests: XCTestCase {
     func testLightweightSharingSummaryOnlyChangesOnSave() throws {
         let f = try fixture(), r = repo()
-        _ = try call(r, "commitProject", request(f, "initial", 1))
-        var req = try request(f, "committed", 2)
-        var data = try XCTUnwrap(f["committed"] as? [String: Any])
         let account = "11111111-1111-4111-8111-111111111111"
         let membership = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-        data["transportBinding"] = ["accountId": account, "membershipGeneration": membership] as [String: Any]
+        let binding = ["accountId": account, "membershipGeneration": membership] as [String: Any]
+        // A shared attachment's binding is immutable, so bind from the first save.
+        var first = try request(f, "initial", 1)
+        var initialData = try XCTUnwrap(f["initial"] as? [String: Any])
+        initialData["transportBinding"] = binding
+        first["collaborationJSON"] = try RepositoryValidation.json(initialData)
+        _ = try call(r, "commitProject", first)
+        var req = try request(f, "committed", 2)
+        var data = try XCTUnwrap(f["committed"] as? [String: Any])
+        data["transportBinding"] = binding
         req["collaborationJSON"] = try RepositoryValidation.json(data)
         _ = try call(r, "commitProject", req)
         let pageValue = try call(r, "listSummaries", ["limit": 100] as [String: Any])
@@ -67,9 +73,9 @@ final class CollaborationTests: XCTestCase {
         let escaped = summaryJSON.replacingOccurrences(of: "'", with: "''")
         r.close()
         try sql("UPDATE project_summaries SET json='\(escaped)',byte_length=\(summaryJSON.utf8.count),crc32='\(Integrity.crc32(summaryJSON))' WHERE id='project_a'")
-        // Structurally invalid, but valid CRC/length: parsing one attachment
-        // must be deferred to that document's read, never repository open.
-        try sql("UPDATE project_bodies SET collaboration_json='{}',collaboration_byte_length=2,collaboration_crc32='\(Integrity.crc32("{}"))' WHERE id='project_a'")
+        // Bit rot: the attachment no longer matches its CRC. Verifying one
+        // attachment must be deferred to that document's read, never repository open.
+        try sql("UPDATE project_bodies SET collaboration_crc32='\(Integrity.crc32("{}"))' WHERE id='project_a'")
         let summariesBefore = try values("SELECT json FROM project_summaries ORDER BY id")
         let receiptsBefore = try values("SELECT signature FROM operation_receipts ORDER BY operation_id")
         let bodiesBefore = try values("SELECT json||repository_revision||local_revision||collaboration_json FROM project_bodies WHERE id='project_a'")
