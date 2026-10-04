@@ -9,8 +9,10 @@ import {
 } from "../utils/interpolation";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import { formatTime } from "../utils/time";
+import type { ReactNode } from 'react';
 
 type SceneThumbnailRailProps = {
+  presenceForScene?: (sceneId: string) => ReactNode;
   project: Project;
   selectedFrameId: string | null;
   collapsed: boolean;
@@ -60,6 +62,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
   onToggleCollapsed,
   onSelectFrame,
   onFrameContextMenu,
+  presenceForScene,
 }: SceneThumbnailRailProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const sortedFrames = useMemo(() => sortFrames(project.frames), [project.frames]);
@@ -154,6 +157,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
                   <div className="scene-thumbnail-card__label">
                     {frame.label}
                   </div>
+                  {presenceForScene?.(frame.id)}
                   {remoteEditorName && (
                     <div className="scene-thumbnail-card__lock">
                       {remoteEditorName}が編集中

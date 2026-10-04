@@ -17,8 +17,11 @@ import { describeAudio, mergeAudioBindings, sameSong, songKey, validateAudioBind
 import { chooseDeviceAudio, deviceAudioCandidates } from "./deviceAudio";
 import { CollaborationHistory, createHistoryTransport } from './historyApi';
 import { HistoryController } from './historyController';
+import { EphemeralSession } from './ephemeralSession';
+import type { EphemeralTransport } from './ephemeralTransport';
 
 export type SharedSessionOptions = {
+  ephemeralTransport?: EphemeralTransport;
   enabled: boolean; config: CloudConfig | null; platform: "web" | "ipad"; mock?: boolean;
   current: () => boolean; publish: (project: Project) => void; failed: (error: unknown) => void;
   saved: (state: SaveState | null) => void; committed: (summary: ProjectSummary) => void;
@@ -31,6 +34,8 @@ export class SharedSessionController {
   attached = false;
   provider: CollaborationProvider | null = null;
   historyUi: HistoryController | null = null;
+  ephemeral: EphemeralSession | null = null;
+  private visibleProject!: Project;
   private detached = false;
   private disposed = false;
   private authEpoch = cloudAuthIdentity().epoch;
@@ -50,6 +55,7 @@ export class SharedSessionController {
     }, summary => options.committed(summary));
     this.releases.push(this.coordinator.subscribeCommits(event => {
       if (event.id !== localId || this.disposed) return;
+      this.ephemeral?.confirm(event.committedUpdateIds);
       this.provider?.committedPending(event.pendingCount);
       this.historyUi?.wake();
       // A successful retry may have no new outbox entry (remote-only save).
@@ -66,8 +72,10 @@ export class SharedSessionController {
     const owner = new SharedSessionController(repository, record.project.id!, options);
     try {
       owner.coordinator.activate(record);
+      owner.visibleProject = record.project;
       owner.attached = !!record.collaboration?.sharedDocumentId;
       owner.editor = await SharedProjectEditor.create(owner.coordinator, record.project, project => {
+        owner.visibleProject = project;
         if (owner.current()) options.publish(project);
         void owner.reviewAudio();
       }, options.failed);
@@ -100,15 +108,24 @@ export class SharedSessionController {
         }));
       }
       await owner.reviewAudio();
+      if (owner.attached && options.enabled) {
+        let ephemeralTransport = options.ephemeralTransport;
+        if (!ephemeralTransport && options.mock && import.meta.env.DEV && options.config && record.collaboration?.transportBinding) {
+          const { createMockEphemeralTransport } = await import('./testing/mockEphemeralTransport');
+          ephemeralTransport = createMockEphemeralTransport(options.config.url, record.collaboration.sharedDocumentId!, record.collaboration.transportBinding.accountId);
+        }
+        if (ephemeralTransport) owner.ephemeral = new EphemeralSession(ephemeralTransport, { project: () => owner.visibleProject, updateId: () => owner.editor.lastLocalUpdateId });
+      }
       return owner;
     } catch (error) { owner.dispose(); throw error; }
   }
-  start() { if (!this.disposed) this.provider?.start(); }
+  start() { if (!this.disposed) { this.provider?.start(); this.ephemeral?.start(); } }
   private current() { return !this.disposed && !this.detached && this.options.current(); }
   private authValid() { return !this.disposed && cloudAuthIdentity().epoch === this.authEpoch; }
   private update() {
     let state = this.provider?.snapshot ?? null;
     if (state && !this.authValid()) state = { ...state, held: true, credentialConfirmed: false, sharing: "auth-required" };
+    if (!this.authValid() || state && state.sharing !== 'active') this.ephemeral?.stop();
     this.store.set({ ...sessionSnapshot(this.localId, state, this.coordinator.state, this.history), historyEvent: this.historyEvent });
   }
   historyResult(result: HistoryResult) { this.history = result; this.historyEvent++; this.update(); }
@@ -157,6 +174,7 @@ export class SharedSessionController {
   /** UI awaits device durability, never network drain. Caller retains this owner
    * independently until background completion, then switches its coordinator. */
   async close(background = true): Promise<boolean> {
+    this.ephemeral?.stop();
     if (!await this.flush()) return false;
     const pending = (await this.coordinator.getSendableOutbox()).length;
     this.detached = true;
@@ -195,7 +213,7 @@ export class SharedSessionController {
   }
   dispose() {
     if (this.disposed) return;
-    this.disposed = true; this.provider?.stop(); this.historyUi?.stop(); clearTimeout(this.drainTimer);
+    this.disposed = true; this.ephemeral?.stop(); this.provider?.stop(); this.historyUi?.stop(); clearTimeout(this.drainTimer);
     this.releases.splice(0).forEach(release => release()); this.editor?.destroy();
     const finish = this.finishDrain; this.finishDrain = undefined; finish?.();
   }

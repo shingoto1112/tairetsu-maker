@@ -73,8 +73,12 @@ import { ResizableRotatableObject } from "./ResizableRotatableObject";
 import { StageTimeBar } from "./StageTimeBar";
 import { CompactStageControls } from "./CompactStageControls";
 import { useCanvasWheelZoom } from "../hooks/useCanvasWheelZoom";
+import type { ReactNode } from 'react';
+import type { EphemeralSession, EphemeralTarget } from '../collaboration/ephemeralSession';
 
 type StageCanvasProps = {
+  ephemeral?: EphemeralSession | null;
+  remoteLayer?: ReactNode;
   viewStates?: Map<string, SceneViewState>;
   compact?: boolean;
   project: Project;
@@ -412,6 +416,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       onContextMenuRequest,
       onReadOnlyEditAttempt,
       onLockedElementEditAttempt,
+      ephemeral,
+      remoteLayer,
     },
     exportRef,
   ) => {
@@ -1082,6 +1088,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       setIsMemberDragging(false);
       if (activeMemberDrag?.hasMoved) {
         onEndProjectEdit();
+        ephemeral?.cancel();
       }
       setActiveSnapGuides([]);
       setIsStagePinching(true);
@@ -1457,6 +1464,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
 
     const moveDraggedMember = (clientX: number, clientY: number) => {
+      const measuredAt = ephemeral ? performance.now() : 0;
       const drag = memberDragRef.current;
       if (!drag || !stageRef.current) {
         return;
@@ -1516,11 +1524,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       drag.latestPositions = nextPositions;
       if (deferMemberDragCommit) {
         previewMemberDragTransforms(drag, nextPositions);
+        ephemeral?.latestMeasured(delta.x, delta.y, measuredAt);
         return;
       }
       Object.entries(nextPositions).forEach(([id, position]) => {
         onMoveMember(id, position);
       });
+      ephemeral?.latestMeasured(delta.x, delta.y, measuredAt);
     };
 
     const handleMemberPointerDown = (
@@ -1674,6 +1684,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             return;
           }
           latestDrag.hasMoved = true;
+          ephemeral?.begin(selectedFrameId, latestDrag.memberIds.map(id => ['member', id, latestDrag.startPositions[id].x, latestDrag.startPositions[id].y] as EphemeralTarget));
           setIsMemberDragging(true);
           moveDraggedMember(latestDrag.currentClientX, latestDrag.currentClientY);
           if (latestDrag.endRequested) {
@@ -1684,6 +1695,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             setActiveSnapGuides([]);
             setIsMemberDragging(false);
             onEndProjectEdit(editTarget);
+            ephemeral?.finish();
             return;
           }
           memberAutoScrollerRef.current?.update(
@@ -1722,6 +1734,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           }));
           commitDeferredMemberDrag(drag);
           onEndProjectEdit(editTargets.length === 1 ? editTargets[0] : editTargets);
+          if (event.type === 'pointercancel') ephemeral?.cancel(); else ephemeral?.finish();
         }
         setIsMemberDragging(false);
       }
@@ -2158,6 +2171,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onPointerCancel={stopTouchContextMenu}
                 onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
               >
+              {remoteLayer}
               {stage.showGrid && (
                 <div className="stage-grid-layer" aria-hidden="true">
                   {stageGridVerticalTicks.map((tick) => (
@@ -2511,6 +2525,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     selected={selected?.type === "object" && selected.id === object.id}
                     disabled={!objectEditing || isReadOnly}
                     deferCommit={deferObjectDragCommit}
+                    ephemeral={ephemeral}
+                    sceneId={selectedFrameId}
                     remoteLockOwner={remoteObjectLockOwner}
                     onSelect={() => selectPointerTarget({ type: "object", id: object.id })}
                     onContextMenu={(event) =>

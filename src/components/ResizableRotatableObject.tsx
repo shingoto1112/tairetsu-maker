@@ -29,6 +29,7 @@ import {
 } from "../utils/touchLongPress";
 
 type InteractionKind = "move" | "resize" | "rotate";
+import type { EphemeralSession } from '../collaboration/ephemeralSession';
 
 type DragState = {
   kind: InteractionKind;
@@ -48,6 +49,8 @@ type DragState = {
 };
 
 type ResizableRotatableObjectProps = {
+  ephemeral?: EphemeralSession | null;
+  sceneId?: string | null;
   object: StageObject;
   state: ObjectState;
   stage: StageConfig;
@@ -114,6 +117,8 @@ export const ResizableRotatableObject = ({
   onTouchLongPressMove,
   onTouchLongPressStart,
   onLockedElementEditAttempt,
+  ephemeral,
+  sceneId,
 }: ResizableRotatableObjectProps) => {
   const objectRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -213,13 +218,13 @@ export const ResizableRotatableObject = ({
   const applyObjectPatch = (
     drag: DragState,
     patch: Partial<ObjectState>,
+    measuredAt = 0,
   ) => {
     drag.latestPatch = patch;
     if (deferCommit) {
       previewObjectDrag(drag, patch);
-      return;
-    }
-    onMove(patch);
+    } else onMove(patch);
+    if (drag.kind === 'move') ephemeral?.latestMeasured((patch.x ?? drag.startState.x) - drag.startState.x, (patch.y ?? drag.startState.y) - drag.startState.y, measuredAt);
   };
 
   const commitDeferredObjectDrag = (drag: DragState) => {
@@ -231,6 +236,7 @@ export const ResizableRotatableObject = ({
   };
 
   const applyDrag = (clientX: number, clientY: number) => {
+    const measuredAt = ephemeral ? performance.now() : 0;
     const drag = dragRef.current;
     if (!drag) {
       return;
@@ -259,6 +265,7 @@ export const ResizableRotatableObject = ({
           return;
         }
         latestDrag.hasMoved = true;
+        if (latestDrag.kind === 'move') ephemeral?.begin(sceneId ?? null, [['object', object.id, latestDrag.startState.x, latestDrag.startState.y, latestDrag.startState.widthMeters, latestDrag.startState.heightMeters, latestDrag.startState.rotation]]);
         applyDrag(latestDrag.currentClientX, latestDrag.currentClientY);
         if (latestDrag.endRequested) {
           commitDeferredObjectDrag(latestDrag);
@@ -266,6 +273,7 @@ export const ResizableRotatableObject = ({
           autoScrollerRef.current?.stop();
           autoScrollerRef.current = null;
           onInteractionEnd?.();
+          ephemeral?.finish();
           return;
         }
         autoScrollerRef.current?.update(
@@ -356,7 +364,7 @@ export const ResizableRotatableObject = ({
       drag.startState.heightMeters,
       stage,
     );
-    applyObjectPatch(drag, next);
+    applyObjectPatch(drag, next, measuredAt);
   };
 
   const startInteraction = (
@@ -466,6 +474,7 @@ export const ResizableRotatableObject = ({
       if (drag.hasMoved) {
         commitDeferredObjectDrag(drag);
         onInteractionEnd?.();
+        if (event.type === 'pointercancel') ephemeral?.cancel(); else ephemeral?.finish();
       }
     }
   };

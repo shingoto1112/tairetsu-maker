@@ -44,6 +44,7 @@ export const withExportClone = async <T>(
   });
 
   const clone = element.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-ephemeral]').forEach(node => node.remove());
   Object.assign(clone.style, {
     display: "block",
     left: "auto",
@@ -96,6 +97,7 @@ export const visibleElementToPngBlob = async (
 
   await waitForFonts();
   const dataUrl = await toPng(element, {
+    filter: node => !(node instanceof Element && node.hasAttribute('data-ephemeral')),
     backgroundColor: options.backgroundColor ?? "#ffffff",
     cacheBust: true,
     height: size.height,

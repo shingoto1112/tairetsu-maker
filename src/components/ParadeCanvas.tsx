@@ -57,6 +57,8 @@ import { NumericInput } from "./NumericInput";
 import { commitPinchView, stickyRulerTranslate, resolvePinchView, stageAnchorMeters, type PinchGeometry } from "../utils/pinchGeometry";
 import { useCanvasWheelZoom } from "../hooks/useCanvasWheelZoom";
 import { createTouchScroller } from "../utils/touchScroll";
+import type { ReactNode } from 'react';
+import type { EphemeralSession, EphemeralTarget } from '../collaboration/ephemeralSession';
 
 export type ParadeReflectOptions = {
   target: "all" | "group";
@@ -67,6 +69,8 @@ export type ParadeReflectOptions = {
 };
 
 type ParadeCanvasProps = {
+  ephemeral?: EphemeralSession | null;
+  remoteLayer?: ReactNode;
   isPlaying?: boolean;
   project: Project;
   snapshot: StageSnapshot;
@@ -408,6 +412,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onContextMenuRequest,
       onReadOnlyEditAttempt,
       onLockedElementEditAttempt,
+      ephemeral,
+      remoteLayer,
     },
   ref,
 ) => {
@@ -1240,6 +1246,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         clearMemberDragTransforms([...memberElementRefs.current.keys()]);
         [...objectElementRefs.current.keys()].forEach(clearObjectDragPreview);
         if (dragState.hasMoved) onEndProjectEdit();
+        ephemeral?.cancel();
         setDragState(null);
       }
     }, [isPlaying]);
@@ -1258,6 +1265,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       let autoScroller: ReturnType<typeof createEdgeAutoScroller> | null = null;
       let isCancelled = false;
       const applyDrag = (clientX: number, clientY: number) => {
+        const measuredAt = ephemeral ? performance.now() : 0;
         currentClientX = clientX;
         currentClientY = clientY;
         const movementPx = Math.hypot(
@@ -1321,6 +1329,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               return;
             }
             didMove = true;
+            if (dragState.type === 'member') ephemeral?.begin(selectedFrameId, dragState.memberIds.map(id => ['member', id, dragState.startPositions[id].x, dragState.startPositions[id].y] as EphemeralTarget));
+            else if (dragState.interaction === 'move') ephemeral?.begin(selectedFrameId, [['object', dragState.id, dragState.startState.x, dragState.startState.y, dragState.startState.widthMeters, dragState.startState.heightMeters, dragState.startState.rotation]]);
             const shouldKeepDragStateLocal =
               (deferMemberDragCommit && dragState.type === "member") ||
               (deferObjectDragCommit && dragState.type === "object");
@@ -1340,6 +1350,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               autoScroller?.stop();
               setDragState(null);
               onEndProjectEdit(normalizedEditTarget);
+              ephemeral?.finish();
               return;
             }
             autoScroller?.update(currentClientX, currentClientY);
@@ -1379,11 +1390,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           latestMemberPositions = nextPositions;
           if (deferMemberDragCommit) {
             previewMemberDragTransforms(dragState, nextPositions);
+            ephemeral?.latestMeasured(primaryDelta.x, primaryDelta.y, measuredAt);
             return;
           }
           Object.entries(nextPositions).forEach(([id, position]) => {
             onMoveMember(id, position);
           });
+          ephemeral?.latestMeasured(primaryDelta.x, primaryDelta.y, measuredAt);
         } else if (dragState.interaction === "resize") {
           const maxWidth = Math.max(
             MIN_OBJECT_SIZE_METERS,
@@ -1456,9 +1469,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           latestObjectPatch = { x: nextX, y: nextY };
           if (deferObjectDragCommit) {
             previewObjectDrag(dragState, latestObjectPatch);
+            ephemeral?.latestMeasured(nextX - dragState.startState.x, nextY - dragState.startState.y, measuredAt);
             return;
           }
           onUpdateObjectState(dragState.id, latestObjectPatch);
+          ephemeral?.latestMeasured(nextX - dragState.startState.x, nextY - dragState.startState.y, measuredAt);
         }
       };
       autoScroller =
@@ -1503,6 +1518,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               ? editTarget[0]
               : editTarget,
           );
+          if (event?.type === 'pointercancel') ephemeral?.cancel(); else ephemeral?.finish();
         }
       };
       window.addEventListener("pointermove", handlePointerMove);
@@ -1528,6 +1544,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       settings.cellSizeMeters,
       backwardDistanceMeters,
       canvasDistanceMeters,
+      ephemeral,
       settings.totalDistance,
       settings.width,
     ]);
@@ -1751,6 +1768,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         setDragState(null);
         if (shouldEndEdit) {
           onEndProjectEdit();
+          ephemeral?.cancel();
         }
       }
       setIsPinching(true);
@@ -2385,6 +2403,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               onPointerCancel={stopTouchContextMenu}
               onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
             >
+              {remoteLayer}
               <div className="parade-grid-layer" aria-hidden="true">
                 {verticalGridTicks.map((meter) => (
                   <span

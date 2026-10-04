@@ -31,6 +31,9 @@ import { useCollaborationUi } from "./hooks/useCollaborationUi";
 const CollaborationSurface = lazy(() => import("./components/CollaborationSurface"));
 const CollaborationBadge = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationBadge })));
 const CollaborationStatus = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationStatus })));
+const RemoteInteractionLayer = lazy(() => import('./components/RemoteInteractionLayer'));
+const PresenceIcons = lazy(() => import('./components/RemoteInteractionLayer').then(module => ({ default: module.PresenceIcons })));
+const ScenePresence = lazy(() => import('./components/RemoteInteractionLayer').then(module => ({ default: module.ScenePresence })));
 import { App as CapacitorApp } from "@capacitor/app";
 import { CircleHelp } from "lucide-react";
 const AssignmentPanel = lazy(() => import("./components/AssignmentPanel").then(module => ({ default: module.AssignmentPanel })));
@@ -12112,6 +12115,11 @@ function App() {
       ? project.members.find((member) => member.id === selected.id)?.name ?? null
       : selectedObjectName;
   const canvasFrameId = displayFrame?.id ?? selectedFrame?.id ?? null;
+  const ephemeral = APP_FEATURES.collaborationV2 ? sharedSession.active?.ephemeral ?? null : null;
+  useEffect(() => {
+    ephemeral?.view(canvasFrameId, selectedMemberIds.length ? selectedMemberIds.map(id => ['member', id]) : selected ? [[selected.type, selected.id]] : []);
+  }, [ephemeral, canvasFrameId, selected, selectedMemberIds]);
+  const remoteLayer = ephemeral ? <Suspense fallback={null}><RemoteInteractionLayer session={ephemeral} project={project} sceneId={canvasFrameId} perspective={viewerPerspective} /></Suspense> : undefined;
   const canvasSnapshot = useMemo<StageSnapshot>(() => {
     if (!activeCloudProject || !canvasFrameId) {
       return snapshot;
@@ -12991,7 +12999,7 @@ function App() {
         isDirty={isDirty}
         isSaving={isSaving}
         localSaveOnly={APP_FEATURES.collaborationV2 && !!sharedSession.active?.attached}
-        collaborationStatus={APP_FEATURES.collaborationV2 && sharedSession.active?.attached ? <Suspense fallback={null}><CollaborationStatus bridge={collaborationUi} localId={project.id!} /></Suspense> : undefined}
+        collaborationStatus={APP_FEATURES.collaborationV2 && sharedSession.active?.attached ? <Suspense fallback={null}><CollaborationStatus bridge={collaborationUi} localId={project.id!} />{ephemeral && <PresenceIcons session={ephemeral} />}</Suspense> : undefined}
         onBackToLibrary={() => void returnToLibrary()}
         onSaveProject={() => void saveProjectManually()}
         onOpenShareExport={() => setIsShareExportOpen(true)}
@@ -13255,6 +13263,7 @@ function App() {
         >
           <div className={`stage-workspace stage-workspace--${project.mode === "parade" ? "parade" : "stage"}`}>
             <SceneThumbnailRail
+              presenceForScene={ephemeral ? sceneId => <Suspense fallback={null}><ScenePresence session={ephemeral} sceneId={sceneId} /></Suspense> : undefined}
               project={project}
               selectedFrameId={displayFrame?.id ?? null}
               collapsed={isSceneThumbnailRailCollapsed}
@@ -13279,6 +13288,8 @@ function App() {
             >
               {project.mode === "parade" ? (
                 <ParadeCanvas
+                  ephemeral={ephemeral}
+                  remoteLayer={remoteLayer}
                   ref={stageExportRef}
                   isPlaying={isPlaying || animationPreviewTimeSec !== null}
                   project={projectForStage}
@@ -13333,6 +13344,8 @@ function App() {
                 />
               ) : (
                 <StageCanvas
+                  ephemeral={ephemeral}
+                  remoteLayer={remoteLayer}
                   ref={stageExportRef}
                   viewStates={stageViewStates}
                   compact={workspaceLayout.isPortrait}

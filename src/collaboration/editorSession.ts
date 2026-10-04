@@ -16,6 +16,7 @@ import { planRecipe, type PlannedWrite } from "./recipeCommands";
 /** No transport/auth/UI creation here. Owns one persistent editing Y.Doc and its
  * UndoManager; durable merges apply into that identity, never recreate from JSON. */
 export class SharedProjectEditor {
+  lastLocalUpdateId?: string;
   readonly commands: CollaborationCommands;
   private local: Project;
   private syncing = false;
@@ -173,7 +174,8 @@ export class SharedProjectEditor {
     if (this.disposed || this.syncing) return;
     if (origin === REMOTE_ORIGIN) { this.emit(); return; }
     this.local = { ...this.local, updatedAt: new Date().toISOString() };
-    this.pending.push({ updateId: crypto.randomUUID(), bytes: encodeUpdate(bytes), source: "local" });
+    this.lastLocalUpdateId = crypto.randomUUID();
+    this.pending.push({ updateId: this.lastLocalUpdateId, bytes: encodeUpdate(bytes), source: "local" });
     this.stagePending();
     this.emit();
   };

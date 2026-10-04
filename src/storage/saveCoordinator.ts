@@ -3,6 +3,7 @@ import { createId } from "../utils/ids";
 import { compareRevisions, incrementRevision, RepositoryError, type CollaborationData, type CollaborationUpdate, type CollaborationOutbox, type CommitRequest, type ProjectRecord, type ProjectRepository, type ProjectSummary, type Revision } from "../repositories/types";
 
 export type SaveState = { id: string; localRevision: Revision; persistedRevision: Revision; dirty: boolean; saving: boolean; error: RepositoryError | null };
+export type SaveCommitEvent = { id: string; pendingUpdateIds: string[]; pendingCount: number; committedUpdateIds: string[] };
 export type Session = SaveState & { project: Project; collaboration?: CollaborationData | null; writerAllocation?: { createdId?: string; updateIds: string[] }; audioBindingsBase?: NonNullable<CollaborationData["audioBindings"]>; repositoryRevision: Revision | null; pending?: CommitRequest; work?: Promise<boolean> };
 const detached = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export const repositoryError = (error: unknown): RepositoryError => error instanceof RepositoryError ? error : new RepositoryError("IO_ERROR");
@@ -14,9 +15,9 @@ export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!sta
  * One session per ID; an inactive session's completion cannot notify the editor.
  */
 export class SaveCoordinator {
-  private commitListeners = new Set<(event: { id: string; pendingUpdateIds: string[]; pendingCount: number }) => void>();
+  private commitListeners = new Set<(event: SaveCommitEvent) => void>();
   private committedUpdates = new Map<string, Set<string>>();
-  subscribeCommits(listener: (event: { id: string; pendingUpdateIds: string[]; pendingCount: number }) => void) {
+  subscribeCommits(listener: (event: SaveCommitEvent) => void) {
     this.commitListeners.add(listener); return () => { this.commitListeners.delete(listener); };
   }
   private sessions = new Map<string, Session>();
@@ -189,7 +190,8 @@ export class SaveCoordinator {
         // queue is needed to distinguish a new pending commit from an ACK.
         this.committedUpdates.set(s.id, new Set(fixedCollaboration?.outbox.map(e => e.updateId)));
         const pendingCount = (fixedCollaboration?.outbox ?? []).filter(e => e.status === "pending").length;
-        for (const listener of this.commitListeners) { try { listener({ id: s.id, pendingUpdateIds, pendingCount }); } catch { /* Observers do not invalidate durable saves. */ } }
+        const committedUpdateIds = [...new Set([...(fixedCollaboration?.journal ?? []), ...(fixedCollaboration?.outbox ?? [])].map(update => update.updateId))];
+        for (const listener of this.commitListeners) { try { listener({ id: s.id, pendingUpdateIds, pendingCount, committedUpdateIds }); } catch { /* Observers do not invalidate durable saves. */ } }
       }
       return true;
     } catch (error) { s.error = repositoryError(error); s.dirty = true; this.emit(s); return false; }

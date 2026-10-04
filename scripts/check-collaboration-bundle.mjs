@@ -42,6 +42,9 @@ try {
   assert(!staticGraph(main, normalChunks).some(chunk => Object.keys(chunk.modules).some(isHelp)),
     "Help text, component and CSS must be absent from the normal startup graph");
   assert(normalChunks.some(chunk => Object.keys(chunk.modules).some(isHelp)), "Missing lazy help chunk");
+  const isEphemeralUI = id => /\/src\/components\/(RemoteInteractionLayer\.tsx|remoteInteraction\.css)$/.test(id.replaceAll("\\", "/"));
+  assert(!staticGraph(main, normalChunks).some(chunk => Object.keys(chunk.modules).some(isEphemeralUI)), 'Ephemeral layer/UI/CSS must stay lazy');
+  assert(normalChunks.some(chunk => Object.keys(chunk.modules).some(isEphemeralUI)), 'Missing lazy ephemeral UI chunk');
   assert(!normalChunks.some(chunk => Object.keys(chunk.modules).some(id => /\/testing\/providerHarness\./.test(id.replaceAll("\\", "/")))),
     "Development provider harness must be absent from every production chunk");
   const mainSize = await measure(normalDir, main);

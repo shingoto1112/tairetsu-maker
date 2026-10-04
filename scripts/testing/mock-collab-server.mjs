@@ -197,6 +197,7 @@ export async function startMockServer(backend, createHandler, origin = process.e
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
     const url = new URL(req.url, 'http://127.0.0.1');
+    if (extra.ephemeral && url.pathname === '/ephemeral') { await extra.ephemeral(req, res, url); return; }
     if (url.pathname === '/events') {
       const actor = url.searchParams.get('actor'), topic = url.searchParams.get('topic');
       if (!backend.members.has(actor) || topic !== backend.topic) { res.writeHead(403).end(); return; }
