@@ -19,6 +19,6 @@ try {
   for(const workload of ['regular','accumulated','boundary']) {
     const file=fixturesOnly?path.resolve('.tmp-maintenance-inputs',workload+'.json'):directory+workload+'.json';await run(workload,'fixture',file);
     if(fixturesOnly)continue;
-    for(const operation of ['compact','automatic'])await run(workload,operation,file);
+    for(const operation of ['compact','automatic','restore'])await run(workload,operation,file);
   }
 } finally {await loaded.dispose();}

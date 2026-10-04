@@ -4,9 +4,9 @@ import * as Y from "yjs";
  * Deno maps the bare import to npm:yjs@13.6.33; Vitest uses the same installed version.
  * Extend this whitelist explicitly when schema 2 ships, never silently accept it.
  */
-export const SERVER_LIMITS = Object.freeze({ updateBytes: 262144, snapshotBytes: 8388608,
-  logBytes: 4194304, entries: 4096, members: 500, scenes: 200, positions: 100000,
-  structs: 100000, clients: 1024, validationMs: 1000 });
+// @ts-ignore Deno source import.
+import { SHARED_DOCUMENT_LIMITS } from "../config/collaborationLimits.ts";
+export const SERVER_LIMITS = SHARED_DOCUMENT_LIMITS;
 export class ValidationError extends Error {
   constructor(public readonly code: string) { super(code); }
 }

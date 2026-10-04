@@ -117,15 +117,15 @@ export async function runMaintenanceSqlSuite(h) {
   // Actual append threshold detection, using lowered settings for the byte case.
   const threshold=create(31),tid=threshold.documentId,tm=membership(tid,31);
   run(`delete from collab_v2_private.history_due where document_id=${q(tid)};
-    update collab_v2_private.budget_settings set compact_updates=128,compact_bytes=524288;`);
+    update collab_v2_private.budget_settings set compact_updates=64,compact_bytes=262144;`);
   const tappend=(i)=>service(`select public.collab_v2_append(${q(tid)},${q(uid(31))},1,${q(tm)},${i-1},${q('threshold-'+i)},'\\x0000'::bytea,extensions.digest('\\x0000'::bytea,'sha256'),'threshold')`);
-  for(let i=1;i<=127;i++)tappend(i);
+  for(let i=1;i<=63;i++)tappend(i);
   assert.equal(scalar(`compaction_required from public.collab_v2_documents where id=${q(tid)}`),'f');
-  assert.equal(json(tappend(128)).maintenance.compactionRequired,true);
+  assert.equal(json(tappend(64)).maintenance.compactionRequired,true);
   run(`update public.collab_v2_documents set compaction_required=false where id=${q(tid)};
     update collab_v2_private.budget_settings set compact_updates=1000,compact_bytes=256;`);
-  assert.equal(json(tappend(129)).maintenance.compactionRequired,true,'byte threshold is independent of the count threshold');
-  run(`update collab_v2_private.budget_settings set compact_updates=128,compact_bytes=524288`);
+  assert.equal(json(tappend(65)).maintenance.compactionRequired,true,'byte threshold is independent of the count threshold');
+  run(`update collab_v2_private.budget_settings set compact_updates=64,compact_bytes=262144`);
   asUser(31,`select public.collab_v2_delete_document(${q(tid)})`);
   console.log('PASS: 9b initial/due atomicity, double lease, append/publish race, P+logs, expiry/release/lost ACK, capacity, role/removal/generation/delete, thinning/protected checkpoint');
 }

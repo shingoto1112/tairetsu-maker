@@ -6,9 +6,11 @@ on:
     paths:
       - 'supabase/**'
       - 'src/collaboration/**'
+      - 'src/config/collaborationLimits.ts'
       - 'scripts/collaboration-*.test.ts'
       - 'scripts/testing/mock-collab-server.mjs'
       - 'scripts/testing/maintenance-sql-suite.mjs'
+      - 'scripts/testing/restore-sql-suite.mjs'
       - 'scripts/test-collaboration-lifecycle-browser.mjs'
       - 'scripts/check-collab-v2.mjs'
       - 'scripts/test-cloud-sql.mjs'
@@ -53,7 +55,7 @@ jobs:
       - name: PostgreSQL migrations, authorization, races, rerun
         run: node scripts/test-cloud-sql.mjs
       - name: Pure validation and ingest contract
-        run: npm test -- src/collaboration/serverValidation.test.ts src/collaboration/maintenance.test.ts supabase/functions/collab-ingest/handler.test.ts scripts/collaboration-lifecycle.test.ts scripts/collaboration-provider.test.ts --maxWorkers 2 --silent=false
+        run: npm test -- src/collaboration/serverValidation.test.ts src/collaboration/maintenance.test.ts src/collaboration/restore.test.ts supabase/functions/collab-ingest/handler.test.ts scripts/collaboration-lifecycle.test.ts scripts/collaboration-provider.test.ts --maxWorkers 2 --silent=false
       - name: Application typecheck
         run: npm run typecheck
       - name: Synthetic load estimate (no hosted-performance claim)
@@ -65,18 +67,21 @@ jobs:
         run: |
           deno check --config supabase/functions/collab-ingest/deno.json supabase/functions/collab-ingest/index.ts
           deno check --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/index.ts
+          deno check --config supabase/functions/collab-restore/deno.json supabase/functions/collab-restore/index.ts
       - name: Deno maintenance execution (offline fixtures, twice)
         run: |
           # lib0 (Yjs) reads optional env vars at import; the Edge runtime allows env access.
           deno test --allow-env --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/handler.deno.ts
           deno test --allow-env --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-maintenance/deno.json supabase/functions/collab-maintenance/handler.deno.ts
+          deno test --allow-env --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-restore/deno.json supabase/functions/collab-restore/handler.deno.ts
+          deno test --allow-env --allow-read=src/repositories/contract/fixtures --config supabase/functions/collab-restore/deno.json supabase/functions/collab-restore/handler.deno.ts
       - name: Maintenance load estimate
         run: node --expose-gc scripts/bench-collab-maintenance.mjs
       - name: Native Deno maintenance load estimate (separate process per case)
         run: |
           node --expose-gc scripts/bench-collab-maintenance.mjs --fixtures-only
           for workload in regular accumulated boundary; do
-            for operation in compact automatic; do
+            for operation in compact automatic restore; do
               deno run --allow-env --allow-read=.tmp-maintenance-inputs --config supabase/functions/collab-maintenance/deno.json scripts/bench-collab-maintenance.deno.ts "$workload" "$operation"
             done
           done

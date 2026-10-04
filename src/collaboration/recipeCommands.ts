@@ -1,8 +1,12 @@
 import * as Y from "yjs";
-import { isSharedLocalAlias } from "./identity";
-import type { Project } from "../types";
-import { ENTITY_ROOTS, getModel, type EntityRoot, type EntityRecord } from "./model";
-import { checkJson, clone, same, entityFields, settingsFields, initializeEntity, listField, orderKey, moveSlot, order, deleted, type Data } from "./projectModel";
+// @ts-ignore Deno source import.
+import { isSharedLocalAlias } from "./identity.ts";
+// @ts-ignore Deno source import.
+import type { Project } from "../types.ts";
+// @ts-ignore Deno source import.
+import { ENTITY_ROOTS, getModel, type EntityRoot, type EntityRecord } from "./model.ts";
+// @ts-ignore Deno source import.
+import { checkJson, clone, same, entityFields, settingsFields, initializeEntity, listField, orderKey, moveSlot, order, deleted, type Data } from "./projectModel.ts";
 
 export type EditTarget = { entityType: string; entityId: string; field: string };
 export type OrderReference = { map: Y.Map<unknown>; key: string };

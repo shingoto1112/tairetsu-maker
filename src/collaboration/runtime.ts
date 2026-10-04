@@ -18,3 +18,6 @@ export { createParticipantAuth } from "./guestAuth";
 export type { ParticipantAuthState } from "./guestAuth";
 export { invitationEntry, invitationToken, takeInvitationLink } from "./invitations";
 export { createCollaborationAccountApi } from "./account";
+export { CollaborationHistory, createHistoryTransport, newRestoreRequest } from "./historyApi";
+export { observeRestore } from "./restore";
+export type { RestoreState, RestoreReceipt } from "./restore";

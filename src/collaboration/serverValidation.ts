@@ -8,9 +8,9 @@ import { assertFullState } from "./serverSchema2.ts";
  * Deno maps the bare import to npm:yjs@13.6.33; Vitest uses the same installed version.
  * Schema 1 remains readable for the historical storage/provider contract fixture.
  */
-export const SERVER_LIMITS = Object.freeze({ updateBytes: 262144, snapshotBytes: 8388608,
-  logBytes: 4194304, entries: 4096, members: 500, scenes: 200, positions: 100000,
-  structs: 100000, clients: 1024, validationMs: 1000 });
+// @ts-ignore Deno source import.
+import { SHARED_DOCUMENT_LIMITS } from "../config/collaborationLimits.ts";
+export const SERVER_LIMITS = SHARED_DOCUMENT_LIMITS;
 export class ValidationError extends Error {
   constructor(public readonly code: string) { super(code); }
 }
@@ -160,6 +160,12 @@ export function assertValidatedDocument(doc: Y.Doc, expectedSchema: 1 | 2): void
     items += struct.length;
     if (items > SERVER_LIMITS.structs) fail('QUOTA_EXCEEDED');
   }
+  let positions = 0;
+  for (const scene of doc.getMap('scenes').values()) {
+    if (!(scene instanceof Y.Map)) fail('INVALID_UPDATE');
+    positions += (scene.get('positions') as Y.Map<unknown> | undefined)?.size ?? 0;
+  }
+  if (doc.getMap('members').size > SERVER_LIMITS.members || doc.getMap('scenes').size > SERVER_LIMITS.scenes || positions > SERVER_LIMITS.positions) fail('QUOTA_EXCEEDED');
   if (doc.getMap('metadata').get('schemaVersion') !== expectedSchema) fail('UNSUPPORTED_SCHEMA');
   try {
     if (expectedSchema === 2) assertFullState(doc);
@@ -206,11 +212,11 @@ export function validateState(snapshot: Uint8Array, updates: readonly Uint8Array
       try { return { ...validateLegacy(snapshot, updates, incoming), title: "隊列表" }; }
       catch (e) { throw new ValidationError(e instanceof Error ? e.message : "INVALID_UPDATE"); }
     }
-    assertFullState(doc);
+    assertValidatedDocument(doc, 2);
     const before = JSON.stringify(doc.getMap("metadata").toJSON());
     if (incoming) {
       apply(incoming, SERVER_LIMITS.updateBytes);
-      assertFullState(doc);
+      assertValidatedDocument(doc, 2);
       if (JSON.stringify(doc.getMap("metadata").toJSON()) !== before) fail("TOPOLOGY_CHANGE");
     }
     const stateBytes = Y.encodeStateAsUpdate(doc).length;

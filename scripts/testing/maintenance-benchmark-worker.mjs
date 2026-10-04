@@ -9,9 +9,9 @@ if(operation==='fixture') {
   await writeFile(fixturePath,JSON.stringify({...fixture,snapshot:Buffer.from(fixture.snapshot).toString('base64'),
     updates:fixture.updates.map(u=>({...u,bytes:Buffer.from(u.bytes).toString('base64')}))}));
 } else {
-  const [validation,maintenance]=await Promise.all(urls.slice(2).map(url=>import(url)));loaded={validation,maintenance};
+  const [validation,maintenance,restoration]=await Promise.all(urls.slice(2).map(url=>import(url)));loaded={validation,maintenance,restoration};
   const input=JSON.parse(await readFile(fixturePath,'utf8'));
-  const snapshot=validation.decodeBase64(input.snapshot,8388608),updates=input.updates.map(u=>({seq:u.seq,bytes:validation.decodeBase64(u.bytes,262144)}));
+  const snapshot=validation.decodeBase64(input.snapshot,validation.SERVER_LIMITS.snapshotBytes),updates=input.updates.map(u=>({seq:u.seq,bytes:validation.decodeBase64(u.bytes,262144)}));
   input.snapshot='';input.updates=[];global.gc?.();
   await measure(snapshot,updates,input.members,input.scenes);
 }
@@ -33,7 +33,7 @@ async function createFixture() {
     });
     if(worker==='accumulated')for(let i=0;i<1024;i++)change(i,8);
     if(worker==='boundary') {
-      const target=8388608;
+      const target=2097152;
       while(Y.encodeStateAsUpdate(doc).length+65580<target)settings.set('title',{title:'b'.repeat(65536)});
       const prefix=Y.encodeStateAsUpdate(doc);let length=target-prefix.length-30,exact;
       for(let attempt=0;attempt<6;attempt++) {
@@ -45,9 +45,9 @@ async function createFixture() {
       doc.destroy();
       const continued=new Y.Doc({gc:false});Y.applyUpdate(continued,exact);continued.clientID=54321;
       const logs=[];continued.on('update',bytes=>logs.push({seq:String(logs.length+1),bytes}));
-      for(let i=0;i<64;i++)continued.getMap('settings').set('title',{title:'l'.repeat(65000)});
-      let total=logs.reduce((n,u)=>n+u.bytes.length,0), remaining=4194304-total,sv=Y.encodeStateVector(continued);
-      // A final update brings the log to the exact 4MiB boundary.
+      for(let i=0;i<16;i++)continued.getMap('settings').set('title',{title:'l'.repeat(65000)});
+      let total=logs.reduce((n,u)=>n+u.bytes.length,0), remaining=1048576-total,sv=Y.encodeStateVector(continued);
+      // A final update brings the log to the exact 1MiB boundary.
       let size=remaining-25,final;
       const prefixLog=Y.encodeStateAsUpdate(continued);
       for(let attempt=0;attempt<6;attempt++) {
@@ -61,24 +61,31 @@ async function createFixture() {
     } else {
       const snapshot=Y.encodeStateAsUpdate(doc),updates=[];
       doc.on('update',bytes=>updates.push({seq:String(updates.length+1),bytes}));
-      for(let i=0;i<128;i++)change(worker==='accumulated'?1024+i:i);
+      for(let i=0;i<64;i++)change(worker==='accumulated'?1024+i:i);
       doc.destroy();return {snapshot,updates,members:project.members.length,scenes:project.frames.length};
     }
 }
     async function measure(snapshot,updates,members,scenes) {
       const operation=process.argv[3],samples=[],cpus=[],rss=[],heaps=[],cut={documentId:'dddddddd-dddd-4ddd-8ddd-dddddddddddd',generation:'1',cutSeq:String(updates.length),
         documentSchema:2,snapshot:{id:'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',uptoSeq:'0',bytes:snapshot},updates};
-      let output=0,errors=[];
+      let output=0,errors=[],rejected=[];
+      const initialOutput=operation==='restore'?await loaded.maintenance.buildMaintenanceOutput({...cut,cutSeq:'0',updates:[]},'manual','11111111-1111-4111-8111-111111111111','2026-10-05T00:00:00.000Z'):null;
+      const target=initialOutput?{
+        ...JSON.parse(new TextDecoder().decode(initialOutput.bytes)),digest:initialOutput.digest,
+        documentId:cut.documentId,generation:'1',confirmedSeq:'0',reason:'manual',automatic:false,requestedBy:'11111111-1111-4111-8111-111111111111',serverAt:'2026-10-05T00:00:00.000Z'
+      }:null;
       for(let i=0;i<12;i++) {
         global.gc?.();const cpu=process.cpuUsage(),start=performance.now();
         const sample=()=>{const m=process.memoryUsage();rss.push(m.rss);heaps.push(m.heapUsed);};sample();
-        try{output=(await loaded.maintenance.buildMaintenanceOutput(cut,operation,'11111111-1111-4111-8111-111111111111','2026-10-04T00:00:00.000Z',sample)).bytes.length;}
-        catch(e){errors.push(e.code??e.message);}
+        try{output=operation==='restore'?(await loaded.restoration.buildRestoreOutput(cut,target,sample)).update.length:
+          (await loaded.maintenance.buildMaintenanceOutput(cut,operation,'11111111-1111-4111-8111-111111111111','2026-10-04T00:00:00.000Z',sample)).bytes.length;}
+        catch(e){if(operation==='restore'&&worker==='boundary'&&e.code==='QUOTA_EXCEEDED')rejected.push(e.code);else errors.push(e.code??e.message);}
         const used=process.cpuUsage(cpu);cpus.push((used.user+used.system)/1000);samples.push(performance.now()-start);sample();
       }
       samples.sort((a,b)=>a-b);cpus.sort((a,b)=>a-b);
       console.log(JSON.stringify({runtime:`Node ${process.version}`,workload:worker,operation,members,scenes,trials:12,
         snapshotBytes:snapshot.length,logBytes:updates.reduce((n,u)=>n+u.bytes.length,0),updates:updates.length,outputBytes:output,cpuP95Ms:cpus[11],wallP95Ms:+samples[11].toFixed(2),
         maxSampledRssMiB:+(Math.max(...rss)/1048576).toFixed(2),processPeakRssMiB:+(process.resourceUsage().maxRSS/1024).toFixed(2),maxSampledHeapMiB:+(Math.max(...heaps)/1048576).toFixed(2),
-        errors:[...new Set(errors)],scope:'binary validation/GC/DTO, includes input base64 decoding; network/DB excluded; fixture/TS compiler in separate processes'}));
+        errors:[...new Set(errors)],expectedRejections:[...new Set(rejected)],scope:'binary validation/GC/DTO/restore, includes input base64 decoding; network/DB excluded; fixture/TS compiler in separate processes'}));
+      if(errors.length)process.exitCode=1;
     }

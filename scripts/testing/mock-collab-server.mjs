@@ -161,7 +161,7 @@ export class MockCollabBackend {
     if (writer && BigInt(args.p_writer_seq) !== BigInt(writer.accepted) + 1n) this.fail('40001', 'WRITER_SEQUENCE_CONFLICT');
     if (this.log.some(u => u.updateId === args.p_update_id)) this.fail('22023', 'UPDATE_ID_CONFLICT');
     if (args.p_expected_head !== this.head) this.fail('40001', 'HEAD_CONFLICT');
-    if (this.capacity || this.receipts.size >= 4096 || this.log.reduce((sum, u) => sum + Buffer.from(u.bytes, 'base64').length, 0) + bytes.length > 4194304) this.fail('54000', 'QUOTA_EXCEEDED');
+    if (this.capacity || this.receipts.size >= 4096 || this.log.reduce((sum, u) => sum + Buffer.from(u.bytes, 'base64').length, 0) + bytes.length > 1048576) this.fail('54000', 'QUOTA_EXCEEDED');
     this.head = String(BigInt(this.head) + 1n);
     this.title = args.p_title ?? '隊列表'; this.titleSeq = this.head;
     this.log.push({ seq: this.head, updateId: args.p_update_id, actor: args.p_actor, bytes: bytes.toString('base64') });

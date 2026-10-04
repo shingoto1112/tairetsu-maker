@@ -1,5 +1,11 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第9回-3で専用 `collab-restore` と履歴クライアントAPIを追加し、未適用foundationを改訂した。[9c契約・新上限・検証・9d申し送り](COLLABORATION_RESTORE.md)を参照。現行ネットワーク受付はsnapshot2MiB／ログ1MiB・512件／圧縮64更新または256KiB、復元update256KiB。端末保存上限とSwiftは変更なし。以下の過去の容量表は現行値ではない。
+
+配備前にClaudeがLinuxのSQL初回・再適用、Deno check／実行2回／新上限9ケース測定、macOS47件を確認する。Node測定だけでEdge適合としない。SQLに追加した `accept_restore / restore_state / publish_restore / release_restore` はservice専用、`confirm_restore` は現在の要求actor限定のauthenticated RPC。原子的復元は公開CASを失ったら新しいEdge呼び出しで計画し直す。
+
+本番配備時に利用者が追加で行うこと：改訂foundationの内容を確認して適用し、既存2関数と同じ環境設定・origin制限で `collab-restore` を配備する。Authをhandlerが検証するため配備方法は下記と同じ。private schemaを公開しない。DashboardでCPU・メモリ・容量・権限を確認してから9dを有効にする。9c単独では新しい画面は出ない。追加の課金・依存・端末DB変換は不要。旧上限を超える端末文書は送信を止めても編集と救出を残す。
+
 第9回-2で専用 `collab-maintenance`、lease・公開CAS・作業予約、自動／手動控え・間引き・頻度制限を追加した。[現行9b契約・最終検証](COLLABORATION_MAINTENANCE.md)を参照。以下の過去の容量・試験値は現行値ではない。配備・確認・停止手順は9bに更新した。
 
 第9回-1で未適用foundationを改訂。writer連番・ACK境界によるreceipt/sent回収、knownSnapshotId、checkpoint DTO/権限、80/32/16MiB配分を追加した。
@@ -116,6 +122,7 @@ Dashboardでindex.tsだけ貼る方法では依存ファイルが不足します
 ```powershell
 supabase functions deploy collab-ingest --project-ref <PROJECT_REF> --no-verify-jwt
 supabase functions deploy collab-maintenance --project-ref <PROJECT_REF> --no-verify-jwt
+supabase functions deploy collab-restore --project-ref <PROJECT_REF> --no-verify-jwt
 ```
 
 `--no-verify-jwt` はgatewayの旧JWT検査を外す指定です。**関数内のAuth検証は必須のまま**です。
@@ -220,7 +227,7 @@ RLSはpublicの9テーブルともtrue、Realtimeは受信allowと送受信restr
 
 ## 元に戻す方法
 
-まず新providerを停止し、Edge Functionsで `collab-ingest` と `collab-maintenance` の両方を削除／停止します。
+まず新providerを停止し、Edge Functionsで `collab-ingest`、`collab-maintenance`、`collab-restore` の3関数を削除／停止します。
 共有データが作られた後のDB削除は不可逆です。利用者の端末コピー／必要なバックアップを確認してから、Claude確認済みの以下をSQL Editorで実行します。
 
 ```sql

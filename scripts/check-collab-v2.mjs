@@ -14,7 +14,17 @@ export function preflight() {
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');
   const functions = [...sql.matchAll(/create or replace function ([\w.]+)\([\s\S]*?\n(?:\$\$;|end \$\$;)/g)];
-  assert.equal(functions.length, 35, 'Reviewed 9b: maintenance hint, claim, thinning, publish and release');
+  assert.equal(functions.length, 40, 'Reviewed 9c: accept, state/lease, atomic publish/release and confirmation restore');
+  const limits = readFileSync('src/config/collaborationLimits.ts','utf8');
+  for (const [field, setting, value] of [['snapshotBytes','max_snapshot_bytes',2097152],['logBytes','max_log_bytes',1048576],
+    ['entries','max_log_entries',512],['compactEntries','compact_updates',64],['compactBytes','compact_bytes',262144]]) {
+    assert.match(limits.slice(limits.indexOf('export const SHARED_DOCUMENT_LIMITS')),new RegExp(`${field}: ${value}\\b`));
+    assert.match(sql,new RegExp(`add column if not exists ${setting} [^;]*default ${value}\\b`));
+  }
+  for (const name of ['serverValidation','legacyServerValidation']) assert.match(readFileSync(`src/collaboration/${name}.ts`,'utf8'),/SERVER_LIMITS = SHARED_DOCUMENT_LIMITS/);
+  for (const [body,name] of functions.filter(([,name])=>/collab_v2_(accept_restore|restore_state|publish_restore|release_restore)$/.test(name))) {
+    assert.match(body,/require_service\(\)/,`${name} must be service-only`);
+  }
   for (const [, name] of functions) assert(name.startsWith('public.collab_v2_') || name.startsWith('collab_v2_private.'));
   for (const [body] of functions) {
     assert.match(body, /security (invoker|definer) set search_path = ''/i);

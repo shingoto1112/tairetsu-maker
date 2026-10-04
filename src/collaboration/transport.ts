@@ -1,6 +1,7 @@
 import { base64Bytes, COLLABORATION_LIMITS } from "../repositories/collaborationData";
 import { isRevision } from "../repositories/types";
 import { isValidStorageId } from "../repositories/ids";
+import { SHARED_DOCUMENT_LIMITS } from "../config/collaborationLimits";
 
 export type Credential = { accountId: string; accessToken: string };
 export type AppendRequest = { action: "append"; documentId: string; generation: string; membershipGeneration: string; updateId: string; bytes: string;
@@ -50,7 +51,7 @@ export function parsePage(v: unknown, documentId: string, generation: string): P
   try {
     if (v.snapshot !== null) {
       if (!obj(v.snapshot) || !uuid(v.snapshot.id) || !revision(v.snapshot.uptoSeq)) invalid();
-      base64Bytes(v.snapshot.bytes, COLLABORATION_LIMITS.baseBytes);
+      base64Bytes(v.snapshot.bytes, SHARED_DOCUMENT_LIMITS.snapshotBytes);
     }
     for (const u of v.updates as unknown[]) {
       if (!obj(u) || !revision(u.seq) || !isValidStorageId(u.updateId) || (u.actor !== null && !uuid(u.actor))) invalid();

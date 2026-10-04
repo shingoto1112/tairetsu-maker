@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import * as Y from 'yjs';
 import { migration, preflight } from './check-collab-v2.mjs';
 import { runMaintenanceSqlSuite } from './testing/maintenance-sql-suite.mjs';
+import { runRestoreSqlSuite } from './testing/restore-sql-suite.mjs';
 
 assert.equal(process.platform, 'linux', 'Linux CI only'); assert.equal(process.argv.length, 2, 'No overrides accepted');
 const files = preflight();
@@ -363,6 +364,7 @@ assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(lid)}
 
 // Rerun with populated v2 tables. Confirm content, state, legacy function ACLs.
 await runMaintenanceSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});
+await runRestoreSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});
 const before = scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`);
 run(readFileSync(migration,'utf8'));
 assert.equal(scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`),before);

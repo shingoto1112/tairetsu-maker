@@ -15,7 +15,7 @@ export class MockMaintenanceBackend extends MockCollabBackend {
         const result=await inherited(name,args);
         if(name==='collab_v2_append') {
           const tail=this.log.filter(u=>BigInt(u.seq)>BigInt(this.snapshotSeq));
-          this.compactionRequired ||= tail.length>=128 || tail.reduce((n,u)=>n+Buffer.from(u.bytes,'base64').length,0)>=524288;
+          this.compactionRequired ||= tail.length>=64 || tail.reduce((n,u)=>n+Buffer.from(u.bytes,'base64').length,0)>=262144;
           return {...result,maintenance:this.hint()};
         }
         return result;

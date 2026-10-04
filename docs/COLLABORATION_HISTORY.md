@@ -1,7 +1,7 @@
 # 新しい共同編集 第9回-1（9a）
 
 SQL/Edge は未適用・未配備の foundation 改訂。旧11 migration、本番、Project 型、ZIP、印刷、音源本体の形式は変更していない。
-この冒頭から9a検証記録までは9a時点の契約。9bの専用maintenance・自動実行・圧縮は [9b実装記録](COLLABORATION_MAINTENANCE.md) に進んだ。履歴画面と共有復元は9c・9dに残る。
+この冒頭から9a検証記録までは9a時点の契約。9bの専用maintenance・自動実行・圧縮は [9b実装記録](COLLABORATION_MAINTENANCE.md)、履歴取得・独立コピー・原子的共有復元APIは [9c実装記録](COLLABORATION_RESTORE.md) に進んだ。履歴画面は9dに残る。履歴権限は下記のユーザー確認済み契約を維持する。9cのネットワーク上限2MiB／ログ1MiBは端末救出上限を変えない。
 
 ## receipt と端末 sent の回収
 

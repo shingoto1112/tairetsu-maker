@@ -1,4 +1,4 @@
-import { uuid } from "./transport";
+const uuid = (v: string) => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
 
 /** Local record identity is separate from immutable creator CRDT identity. */
 export function isSharedLocalAlias(localId: string | undefined, documentId?: string | null): boolean {

@@ -1,7 +1,10 @@
 import * as Y from "yjs";
-import type { Position, Project } from "../types";
-import { assertDocument as assertLegacy } from "./legacyModel";
-import { initializeProject, validateModel } from "./projectModel";
+// @ts-ignore Deno source import.
+import type { Position, Project } from "../types.ts";
+// @ts-ignore Deno source import.
+import { assertDocument as assertLegacy } from "./legacyModel.ts";
+// @ts-ignore Deno source import.
+import { initializeProject, validateModel } from "./projectModel.ts";
 
 export const SCHEMA_VERSION = 2;
 export const REMOTE_ORIGIN = Symbol("collaboration remote");

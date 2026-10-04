@@ -62,7 +62,9 @@ describe('schema 2 server validation', () => {
     expect(() => inspectWire(Uint8Array.of(0, 0, 99))).toThrow();
     expect(() => validateState(Uint8Array.of(1))).toThrow();
     expect(() => validateState(base, [], new Uint8Array(SERVER_LIMITS.updateBytes + 1))).toThrow('QUOTA_EXCEEDED');
-    expect(() => fixture(SERVER_LIMITS.members + 1)).toThrow('QUOTA_EXCEEDED');
+    // Old local records remain readable/rescuable; new network acceptance is smaller.
+    const oldLocal = fixture(SERVER_LIMITS.members + 1);
+    expect(() => validateState(Y.encodeStateAsUpdate(oldLocal))).toThrow('QUOTA_EXCEEDED'); oldLocal.destroy();
     const large = fixture(SERVER_LIMITS.members);
     getModel(large).members.set('over-limit', new Y.Map());
     expect(() => validateState(Y.encodeStateAsUpdate(large))).toThrow('QUOTA_EXCEEDED'); large.destroy(); doc.destroy();

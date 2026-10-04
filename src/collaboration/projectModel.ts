@@ -1,10 +1,15 @@
 import * as Y from "yjs";
-import type { Project } from "../types";
-import { ENTITY_ROOTS, getModel, SCHEMA_VERSION, type EntityRoot, type EntityRecord } from "./model";
-import { assertFullState } from "./serverSchema2";
+// @ts-ignore Deno source import.
+import type { Project } from "../types.ts";
+// @ts-ignore Deno source import.
+import { ENTITY_ROOTS, getModel, SCHEMA_VERSION, type EntityRoot, type EntityRecord } from "./model.ts";
+// @ts-ignore Deno source import.
+import { assertFullState } from "./serverSchema2.ts";
 
-export { fieldNames, atoms, sceneMaps, settingAtoms } from "./projectSchema";
-import { fieldNames, atoms, sceneMaps, settingAtoms } from "./projectSchema";
+// @ts-ignore Deno source import.
+export { fieldNames, atoms, sceneMaps, settingAtoms } from "./projectSchema.ts";
+// @ts-ignore Deno source import.
+import { fieldNames, atoms, sceneMaps, settingAtoms } from "./projectSchema.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Data = Record<string, unknown>;

@@ -2,8 +2,8 @@ import { isValidStorageId } from "./ids";
 import { validateAudioBindings } from "./audioBindings";
 import { compareRevisions, isRevision, RepositoryError, type CollaborationData } from "./types";
 
-export const COLLABORATION_LIMITS = Object.freeze({ updateBytes: 256 * 1024, baseBytes: 8 * 1024 * 1024,
-  totalBytes: 16 * 1024 * 1024, jsonBytes: 24 * 1024 * 1024, entries: 4096, compactEntries: 128, compactBytes: 1024 * 1024 });
+import { DEVICE_COLLABORATION_LIMITS } from "../config/collaborationLimits";
+export const COLLABORATION_LIMITS = DEVICE_COLLABORATION_LIMITS;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, names: string[]) => Object.keys(v).length === names.length && names.every(n => n in v);
 export const base64Bytes = (value: unknown, max: number): number => {

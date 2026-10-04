@@ -1,8 +1,12 @@
 import * as Y from "yjs";
-import type { Project } from "../types";
-import { getSupportedModel, ENTITY_ROOTS, type EntityRoot, type EntityRecord } from "./model";
-import { expandFields, orderedIds, orderKey, listField, sceneMaps, clone, fieldNames, atoms, settingAtoms, type Data } from "./projectModel";
-import { isSharedLocalAlias } from "./identity";
+// @ts-ignore Deno source import.
+import type { Project } from "../types.ts";
+// @ts-ignore Deno source import.
+import { getSupportedModel, ENTITY_ROOTS, type EntityRoot, type EntityRecord } from "./model.ts";
+// @ts-ignore Deno source import.
+import { expandFields, orderedIds, orderKey, listField, sceneMaps, clone, fieldNames, atoms, settingAtoms, type Data } from "./projectModel.ts";
+// @ts-ignore Deno source import.
+import { isSharedLocalAlias } from "./identity.ts";
 
 /** Pure read: orphaned references and inactive slots never trigger repair writes. */
 export function projectSharedDocument(doc: Y.Doc, base: Project, sharedDocumentId?: string | null): Project {

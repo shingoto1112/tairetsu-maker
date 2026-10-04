@@ -48,7 +48,7 @@ export function projectCheckpointContent(doc: Y.Doc, schema: 1 | 2): { content: 
 }
 /** Reconstruct the logical DTO through public Yjs APIs. All binary/internal
  * checks remain in serverValidation; no new doc.store or Item dependencies. */
-function materialize(dto: Pick<CheckpointDTO, "content" | "song" | "sharedSchemaVersion">): Y.Doc {
+export function materializeCheckpoint(dto: Pick<CheckpointDTO, "content" | "song" | "sharedSchemaVersion">): Y.Doc {
   if (!exact(dto.content, ["roots", "hasSong"]) || typeof dto.content.hasSong !== "boolean" || !exact(dto.content.roots, dto.sharedSchemaVersion === 2 ? roots2 : roots1) ||
     !dto.content.hasSong && dto.song !== null || dto.sharedSchemaVersion === 1 && dto.content.hasSong) invalid();
   const doc = new Y.Doc();
@@ -110,6 +110,6 @@ export async function validateCheckpointDTO(value: unknown): Promise<CheckpointD
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(dto.serverAt) || !Number.isFinite(Date.parse(dto.serverAt)) || !/^[0-9a-f]{64}$/.test(dto.digest)) invalid();
   const bytes = canonicalCheckpointContent(dto);
   if (await digest(bytes) !== dto.digest) throw new ValidationError("CHECKPOINT_DIGEST_MISMATCH");
-  const doc = materialize(dto); doc.destroy();
+  const doc = materializeCheckpoint(dto); doc.destroy();
   return JSON.parse(JSON.stringify(dto)) as CheckpointDTO;
 }

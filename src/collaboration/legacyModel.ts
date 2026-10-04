@@ -1,5 +1,6 @@
 import * as Y from "yjs";
-import type { Position, Project } from "../types";
+// @ts-ignore Deno source import.
+import type { Position, Project } from "../types.ts";
 
 export const SCHEMA_VERSION = 1;
 export const REMOTE_ORIGIN = Symbol("collaboration remote");

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir, rm, access } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
@@ -20,7 +20,8 @@ export async function loadCollabRuntime() {
     // production-like, flag-OFF environment for this offline CLI.
     source = source.replaceAll("import.meta.env", '({ DEV: false, PROD: true, MODE: "test" })');
     for (const match of [...source.matchAll(/(?:from\s*|import\s*\(\s*)(["'])(\.[^"']+)\1/g)]) {
-      const specifier = match[2], dependency = path.resolve(path.dirname(input), specifier.endsWith(".ts") ? specifier : `${specifier}.ts`);
+      const specifier = match[2]; let dependency = path.resolve(path.dirname(input), specifier.endsWith(".ts") ? specifier : `${specifier}.ts`);
+      try { await access(dependency); } catch { dependency = path.resolve(path.dirname(input), specifier, 'index.ts'); }
       const target = await compile(dependency);
       let newSpecifier = path.relative(path.dirname(output), target).replaceAll("\\", "/");
       if (!newSpecifier.startsWith(".")) newSpecifier = `./${newSpecifier}`;
@@ -35,13 +36,15 @@ export async function loadCollabRuntime() {
     await rm(directory, { recursive: true, force: true });
   };
   try {
-    const [runtime, normalization, validation, maintenance] = await Promise.all([
+    const [runtime, normalization, validation, maintenance, restoration] = await Promise.all([
       compile(path.join(root, "src/collaboration/runtime.ts")), compile(path.join(root, "src/project/normalizeProject.ts")),
       compile(path.join(root, "src/collaboration/serverValidation.ts")),
       compile(path.join(root, "src/collaboration/maintenance.ts")),
+      compile(path.join(root, "src/collaboration/restore.ts")),
     ]);
     return { runtime: await import(pathToFileURL(runtime).href), normalization: await import(pathToFileURL(normalization).href),
       validation: await import(pathToFileURL(validation).href), maintenance: await import(pathToFileURL(maintenance).href),
-      moduleUrls: [runtime, normalization, validation, maintenance].map(p => pathToFileURL(p).href), dispose };
+      restoration: await import(pathToFileURL(restoration).href),
+      moduleUrls: [runtime, normalization, validation, maintenance, restoration].map(p => pathToFileURL(p).href), dispose };
   } catch (error) { await dispose(); throw error; }
 }
