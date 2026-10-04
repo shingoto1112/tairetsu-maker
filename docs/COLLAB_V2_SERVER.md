@@ -1,5 +1,9 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第7回で未適用 foundation を改訂。[現行 API・変更点・適用前の設定](COLLABORATION_LIFECYCLE.md)を参照。
+list_members/access_status、private 試行制限・終了記録、同世代の招待応答再取得、Auth 削除前の
+招待失効 trigger を追加した。旧11 migration・旧関数は変更なし。以下は第3回時点の記録。
+
 第6回で新規 document_schema default=2、check=1/2、Edge 全写像検証へ更新した。
 create は2のみ、append は DB と内部 schema 一致を検査する。本番には未適用。
 [全写像・境界・Linux CI 申し送り](COLLABORATION_PROJECT.md)を参照。

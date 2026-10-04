@@ -34,7 +34,7 @@ export function createCollaborationData(doc: Y.Doc): CollaborationData {
 export function validateCollaborationProject(data: CollaborationData, project: Project): void {
   const doc = hydrateCollaboration(data);
   try {
-    const projection = projectSharedDocument(doc, project);
+    const projection = projectSharedDocument(doc, project, data.sharedDocumentId);
     if (data.documentSchema === 2 && !same(projection, project)) throw new Error("Shared Project projection mismatch");
     for (let i = 0; i < project.frames.length; i++) {
       const actual = project.frames[i].positions, expected = projection.frames[i].positions;
@@ -43,7 +43,7 @@ export function validateCollaborationProject(data: CollaborationData, project: P
     // Outbox bytes must already be part of the durable state (including delete sets).
     const before = encodeUpdate(Y.encodeStateAsUpdate(doc));
     for (const update of data.outbox) Y.applyUpdate(doc, decodeUpdate(update.bytes));
-    if (before !== encodeUpdate(Y.encodeStateAsUpdate(doc)) || getModel(doc).metadata.get("projectId") !== project.id) throw new Error();
+    if (before !== encodeUpdate(Y.encodeStateAsUpdate(doc))) throw new Error();
   } catch { throw new RepositoryError("INVALID_ARGUMENT"); }
   finally { doc.destroy(); }
 }
@@ -92,6 +92,6 @@ export function mergeCollaboration(saved: CollaborationData, local: Collaboratio
     const collaboration = validateCollaboration({ ...saved, sharedDocumentId: saved.sharedDocumentId ?? local.sharedDocumentId,
       base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], outbox: [...outbox.values()],
       serverCursor: compareRevisions(saved.serverCursor, local.serverCursor) >= 0 ? saved.serverCursor : local.serverCursor });
-    return { project: projectSharedDocument(doc, base), collaboration };
+    return { project: projectSharedDocument(doc, base, collaboration.sharedDocumentId), collaboration };
   } finally { doc.destroy(); mine.destroy(); }
 }

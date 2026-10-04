@@ -11,7 +11,7 @@ export function editSharedSession(s: Session, updates: CollaborationUpdate[], cu
   if (!s.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
   const collaboration = appendCollaboration(s.collaboration, updates, cursor ?? s.collaboration.serverCursor);
   const doc = hydrateCollaboration(collaboration);
-  try { s.project = projectSharedDocument(doc, s.project); } finally { doc.destroy(); }
+  try { s.project = projectSharedDocument(doc, s.project, collaboration.sharedDocumentId); } finally { doc.destroy(); }
   s.collaboration = collaboration; s.localRevision = incrementRevision(s.localRevision); s.dirty = true;
   return JSON.parse(JSON.stringify(s.project)) as Session["project"];
 }
@@ -45,7 +45,7 @@ export function receiveSharedSnapshot(s: Session, bytes: string, updates: Collab
     const collaboration = validateCollaboration({ ...s.collaboration, base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], serverCursor: cursor });
     const checked = hydrateCollaboration(collaboration); checked.destroy();
     if (collaboration.base === before && cursor === s.collaboration.serverCursor) return;
-    const project = projectSharedDocument(doc, s.project);
+    const project = projectSharedDocument(doc, s.project, collaboration.sharedDocumentId);
     s.project = project; s.collaboration = collaboration; s.localRevision = incrementRevision(s.localRevision); s.dirty = true;
   } finally { doc.destroy(); }
 }

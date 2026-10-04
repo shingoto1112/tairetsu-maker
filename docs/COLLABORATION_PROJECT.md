@@ -1,5 +1,9 @@
 # 共同編集 第6回 — 全 Project 写像と編集入口
 
+第7回の [共有開始・招待・参加・終了 API と本番設定](COLLABORATION_LIFECYCLE.md)を追加。
+端末の参加コピーは共有文書に紐づく新 ID、CRDT の作成者 ID は維持する。
+以下は第6回時点の記録。Swift・共通 fixture は第7回では変更していない。
+
 2026-10-04。新規 Y.Doc は **documentSchema=2**。attachment の schemaVersion=1、
 既存 IndexedDB/SQLite/bridge の番号とは別物。本番 SQL/Edge は未適用。
 schema 1 は過去 fixture の読み込み・append を維持するが、全項目を編集する App には2が必要。

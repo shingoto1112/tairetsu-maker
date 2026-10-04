@@ -1,5 +1,8 @@
 # 新しい共同編集 第2回：端末保存契約
 
+第7回の [共有開始・参加・終了と救出 API](COLLABORATION_LIFECYCLE.md)を参照。
+保存形式・binding 不変条件は維持し、参加時は新しい端末 ID のレコードを作る。
+
 第6回の documentSchema=2 / 全投影一致検査 / App 接続は
 [COLLABORATION_PROJECT.md](COLLABORATION_PROJECT.md)。以下の schema 1 表記は第2回の記録。
 

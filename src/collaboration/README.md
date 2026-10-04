@@ -1,5 +1,8 @@
 # 共同編集モデル — 第1回
 
+第7回の [共有管理 API・ゲスト認証・状態・本番設定](../../docs/COLLABORATION_LIFECYCLE.md)を追加。
+開始・参加・終了 API は runtime の遅延読込境界内、UI は第8回。
+
 現行 schema 2 / App 接続は [COLLABORATION_PROJECT.md](../../docs/COLLABORATION_PROJECT.md) を参照。
 以下の schema 1 と未実装表記は第1回の設計記録。第6回で全写像・編集入口・Undo を実装した。
 

@@ -3,10 +3,11 @@ import { compareRevisions, incrementRevision, RepositoryError, type Collaboratio
 import { parseAck, parseNotice, parsePage, TransportError, uuid, type CollaborationTransport, type Credential, type PullPage } from "./transport";
 
 export type ProviderError = { kind: TransportError["kind"] | "storage" | "membership"; code: string };
-export type ProviderState = { online: boolean; realtimeConnected: boolean; syncing: boolean; pending: number; held: boolean; cursor: string; error: ProviderError | null };
+export type ProviderState = { online: boolean; realtimeConnected: boolean; syncing: boolean; pending: number; held: boolean; cursor: string; error: ProviderError | null;
+  sharing: "active" | "removed" | "ended" | "membership-changed" | "auth-required" };
 /** Notification only, durable queue only. One instance owns one active coordinator session. */
 export class CollaborationProvider {
-  private state: ProviderState = { online: true, realtimeConnected: false, syncing: false, pending: 0, held: false, cursor: "0", error: null };
+  private state: ProviderState = { online: true, realtimeConnected: false, syncing: false, pending: 0, held: false, cursor: "0", error: null, sharing: "active" };
   private listeners = new Set<(state: ProviderState) => void>();
   private stopped = true;
   private controller = new AbortController();
@@ -64,6 +65,7 @@ export class CollaborationProvider {
   private valid(epoch: number): boolean { return !this.stopped && this.state.online && this.epoch === epoch && this.coordinator.state?.id === this.activeId; }
   private closeChannel() { this.topicKey = ""; const unsubscribe = this.unsubscribe; this.unsubscribe = null; this.state.realtimeConnected = false; unsubscribe?.(); }
   private kick(lane: "send" | "pull") {
+    if (["removed", "ended"].includes(this.state.sharing)) return;
     if (this.stopped || !this.state.online || this.blocked.has(lane) || this.coordinator.state?.id !== this.activeId) return;
     if (this.running.has(lane)) { this.requested.add(lane); return; }
     if (this.timers.has(lane)) return;
@@ -89,6 +91,7 @@ export class CollaborationProvider {
       if (!this.valid(epoch)) return;
       if (!uuid(membership)) throw new TransportError("protocol", "INVALID_MEMBERSHIP");
       this.state.held = membership !== data.transportBinding.membershipGeneration;
+      this.state.sharing = this.state.held ? "membership-changed" : "active";
       if (lane === "send" && this.state.held) {
         this.errors.send = { kind: "membership", code: "MEMBERSHIP_CHANGED" }; this.blocked.add("send"); return;
       }
@@ -100,6 +103,13 @@ export class CollaborationProvider {
       if (!this.valid(epoch)) return;
       const e = error instanceof TransportError ? error : new TransportError("validation", error instanceof RepositoryError ? error.code : "LOCAL_STATE_INVALID");
       this.errors[lane] = { kind: error instanceof RepositoryError || e.code.startsWith("LOCAL_") ? "storage" : e.kind, code: e.code };
+      if (e.kind === "auth") this.state.sharing = "auth-required";
+      if (e.code === "MEMBERSHIP_CHANGED") this.state.sharing = "membership-changed";
+      if (["DOCUMENT_DELETED", "NOT_MEMBER"].includes(e.code)) {
+        this.state.sharing = e.code === "DOCUMENT_DELETED" ? "ended" : "removed";
+        this.state.held = true; this.blocked.add("send"); this.blocked.add("pull");
+        this.epoch++; this.controller.abort(); this.timers.forEach(clearTimeout); this.timers.clear();
+      }
       if (["network", "temporary", "rate-limit"].includes(e.kind) || e.code === "MISSING_DEPENDENCIES" || e.code === "HEAD_CONFLICT") {
         const attempt = this.attempts[lane]++;
         if (e.code === "MISSING_DEPENDENCIES") this.kick("pull");

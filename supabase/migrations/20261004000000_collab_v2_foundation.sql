@@ -42,11 +42,29 @@ create table if not exists public.collab_v2_invites (
   expires_at timestamptz not null default (pg_catalog.now() + interval '24 hours'),
   used_at timestamptz,
   used_by uuid references auth.users(id) on delete set null,
+  used_membership uuid,
   revoked_at timestamptz,
   check (expires_at <= issued_at + interval '24 hours')
 );
 create index if not exists collab_v2_invites_document_idx on public.collab_v2_invites(document_id, issued_at);
 create index if not exists collab_v2_invites_issuer_idx on public.collab_v2_invites(issued_by);
+-- Unapplied foundation revision: retry a consumed invite only in the SAME
+-- membership. It cannot grant a new membership after removal/rejoin.
+alter table public.collab_v2_invites add column if not exists used_membership uuid;
+create table if not exists collab_v2_private.join_attempts (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  window_started timestamptz not null,
+  attempts integer not null check (attempts between 1 and 21)
+);
+create table if not exists collab_v2_private.departures (
+  document_id uuid not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  reason text not null check (reason in ('removed', 'ended')),
+  primary key (document_id, user_id)
+);
+alter table collab_v2_private.join_attempts enable row level security;
+alter table collab_v2_private.departures enable row level security;
+revoke all on collab_v2_private.join_attempts, collab_v2_private.departures from public, anon, authenticated, service_role;
 create table if not exists public.collab_v2_updates (
   document_id uuid not null references public.collab_v2_documents(id) on delete cascade,
   seq bigint not null check (seq > 0),
@@ -127,6 +145,12 @@ begin
   if tg_op = 'DELETE' then
     update public.collab_v2_invites set revoked_at = coalesce(revoked_at, pg_catalog.now())
       where document_id = v_document and issued_by = old.user_id and used_at is null;
+    if exists (select 1 from auth.users where id = old.user_id) then
+      insert into collab_v2_private.departures(document_id, user_id, reason)
+        values (v_document, old.user_id, 'removed') on conflict (document_id, user_id) do nothing;
+    end if;
+  else
+    delete from collab_v2_private.departures where document_id = v_document and user_id = new.user_id;
   end if;
   return null;
 end $$;
@@ -136,6 +160,32 @@ create trigger collab_v2_member_changed after insert or delete on public.collab_
 
 -- Deferred snapshot FK permits auth.users -> document -> snapshot cascades.
 -- Existing delete_current_account eventually deletes auth.users, so no override.
+create or replace function collab_v2_private.document_deleted()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into collab_v2_private.departures(document_id, user_id, reason)
+    select old.id, m.user_id, 'ended' from public.collab_v2_members m
+      join auth.users u on u.id = m.user_id where m.document_id = old.id
+    on conflict (document_id, user_id) do update set reason = 'ended';
+  update collab_v2_private.departures set reason = 'ended' where document_id = old.id;
+  return old;
+end $$;
+drop trigger if exists collab_v2_document_deleted on public.collab_v2_documents;
+create trigger collab_v2_document_deleted before delete on public.collab_v2_documents
+  for each row execute function collab_v2_private.document_deleted();
+
+-- BEFORE Auth cascades SET NULL issued_by, so cascade ordering cannot leave
+-- an unused invitation unrevoked. Also applies to existing account-delete RPC.
+create or replace function collab_v2_private.user_deleting()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  update public.collab_v2_invites set revoked_at = coalesce(revoked_at, pg_catalog.now())
+    where issued_by = old.id and used_at is null;
+  return old;
+end $$;
+drop trigger if exists collab_v2_user_deleting on auth.users;
+create trigger collab_v2_user_deleting before delete on auth.users
+  for each row execute function collab_v2_private.user_deleting();
 
 create or replace function collab_v2_private.require_budget(p_extra bigint)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -217,33 +267,51 @@ end $$;
 create or replace function public.collab_v2_join(p_token text, p_display_name text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_user uuid := collab_v2_private.require_user(); v_invite public.collab_v2_invites%rowtype;
-  v_document uuid; v_member uuid; v_guest boolean;
+  v_document uuid; v_member uuid; v_guest boolean; v_attempts integer;
 begin
+  -- Returning errors (rather than raising) is deliberate: failed guesses MUST
+  -- commit the rate counter. The client maps this result to a typed error.
+  insert into collab_v2_private.join_attempts(user_id, window_started, attempts)
+    values (v_user, pg_catalog.clock_timestamp(), 1)
+    on conflict (user_id) do update set
+      attempts = case when collab_v2_private.join_attempts.window_started <= pg_catalog.clock_timestamp() - interval '10 minutes'
+        then 1 else least(collab_v2_private.join_attempts.attempts + 1, 21) end,
+      window_started = case when collab_v2_private.join_attempts.window_started <= pg_catalog.clock_timestamp() - interval '10 minutes'
+        then pg_catalog.clock_timestamp() else collab_v2_private.join_attempts.window_started end
+    returning attempts into v_attempts;
+  if v_attempts > 20 then return pg_catalog.jsonb_build_object('error', 'INVITE_ATTEMPT_LIMIT'); end if;
   if p_token is null or p_token !~ '^[0-9a-f]{64}$' or p_display_name is null
     or pg_catalog.char_length(p_display_name) not between 1 and 80 or pg_catalog.btrim(p_display_name) = '' then
-    raise exception using errcode = '22023', message = 'INVALID_ARGUMENT';
+    return pg_catalog.jsonb_build_object('error', 'INVALID_ARGUMENT');
   end if;
   select document_id into v_document from public.collab_v2_invites where token_hash = extensions.digest(p_token, 'sha256');
-  if v_document is null then raise exception using errcode = '42501', message = 'INVALID_INVITE'; end if;
+  if v_document is null then return pg_catalog.jsonb_build_object('error', 'INVALID_INVITE'); end if;
   -- Always document first, then invitation. Same order as remove and revoke.
   perform 1 from public.collab_v2_documents where id = v_document and deleted_at is null for update;
-  if not found then raise exception using errcode = '42501', message = 'INVALID_INVITE'; end if;
+  if not found then return pg_catalog.jsonb_build_object('error', 'INVALID_INVITE'); end if;
   select * into v_invite from public.collab_v2_invites where token_hash = extensions.digest(p_token, 'sha256') for update;
-  if not found or v_invite.revoked_at is not null or v_invite.used_at is not null
+  select membership_generation into v_member from public.collab_v2_members where document_id = v_document and user_id = v_user;
+  if not found then v_member := null; end if;
+  if v_invite.used_at is not null and v_invite.used_by = v_user and v_invite.used_membership = v_member then
+    -- Only replay the receipt; no INSERT/ACL rotation/name mutation.
+    return (select pg_catalog.jsonb_build_object('documentId', d.id, 'generation', d.generation::text,
+      'headSeq', d.head_seq::text, 'aclGeneration', d.acl_generation::text, 'topic', d.private_topic,
+      'membershipGeneration', v_member) from public.collab_v2_documents d where d.id = v_document);
+  end if;
+  if v_invite.id is null or v_invite.revoked_at is not null or v_invite.used_at is not null
     or v_invite.expires_at <= pg_catalog.now() or not exists (
       select 1 from public.collab_v2_members where document_id = v_document and user_id = v_invite.issued_by) then
-    raise exception using errcode = '42501', message = 'INVALID_INVITE';
+    return pg_catalog.jsonb_build_object('error', 'INVALID_INVITE');
   end if;
-  select membership_generation into v_member from public.collab_v2_members where document_id = v_document and user_id = v_user;
   if v_member is null then
     if (select count(*) from public.collab_v2_members where document_id = v_document) >= 8 then
-      raise exception using errcode = '54000', message = 'MEMBER_LIMIT';
+      return pg_catalog.jsonb_build_object('error', 'MEMBER_LIMIT');
     end if;
     select is_anonymous into v_guest from auth.users where id = v_user;
     insert into public.collab_v2_members(document_id, user_id, display_name, is_guest)
       values (v_document, v_user, p_display_name, v_guest) returning membership_generation into v_member;
   end if;
-  update public.collab_v2_invites set used_at = pg_catalog.now(), used_by = v_user where id = v_invite.id;
+  update public.collab_v2_invites set used_at = pg_catalog.now(), used_by = v_user, used_membership = v_member where id = v_invite.id;
   return (select pg_catalog.jsonb_build_object('documentId', d.id, 'generation', d.generation::text,
     'headSeq', d.head_seq::text, 'aclGeneration', d.acl_generation::text, 'topic', d.private_topic,
     'membershipGeneration', v_member) from public.collab_v2_documents d where id = v_document);
@@ -292,6 +360,39 @@ begin
   delete from public.collab_v2_updates where document_id = p_document;
   delete from public.collab_v2_update_receipts where document_id = p_document;
   delete from public.collab_v2_sync_snapshots where document_id = p_document;
+  update collab_v2_private.departures set reason = 'ended' where document_id = p_document;
+end $$;
+
+-- Only the caller's prior relationship is disclosed; no document contents or
+-- existence oracle for outsiders. A creator Auth deletion leaves this receipt.
+create or replace function public.collab_v2_access_status(p_document uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare v_user uuid := collab_v2_private.require_user(); v_member uuid; v_deleted boolean; v_reason text;
+begin
+  if p_document is null then raise exception using errcode = '22023', message = 'INVALID_ARGUMENT'; end if;
+  select m.membership_generation, d.deleted_at is not null into v_member, v_deleted
+    from public.collab_v2_members m join public.collab_v2_documents d on d.id = m.document_id
+    where m.document_id = p_document and m.user_id = v_user;
+  if found then
+    if v_deleted then return pg_catalog.jsonb_build_object('status', 'ended'); end if;
+    return pg_catalog.jsonb_build_object('status', 'active', 'membershipGeneration', v_member);
+  end if;
+  select reason into v_reason from collab_v2_private.departures where document_id = p_document and user_id = v_user;
+  return pg_catalog.jsonb_build_object('status', coalesce(v_reason, 'unavailable'));
+end $$;
+create or replace function public.collab_v2_list_members(p_document uuid)
+returns jsonb language plpgsql stable security invoker set search_path = '' as $$
+begin
+  perform collab_v2_private.require_user();
+  if p_document is null then raise exception using errcode = '22023', message = 'INVALID_ARGUMENT'; end if;
+  if not collab_v2_private.is_member(p_document) then raise exception using errcode = '42501', message = 'NOT_MEMBER'; end if;
+  if exists (select 1 from public.collab_v2_documents where id = p_document and deleted_at is not null) then
+    raise exception using errcode = '42501', message = 'DOCUMENT_DELETED';
+  end if;
+  return (select coalesce(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('userId', m.user_id,
+    'displayName', m.display_name, 'isGuest', m.is_guest, 'isCreator', m.user_id = d.creator_id)
+    order by m.joined_at, m.user_id), '[]'::jsonb)
+    from public.collab_v2_members m join public.collab_v2_documents d on d.id = m.document_id where d.id = p_document);
 end $$;
 
 -- One SELECT = one MVCC snapshot. Never mix a newer head with an older page.

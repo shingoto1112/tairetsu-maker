@@ -5,7 +5,10 @@ on:
     branches: [codex/ipad-release-20261002]
     paths:
       - 'supabase/**'
-      - 'src/collaboration/serverValidation*'
+      - 'src/collaboration/**'
+      - 'scripts/collaboration-*.test.ts'
+      - 'scripts/testing/mock-collab-server.mjs'
+      - 'scripts/test-collaboration-lifecycle-browser.mjs'
       - 'scripts/check-collab-v2.mjs'
       - 'scripts/test-cloud-sql.mjs'
       - 'scripts/bench-collab-v2.mjs'
@@ -46,7 +49,7 @@ jobs:
       - name: PostgreSQL migrations, authorization, races, rerun
         run: node scripts/test-cloud-sql.mjs
       - name: Pure validation and ingest contract
-        run: npm test -- src/collaboration/serverValidation.test.ts supabase/functions/collab-ingest/handler.test.ts --maxWorkers 2 --silent=false
+        run: npm test -- src/collaboration/serverValidation.test.ts supabase/functions/collab-ingest/handler.test.ts scripts/collaboration-lifecycle.test.ts scripts/collaboration-provider.test.ts --maxWorkers 2 --silent=false
       - name: Application typecheck
         run: npm run typecheck
       - name: Synthetic load estimate (no hosted-performance claim)

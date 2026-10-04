@@ -2,11 +2,16 @@ import * as Y from "yjs";
 import type { Project } from "../types";
 import { getSupportedModel, ENTITY_ROOTS, type EntityRoot, type EntityRecord } from "./model";
 import { expandFields, orderedIds, orderKey, listField, sceneMaps, clone, fieldNames, atoms, settingAtoms, type Data } from "./projectModel";
+import { isSharedLocalAlias } from "./identity";
 
 /** Pure read: orphaned references and inactive slots never trigger repair writes. */
-export function projectSharedDocument(doc: Y.Doc, base: Project): Project {
+export function projectSharedDocument(doc: Y.Doc, base: Project, sharedDocumentId?: string | null): Project {
   const model = getSupportedModel(doc);
-  if (model.metadata.get("projectId") !== base.id) throw new Error("Project base does not match collaboration document");
+  // A join gets a fresh local record, while the creator's CRDT identities stay
+  // unchanged. Only an explicit, document-bound local alias is accepted.
+  const alias = isSharedLocalAlias(base.id, sharedDocumentId);
+  if (model.metadata.get("projectId") !== base.id && !(alias && model.metadata.get("schemaVersion") === 2))
+    throw new Error("Project base does not match collaboration document");
   if (model.metadata.get("schemaVersion") === 1) {
     if (model.members.size !== base.members.length || model.scenes.size !== base.frames.length ||
         new Set(base.frames.map(f => f.id)).size !== base.frames.length ||

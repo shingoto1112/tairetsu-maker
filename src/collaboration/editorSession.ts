@@ -22,6 +22,7 @@ export class SharedProjectEditor {
   private pending: CollaborationUpdate[] = [];
   private seen = new WeakSet<object>();
   private published = new WeakSet<Project>();
+  private readonly sharedDocumentId: string | null;
   acceptsProjection(project: Project): boolean { return this.published.has(project); }
   private noteAdapters = new Map<string, SharedNotesAdapter>();
   notes(sceneId: string): SharedNotesAdapter {
@@ -33,6 +34,7 @@ export class SharedProjectEditor {
   private constructor(readonly doc: Y.Doc, private coordinator: SaveCoordinator, project: Project,
     private publish: (project: Project) => void, private failed: (error: unknown) => void) {
     this.local = project; this.commands = new CollaborationCommands(doc);
+    this.sharedDocumentId = coordinator.collaborationProjection?.sharedDocumentId ?? null;
     doc.on("update", this.updated); this.remember(project);
   }
   static async create(coordinator: SaveCoordinator, project: Project, publish: (project: Project) => void, failed: (error: unknown) => void) {
@@ -42,7 +44,7 @@ export class SharedProjectEditor {
     return new SharedProjectEditor(hydrateCollaboration(data), coordinator, project, publish, failed);
   }
   get project(): Project {
-    const projected = projectSharedDocument(this.doc, this.local);
+    const projected = projectSharedDocument(this.doc, this.local, this.sharedDocumentId);
     if (!this.batch) return projected;
     const own = this.batch;
     // A synchronous compound entry (e.g. applying plans to several members)
@@ -71,7 +73,7 @@ export class SharedProjectEditor {
     if (next === previous) return;
     if (!intentionalImport) this.rejectStale(previous, next);
     // Compile now, before any asynchronous save or remote update.
-    const writes = planRecipe(this.doc, previous, next);
+    const writes = planRecipe(this.doc, previous, next, this.sharedDocumentId);
     this.local = { ...next, updatedAt: new Date().toISOString() };
     if (this.batch) {
       writes.forEach(w => this.batch!.writes.set(JSON.stringify(w.target), w));

@@ -14,7 +14,7 @@ export function preflight() {
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');
   const functions = [...sql.matchAll(/create or replace function ([\w.]+)\([\s\S]*?\n(?:\$\$;|end \$\$;)/g)];
-  assert.equal(functions.length, 16, 'Review new function inventory when changing it');
+  assert.equal(functions.length, 20, 'Review new function inventory when changing it');
   for (const [, name] of functions) assert(name.startsWith('public.collab_v2_') || name.startsWith('collab_v2_private.'));
   for (const [body] of functions) {
     assert.match(body, /security (invoker|definer) set search_path = ''/i);
@@ -25,6 +25,10 @@ export function preflight() {
   assert.match(sql, /v_seq := v_doc.head_seq \+ 1/);
   assert.match(sql, /deferrable initially deferred/);
   assert.match(sql, /as restrictive for insert to anon, authenticated/);
+  assert.match(sql, /Returning errors \(rather than raising\)/);
+  assert.match(sql, /used_membership = v_member/);
+  assert.match(sql, /before delete on auth.users/);
+  assert.match(sql, /before delete on public.collab_v2_documents/);
   assert(!/alter table realtime.messages/i.test(sql), 'Supabase owns realtime.messages; only add policies');
   const config = JSON.parse(readFileSync('supabase/functions/collab-ingest/deno.json', 'utf8'));
   assert.equal(config.imports.yjs, 'npm:yjs@13.6.33');

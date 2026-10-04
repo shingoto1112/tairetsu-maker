@@ -1,5 +1,8 @@
 # 共同編集 第5回：iPad SQLite 保存
 
+第7回の [貼付け参加・終了・救出 API](COLLABORATION_LIFECYCLE.md)は既存 bridge を利用する。
+Swift・保存形式・共通 fixture は変更なし。新しい端末 alias の commit/再読込は macOS/iPad で確認する。
+
 第6回の最小 Swift 差分（documentSchema=1/2、未来 schema=99 の拒否試験、
 raw sqlite3 テスト接続の foreign_keys=ON）と macOS 確認事項は
 [COLLABORATION_PROJECT.md](COLLABORATION_PROJECT.md)を参照。byte 上限・bridge は変更していない。

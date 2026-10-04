@@ -1,5 +1,9 @@
 # 新しい共同編集 第4回：provider の縦切り
 
+第7回で [共有管理 API・状態・本番設定](COLLABORATION_LIFECYCLE.md)を追加。
+membership 確認は access_status RPC へ変更。provider.sharing に解除・終了等の状態を追加し、
+解除/終了では両 lane と購読を停止、端末コピーと outbox を保持する。以下は以前の記録。
+
 第6回で schema 2 の全写像と App 編集 session を追加した。
 [現行の写像・編集入口・申し送り](COLLABORATION_PROJECT.md)を参照。
 provider は1/2を受理し、受信ページと attachment の schema 一致を検証する。

@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { isSharedLocalAlias } from "./identity";
 import type { Project } from "../types";
 import { ENTITY_ROOTS, getModel, type EntityRoot, type EntityRecord } from "./model";
 import { checkJson, clone, same, entityFields, settingsFields, initializeEntity, listField, orderKey, moveSlot, order, deleted, type Data } from "./projectModel";
@@ -18,8 +19,8 @@ export function textSplice(before: string, after: string): { index: number; remo
 }
 /** Runs at the synchronous edit entry, never in a React effect. Only changed
  * branches are visited; scalar/geometry commands never replace entity maps. */
-export function planRecipe(doc: Y.Doc, before: Project, after: Project): PlannedWrite[] {
-  if (before.id !== after.id || after.id !== getModel(doc).metadata.get("projectId")) throw new Error("Shared project identity cannot change");
+export function planRecipe(doc: Y.Doc, before: Project, after: Project, sharedDocumentId?: string | null): PlannedWrite[] {
+  if (before.id !== after.id || (after.id !== getModel(doc).metadata.get("projectId") && !isSharedLocalAlias(after.id, sharedDocumentId))) throw new Error("Shared project identity cannot change");
   const model = getModel(doc), result: PlannedWrite[] = [];
   const removed = Object.fromEntries(ENTITY_ROOTS.map(root => {
     const old = (before[listField(root)] ?? []) as { id: string }[], next = (after[listField(root)] ?? []) as { id: string }[];

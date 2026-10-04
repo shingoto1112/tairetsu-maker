@@ -202,12 +202,13 @@ describe('provider durable boundaries and failure states', () => {
   it('HTTP adapter supplies exact RPC args/Bearer and membership read with injected config', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const fetcher = (async (url, init) => {
-      calls.push({ url: String(url), init }); return new Response(JSON.stringify(String(url).includes('collab_v2_members?') ? [{ membership_generation: memberships[0] }] : { ok: true }));
+      calls.push({ url: String(url), init }); return new Response(JSON.stringify(String(url).includes('collab_v2_access_status') ? { status: 'active', membershipGeneration: memberships[0] } : { ok: true }));
     }) as typeof fetch;
     const transport = createHttpTransport({ url: 'http://localhost:9999', anonKey: 'public-only' }, async () => null, async () => () => {}, fetcher);
     const auth = { accountId: actors[0], accessToken: 'injected-token' }, signal = new AbortController().signal;
     await transport.membership(documentId, auth, signal); await transport.pull(documentId, '1', '9007199254740993', 32, auth, signal);
-    expect(calls[0].url).toContain(`user_id=eq.${actors[0]}`);
+    expect(calls[0].url).toContain('/rpc/collab_v2_access_status');
+    expect(JSON.parse(calls[0].init!.body as string)).toEqual({ p_document: documentId });
     expect(calls[1].init?.headers).toMatchObject({ Authorization: 'Bearer injected-token', apikey: 'public-only' });
     expect(JSON.parse(calls[1].init!.body as string)).toEqual({ p_document: documentId, p_generation: '1', p_cursor: '9007199254740993', p_limit: 32 });
     expect(httpError(429, 'VALIDATION_BUDGET').kind).toBe('validation'); expect(httpError(400, 'MISSING_DEPENDENCIES').kind).toBe('temporary');

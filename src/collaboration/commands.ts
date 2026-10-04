@@ -93,9 +93,9 @@ export class CollaborationCommands {
     return changes.length;
   }
 
-  applyRecipe(before: Project, after: Project): number {
+  applyRecipe(before: Project, after: Project, sharedDocumentId?: string | null): number {
     if (getSupportedModel(this.doc).metadata.get("schemaVersion") !== 2) throw new Error("Full editing requires schema 2");
-    return this.execute(planRecipe(this.doc, before, after));
+    return this.execute(planRecipe(this.doc, before, after, sharedDocumentId));
   }
   restoreEntity(root: EntityRoot, id: string): number { return this.execute(planRestore(this.doc, root, id)); }
   executePrepared(writes: PlannedWrite[]): number { return this.execute(writes); }

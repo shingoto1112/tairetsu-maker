@@ -9,8 +9,7 @@ export function httpError(status: number, code: string, retryAfterMs = 0): Trans
     status === 429 ? "rate-limit" : status >= 500 || code === "HEAD_CONFLICT" || code === "MISSING_DEPENDENCIES" ? "temporary" : "validation", code, retryAfterMs);
 }
 /** Auth ownership stays with the existing session service. No second persisted auth store. */
-export function createHttpTransport(config: CloudConfig, credential: CollaborationTransport["credential"],
-  subscribe: CollaborationTransport["subscribe"], fetcher: typeof fetch = fetch): CollaborationTransport {
+export function createCollaborationRequest(config: CloudConfig, fetcher: typeof fetch = fetch) {
   const url = config.url.replace(/\/+$/, "");
   const request = async (path: string, auth: Credential, signal: AbortSignal, body?: unknown) => {
     // Every request is bounded, including a lost ACK or stalled RPC.
@@ -39,12 +38,19 @@ export function createHttpTransport(config: CloudConfig, credential: Collaborati
       throw new TransportError("network", "NETWORK_UNAVAILABLE");
     } finally { clearTimeout(timer); signal.removeEventListener("abort", abort); }
   };
+  return request;
+}
+export function createHttpTransport(config: CloudConfig, credential: CollaborationTransport["credential"],
+  subscribe: CollaborationTransport["subscribe"], fetcher: typeof fetch = fetch): CollaborationTransport {
+  const request = createCollaborationRequest(config, fetcher);
   return {
     credential, subscribe,
     membership: async (documentId, auth, signal) => {
-      const result = await request(`/rest/v1/collab_v2_members?document_id=eq.${encodeURIComponent(documentId)}&user_id=eq.${encodeURIComponent(auth.accountId)}&select=membership_generation`, auth, signal);
-      if (!Array.isArray(result) || result.length !== 1) throw new TransportError("permission", "NOT_MEMBER");
-      const membership = result[0]?.membership_generation;
+      const result = await request("/rest/v1/rpc/collab_v2_access_status", auth, signal, { p_document: documentId }) as { status?: string; membershipGeneration?: string } | null;
+      if (result?.status === "ended") throw new TransportError("permission", "DOCUMENT_DELETED");
+      if (result?.status === "removed" || result?.status === "unavailable") throw new TransportError("permission", "NOT_MEMBER");
+      if (result?.status !== "active") throw new TransportError("protocol", "INVALID_MEMBERSHIP");
+      const membership = result.membershipGeneration;
       if (!uuid(membership)) throw new TransportError("protocol", "INVALID_MEMBERSHIP");
       return membership;
     },
