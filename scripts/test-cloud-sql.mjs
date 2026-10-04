@@ -29,7 +29,7 @@ const deny = (n, sql, message, role = 'authenticated') => {
   try { run(`begin; ${identity(n, role)} ${sql}; commit;`); assert.fail(`Expected denial: ${message}`); }
   catch (error) { assert.match(error.stderr ?? error.message, new RegExp(message), sql); }
 };
-const json = text => JSON.parse(text.split('\n').at(-1));
+const json = text => JSON.parse(text.trim().split('\n').at(-1));
 const scalar = sql => run(`select ${sql};`);
 
 assert.equal(scalar("to_regclass('public.projects') is null and not exists(select 1 from pg_namespace where nspname = 'auth')"), 't', 'Fresh disposable database required');
