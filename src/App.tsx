@@ -193,6 +193,7 @@ import { protectAudioEditor } from "./storage/maintenanceLock";
 const StorageTools = lazy(() => import("./components/StorageTools").then(module => ({ default: module.StorageTools })));
 const StorageRecoveryScreen = lazy(() => import("./components/StorageTools").then(module => ({ default: module.StorageRecoveryScreen })));
 import { getRequiredProject, listAllSummaries, prepareAppRepository, readOpenedProject } from "./storage/appRepository";
+import type { SharedProjectEditor } from "./collaboration/editorSession";
 import {
   createTairetsuArchive,
   createTairetsuFileName,
@@ -1561,7 +1562,7 @@ function App() {
   useAppShellScrollGuard();
   const workspaceLayout = useWorkspaceLayout();
   const initial = useMemo(readInitialProject, []);
-  const [project, setProject] = useState<Project>(initial.project);
+  const [project, setProjectState] = useState<Project>(initial.project);
   const [savedProjects, setSavedProjects] = useState<ProjectSummary[]>([]);
   const [storageReady, setStorageReady] = useState(false);
   const [storageCorrupt, setStorageCorrupt] = useState(false);
@@ -1712,6 +1713,7 @@ function App() {
     useState<FloatingMenuPosition | null>(null);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const undoStackRef = useRef<HistoryEntry[]>([]);
+  const sharedEditorRef = useRef<SharedProjectEditor | null>(null);
   const redoStackRef = useRef<HistoryEntry[]>([]);
   const historyBatchRef = useRef<{ label?: string } | null>(null);
   const isProjectEditBatchActiveRef = useRef(false);
@@ -1754,6 +1756,15 @@ function App() {
   const isCloudShareOpenRef = useRef(isCloudShareOpen);
   const isDirtyRef = useRef(isDirty);
   const selectedFrameIdRef = useRef<string | null>(selectedFrameId);
+  // Async legacy save/import callbacks must never install a captured snapshot
+  // over a shared editor. Only its freshly published projections are accepted.
+  const setProject = useCallback((next: Project) => {
+    const editor = sharedEditorRef.current;
+    if (editor && !editor.acceptsProjection(next)) {
+      const projection = editor.project; projectRef.current = projection; setProjectState(projection); return;
+    }
+    setProjectState(next);
+  }, []);
 
   useEffect(() => {
     document.title =
@@ -1771,6 +1782,7 @@ function App() {
   }, []);
 
   const markLocalEdit = useCallback((next: Project) => {
+    if (sharedEditorRef.current) { sharedEditorRef.current.setLocal(next); return; }
     if (!activeCloudProjectRef.current) saveCoordinatorRef.current?.edit(next);
   }, []);
 
@@ -1791,6 +1803,7 @@ function App() {
         saveCoordinatorRef.current = new SaveCoordinator(repository, state => {
           if (cancelled) return;
           setLocalSaveState(state);
+          sharedEditorRef.current?.receiveDurable();
           if (state) { isDirtyRef.current = state.dirty; setIsDirty(state.dirty); setIsSaving(state.saving); }
           else setIsSaving(false);
         }, summary => {
@@ -1815,6 +1828,7 @@ function App() {
     })();
     return () => {
       cancelled = true; ++editorLoadGenerationRef.current;
+      sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
       const close = () => { if (repository && "close" in repository) (repository as ProjectRepository & { close(): void }).close(); };
       void (saveCoordinatorRef.current?.flush() ?? Promise.resolve()).finally(close);
     };
@@ -2039,6 +2053,10 @@ function App() {
   );
 
   const refreshHistoryCounts = useCallback(() => {
+    if (sharedEditorRef.current) {
+      setHistoryCounts({ undo: sharedEditorRef.current.commands.canUndo ? 1 : 0, redo: sharedEditorRef.current.commands.canRedo ? 1 : 0 });
+      return;
+    }
     setHistoryCounts({
       undo: undoStackRef.current.length,
       redo: redoStackRef.current.length,
@@ -2172,6 +2190,10 @@ function App() {
       label?: string,
       options: { coalesceHistory?: boolean } = {},
     ) => {
+      if (sharedEditorRef.current) {
+        sharedEditorRef.current.edit(recipe);
+        refreshHistoryCounts(); return;
+      }
       const previous = projectRef.current;
       const nextProject = recipe(previous);
       if (nextProject === previous) {
@@ -2214,6 +2236,7 @@ function App() {
 
   const replaceProjectWithHistory = useCallback(
     (nextProject: Project, label?: string) => {
+      if (sharedEditorRef.current) { sharedEditorRef.current.replace(); }
       if (!allowCloudLockedSceneChange(projectRef.current, nextProject)) {
         return;
       }
@@ -2228,6 +2251,7 @@ function App() {
   );
 
   const undoProject = useCallback(() => {
+    if (sharedEditorRef.current) { sharedEditorRef.current.undo(); refreshHistoryCounts(); return; }
     const entry = undoStackRef.current[undoStackRef.current.length - 1];
     if (!entry) {
       return;
@@ -2253,6 +2277,7 @@ function App() {
   }, [allowCloudLockedSceneChange, markLocalEdit, refreshHistoryCounts]);
 
   const redoProject = useCallback(() => {
+    if (sharedEditorRef.current) { sharedEditorRef.current.redo(); refreshHistoryCounts(); return; }
     const entry = redoStackRef.current[redoStackRef.current.length - 1];
     if (!entry) {
       return;
@@ -2287,6 +2312,8 @@ function App() {
 
   const flushPendingAutoSave = useCallback(async () => {
     clearPendingAutoSave();
+    sharedEditorRef.current?.end();
+    if (sharedEditorRef.current && !sharedEditorRef.current.stagePending()) return false;
     return await (saveCoordinatorRef.current?.flush() ?? Promise.resolve(true));
   }, [clearPendingAutoSave]);
 
@@ -2872,6 +2899,10 @@ function App() {
       label?: string,
       target?: SceneElementEditTarget | SceneElementEditTarget[],
     ): boolean | Promise<boolean> => {
+      if (sharedEditorRef.current) {
+        sharedEditorRef.current.begin(selectedFrameIdRef.current ?? undefined, target ? Array.isArray(target) ? target : [target] : []);
+        isProjectEditBatchActiveRef.current = true; return true;
+      }
       if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
         if (!target) {
           setNotice("クラウド共同編集では、この操作はまだセル単位保存に対応していません。");
@@ -2897,6 +2928,10 @@ function App() {
   const endProjectHistoryBatch = useCallback((
     target?: SceneElementEditTarget | SceneElementEditTarget[],
   ) => {
+    if (sharedEditorRef.current) {
+      sharedEditorRef.current.end(); isProjectEditBatchActiveRef.current = false;
+      refreshHistoryCounts(); return;
+    }
     if (activeCloudProjectRef.current && APP_FEATURES.collaboration) {
       if (target) {
         const targets = Array.isArray(target) ? target : [target];
@@ -2917,7 +2952,7 @@ function App() {
       window.clearTimeout(autoSaveTimerRef.current);
     }
     autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 250);
-  }, [appView, flushPendingAutoSave, isSharedProject]);
+  }, [appView, flushPendingAutoSave, isSharedProject, refreshHistoryCounts]);
 
   useEffect(() => {
     if (project.frames.length === 0) {
@@ -5487,6 +5522,10 @@ function App() {
   }
 
   const saveCurrentFormation = async () => {
+    if (sharedEditorRef.current) {
+      if (await flushPendingAutoSave()) setNotice("現在の隊形を保存しました。", "success");
+      return;
+    }
     if (!selectedFrame) {
       setNotice("保存先のフレームがありません。");
       return;
@@ -5954,6 +5993,10 @@ function App() {
   const reorderFrames = (draggedId: string, targetId: string) => {
     if (draggedId === targetId) {
       return;
+    }
+    if (sharedEditorRef.current) {
+      sharedEditorRef.current.commands.moveEntity("scenes", draggedId, targetId);
+      setSelectedFrameId(draggedId); refreshHistoryCounts(); return;
     }
     updateProject((previous) => {
       const sourceIndex = previous.frames.findIndex((frame) => frame.id === draggedId);
@@ -7091,10 +7134,25 @@ function App() {
     }
     if (generation !== editorLoadGenerationRef.current) return false;
     const now = new Date().toISOString();
-    const nextProject = normalizeProject({
+    let nextProject = normalizeProject({
       ...rawProject,
       lastOpenedAt: now,
     });
+    sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
+    if (record) {
+      saveCoordinatorRef.current?.activate({ ...record, project: nextProject });
+      if (record.collaboration) {
+        if (options.cloudProject) throw new Error("新しい共同編集と旧クラウド編集は併用できません。");
+        const { SharedProjectEditor } = await import("./collaboration/editorSession");
+        const editor = await SharedProjectEditor.create(saveCoordinatorRef.current!, nextProject, projection => {
+          projectRef.current = projection; setProject(projection);
+          const commands = sharedEditorRef.current?.commands;
+          if (commands) setHistoryCounts({ undo: commands.canUndo ? 1 : 0, redo: commands.canRedo ? 1 : 0 });
+        }, error => setNotice(error instanceof Error ? error.message : "共同編集の端末保存に失敗しました。"));
+        if (generation !== editorLoadGenerationRef.current) { editor.destroy(); return false; }
+        sharedEditorRef.current = editor; nextProject = editor.project;
+      }
+    }
     undoStackRef.current = [];
     redoStackRef.current = [];
     historyBatchRef.current = null;
@@ -7120,7 +7178,6 @@ function App() {
     setAppView("editor");
     setIsDirty(false);
     if (record) {
-      saveCoordinatorRef.current?.activate({ ...record, project: nextProject });
       void refreshLocalLibrary().catch(error => setNotice(repositoryError(error).message));
     } else if (creation && creationError) {
       saveCoordinatorRef.current?.activateUnsaved(creation, creationError);
@@ -7163,6 +7220,7 @@ function App() {
     try {
       if (!activeCloudProjectRef.current && !await flushPendingAutoSave()) return;
       ++editorLoadGenerationRef.current;
+      sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
       if (isSharedProject) {
         setIsSharedProject(false);
         await refreshLocalLibrary();
@@ -7224,6 +7282,7 @@ function App() {
     if (!coordinator || !canLeaveWithoutSaving(coordinator.state)) return;
     if (!window.confirm("未保存の編集が失われます。先に「編集中のデータを ZIP で書き出す」で退避することをおすすめします。保存せずに一覧へ戻りますか？")) return;
     clearPendingAutoSave(); coordinator.discard(); ++editorLoadGenerationRef.current;
+    sharedEditorRef.current?.destroy(); sharedEditorRef.current = null;
     setIsDirty(false); isDirtyRef.current = false; setIsPlaying(false); audioRef.current?.pause(); setAppView("library");
     void refreshLocalLibrary().catch(error => setNotice(repositoryError(error).message));
   };
@@ -7259,8 +7318,23 @@ function App() {
     const summary = savedProjects.find(s => s.id === id);
     if (!summary) throw new RepositoryError("NOT_FOUND");
     const record = await getRequiredProject(repository, id);
-    await repository.rename({ id, title, updatedAt: new Date().toISOString(), localRevision: incrementRevision(record.localRevision),
-      expectedRepositoryRevision: summary.repositoryRevision, operationId: createProjectId() });
+    if (record.collaboration) {
+      // Library rename is also a shared title command, never JSON metadata that
+      // disagrees with the durable document. Keep the regular rename unchanged.
+      const { SharedProjectEditor } = await import("./collaboration/editorSession");
+      let editor: SharedProjectEditor | undefined;
+      const coordinator = new SaveCoordinator(repository, () => editor?.receiveDurable());
+      coordinator.activate(record);
+      let failure: unknown;
+      try {
+        editor = await SharedProjectEditor.create(coordinator, record.project, () => {}, error => { failure = error; });
+        editor.edit(project => ({ ...project, title }));
+        if (!editor.stagePending() || !await coordinator.flush()) throw failure ?? coordinator.state?.error ?? new RepositoryError("BUSY");
+      } finally { editor?.destroy(); }
+    } else {
+      await repository.rename({ id, title, updatedAt: new Date().toISOString(), localRevision: incrementRevision(record.localRevision),
+        expectedRepositoryRevision: summary.repositoryRevision, operationId: createProjectId() });
+    }
     await refreshLocalLibrary(); setNotice("隊列表名を変更しました。", "success");
   });
 
@@ -10760,6 +10834,7 @@ function App() {
   const setSelectedPathType = (pathType: MovementPathType) => {
     if (!selectedMovementTarget) {
       if (selectedMemberIds.length > 0) {
+        sharedEditorRef.current?.begin();
         selectedMemberIds.forEach((memberId) => {
           const controlPoint =
             pathType === "curve"
@@ -10767,6 +10842,7 @@ function App() {
               : undefined;
           upsertMovementPath("member", memberId, pathType, controlPoint);
         });
+        sharedEditorRef.current?.end();
         setShowMovementPaths(false);
         setMode("preview");
         return;
@@ -10797,6 +10873,7 @@ function App() {
   const setSelectedCurvePreset = (side: "left" | "right") => {
     if (!selectedMovementTarget) {
       if (selectedMemberIds.length > 0) {
+        sharedEditorRef.current?.begin();
         selectedMemberIds.forEach((memberId) => {
           upsertMovementPath(
             "member",
@@ -10805,6 +10882,7 @@ function App() {
             controlPointForPreset("member", memberId, side),
           );
         });
+        sharedEditorRef.current?.end();
         setShowMovementPaths(false);
         setMode("preview");
         return;
@@ -12646,6 +12724,7 @@ function App() {
           sceneNumber={selectedSceneNumber}
           canEditScene={canEditCurrentScene}
           commitOnBlur={Boolean(activeCloudProject)}
+          sharedNotes={selectedFrame && sharedEditorRef.current ? sharedEditorRef.current.notes(selectedFrame.id) : undefined}
           sceneReadOnlyMessage={cloudReadOnlyMessage}
           onUpdateFrame={updateFrame}
         />
@@ -13089,10 +13168,10 @@ function App() {
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
                   deferMemberDragCommit={Boolean(
-                    activeCloudProject && APP_FEATURES.collaboration,
+                    sharedEditorRef.current || activeCloudProject && APP_FEATURES.collaboration,
                   )}
                   deferObjectDragCommit={Boolean(
-                    activeCloudProject && APP_FEATURES.collaboration,
+                    sharedEditorRef.current || activeCloudProject && APP_FEATURES.collaboration,
                   )}
                   remoteMemberLocks={remoteMemberPositionLocksById}
                   remoteObjectLocks={remoteObjectStateLocksById}
@@ -13155,10 +13234,10 @@ function App() {
                   isReadOnly={isCloudCanvasReadOnly}
                   readOnlyMessage={cloudReadOnlyMessage}
                   deferMemberDragCommit={Boolean(
-                    activeCloudProject && APP_FEATURES.collaboration,
+                    sharedEditorRef.current || activeCloudProject && APP_FEATURES.collaboration,
                   )}
                   deferObjectDragCommit={Boolean(
-                    activeCloudProject && APP_FEATURES.collaboration,
+                    sharedEditorRef.current || activeCloudProject && APP_FEATURES.collaboration,
                   )}
                   remoteMemberLocks={remoteMemberPositionLocksById}
                   remoteObjectLocks={remoteObjectStateLocksById}

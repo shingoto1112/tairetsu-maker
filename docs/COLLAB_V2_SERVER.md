@@ -1,5 +1,10 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第6回で新規 document_schema default=2、check=1/2、Edge 全写像検証へ更新した。
+create は2のみ、append は DB と内部 schema 一致を検査する。本番には未適用。
+[全写像・境界・Linux CI 申し送り](COLLABORATION_PROJECT.md)を参照。
+以下の座標 schema 1 は第3回時点の記録。
+
 今回は未適用・未配備です。Claude が差分と Linux CI を確認し、その後に利用者が操作します。
 アプリとの接続は第4回です。SQLを適用しても現在のUIは共同編集へ切り替わりません。
 

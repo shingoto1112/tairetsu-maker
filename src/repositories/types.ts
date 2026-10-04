@@ -72,7 +72,7 @@ export type CollaborationOutbox = { updateId: string; bytes: string; status: "pe
 export type CollaborationData = {
   schemaVersion: 1;
   sharedDocumentId: string | null;
-  documentSchema: 1;
+  documentSchema: 1 | 2;
   generation: Revision;
   base: string;
   journal: CollaborationUpdate[];

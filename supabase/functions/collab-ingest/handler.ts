@@ -78,7 +78,7 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
         if (!fields(input, ['action', 'displayName', 'bytes']) || typeof input.displayName !== 'string' ||
           !input.displayName.trim() || [...input.displayName].length > 80) invalid();
         const bytes = decodeBase64(input.bytes, SERVER_LIMITS.snapshotBytes);
-        validateState(bytes);
+        validateState(bytes, [], undefined, 2);
         const result = await backend.rpc('collab_v2_create_document', { p_actor: user.id, p_display_name: input.displayName, p_bytes: hex(bytes) });
         return response(200, result);
       }
@@ -90,10 +90,10 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
       let validationTime = 0;
       for (let attempt = 0; attempt < 3; attempt++) {
         const state = await backend.rpc('collab_v2_ingest_state', args) as State;
-        if (state.documentSchema !== 1 || !state.snapshot || !Array.isArray(state.updates)) throw new ValidationError('UNSUPPORTED_SCHEMA');
+        if (![1, 2].includes(state.documentSchema) || !state.snapshot || !Array.isArray(state.updates)) throw new ValidationError('UNSUPPORTED_SCHEMA');
         const snapshot = decodeBase64(state.snapshot.bytes, SERVER_LIMITS.snapshotBytes);
         const updates = state.updates.map(u => decodeBase64(u.bytes, SERVER_LIMITS.updateBytes));
-        validationTime += validateState(snapshot, updates, bytes).elapsedMs;
+        validationTime += validateState(snapshot, updates, bytes, state.documentSchema as 1 | 2).elapsedMs;
         if (validationTime > SERVER_LIMITS.validationMs) throw new ValidationError('VALIDATION_BUDGET');
         try {
           const ack = await backend.rpc('collab_v2_append', { ...args, p_expected_head: state.headSeq,

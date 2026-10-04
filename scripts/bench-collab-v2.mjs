@@ -1,18 +1,11 @@
 #!/usr/bin/env node
 // Local/CI synthetic benchmark; no production data, environment or connections.
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 import * as Y from 'yjs';
+import { loadCollabRuntime } from './testing/load-collab-runtime.mjs';
 
-const directory = mkdtempSync(resolve('.tmp-collab-v2-bench-'));
+const loaded = await loadCollabRuntime();
 try {
-  const output = ts.transpileModule(readFileSync('src/collaboration/serverValidation.ts','utf8'), {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  }).outputText;
-  const modulePath = join(directory,'validation.mjs'); writeFileSync(modulePath,output);
-  const { validateState } = await import(pathToFileURL(modulePath).href);
+  const { validateState } = loaded.validation;
   const doc = new Y.Doc(); doc.getMap('metadata').set('schemaVersion',1); doc.getMap('metadata').set('projectId','benchmark');
   const members = doc.getMap('members'), scenes = doc.getMap('scenes');
   for (let m=0;m<146;m++) members.set(`m${m}`,new Y.Map());
@@ -42,7 +35,5 @@ try {
   }
   doc.destroy();
 } finally {
-  // This is a newly-created task directory under cwd, never an input path.
-  if (!directory.startsWith(resolve('.tmp-collab-v2-bench-'))) throw new Error('Unexpected cleanup target');
-  rmSync(directory,{recursive:true,force:true});
+  await loaded.dispose();
 }

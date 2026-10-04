@@ -9,8 +9,12 @@ export async function loadCollabEdge() {
     const validation = await readFile('src/collaboration/serverValidation.ts', 'utf8');
     const handler = (await readFile('supabase/functions/collab-ingest/handler.ts', 'utf8'))
       .replace('../../../src/collaboration/serverValidation.ts', './validation.mjs');
-    for (const [name, source] of [['validation', validation], ['handler', handler]]) {
-      await writeFile(path.join(directory, `${name}.mjs`), ts.transpileModule(source, {
+    const dependencies = await Promise.all(['legacyServerValidation', 'serverSchema2', 'projectSchema'].map(async name =>
+      [name, await readFile(`src/collaboration/${name}.ts`, 'utf8')]));
+    for (const [name, source] of [['validation', validation], ['handler', handler], ...dependencies]) {
+      const resolved = source.replaceAll('./legacyServerValidation.ts', './legacyServerValidation.mjs')
+        .replaceAll('./serverSchema2.ts', './serverSchema2.mjs').replaceAll('./projectSchema.ts', './projectSchema.mjs');
+      await writeFile(path.join(directory, `${name}.mjs`), ts.transpileModule(resolved, {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
       }).outputText);
     }

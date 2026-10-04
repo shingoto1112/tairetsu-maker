@@ -68,7 +68,7 @@ describe("native SQLite adapter mapping", () => {
     await expect(repository.get("project_a")).rejects.toMatchObject({ code: "CORRUPT" });
     plugin.readProject = async input => {
       const raw = JSON.parse((await read(input)).json);
-      raw.collaborationJSON = JSON.stringify({ ...initialCollaboration(), documentSchema: 2 });
+      raw.collaborationJSON = JSON.stringify({ ...initialCollaboration(), documentSchema: 99 });
       return { json: JSON.stringify(raw) };
     };
     await expect(repository.get("project_a")).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA" });

@@ -37,7 +37,7 @@ const collaborationFixture = JSON.parse(readFileSync("src/repositories/contract/
 assert.equal(collaborationFixture.contractVersion, 1);
 assert.equal(collaborationFixture.requiresNativeSchema, 2);
 assert.equal(collaborationFixture.initial.schemaVersion, 1);
-assert.equal(collaborationFixture.initial.documentSchema, 1);
+assert.equal(collaborationFixture.initial.documentSchema, 2);
 assert.equal(collaborationFixture.initial.serverCursor, "0");
 for (const value of [collaborationFixture.initial.base, ...collaborationFixture.updates.map(e => e.bytes)]) {
   assert.equal(Buffer.from(value, "base64").toString("base64"), value, "canonical shared base64 fixture");

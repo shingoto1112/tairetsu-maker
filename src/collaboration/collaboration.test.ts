@@ -46,7 +46,10 @@ describe("collaboration initialization and partial Project projection", () => {
     const original = JSON.stringify(project);
     const doc = keep(createSharedDocument(project));
     const joined = keep(joinSharedDocument(Y.encodeStateAsUpdate(doc)));
-    expect(projectSharedDocument(joined, project)).toEqual(project);
+    const expected = { ...project, movementPaths: project.movementPaths?.filter(path =>
+      project.frames.some(f => f.id === path.fromFrameId) && project.frames.some(f => f.id === path.toFrameId) &&
+      (path.targetType === "object" ? project.stageObjects : project.members).some(target => target.id === (path.targetId ?? path.memberId))) };
+    expect(projectSharedDocument(joined, project)).toEqual(expected);
     const frame = project.frames[0];
     const member = project.members[0];
     if (member) {
@@ -77,8 +80,8 @@ describe("collaboration initialization and partial Project projection", () => {
     expect(() => joinSharedDocument(Y.encodeStateAsUpdate(keep(new Y.Doc())))).toThrow(/Uninitialized/);
     const { docs, project } = peers();
     expect(() => projectSharedDocument(docs[0], { ...project, id: "other" })).toThrow(/does not match/);
-    expect(() => projectSharedDocument(docs[0], { ...project, members: [] })).toThrow(/does not match/);
-    expect(() => projectSharedDocument(docs[0], { ...project, frames: [project.frames[0], project.frames[0]] })).toThrow();
+    expect(projectSharedDocument(docs[0], { ...project, members: [] }).members).toEqual(project.members);
+    expect(projectSharedDocument(docs[0], { ...project, frames: [project.frames[0], project.frames[0]] }).frames).toHaveLength(project.frames.length);
     getModel(docs[0]).metadata.set("schemaVersion", 999);
     expect(() => projectSharedDocument(docs[0], project)).toThrow(/unsupported/);
   });

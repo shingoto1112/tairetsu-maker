@@ -2,8 +2,9 @@ import * as Y from "yjs";
 import type { Project } from "../types";
 import { COLLABORATION_LIMITS, base64Bytes, validateCollaboration } from "../repositories/collaborationData";
 import { compareRevisions, RepositoryError, type CollaborationData, type CollaborationUpdate } from "../repositories/types";
-import { assertDocument, getModel, SCHEMA_VERSION } from "./model";
+import { assertDocument, getModel } from "./model";
 import { projectSharedDocument } from "./projection";
+import { same } from "./projectModel";
 export { projectSharedDocument } from "./projection";
 
 export const encodeUpdate = (bytes: Uint8Array): string => {
@@ -19,6 +20,7 @@ export function hydrateCollaboration(data: CollaborationData): Y.Doc {
     Y.applyUpdate(doc, decodeUpdate(data.base));
     for (const update of data.journal) Y.applyUpdate(doc, decodeUpdate(update.bytes));
     assertDocument(doc);
+    if (getModel(doc).metadata.get("schemaVersion") !== data.documentSchema) throw new Error("Document schema mismatch");
     // Unresolved dependencies cannot be compacted or advanced past a cursor.
     if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Incomplete Yjs updates");
     return doc;
@@ -26,13 +28,14 @@ export function hydrateCollaboration(data: CollaborationData): Y.Doc {
 }
 export function createCollaborationData(doc: Y.Doc): CollaborationData {
   assertDocument(doc);
-  return validateCollaboration({ schemaVersion: 1, documentSchema: SCHEMA_VERSION, sharedDocumentId: null,
+  return validateCollaboration({ schemaVersion: 1, documentSchema: getModel(doc).metadata.get("schemaVersion") as 1 | 2, sharedDocumentId: null,
     generation: "1", base: encodeUpdate(Y.encodeStateAsUpdate(doc)), journal: [], outbox: [], serverCursor: "0" });
 }
 export function validateCollaborationProject(data: CollaborationData, project: Project): void {
   const doc = hydrateCollaboration(data);
   try {
     const projection = projectSharedDocument(doc, project);
+    if (data.documentSchema === 2 && !same(projection, project)) throw new Error("Shared Project projection mismatch");
     for (let i = 0; i < project.frames.length; i++) {
       const actual = project.frames[i].positions, expected = projection.frames[i].positions;
       if (Object.keys(actual).length !== Object.keys(expected).length || Object.entries(expected).some(([id, p]) => actual[id]?.x !== p.x || actual[id]?.y !== p.y)) throw new Error();

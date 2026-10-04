@@ -1,4 +1,4 @@
--- Collaboration schema 1 (coordinates only). No changes to the legacy schema.
+-- Collaboration document schemas 1 (legacy fixture) and 2 (full Project). No legacy table changes.
 -- Apply as one transaction. Reapplication preserves data and ACLs.
 begin;
 
@@ -10,7 +10,7 @@ create table if not exists public.collab_v2_documents (
   id uuid primary key default pg_catalog.gen_random_uuid(),
   creator_id uuid not null references auth.users(id) on delete cascade,
   initial_digest bytea not null check (pg_catalog.octet_length(initial_digest) = 32),
-  document_schema integer not null default 1 check (document_schema = 1),
+  document_schema integer not null default 2 check (document_schema in (1, 2)),
   generation bigint not null default 1 check (generation > 0),
   head_seq bigint not null default 0 check (head_seq >= 0),
   latest_snapshot_id uuid,

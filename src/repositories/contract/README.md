@@ -1,5 +1,9 @@
 # Repository 契約（第1回）
 
+第6回の `fixtures/collaboration.json` は全 Project 写像 documentSchema=2。
+従来 fixture は `collaborationSchema1.json` に保管した。attachment schemaVersion と Swift
+bridge schema は従来どおり。[現行写像](../../../docs/COLLABORATION_PROJECT.md)を参照。
+
 新しい共同編集第2回の追加契約は [COLLABORATION_STORAGE.md](../../../docs/COLLABORATION_STORAGE.md)。
 `fixtures/collaboration.json` はSwift schema2用のcanonical base64素材。
 既存3種のSwift操作fixtureを変更せず、`runCollaborationContract.ts`をVitest/実IndexedDBで実行する。

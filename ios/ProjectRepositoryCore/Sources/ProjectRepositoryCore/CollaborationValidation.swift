@@ -29,7 +29,7 @@ enum CollaborationValidation {
         guard json.utf8.count <= jsonBytes else { throw RepositoryError("QUOTA_EXCEEDED") }
         let value = try RepositoryValidation.object(json)
         guard RepositoryValidation.integer(value["schemaVersion"]) == 1,
-              RepositoryValidation.integer(value["documentSchema"]) == 1 else { throw RepositoryError("UNSUPPORTED_SCHEMA") }
+              [1, 2].contains(RepositoryValidation.integer(value["documentSchema"]) ?? -1) else { throw RepositoryError("UNSUPPORTED_SCHEMA") }
         var names = ["schemaVersion", "sharedDocumentId", "documentSchema", "generation", "base", "journal", "outbox", "serverCursor"]
         if let raw = value["transportBinding"] {
             names.append("transportBinding")

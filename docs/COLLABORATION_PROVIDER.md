@@ -1,5 +1,10 @@
 # 新しい共同編集 第4回：provider の縦切り
 
+第6回で schema 2 の全写像と App 編集 session を追加した。
+[現行の写像・編集入口・申し送り](COLLABORATION_PROJECT.md)を参照。
+provider は1/2を受理し、受信ページと attachment の schema 一致を検証する。
+以下の「App 未接続」「schema 1」は第4回時点の記録。
+
 対象は schema 1 のメンバー座標。App/UI・Swift・旧クラウド・SQL/Edge は変更しない。
 本番 Supabase は未適用・未配備のまま。全通信試験は使い捨てローカルモック。
 

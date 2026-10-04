@@ -50,7 +50,7 @@ export async function runCollaborationContract(create: () => ProjectRepository, 
   await rejection(commit(null, "implicit-detach"), "CONFLICT");
   await rejection(commit({ ...data, outbox: data.outbox.slice(1) }, "outbox-drop"), "CONFLICT");
   await rejection(commit({ ...data, base: "AAAA" }, "bad-yjs"), "INVALID_ARGUMENT");
-  await rejection(commit({ ...data, documentSchema: 2 } as unknown as CollaborationData, "future-schema"), "UNSUPPORTED_SCHEMA");
+  await rejection(commit({ ...data, documentSchema: 99 } as unknown as CollaborationData, "future-schema"), "UNSUPPORTED_SCHEMA");
   await rejection(commit({ ...data, journal: [{ updateId: "huge", source: "remote", bytes: "AAAA".repeat(Math.ceil(COLLABORATION_LIMITS.updateBytes / 3) + 1) }] }, "too-large"), "QUOTA_EXCEEDED");
   const compacted = compactCollaboration(data, true);
   assert(compacted.journal.length === 0 && JSON.stringify(compacted.outbox) === JSON.stringify(data.outbox), "Compaction retains outbox");

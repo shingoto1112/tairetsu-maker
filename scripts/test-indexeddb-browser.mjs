@@ -49,7 +49,11 @@ try {
   await page.evaluate(async () => {
     const { default: fixture } = await import("/src/repositories/contract/fixtures/collaboration.json");
     const record = await window.testRepository.get("project_a");
-    await window.testRepository.commit({ project: record.project, collaboration: fixture.initial,
+    const { hydrateCollaboration, projectSharedDocument } = await import("/src/collaboration/persistence.ts");
+    const doc = hydrateCollaboration(fixture.initial);
+    // Schema 2 also fixes title/settings; seed a matching full projection.
+    const project = projectSharedDocument(doc, record.project); doc.destroy();
+    await window.testRepository.commit({ project, collaboration: fixture.initial,
       expectedRepositoryRevision: record.repositoryRevision, localRevision: "3", operationId: "two-pages-share" });
   });
   for (const [index, tab] of pages.entries()) await tab.evaluate(async i => {

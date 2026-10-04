@@ -16,6 +16,7 @@ export const canLeaveWithoutSaving = (state: SaveState | null): boolean => !!sta
 export class SaveCoordinator {
   private sessions = new Map<string, Session>();
   private active: Session | null = null;
+  private sharedRuntime?: typeof import("../collaboration/saveSession");
   constructor(private repository: ProjectRepository, private changed: (state: SaveState | null) => void,
     private committed: (summary: ProjectSummary) => void = () => {}) {}
 
@@ -38,6 +39,23 @@ export class SaveCoordinator {
   get state(): SaveState | null { return this.active ? this.publicState(this.active) : null; }
   /** Future UI can read a merged projection after changed() without sharing mutable state. */
   get projectProjection(): Project | null { return this.active ? detached(this.active.project) : null; }
+  get collaborationProjection(): CollaborationData | null { return this.active?.collaboration ? detached(this.active.collaboration) : null; }
+  async prepareCollaborationEditing(): Promise<void> { this.sharedRuntime ??= await import("../collaboration/saveSession"); }
+  /** Available only after the shared editor's dynamic initialization. Immediate
+   * journal staging makes pagehide/flush include the operation without a race. */
+  editCollaborationNow(updates: CollaborationUpdate[], localProject?: Project): Project {
+    const s = this.active;
+    if (!s?.collaboration || !this.sharedRuntime) throw new RepositoryError("INVALID_ARGUMENT");
+    if (localProject && localProject.id !== s.id) throw new RepositoryError("INVALID_ARGUMENT");
+    if (localProject) s.project = { ...s.project, audio: localProject.audio, focusMemberId: localProject.focusMemberId,
+      viewerPerspective: localProject.viewerPerspective, lastOpenedAt: localProject.lastOpenedAt, updatedAt: localProject.updatedAt,
+      frames: s.project.frames.map(f => ({ ...f, sceneViewState: localProject.frames.find(local => local.id === f.id)?.sceneViewState })) };
+    const project = this.sharedRuntime.editSharedSession(s, detached(updates)); this.emit(s); return project;
+  }
+  editCollaborationLocal(project: Project): void {
+    // Empty update stages only local fields, then reprojects every shared field.
+    this.editCollaborationNow([], project);
+  }
   edit(project: Project) {
     const s = this.active;
     if (!s || s.id !== project.id || s.project === project) return;
@@ -49,9 +67,9 @@ export class SaveCoordinator {
     const s = this.active;
     if (!s?.collaboration) throw new RepositoryError("INVALID_ARGUMENT");
     const fixed = detached(updates);
-    const runtime = await import("../collaboration/saveSession");
+    await this.prepareCollaborationEditing();
     if (this.active !== s) throw new RepositoryError("BUSY");
-    const project = runtime.editSharedSession(s, fixed, serverCursor); this.emit(s); return project;
+    const project = this.sharedRuntime!.editSharedSession(s, fixed, serverCursor); this.emit(s); return project;
   }
   /** Reads ONLY committed updates, including after restart. Provider supplies auth/epoch checks. */
   async getSendableOutbox(id = this.active?.id): Promise<CollaborationOutbox[]> {

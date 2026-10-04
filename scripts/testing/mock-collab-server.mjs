@@ -19,7 +19,7 @@ export class MockCollabBackend {
     if (generation !== this.generation) this.fail('40001', 'STALE_GENERATION');
   }
   page(cursor, limit) {
-    return { documentId, documentSchema: 1, generation: this.generation, headSeq: this.head, aclGeneration: this.acl,
+    return { documentId, documentSchema: 2, generation: this.generation, headSeq: this.head, aclGeneration: this.acl,
       topic: this.topic, deleted: false, snapshot: cursor === '0' ? { uptoSeq: '0', bytes: this.base } : null,
       updates: this.log.filter(u => BigInt(u.seq) > BigInt(cursor)).slice(0, limit).map(u => ({ ...u })) };
   }

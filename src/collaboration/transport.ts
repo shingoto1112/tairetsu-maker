@@ -6,7 +6,7 @@ export type Credential = { accountId: string; accessToken: string };
 export type AppendRequest = { action: "append"; documentId: string; generation: string; membershipGeneration: string; updateId: string; bytes: string };
 export type Ack = { documentId: string; generation: string; updateId: string; seq: string; duplicate: boolean };
 export type Notice = { documentId: string; generation: string; headSeq: string; aclGeneration: string };
-export type PullPage = Notice & { documentSchema: 1; topic: string; deleted: boolean;
+export type PullPage = Notice & { documentSchema: 1 | 2; topic: string; deleted: boolean;
   snapshot: null | { uptoSeq: string; bytes: string }; updates: { seq: string; updateId: string; actor: string | null; bytes: string }[] };
 export class TransportError extends Error {
   constructor(readonly kind: "network" | "auth" | "permission" | "capacity" | "generation" | "protocol" | "rate-limit" | "temporary" | "validation", readonly code: string, readonly retryAfterMs = 0) { super(code); }
@@ -30,7 +30,7 @@ export function parseAck(v: unknown, request: AppendRequest): Ack {
   return v as Ack;
 }
 export function parsePage(v: unknown, documentId: string, generation: string): PullPage {
-  if (!obj(v) || !parseNotice(v) || v.documentId !== documentId || v.generation !== generation || v.documentSchema !== 1 ||
+  if (!obj(v) || !parseNotice(v) || v.documentId !== documentId || v.generation !== generation || ![1, 2].includes(v.documentSchema as number) ||
     typeof v.topic !== "string" || !/^collab-v2:[0-9a-f-]{36}$/i.test(v.topic) || typeof v.deleted !== "boolean" || !Array.isArray(v.updates) || v.updates.length > 32) invalid();
   try {
     if (v.snapshot !== null) {

@@ -1,5 +1,8 @@
 # 新しい共同編集 第2回：端末保存契約
 
+第6回の documentSchema=2 / 全投影一致検査 / App 接続は
+[COLLABORATION_PROJECT.md](COLLABORATION_PROJECT.md)。以下の schema 1 表記は第2回の記録。
+
 第4回のprovider・任意transportBinding・snapshot受信保存APIの追加契約は
 [COLLABORATION_PROVIDER.md](COLLABORATION_PROVIDER.md) を参照。第5回Swiftへ合わせて引き継ぐ。
 

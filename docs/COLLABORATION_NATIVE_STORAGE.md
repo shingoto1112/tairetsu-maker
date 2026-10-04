@@ -1,5 +1,9 @@
 # 共同編集 第5回：iPad SQLite 保存
 
+第6回の最小 Swift 差分（documentSchema=1/2、未来 schema=99 の拒否試験、
+raw sqlite3 テスト接続の foreign_keys=ON）と macOS 確認事項は
+[COLLABORATION_PROJECT.md](COLLABORATION_PROJECT.md)を参照。byte 上限・bridge は変更していない。
+
 基準は [保存契約](COLLABORATION_STORAGE.md) と
 [provider の binding 契約](COLLABORATION_PROVIDER.md)。App/UI、Project 型、ZIP、
 サーバー、旧クラウド、依存、Info.plist、CapApp-SPM は変更しない。

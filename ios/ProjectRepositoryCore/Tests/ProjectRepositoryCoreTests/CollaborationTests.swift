@@ -50,6 +50,7 @@ final class CollaborationTests: XCTestCase {
         var handle: OpaquePointer?
         XCTAssertEqual(sqlite3_open(databaseURL.path, &handle), SQLITE_OK)
         let db = try XCTUnwrap(handle); defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_exec(db, "PRAGMA foreign_keys=ON", nil, nil, nil), SQLITE_OK)
         try work(db)
     }
     private func sql(_ text: String) throws {
@@ -223,7 +224,7 @@ final class CollaborationTests: XCTestCase {
         let f = try fixture(), original = try XCTUnwrap(f["initial"] as? [String: Any])
         var invalid = original; invalid["base"] = "AB=="
         error("INVALID_ARGUMENT") { try CollaborationValidation.parse(RepositoryValidation.json(invalid)) }
-        invalid = original; invalid["documentSchema"] = 2
+        invalid = original; invalid["documentSchema"] = 99
         error("UNSUPPORTED_SCHEMA") { try CollaborationValidation.parse(RepositoryValidation.json(invalid)) }
         invalid = original; invalid["transportBinding"] = ["accountId": "bad", "membershipGeneration": "bad"] as [String: Any]
         error("INVALID_ARGUMENT") { try CollaborationValidation.parse(RepositoryValidation.json(invalid)) }
@@ -337,7 +338,7 @@ final class CollaborationTests: XCTestCase {
         error("CORRUPT") { try self.call(r, "readProject", ["id": "project_a"] as [String: Any]) }
         let replay = try call(r, "readCommitReceipt", request(f, "committed", 2))
         XCTAssertEqual((replay as? [String: Any])?["repositoryRevision"] as? String, "2")
-        var future = try XCTUnwrap(f["committed"] as? [String: Any]); future["documentSchema"] = 2
+        var future = try XCTUnwrap(f["committed"] as? [String: Any]); future["documentSchema"] = 99
         let json = try RepositoryValidation.json(future)
         let escaped = json.replacingOccurrences(of: "'", with: "''")
         try sql("UPDATE project_bodies SET collaboration_json='\(escaped)',collaboration_byte_length=\(json.utf8.count),collaboration_crc32='\(Integrity.crc32(json))'")

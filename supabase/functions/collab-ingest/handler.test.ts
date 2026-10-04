@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { createHandler, RpcError, type Backend } from './handler';
 import { encodeBase64 } from '../../../src/collaboration/serverValidation';
+import { createSharedDocument } from '../../../src/collaboration/model';
+import { createSampleProject } from '../../../src/sampleProject';
 
 const userId = '00000000-0000-0000-0000-000000000001';
 const documentId = '00000000-0000-0000-0000-000000000101';
@@ -65,6 +67,9 @@ describe('Edge ingest contract with a stub backend', () => {
     backend.rpc = async () => ({ documentSchema: 2 });
     const unsupported = await createHandler(backend, ['https://app.example.invalid'])(request(input(delta)));
     expect(unsupported.status).toBe(400); expect(await unsupported.json()).toEqual({ error: 'UNSUPPORTED_SCHEMA' });
+    backend.rpc = async () => ({ documentSchema: 2, snapshot: { bytes: encodeBase64(base), uptoSeq: '0' }, updates: [], headSeq: '0' });
+    const mismatch = await createHandler(backend, ['https://app.example.invalid'])(request(input(delta)));
+    expect(mismatch.status).toBe(400); expect(await mismatch.json()).toEqual({ error: 'UNSUPPORTED_SCHEMA' });
   });
   it('bounds CAS retries and preserves the fixed request when conflicts persist', async () => {
     const { base, delta } = fixture(); let reads = 0, writes = 0;
@@ -90,7 +95,9 @@ describe('Edge ingest contract with a stub backend', () => {
     expect(writes).toBe(0);
   });
   it('requires creator validation through Edge and refuses guest creation', async () => {
-    const { base } = fixture(); let guest = true; const calls: string[] = [];
+    const doc = createSharedDocument({ ...createSampleProject(), id: 'test' });
+    const base = Y.encodeStateAsUpdate(doc); doc.destroy();
+    let guest = true; const calls: string[] = [];
     const backend: Backend = { authenticate: async () => ({ id: userId, is_anonymous: guest }), rpc: async name => { calls.push(name); return { documentId }; } };
     const handler = createHandler(backend, ['https://app.example.invalid']);
     const create = { action: 'create', displayName: '作成者', bytes: encodeBase64(base) };

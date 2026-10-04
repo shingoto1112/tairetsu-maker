@@ -56,7 +56,7 @@ describe('round-3 contract oracle with real Edge ingest', () => {
     expect(await first.json()).toEqual({ documentId, generation: '1', updateId: input.updateId, seq: '1', duplicate: false });
     expect(await (await s.handler(request(input))).json()).toEqual({ documentId, generation: '1', updateId: input.updateId, seq: '1', duplicate: true });
     const page = await s.transport.pull(documentId, '1', '0', 1, { accountId: actors[0], accessToken: actors[0] }, new AbortController().signal);
-    expect(page).toEqual({ documentId, documentSchema: 1, generation: '1', headSeq: '1', aclGeneration: '1', topic: s.backend.topic, deleted: false,
+    expect(page).toEqual({ documentId, documentSchema: 2, generation: '1', headSeq: '1', aclGeneration: '1', topic: s.backend.topic, deleted: false,
       snapshot: { uptoSeq: '0', bytes: fixture.initial.base }, updates: [{ seq: '1', updateId: input.updateId, actor: actors[0], bytes: input.bytes }] });
     expect(s.backend.page('1', 32)).toMatchObject({ snapshot: null, updates: [] });
     expect(s.backend.notices[0].notice).toEqual({ documentId, generation: '1', headSeq: '1', aclGeneration: '1' });

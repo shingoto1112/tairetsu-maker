@@ -17,7 +17,7 @@ export const base64Bytes = (value: unknown, max: number): number => {
 };
 export function validateCollaboration(value: unknown): CollaborationData {
   if (!object(value)) throw new RepositoryError("INVALID_ARGUMENT");
-  if (value.schemaVersion !== 1 || value.documentSchema !== 1) throw new RepositoryError("UNSUPPORTED_SCHEMA");
+  if (value.schemaVersion !== 1 || ![1, 2].includes(value.documentSchema as number)) throw new RepositoryError("UNSUPPORTED_SCHEMA");
   const names = ["schemaVersion", "sharedDocumentId", "documentSchema", "generation", "base", "journal", "outbox", "serverCursor"];
   if ("transportBinding" in value) {
     names.push("transportBinding");

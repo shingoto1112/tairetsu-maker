@@ -17,7 +17,7 @@ function update(doc: Y.Doc, action: () => void) {
   doc.on('update', listener); action(); doc.off('update', listener);
   return Y.mergeUpdates(updates);
 }
-describe('schema 1 server validation', () => {
+describe('schema 2 server validation', () => {
   it('accepts empty roots, which Yjs does not encode until their first item', () => {
     const doc = fixture(0, 0); expect(() => validateState(Y.encodeStateAsUpdate(doc))).not.toThrow(); doc.destroy();
   });
@@ -47,7 +47,7 @@ describe('schema 1 server validation', () => {
       if (kind === 'text') model.members.get('m0')!.set('a', new Y.Text('secret'));
       if (kind === 'subdoc') model.members.get('m0')!.set('a', new Y.Doc());
       if (kind === 'metadata') model.metadata.set('projectId', 'replacement');
-      if (kind === 'topology') model.members.delete('m0');
+      if (kind === 'topology') model.members.set('invalid/id', new Y.Map());
       if (kind === 'hidden') { model.members.get('m0')!.set('admin', 1); model.members.get('m0')!.delete('admin'); }
     });
     expect(() => validateState(base, [], delta)).toThrow(); doc.destroy();
@@ -62,12 +62,23 @@ describe('schema 1 server validation', () => {
     expect(() => inspectWire(Uint8Array.of(0, 0, 99))).toThrow();
     expect(() => validateState(Uint8Array.of(1))).toThrow();
     expect(() => validateState(base, [], new Uint8Array(SERVER_LIMITS.updateBytes + 1))).toThrow('QUOTA_EXCEEDED');
-    const large = fixture(SERVER_LIMITS.members + 1);
+    expect(() => fixture(SERVER_LIMITS.members + 1)).toThrow('QUOTA_EXCEEDED');
+    const large = fixture(SERVER_LIMITS.members);
+    getModel(large).members.set('over-limit', new Y.Map());
     expect(() => validateState(Y.encodeStateAsUpdate(large))).toThrow('QUOTA_EXCEEDED'); large.destroy(); doc.destroy();
   });
   it('requires canonical bounded base64', () => {
     expect(decodeBase64(encodeBase64(Uint8Array.of(1, 2, 3)), 3)).toEqual(Uint8Array.of(1, 2, 3));
     for (const value of ['AB==', 'AQ==\n', '', null, '!', 'AAAA']) expect(() => decodeBase64(value, 2)).toThrow();
+  });
+  it.each(['member', 'group', 'order'])('rejects incomplete %s containers before projection', kind => {
+    const doc = fixture(), base = Y.encodeStateAsUpdate(doc);
+    const delta = update(doc, () => {
+      if (kind === 'member') getModel(doc).members.set('new-member', new Y.Map());
+      if (kind === 'group') getModel(doc).memberGroups.set('new-group', new Y.Map([['name', 'group']]));
+      if (kind === 'order') getModel(doc).orders.set(JSON.stringify(['members']), new Y.Map());
+    });
+    expect(() => validateState(base, [], delta)).toThrow('INVALID_UPDATE'); doc.destroy();
   });
   it('measures 146 members × 18 scenes without a hosted-performance assertion', () => {
     const doc = fixture(146, 18), base = Y.encodeStateAsUpdate(doc);

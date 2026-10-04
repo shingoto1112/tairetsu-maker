@@ -1,5 +1,8 @@
 # 共同編集モデル — 第1回
 
+現行 schema 2 / App 接続は [COLLABORATION_PROJECT.md](../../docs/COLLABORATION_PROJECT.md) を参照。
+以下の schema 1 と未実装表記は第1回の設計記録。第6回で全写像・編集入口・Undo を実装した。
+
 第2回のRepository/coordinator統合、付属JSON契約、上限、圧縮、GC判断とSwiftへの引継ぎは
 [COLLABORATION_STORAGE.md](../../docs/COLLABORATION_STORAGE.md)を参照。以下は第1回のモデル設計。
 

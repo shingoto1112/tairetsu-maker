@@ -135,6 +135,7 @@ export class CollaborationProvider {
     // Bound each turn; a busy document yields before catching up further.
     for (let pageIndex = 0; pageIndex < 8; pageIndex++) {
       const page = parsePage(await this.transport.pull(data.sharedDocumentId!, data.generation, cursor, 32, credential, signal), data.sharedDocumentId!, data.generation);
+      if (page.documentSchema !== data.documentSchema) throw new TransportError("validation", "UNSUPPORTED_SCHEMA");
       if (!this.valid(epoch)) return;
       if (page.deleted) throw new TransportError("permission", "DOCUMENT_DELETED");
       const updates: CollaborationUpdate[] = [];
