@@ -111,9 +111,9 @@ final class CollaborationTests: XCTestCase {
             let replay = try call(r, "commitProject", req)
             XCTAssertEqual(try RepositoryValidation.json(receipt), try RepositoryValidation.json(replay))
             var reordered = req
-            let data = try XCTUnwrap(f[key] as? [String: Any])
-            let members = try data.keys.sorted().reversed().map { name in
-                try RepositoryValidation.json(name) + ":" + RepositoryValidation.json(data[name]!)
+            let fixtureData = try XCTUnwrap(f[key] as? [String: Any])
+            let members = try fixtureData.keys.sorted().reversed().map { name in
+                try RepositoryValidation.json(name) + ":" + RepositoryValidation.json(fixtureData[name]!)
             }
             reordered["collaborationJSON"] = "{" + members.joined(separator: ",") + "}"
             let normalizedReplay = try call(r, "readCommitReceipt", reordered)
