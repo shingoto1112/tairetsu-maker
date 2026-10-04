@@ -210,7 +210,9 @@ final class CollaborationTests: XCTestCase {
             error("CONFLICT") { try self.call(r, "commitProject", req) }
         }
         // A legacy shared attachment without binding cannot acquire new credentials.
-        r.close(); try sql("DELETE FROM project_bodies; DELETE FROM operation_receipts")
+        // A raw connection has foreign keys OFF by default; enable them so the delete
+        // cascades to summaries/previous instead of leaving rows the integrity check rejects.
+        r.close(); try sql("PRAGMA foreign_keys=ON; DELETE FROM project_bodies; DELETE FROM operation_receipts")
         let old = repo(); defer { old.close() }
         _ = try call(old, "commitProject", request(f, "initial", 1))
         req = try request(f, "initial", 2); req["collaborationJSON"] = try RepositoryValidation.json(data)
