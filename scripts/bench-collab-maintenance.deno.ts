@@ -24,9 +24,10 @@ for(let i=0;i<12;i++) {
 }
 samples.sort((a,b)=>a-b);cpus.sort((a,b)=>a-b);
 const peakRss=process.resourceUsage().maxRSS/1024,peakHeap=Math.max(...heaps)/1048576;
-// Gate on the isolate heap (what the Edge memory limit governs). Whole-process RSS also counts the
+// Gate on the isolate heap (what the Edge memory limit governs) at 75% of the 256MB Edge limit;
+// sampled heap includes uncollected garbage and varies by run (99-134MiB for the same case). Whole-process RSS also counts the
 // Deno runtime/V8 platform, varies run to run, and is reported only. Real-Edge measurement stays a pre-release step.
-const restoreMemoryBudget=operation==='restore'&&workload!=='boundary'?{heapMiB:120,rssMiBReported:peakRss,pass:peakHeap<=120}:null;
+const restoreMemoryBudget=operation==='restore'&&workload!=='boundary'?{heapMiB:192,rssMiBReported:peakRss,pass:peakHeap<=192}:null;
 console.log(JSON.stringify({runtime:`Deno ${Deno.version.deno}`,workload,operation,trials:12,snapshotBytes:cut.snapshot.bytes.length,
   logBytes:cut.updates.reduce((n,u)=>n+u.bytes.length,0),outputBytes:output,cpuP95Ms:cpus[11],wallP95Ms:samples[11],
   maxSampledRssMiB:Math.max(...rss)/1048576,processPeakRssMiB:peakRss,maxSampledHeapMiB:peakHeap,restoreMemoryBudget,errors:[...new Set(errors)],expectedRejections:[...new Set(rejected)],scope:'native Deno; binary pipeline and input decode; no hosted network/DB'}));
