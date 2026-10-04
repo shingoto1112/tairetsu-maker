@@ -172,9 +172,38 @@ alter table public.collab_v2_documents add column if not exists last_checkpoint_
 alter table public.collab_v2_documents add column if not exists previous_snapshot_id uuid;
 -- No implicit grants/default privileges on private settings, due or reservations.
 alter table collab_v2_private.budget_settings enable row level security;
+alter table collab_v2_private.history_due add column if not exists retry_at timestamptz;
 alter table collab_v2_private.history_due enable row level security;
 alter table collab_v2_private.work_reservations enable row level security;
 revoke all on collab_v2_private.budget_settings, collab_v2_private.history_due, collab_v2_private.work_reservations from public, anon, authenticated, service_role;
+-- 9b unapplied foundation revision: participant-triggered, bounded maintenance.
+alter table collab_v2_private.budget_settings add column if not exists compact_updates integer not null default 128 check (compact_updates > 0);
+alter table collab_v2_private.budget_settings add column if not exists compact_bytes bigint not null default 524288 check (compact_bytes > 0);
+alter table collab_v2_private.budget_settings add column if not exists maintenance_interval interval not null default interval '5 seconds' check (maintenance_interval > interval '0');
+alter table collab_v2_private.budget_settings add column if not exists actor_maintenance_interval interval not null default interval '10 seconds' check (actor_maintenance_interval > interval '0');
+alter table collab_v2_private.budget_settings add column if not exists manual_interval interval not null default interval '1 minute' check (manual_interval > interval '0');
+alter table collab_v2_private.budget_settings add column if not exists lease_duration interval not null default interval '45 seconds' check (lease_duration > interval '0');
+alter table public.collab_v2_documents add column if not exists compaction_required boolean not null default false;
+alter table public.collab_v2_documents add column if not exists next_maintenance_at timestamptz;
+alter table public.collab_v2_documents add column if not exists next_manual_at timestamptz;
+-- 9c must pin the mandatory before-restore row for the complete restore transaction.
+alter table public.collab_v2_checkpoints add column if not exists protected boolean not null default false;
+create table if not exists collab_v2_private.maintenance_leases (
+  document_id uuid primary key references public.collab_v2_documents(id) on delete cascade,
+  lease_id uuid not null unique, generation bigint not null, base_snapshot_id uuid not null,
+  cut_seq bigint not null, operation text not null check(operation in ('compact','automatic','manual')),
+  actor_id uuid references auth.users(id) on delete cascade, membership_generation uuid not null,
+  expires_at timestamptz not null, result jsonb
+);
+create table if not exists collab_v2_private.maintenance_rates (
+  document_id uuid not null, actor_id uuid not null, next_at timestamptz not null, next_manual_at timestamptz,
+  primary key(document_id,actor_id),
+  foreign key(document_id,actor_id) references public.collab_v2_members(document_id,user_id) on delete cascade
+);
+alter table collab_v2_private.maintenance_leases enable row level security;
+alter table collab_v2_private.maintenance_rates enable row level security;
+revoke all on collab_v2_private.maintenance_leases, collab_v2_private.maintenance_rates from public, anon, authenticated, service_role;
+
 -- Composite FK prevents a snapshot belonging to another document being referenced.
 do $$ begin
   if not exists (select 1 from pg_catalog.pg_constraint where conname = 'collab_v2_latest_snapshot_fk'
@@ -285,6 +314,8 @@ begin
   v_history := v_history + (select count(*) * c.row_overhead::bigint from public.collab_v2_checkpoints);
   -- Expired reservations still count until an atomic lease cleanup actually removes them.
   select coalesce(sum(bytes + c.row_overhead),0) into v_work from collab_v2_private.work_reservations;
+  v_work := v_work + (select count(*) * c.row_overhead::bigint from collab_v2_private.maintenance_leases)
+    + (select count(*) * c.row_overhead::bigint from collab_v2_private.maintenance_rates);
   v_delta := p_extra - p_replaced;
   if p_pool = 'state' then v_state := v_state + v_delta;
   elsif p_pool = 'checkpoint' then v_history := v_history + v_delta;
@@ -297,9 +328,10 @@ end $$;
 
 -- Creation must go through Edge validation too, not an authenticated bytea RPC.
 drop function if exists public.collab_v2_create_document(uuid, text, bytea);
-create or replace function public.collab_v2_create_document(p_actor uuid, p_display_name text, p_bytes bytea, p_title text default '隊列表')
+drop function if exists public.collab_v2_create_document(uuid, text, bytea, text);
+create or replace function public.collab_v2_create_document(p_actor uuid, p_display_name text, p_bytes bytea, p_title text default '隊列表', p_checkpoint bytea default null, p_checkpoint_digest bytea default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare v_id uuid; v_snapshot uuid; v_guest boolean; v_digest bytea;
+declare v_id uuid; v_snapshot uuid; v_guest boolean; v_digest bytea; v_checkpoint_result jsonb;
 begin
   perform collab_v2_private.require_service();
   if p_title is null or pg_catalog.char_length(p_title) not between 1 and 120 or p_actor is null or p_display_name is null or p_bytes is null
@@ -322,7 +354,7 @@ begin
       raise exception using errcode = '42501', message = 'DOCUMENT_DELETED';
     end if;
   else
-  perform collab_v2_private.require_budget(pg_catalog.octet_length(p_bytes) + (select 2 * row_overhead from collab_v2_private.budget_settings where singleton));
+  perform collab_v2_private.require_budget(pg_catalog.octet_length(p_bytes) + (select 3 * row_overhead from collab_v2_private.budget_settings where singleton));
   if (select count(*) from public.collab_v2_documents where creator_id = p_actor) >= 20
     or (select count(*) from public.collab_v2_documents) >= 100 then
     raise exception using errcode = '54000', message = 'QUOTA_EXCEEDED';
@@ -333,6 +365,14 @@ begin
   update public.collab_v2_documents set latest_snapshot_id = v_snapshot where id = v_id;
   insert into public.collab_v2_members(document_id, user_id, display_name, is_guest)
     values (v_id, p_actor, p_display_name, v_guest);
+  if p_checkpoint is not null then
+    v_checkpoint_result := public.collab_v2_store_checkpoint(v_id,p_actor,1,0,p_checkpoint,p_checkpoint_digest,'automatic');
+  end if;
+  -- Old service callers can omit the DTO; preserve seq=0 until it is generated.
+  -- A full checkpoint pool must not prevent creating/editing the current state.
+  if p_checkpoint is null or v_checkpoint_result->>'result'='DEFERRED_CAPACITY' then
+    insert into collab_v2_private.history_due(document_id,generation,cut_seq) values(v_id,1,0);
+  end if;
   end if;
   return (select pg_catalog.jsonb_build_object('documentId', d.id, 'generation', d.generation::text,
     'headSeq', d.head_seq::text, 'aclGeneration', d.acl_generation::text, 'topic', d.private_topic,
@@ -462,6 +502,8 @@ begin
   delete from public.collab_v2_writers where document_id = p_document;
   delete from collab_v2_private.history_due where document_id = p_document;
   delete from collab_v2_private.work_reservations where document_id = p_document;
+  delete from collab_v2_private.maintenance_leases where document_id = p_document;
+  delete from collab_v2_private.maintenance_rates where document_id = p_document;
   delete from public.collab_v2_sync_snapshots where document_id = p_document;
   update collab_v2_private.departures set reason = 'ended' where document_id = p_document;
 end $$;
@@ -549,6 +591,13 @@ begin
     from public.collab_v2_invites where document_id = p_document);
 end $$;
 
+create or replace function collab_v2_private.maintenance_hint(p_document uuid)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select pg_catalog.jsonb_build_object('checkpointDue', exists(select 1 from collab_v2_private.history_due where document_id=d.id),
+    'compactionRequired', d.compaction_required) from public.collab_v2_documents d where d.id=p_document and
+    (collab_v2_private.is_member(p_document) or auth.jwt()->>'role'='service_role')
+$$;
+
 -- One SELECT = one MVCC snapshot. Never mix a newer head with an older page.
 drop function if exists public.collab_v2_get_updates(uuid,bigint,bigint,integer);
 drop function if exists collab_v2_private.read_state(uuid,bigint,integer);
@@ -557,6 +606,7 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
   select pg_catalog.jsonb_build_object('documentId', d.id, 'documentSchema', d.document_schema,
     'generation', d.generation::text, 'headSeq', d.head_seq::text, 'aclGeneration', d.acl_generation::text,
     'topic', d.private_topic, 'deleted', d.deleted_at is not null,
+    'maintenance', collab_v2_private.maintenance_hint(d.id),
     'snapshot', case when p_cursor < s.upto_seq or p_known_snapshot_id is distinct from s.id then
       pg_catalog.jsonb_build_object('id', s.id, 'uptoSeq', s.upto_seq::text, 'bytes', pg_catalog.replace(pg_catalog.encode(s.bytes, 'base64'), E'\n', '')) else null end,
     'updates', coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
@@ -690,10 +740,15 @@ begin
   if p_writer is not null then update public.collab_v2_writers set accepted_through=p_writer_seq where document_id=p_document and generation=p_generation and writer_id=p_writer; end if;
   update public.collab_v2_documents set head_seq = v_seq, log_bytes = log_bytes + pg_catalog.octet_length(p_bytes),
     receipt_count = receipt_count + 1, list_title = p_title, title_seq = v_seq where id = p_document;
+  update public.collab_v2_documents set compaction_required = compaction_required or
+    v_seq - (select upto_seq from public.collab_v2_sync_snapshots where id=v_doc.latest_snapshot_id) >= c.compact_updates or
+    (select coalesce(sum(pg_catalog.octet_length(bytes)),0) from public.collab_v2_updates where document_id=p_document and
+      seq > (select upto_seq from public.collab_v2_sync_snapshots where id=v_doc.latest_snapshot_id)) >= c.compact_bytes where id=p_document;
   -- Transactional notification: only the current topic, no binary/document data.
   perform realtime.send(pg_catalog.jsonb_build_object('documentId', p_document, 'generation', p_generation::text,
     'headSeq', v_seq::text, 'aclGeneration', v_doc.acl_generation::text), 'update', v_doc.private_topic, true);
-  return pg_catalog.jsonb_build_object('seq', v_seq::text, 'duplicate', false);
+  return pg_catalog.jsonb_build_object('seq', v_seq::text, 'duplicate', false,
+    'maintenance', pg_catalog.jsonb_build_object('checkpointDue', exists(select 1 from collab_v2_private.history_due where document_id=p_document), 'compactionRequired', (select compaction_required from public.collab_v2_documents where id=p_document)));
 end $$;
 
 -- Only continuous server-accepted writer sequences can be confirmed. The client
@@ -828,6 +883,7 @@ begin
   perform collab_v2_private.require_user();
   perform 1 from public.collab_v2_documents where id=p_document for update;
   if not collab_v2_private.history_allowed(p_document,'delete') then raise exception using errcode='42501',message='CREATOR_ONLY'; end if;
+  if exists(select 1 from public.collab_v2_checkpoints where document_id=p_document and id=p_checkpoint and protected) then raise exception using errcode='42501',message='CHECKPOINT_PROTECTED'; end if;
   delete from public.collab_v2_checkpoints where document_id=p_document and id=p_checkpoint returning content_id into v_content;
   delete from public.collab_v2_checkpoint_contents c where c.document_id=p_document and c.id=v_content and not exists(select 1 from public.collab_v2_checkpoints h where h.document_id=p_document and h.content_id=c.id);
 end $$;
@@ -865,15 +921,223 @@ drop policy if exists collab_v2_send_fence on realtime.messages;
 create policy collab_v2_send_fence on realtime.messages as restrictive for insert to anon, authenticated
   with check (topic not like 'collab-v2:%' and coalesce((select realtime.topic()), '') not like 'collab-v2:%');
 
+-- 9b: a claim contains a consistent, fixed cut. No lock survives the RPC.
+create or replace function public.collab_v2_claim_maintenance(p_document uuid, p_actor uuid, p_generation bigint,
+  p_membership uuid, p_action text default 'maintain')
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare d public.collab_v2_documents%rowtype; c collab_v2_private.budget_settings%rowtype;
+  l collab_v2_private.maintenance_leases%rowtype; due collab_v2_private.history_due%rowtype;
+  r collab_v2_private.maintenance_rates%rowtype; s public.collab_v2_sync_snapshots%rowtype;
+  v_op text; v_cut bigint; v_token uuid; v_until timestamptz; v_now timestamptz := pg_catalog.clock_timestamp(); v_extra bigint;
+begin
+  perform collab_v2_private.require_service();
+  if p_document is null or p_actor is null or p_generation is null or p_generation <= 0 or p_membership is null or
+    p_action is null or p_action not in ('maintain','manual') then raise exception using errcode='22023',message='INVALID_ARGUMENT'; end if;
+  select * into d from public.collab_v2_documents where id=p_document for update;
+  if not found or d.deleted_at is not null then raise exception using errcode='42501',message='DOCUMENT_DELETED'; end if;
+  if not collab_v2_private.history_allowed(p_document,'create',p_actor) or not exists
+    (select 1 from public.collab_v2_members where document_id=p_document and user_id=p_actor and membership_generation=p_membership) then
+    raise exception using errcode='42501',message='NOT_MEMBER'; end if;
+  if d.generation <> p_generation then raise exception using errcode='40001',message='STALE_GENERATION'; end if;
+  select * into strict c from collab_v2_private.budget_settings where singleton;
+  -- Limit every authorized request, including NOOP/BUSY, before fetching bytes.
+  select * into r from collab_v2_private.maintenance_rates where document_id=p_document and actor_id=p_actor;
+  v_until := greatest(d.next_maintenance_at,r.next_at,
+    (case when p_action='manual' then greatest(d.next_manual_at,r.next_manual_at) else null end));
+  if v_until > v_now then return pg_catalog.jsonb_build_object('result','RATE_LIMIT','retryAfterMs',ceil(extract(epoch from v_until-v_now)*1000)); end if;
+  if r.document_id is null then
+    perform pg_catalog.pg_advisory_xact_lock(20261004,2);
+    delete from collab_v2_private.work_reservations where expires_at<=v_now;
+    begin
+      perform collab_v2_private.require_budget(c.row_overhead,'work');
+    exception when sqlstate '54000' then
+      if p_action='manual' then raise; end if;
+      return pg_catalog.jsonb_build_object('result','DEFERRED_CAPACITY','retryAfterMs',60000);
+    end;
+  end if;
+  insert into collab_v2_private.maintenance_rates(document_id,actor_id,next_at,next_manual_at)
+    values(p_document,p_actor,v_now+c.actor_maintenance_interval,(case when p_action='manual' then v_now+c.manual_interval else null end))
+    on conflict(document_id,actor_id) do update set next_at=excluded.next_at,
+      next_manual_at=(case when p_action='manual' then excluded.next_manual_at else collab_v2_private.maintenance_rates.next_manual_at end);
+  r.document_id := p_document;
+  update public.collab_v2_documents set next_maintenance_at=v_now+c.maintenance_interval,
+    next_manual_at=(case when p_action='manual' then v_now+c.manual_interval else next_manual_at end) where id=p_document;
+  select * into l from collab_v2_private.maintenance_leases where document_id=p_document;
+  if l.result is null and l.expires_at > v_now then
+    return pg_catalog.jsonb_build_object('result','BUSY','retryAfterMs',greatest(1000,ceil(extract(epoch from l.expires_at-v_now)*1000)));
+  end if;
+  select * into due from collab_v2_private.history_due where document_id=p_document;
+  if due.document_id is not null and due.generation <> d.generation then raise exception using errcode='40001',message='STALE_DUE_GENERATION'; end if;
+  if p_action='manual' then v_op := 'manual'; v_cut := d.head_seq;
+  elsif due.document_id is not null and (due.retry_at is null or due.retry_at <= v_now) then v_op := 'automatic'; v_cut := due.cut_seq;
+  elsif d.compaction_required then v_op := 'compact'; v_cut := d.head_seq;
+  else return pg_catalog.jsonb_build_object('result',(case when due.document_id is null then 'NOOP' else 'DEFERRED_CAPACITY' end),
+    'retryAfterMs',60000,'maintenance',collab_v2_private.maintenance_hint(p_document)); end if;
+  select * into s from public.collab_v2_sync_snapshots where document_id=p_document and generation=d.generation and
+    id in (d.latest_snapshot_id,d.previous_snapshot_id) and upto_seq <= v_cut order by upto_seq desc,created_at desc limit 1;
+  if not found then raise exception using errcode='40001',message='MISSING_CHECKPOINT_BASE'; end if;
+  -- Never discard the only base from which an uncompleted due can be replayed.
+  if v_op='compact' and due.document_id is not null and s.upto_seq > due.cut_seq then
+    return pg_catalog.jsonb_build_object('result','DEFERRED_CAPACITY','retryAfterMs',60000); end if;
+  perform pg_catalog.pg_advisory_xact_lock(20261004,2);
+  -- Only real cleanup releases expired work, including abandoned Edge requests.
+  delete from collab_v2_private.work_reservations where expires_at <= v_now;
+  v_token := pg_catalog.gen_random_uuid(); v_until := v_now+c.lease_duration;
+  v_extra := 8388608 + c.row_overhead;
+  if l.document_id is null then v_extra := v_extra+c.row_overhead; end if;
+  begin
+    perform collab_v2_private.require_budget(v_extra,'work');
+  exception when sqlstate '54000' then
+    if v_op='manual' then raise; end if;
+    return pg_catalog.jsonb_build_object('result','DEFERRED_CAPACITY','retryAfterMs',60000);
+  end;
+  insert into collab_v2_private.work_reservations(document_id,lease_id,bytes,expires_at) values(p_document,v_token,8388608,v_until);
+  insert into collab_v2_private.maintenance_leases(document_id,lease_id,generation,base_snapshot_id,cut_seq,operation,actor_id,membership_generation,expires_at)
+    values(p_document,v_token,d.generation,s.id,v_cut,v_op,p_actor,p_membership,v_until)
+    on conflict(document_id) do update set lease_id=excluded.lease_id,generation=excluded.generation,base_snapshot_id=excluded.base_snapshot_id,
+      cut_seq=excluded.cut_seq,operation=excluded.operation,actor_id=excluded.actor_id,membership_generation=excluded.membership_generation,
+      expires_at=excluded.expires_at,result=null;
+  if v_op='automatic' then update collab_v2_private.history_due set lease_id=v_token,lease_until=v_until where document_id=p_document; end if;
+  return pg_catalog.jsonb_build_object('result','CLAIMED','leaseToken',v_token,'generation',d.generation::text,
+    'baseSnapshotId',s.id,'cutSeq',v_cut::text,'operation',v_op,'documentSchema',d.document_schema,
+    'serverAt',pg_catalog.to_char(v_now at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'snapshot',pg_catalog.jsonb_build_object('id',s.id,'uptoSeq',s.upto_seq::text,'bytes',pg_catalog.replace(pg_catalog.encode(s.bytes,'base64'),E'\n','')),
+    'updates',coalesce((select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('seq',seq::text,'bytes',pg_catalog.replace(pg_catalog.encode(bytes,'base64'),E'\n','')) order by seq)
+      from public.collab_v2_updates where document_id=p_document and generation=d.generation and seq>s.upto_seq and seq<=v_cut),'[]'::jsonb));
+end $$;
+
+-- Time buckets preserve the preferred row, then capacity trimming removes the
+-- oldest automatic first. Protected restore checkpoints and the newest survive.
+create or replace function collab_v2_private.thin_checkpoints(p_document uuid, p_incoming bytea)
+returns void language plpgsql security definer set search_path = '' as $$
+declare c collab_v2_private.budget_settings%rowtype; h record; v_count bigint; v_bytes bigint; v_new bigint; v_latest uuid;
+begin
+  select * into strict c from collab_v2_private.budget_settings where singleton;
+  select id into v_latest from public.collab_v2_checkpoints where document_id=p_document order by server_at desc,id desc limit 1;
+  delete from public.collab_v2_checkpoints where id in (
+    select id from (select id,automatic,protected,row_number() over(partition by
+      (case when server_at >= pg_catalog.now()-interval '2 hours' then 'recent'
+        when server_at >= pg_catalog.now()-interval '24 hours' then 'hour' else 'day' end),
+      floor(extract(epoch from server_at)/(case when server_at >= pg_catalog.now()-interval '2 hours' then 600
+        when server_at >= pg_catalog.now()-interval '24 hours' then 3600 else 86400 end))
+      order by protected desc,(case when reason in ('before-restore','before-generation') then 0 when reason='manual' then 1 else 2 end),server_at desc,id desc) as rank
+      from public.collab_v2_checkpoints where document_id=p_document) ranked where rank>1 and automatic and not protected and id<>v_latest);
+  delete from public.collab_v2_checkpoint_contents c0 where c0.document_id=p_document and not exists
+    (select 1 from public.collab_v2_checkpoints h0 where h0.document_id=p_document and h0.content_id=c0.id);
+  for h in select id from public.collab_v2_checkpoints where document_id=p_document and not protected and id<>v_latest
+    order by (case when automatic then 0 when reason='manual' then 1 else 2 end),server_at,id loop
+    select count(*) into v_count from public.collab_v2_checkpoints where document_id=p_document;
+    select coalesce(sum(pg_catalog.octet_length(bytes)+c.row_overhead),0) into v_bytes from public.collab_v2_checkpoint_contents where document_id=p_document;
+    v_new := (case when exists(select 1 from public.collab_v2_checkpoint_contents where document_id=p_document and digest=extensions.digest(p_incoming,'sha256')) then 0 else pg_catalog.octet_length(p_incoming)+c.row_overhead end);
+    if v_count < c.document_checkpoint_count and v_bytes+(v_count+1)*c.row_overhead+v_new <= c.document_checkpoint_bytes then exit; end if;
+    delete from public.collab_v2_checkpoints where id=h.id;
+    delete from public.collab_v2_checkpoint_contents c0 where c0.document_id=p_document and not exists
+      (select 1 from public.collab_v2_checkpoints h0 where h0.document_id=p_document and h0.content_id=c0.id);
+  end loop;
+end $$;
+
+create or replace function public.collab_v2_publish_maintenance(p_document uuid, p_actor uuid, p_generation bigint,
+  p_membership uuid, p_lease uuid, p_base_snapshot uuid, p_cut bigint, p_bytes bytea, p_digest bytea)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare d public.collab_v2_documents%rowtype; l collab_v2_private.maintenance_leases%rowtype;
+  c collab_v2_private.budget_settings%rowtype; s public.collab_v2_sync_snapshots%rowtype;
+  v_result jsonb; v_id uuid; v_deleted bigint; v_rows bigint; v_replaced bigint; v_used bigint;
+begin
+  perform collab_v2_private.require_service();
+  select * into d from public.collab_v2_documents where id=p_document for update;
+  if not found or d.deleted_at is not null then raise exception using errcode='42501',message='DOCUMENT_DELETED'; end if;
+  if not collab_v2_private.history_allowed(p_document,'create',p_actor) or not exists
+    (select 1 from public.collab_v2_members where document_id=p_document and user_id=p_actor and membership_generation=p_membership) then
+    raise exception using errcode='42501',message='NOT_MEMBER'; end if;
+  if d.generation is distinct from p_generation then raise exception using errcode='40001',message='STALE_GENERATION'; end if;
+  select * into l from collab_v2_private.maintenance_leases where document_id=p_document;
+  if l.lease_id is distinct from p_lease or l.actor_id is distinct from p_actor or l.membership_generation is distinct from p_membership or
+    l.generation is distinct from p_generation or l.base_snapshot_id is distinct from p_base_snapshot or l.cut_seq is distinct from p_cut then
+    raise exception using errcode='40001',message='STALE_LEASE'; end if;
+  -- An ACK-lost publish repeats the exact completed receipt, even after expiry.
+  if l.result is not null then return l.result; end if;
+  if l.expires_at <= pg_catalog.clock_timestamp() then raise exception using errcode='40001',message='LEASE_EXPIRED'; end if;
+  if p_bytes is null or pg_catalog.octet_length(p_bytes) not between 1 and 8388608 or p_digest is null or
+    pg_catalog.octet_length(p_digest)<>32 or extensions.digest(p_bytes,'sha256')<>p_digest then raise exception using errcode='22023',message='INVALID_MAINTENANCE_OUTPUT'; end if;
+  select * into strict c from collab_v2_private.budget_settings where singleton;
+  perform pg_catalog.pg_advisory_xact_lock(20261004,2);
+  if not exists(select 1 from collab_v2_private.work_reservations where lease_id=p_lease and bytes>=pg_catalog.octet_length(p_bytes)) then
+    raise exception using errcode='40001',message='MISSING_RESERVATION'; end if;
+  if l.operation='compact' then
+    if d.latest_snapshot_id is distinct from p_base_snapshot then raise exception using errcode='40001',message='SNAPSHOT_CONFLICT'; end if;
+    select * into strict s from public.collab_v2_sync_snapshots where id=p_base_snapshot and document_id=p_document;
+    if p_cut<=s.upto_seq or p_cut>d.head_seq then raise exception using errcode='40001',message='INVALID_COMPACTION_CUT'; end if;
+    if exists(select 1 from collab_v2_private.history_due where document_id=p_document and (generation<>d.generation or cut_seq<s.upto_seq)) then
+      raise exception using errcode='40001',message='CHECKPOINT_REQUIRED'; end if;
+    select coalesce(sum(pg_catalog.octet_length(bytes)),0),count(*) into v_deleted,v_rows from public.collab_v2_updates where document_id=p_document and generation=d.generation and seq<=s.upto_seq;
+    select coalesce(sum(pg_catalog.octet_length(bytes)+c.row_overhead),0) into v_replaced from public.collab_v2_sync_snapshots where document_id=p_document and id<>p_base_snapshot;
+    v_replaced := v_replaced+v_deleted+v_rows*c.row_overhead;
+    select coalesce(sum(pg_catalog.octet_length(bytes)+c.row_overhead),0) into v_used from public.collab_v2_sync_snapshots where document_id=p_document;
+    v_used := v_used+d.log_bytes+d.receipt_count*c.row_overhead+
+      (select count(*)*c.row_overhead from public.collab_v2_updates where document_id=p_document)+
+      (select count(*)*c.row_overhead from public.collab_v2_writers where document_id=p_document);
+    if pg_catalog.octet_length(p_bytes)+c.row_overhead>v_replaced and v_used+pg_catalog.octet_length(p_bytes)+c.row_overhead-v_replaced>c.document_state_bytes then
+      raise exception using errcode='54000',message='QUOTA_EXCEEDED'; end if;
+    perform collab_v2_private.require_budget(pg_catalog.octet_length(p_bytes)+c.row_overhead,'state',v_replaced);
+    insert into public.collab_v2_sync_snapshots(document_id,generation,upto_seq,bytes,digest) values(p_document,d.generation,p_cut,p_bytes,p_digest) returning id into v_id;
+    update public.collab_v2_documents set previous_snapshot_id=p_base_snapshot,latest_snapshot_id=v_id,log_bytes=log_bytes-v_deleted,
+      compaction_required=head_seq-p_cut>=c.compact_updates or
+        (select coalesce(sum(pg_catalog.octet_length(bytes)),0) from public.collab_v2_updates where document_id=p_document and seq>p_cut)>=c.compact_bytes where id=p_document;
+    delete from public.collab_v2_updates where document_id=p_document and generation=d.generation and seq<=s.upto_seq;
+    delete from public.collab_v2_sync_snapshots where document_id=p_document and id not in(p_base_snapshot,v_id);
+    v_result := pg_catalog.jsonb_build_object('result','COMPACTED','snapshotId',v_id,'cutSeq',p_cut::text);
+  else
+    if not exists(select 1 from public.collab_v2_sync_snapshots where document_id=p_document and generation=d.generation and id=p_base_snapshot and id in(d.latest_snapshot_id,d.previous_snapshot_id)) then
+      raise exception using errcode='40001',message='SNAPSHOT_CONFLICT'; end if;
+    if l.operation='automatic' and not exists(select 1 from collab_v2_private.history_due where document_id=p_document and generation=d.generation and cut_seq=p_cut and lease_id=p_lease) then
+      raise exception using errcode='40001',message='STALE_DUE'; end if;
+    -- A failed automatic save rolls back thinning as well, retaining all history.
+    begin
+      if l.operation='automatic' then perform collab_v2_private.thin_checkpoints(p_document,p_bytes); end if;
+      v_result := public.collab_v2_store_checkpoint(p_document,p_actor,p_generation,p_cut,p_bytes,p_digest,l.operation);
+      if v_result->>'result'='DEFERRED_CAPACITY' then raise exception using errcode='54000',message='CHECKPOINT_QUOTA_EXCEEDED'; end if;
+    exception when sqlstate '54000' then
+      if l.operation='manual' then raise; end if;
+      v_result := pg_catalog.jsonb_build_object('result','DEFERRED_CAPACITY','retryAfterMs',60000);
+    end;
+    if v_result->>'result'='STORED' then
+      update public.collab_v2_documents set last_checkpoint_at=pg_catalog.clock_timestamp(),last_checkpoint_seq=greatest(last_checkpoint_seq,p_cut) where id=p_document;
+      if l.operation='automatic' then delete from collab_v2_private.history_due where document_id=p_document and lease_id=p_lease; end if;
+    end if;
+  end if;
+  update collab_v2_private.history_due set lease_id=null,lease_until=null,
+    retry_at=(case when v_result->>'result'='DEFERRED_CAPACITY' then pg_catalog.clock_timestamp()+interval '1 minute' else retry_at end)
+    where document_id=p_document and lease_id=p_lease;
+  delete from collab_v2_private.work_reservations where lease_id=p_lease;
+  v_result := v_result || pg_catalog.jsonb_build_object('maintenance',collab_v2_private.maintenance_hint(p_document));
+  update collab_v2_private.maintenance_leases set result=v_result where document_id=p_document and lease_id=p_lease;
+  return v_result;
+end $$;
+
+-- Best-effort on validation/network failure. A stopped Edge is recovered by expiry.
+create or replace function public.collab_v2_release_maintenance(p_document uuid,p_actor uuid,p_lease uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform collab_v2_private.require_service();
+  perform 1 from public.collab_v2_documents where id=p_document for update;
+  perform pg_catalog.pg_advisory_xact_lock(20261004,2);
+  if exists(select 1 from collab_v2_private.maintenance_leases where document_id=p_document and lease_id=p_lease and actor_id=p_actor and result is null) then
+    delete from collab_v2_private.work_reservations where lease_id=p_lease;
+    update collab_v2_private.history_due set lease_id=null,lease_until=null where document_id=p_document and lease_id=p_lease;
+    update collab_v2_private.maintenance_leases set expires_at=pg_catalog.clock_timestamp() where document_id=p_document and lease_id=p_lease;
+  end if;
+end $$;
+
+
 -- No implicit PUBLIC execute. Internal functions are not exposed via private schema.
 do $$ declare v_function record; begin
   for v_function in select p.oid::pg_catalog.regprocedure as signature, p.proname, n.nspname
     from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'collab_v2_private' or (n.nspname = 'public' and p.proname like 'collab_v2_%') loop
     execute pg_catalog.format('revoke all on function %s from public, anon, authenticated, service_role', v_function.signature);
-    if v_function.proname in ('collab_v2_create_document', 'collab_v2_ingest_state', 'collab_v2_append','collab_v2_probe_writer','collab_v2_store_checkpoint') then
+    if v_function.proname in ('collab_v2_create_document', 'collab_v2_ingest_state', 'collab_v2_append','collab_v2_probe_writer','collab_v2_store_checkpoint','collab_v2_claim_maintenance','collab_v2_publish_maintenance','collab_v2_release_maintenance') then
       execute pg_catalog.format('grant execute on function %s to service_role', v_function.signature);
-    elsif v_function.nspname = 'public' or v_function.proname in ('is_member', 'require_user', 'read_state','history_allowed') then
+    elsif v_function.nspname = 'public' or v_function.proname in ('is_member', 'require_user', 'read_state','history_allowed','maintenance_hint') then
       execute pg_catalog.format('grant execute on function %s to authenticated', v_function.signature);
     end if;
   end loop;

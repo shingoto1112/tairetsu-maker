@@ -15,17 +15,20 @@ import { parseAck, parsePage, TransportError, type CollaborationTransport } from
 import { createHttpTransport, httpError } from '../src/collaboration/supabaseTransport';
 import { MockCollabBackend, actors, memberships, documentId } from './testing/mock-collab-server.mjs';
 import { createHandler, RpcError } from '../supabase/functions/collab-ingest/handler';
+import { createMaintenanceHandler } from '../supabase/functions/collab-maintenance/handler';
+import { MockMaintenanceBackend } from './testing/mock-maintenance-backend.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 async function until(check: () => boolean | Promise<boolean>) { for (let n = 0; n < 200; n++) { if (await check()) return; await tick(); } throw new Error('Test did not settle'); }
 const appendInput = (updateId: string, bytes: string) => ({ action: 'append' as const, documentId, generation: '1', membershipGeneration: memberships[0], updateId, bytes });
 const request = (value: unknown, actor = actors[0]) => new Request('http://mock.invalid', { method: 'POST', headers: { Authorization: `Bearer ${actor}`, 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
-async function setup() {
+async function setup(options: { maintenance?: boolean; backend?: MockCollabBackend } = {}) {
   const repository = new MemoryProjectRepository(); await repository.initialize();
   const collaboration = { ...fixture.initial, sharedDocumentId: documentId, transportBinding: { accountId: actors[0], membershipGeneration: memberships[0] } } as CollaborationData;
   await repository.commit({ project: projects.stage as Project, collaboration, localRevision: '1', expectedRepositoryRevision: null, operationId: 'initial' });
   const coordinator = new SaveCoordinator(repository, () => {}); coordinator.activate((await repository.get('project_a'))!);
-  const backend = new MockCollabBackend(fixture.initial.base, RpcError), handler = createHandler(backend, []);
+  const backend = options.backend ?? (options.maintenance ? new MockMaintenanceBackend(fixture.initial.base, RpcError) : new MockCollabBackend(fixture.initial.base, RpcError)), handler = createHandler(backend, []);
+  const maintenanceHandler = createMaintenanceHandler(backend, [], () => {});
   const transport: CollaborationTransport = {
     credential: async () => ({ accountId: actors[0], accessToken: actors[0] }),
     membership: async () => { if (!backend.members.has(actors[0])) throw new TransportError('permission', 'NOT_MEMBER'); return backend.members.get(actors[0])!; },
@@ -41,6 +44,10 @@ async function setup() {
     },
   };
   const provider = new CollaborationProvider(coordinator, transport, { pollMs: 60_000, backoffMs: 10, random: () => 0, lifecycle: false });
+  if (options.maintenance) transport.maintenance = async input => {
+    const response = await maintenanceHandler(request(input)), value = await response.json();
+    if (!response.ok) throw httpError(response.status, value.error); return value;
+  };
   coordinator.subscribeCommits(event => provider.committedPending(event.pendingCount));
   const move = async (x: number, commit = true) => {
     const doc = hydrateCollaboration((await coordinator.getCommittedCollaboration())!), before = Y.encodeStateVector(doc), commands = new CollaborationCommands(doc);
@@ -289,5 +296,64 @@ describe('provider durable boundaries and failure states', () => {
     expect(calls[1].init?.headers).toMatchObject({ Authorization: 'Bearer injected-token', apikey: 'public-only' });
     expect(JSON.parse(calls[1].init!.body as string)).toEqual({ p_document: documentId, p_generation: '1', p_cursor: '9007199254740993', p_limit: 32, p_known_snapshot_id: null });
     expect(httpError(429, 'VALIDATION_BUDGET').kind).toBe('validation'); expect(httpError(400, 'MISSING_DEPENDENCIES').kind).toBe('temporary');
+  });
+});
+
+
+describe('9b provider maintenance lane', () => {
+  it('makes one leased cut for two simultaneous devices; automatic work stays outside the editing/ACK path', async () => {
+    const backend = new MockMaintenanceBackend(fixture.initial.base, RpcError);
+    backend.due={cut:'0',generation:'1'};backend.delayMaintenanceMs=150;
+    const a=await setup({maintenance:true,backend}), b=await setup({maintenance:true,backend});
+    a.provider.start();b.provider.start();
+    try {
+      await until(()=>backend.workCount===1);
+      await a.move(17);a.provider.wakeSend();
+      await until(()=>backend.head==='1');
+      await until(()=>backend.checkpoints.length===1);
+      expect(backend.workCount).toBe(1);expect(backend.checkpoints[0].cut).toBe('0');
+      await until(()=>a.provider.snapshot.pending===0);expect(a.provider.snapshot.held).toBe(false);
+    } finally {a.provider.stop();b.provider.stop();}
+  });
+  it('uses ten-minute pre-append due, defers capacity without holding edits and retries a failed request with backoff', async () => {
+    const backend=new MockMaintenanceBackend(fixture.initial.base,RpcError),s=await setup({maintenance:true,backend});
+    await s.handler(request(await s.move(5)));backend.lastCheckpointAt=Date.now()-600001;backend.checkpointCapacity=true;
+    const second=await s.move(6);await s.handler(request(second));
+    expect(backend.due.cut).toBe('1');expect(backend.head).toBe('2');
+    let calls=0;const maintain=s.transport.maintenance!;
+    s.transport.maintenance=async(...args)=>{if(!calls++)throw new TransportError('network','NETWORK_UNAVAILABLE');return maintain(...args);};
+    s.provider.start();
+    try {
+      await until(()=>calls>=2 && backend.lease?.result?.result==='DEFERRED_CAPACITY');
+      await until(()=>s.provider.snapshot.pending===0);
+      expect(backend.due.cut).toBe('1');expect(s.provider.snapshot.held).toBe(false);expect(s.provider.snapshot.error).toBe(null);
+      await s.move(9);s.provider.wakeSend();await until(()=>backend.head==='3');
+      expect(backend.due.cut).toBe('1');
+    } finally {s.provider.stop();}
+  });
+  it('merges a compacted snapshot into an old cursor without losing pending outbox or a concurrent append', async () => {
+    const backend=new MockMaintenanceBackend(fixture.initial.base,RpcError),s=await setup({maintenance:true,backend});
+    const local=await s.move(42);expect(await s.coordinator.prepareCollaborationWriter()).toBe(true);
+    const pending=(await s.coordinator.getCommittedCollaboration())!.outbox[0];
+    const remote=new Y.Doc();Y.applyUpdate(remote,Uint8Array.from(atob(fixture.initial.base),c=>c.charCodeAt(0)));
+    for(let i=1;i<=2;i++) {
+      const sv=Y.encodeStateVector(remote);remote.getMap('settings').set('title',{title:'?? '+i});
+      const result=await s.handler(request(appendInput('remote-'+i,encodeUpdate(Y.encodeStateAsUpdate(remote,sv)))));expect(result.status).toBe(200);
+    }
+    remote.destroy();backend.compactionRequired=true;
+    const beforeId=backend.snapshotId;
+    const result=await s.transport.maintenance!({action:'maintain',documentId,generation:'1',membershipGeneration:memberships[0]},
+      {accountId:actors[0],accessToken:actors[0]},new AbortController().signal) as {result:string};
+    expect(result.result).toBe('COMPACTED');expect(backend.snapshotId).not.toBe(beforeId);
+    let release!:()=>void;const gate=new Promise<void>(r=>{release=r;}),append=s.transport.append;
+    s.transport.append=async(...args)=>{await gate;return append(...args);};s.provider.start();
+    try {
+      await until(async()=> (await s.coordinator.getCommittedCollaboration())!.knownSnapshotId===backend.snapshotId);
+      const saved=(await s.coordinator.getCommittedCollaboration())!;
+      expect(saved.serverCursor).toBe('2');expect(saved.outbox[0]).toEqual(pending);expect(saved.outbox[0].bytes).toBe(local.bytes);
+      const doc=hydrateCollaboration(saved);expect((doc.getMap('settings').get('title') as {title:string}).title).toBe('?? 2');doc.destroy();
+      release();await until(()=>backend.head==='3' && s.provider.snapshot.pending===0);await until(()=>s.provider.snapshot.cursor==='3');
+      expect((await s.coordinator.getCommittedCollaboration())!.knownSnapshotId).toBe(backend.snapshotId);
+    } finally {release();s.provider.stop();}
   });
 });

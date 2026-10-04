@@ -235,6 +235,12 @@ export async function startMockServer(backend, createHandler, origin = process.e
         res.end(JSON.stringify(membership ? [{ membership_generation: membership }] : [])); return;
       }
       const input = JSON.parse(body);
+      if (url.pathname === '/functions/v1/collab-maintenance') {
+        // Pre-maintenance browser scenarios have no scheduled work; keep their
+        // protocol complete without introducing a second snapshot implementation.
+        backend.requireMember(actor);
+        res.end(JSON.stringify({result:'NOOP'})); return;
+      }
       if (url.pathname === '/rest/v1/rpc/collab_v2_get_updates') {
         const result = await backend.rpc('collab_v2_get_updates', { ...input, p_actor: actor });
         await wait(backend.delayPullMs); res.end(JSON.stringify(result)); return;

@@ -5,6 +5,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import * as Y from 'yjs';
 import { migration, preflight } from './check-collab-v2.mjs';
+import { runMaintenanceSqlSuite } from './testing/maintenance-sql-suite.mjs';
 
 assert.equal(process.platform, 'linux', 'Linux CI only'); assert.equal(process.argv.length, 2, 'No overrides accepted');
 const files = preflight();
@@ -291,6 +292,8 @@ assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(hid)}
 assert.equal(json(service(happend('writer-next',2,1))).seq,'2');
 assert.equal(json(asUser(24,hconfirm(2))).reclaimedThrough,'2');
 // Due contract freezes the pre-append cut, and preserves it on later appends.
+// The dedicated 9b suite covers completion of the new initial cut.
+run(`delete from collab_v2_private.history_due where document_id=${q(hid)}`);
 run(`update public.collab_v2_documents set last_checkpoint_at=now()-interval '11 minutes' where id=${q(hid)}`);
 assert.equal(json(service(happend('due-first',3,2))).seq,'3');
 assert.equal(scalar(`cut_seq from collab_v2_private.history_due where document_id=${q(hid)}`),'2');
@@ -359,6 +362,7 @@ deny(null,legacyAppend(),'WRITER_REQUIRED','service_role');
 assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(lid)}`),'1');
 
 // Rerun with populated v2 tables. Confirm content, state, legacy function ACLs.
+await runMaintenanceSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});
 const before = scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`);
 run(readFileSync(migration,'utf8'));
 assert.equal(scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`),before);

@@ -60,8 +60,11 @@ function typePath(doc: Y.Doc, type: Y.AbstractType<unknown>): string[] {
   }
   return fail();
 }
-function content(doc: Y.Doc, parent: Y.AbstractType<unknown>, key: string | null, value: unknown): void {
-  const path = typePath(doc, parent), [root, entity, field] = path;
+function content(doc: Y.Doc, parent: Y.AbstractType<unknown>, key: string | null, value: unknown,
+  paths: Map<Y.AbstractType<unknown>, string[]>): void {
+  let path = paths.get(parent);
+  if (!path) { path = typePath(doc, parent); paths.set(parent, path); }
+  const [root, entity, field] = path;
   if (parent instanceof Y.Text) { if (root !== "scenes" || field !== "notes" || key !== null || typeof value !== "string") fail(); return; }
   if (parent instanceof Y.Array) {
     if (root !== "orders" || field !== "slots" || key !== null || !obj(value) || Object.keys(value).sort().join() !== "elementId,slotId" || !id(value.elementId) || !id(value.slotId)) fail(); return;
@@ -128,6 +131,9 @@ function content(doc: Y.Doc, parent: Y.AbstractType<unknown>, key: string | null
 }
 /** Includes hidden/deleted history (gc:false), not just the visible projection. */
 export function assertFullState(doc: Y.Doc): void {
+  // Parent topology is immutable while this synchronous check runs. A positions
+  // map often owns thousands of Items; validate its root path once per check.
+  const paths = new Map<Y.AbstractType<unknown>, string[]>();
   if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("MISSING_DEPENDENCIES");
   if ([...doc.share.keys()].some(root => !allRoots.includes(root))) fail();
   // Materialize decoded root maps before inspecting Item parent types.
@@ -164,6 +170,6 @@ export function assertFullState(doc: Y.Doc): void {
   for (const list of doc.store.clients.values()) for (const struct of list) {
     if (!(struct instanceof Y.Item) || struct.content instanceof Y.ContentDeleted) continue;
     if (!(struct.parent instanceof Y.AbstractType)) fail();
-    for (const value of struct.content.getContent() as unknown[]) content(doc, struct.parent as Y.AbstractType<unknown>, struct.parentSub, value);
+    for (const value of struct.content.getContent() as unknown[]) content(doc, struct.parent as Y.AbstractType<unknown>, struct.parentSub, value, paths);
   }
 }

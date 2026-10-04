@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 // @ts-ignore Deno source import; both runtimes pin Yjs 13.6.33.
-import { validateState, ValidationError, SERVER_LIMITS } from "./serverValidation.ts";
+import { validateState, assertValidatedDocument, ValidationError, SERVER_LIMITS } from "./serverValidation.ts";
 // @ts-ignore Deno source import.
 import { sceneMaps } from "./projectSchema.ts";
 
@@ -39,7 +39,7 @@ export function canonicalCheckpointContent(value: Pick<CheckpointDTO, "formatVer
   return bytes;
 }
 async function digest(bytes: Uint8Array) { return [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer))].map(b => b.toString(16).padStart(2, "0")).join(""); }
-function projectContent(doc: Y.Doc, schema: 1 | 2): { content: SharedContentDTO; song: SongDTO | null } {
+export function projectCheckpointContent(doc: Y.Doc, schema: 1 | 2): { content: SharedContentDTO; song: SongDTO | null } {
   const roots = Object.fromEntries((schema === 2 ? roots2 : roots1).map(name => [name, doc.getMap(name).toJSON() as MapDTO]));
   const settings = roots.settings;
   const hasSong = !!settings && Object.prototype.hasOwnProperty.call(settings, "song"), song = hasSong ? settings.song as unknown as SongDTO | null : null;
@@ -73,8 +73,8 @@ function materialize(dto: Pick<CheckpointDTO, "content" | "song" | "sharedSchema
       }
     }
     if (dto.content.hasSong) doc.getMap("settings").set("song", dto.song);
-    validateState(Y.encodeStateAsUpdate(doc), [], undefined, dto.sharedSchemaVersion);
-    const projected = projectContent(doc, dto.sharedSchemaVersion);
+    assertValidatedDocument(doc, dto.sharedSchemaVersion);
+    const projected = projectCheckpointContent(doc, dto.sharedSchemaVersion);
     if (new TextDecoder().decode(canonicalCheckpointContent({ formatVersion: 1, sharedSchemaVersion: dto.sharedSchemaVersion, ...projected })) !==
       new TextDecoder().decode(canonicalCheckpointContent({ formatVersion: 1, ...dto }))) invalid();
     return doc;
@@ -97,7 +97,7 @@ export async function createCheckpointDTO(snapshot: { uptoSeq: string; bytes: Ui
 /** For a reconstructed, confirmed Doc only; binary state is revalidated here. */
 export async function checkpointFromConfirmedDocument(doc: Y.Doc, metadata: Omit<CheckpointDTO, "formatVersion" | "content" | "song" | "digest">): Promise<CheckpointDTO> {
   validateState(Y.encodeStateAsUpdate(doc), [], undefined, metadata.sharedSchemaVersion);
-  const payload = { formatVersion: 1 as const, sharedSchemaVersion: metadata.sharedSchemaVersion, ...projectContent(doc, metadata.sharedSchemaVersion) };
+  const payload = { formatVersion: 1 as const, sharedSchemaVersion: metadata.sharedSchemaVersion, ...projectCheckpointContent(doc, metadata.sharedSchemaVersion) };
   const dto: CheckpointDTO = { ...metadata, ...payload, digest: await digest(canonicalCheckpointContent(payload)) };
   return validateCheckpointDTO(dto);
 }

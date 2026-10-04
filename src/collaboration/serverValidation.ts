@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 // @ts-ignore Deno requires explicit TS extensions; Vite/Vitest resolve them.
-import { validateState as validateLegacy } from "./legacyServerValidation.ts";
+import { validateState as validateLegacy, assertState as assertLegacyDocument } from "./legacyServerValidation.ts";
 // @ts-ignore Deno source import.
 import { assertFullState } from "./serverSchema2.ts";
 
@@ -39,7 +39,11 @@ export function decodeBase64(value: unknown, max: number): Uint8Array {
   try { text = atob(value); } catch { return fail(); }
   if (text.length > max) fail("QUOTA_EXCEEDED");
   if (btoa(text) !== value) fail();
-  return Uint8Array.from(text, c => c.charCodeAt(0));
+  // Uint8Array.from(string, mapper) first builds an iterable value list in V8.
+  // At 8MiB that transient list alone can exceed an Edge worker's memory limit.
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  return bytes;
 }
 
 /** Bounded V1 wire scanner, BEFORE Yjs allocates arrays or reads recursive any.
@@ -144,6 +148,37 @@ export function inspectWire(bytes: Uint8Array): void {
     for (let j = 0; j < ranges; j++) { const clock = uint(), length = uint(); if (!length || !Number.isSafeInteger(clock + length)) fail(); }
   }
   if (offset !== bytes.length) fail();
+}
+
+/** Internal validation boundary shared with maintenance. Checks hidden Items as
+ * well as the visible closed schema; callers must retain gc:false until checked. */
+export function assertValidatedDocument(doc: Y.Doc, expectedSchema: 1 | 2): void {
+  if (doc.store.pendingStructs || doc.store.pendingDs) fail('MISSING_DEPENDENCIES');
+  if (doc.store.clients.size > SERVER_LIMITS.clients) fail('QUOTA_EXCEEDED');
+  let items = 0;
+  for (const structs of doc.store.clients.values()) for (const struct of structs) {
+    items += struct.length;
+    if (items > SERVER_LIMITS.structs) fail('QUOTA_EXCEEDED');
+  }
+  if (doc.getMap('metadata').get('schemaVersion') !== expectedSchema) fail('UNSUPPORTED_SCHEMA');
+  try {
+    if (expectedSchema === 2) assertFullState(doc);
+    else assertLegacyDocument(doc);
+  } catch (error) {
+    if (error instanceof ValidationError) throw error;
+    fail(error instanceof Error && ['QUOTA_EXCEEDED','UNSUPPORTED_SCHEMA','MISSING_DEPENDENCIES'].includes(error.message) ? error.message : 'INVALID_UPDATE');
+  }
+}
+
+export function assertResolvedDocument(doc: Y.Doc): void {
+  if (doc.store.pendingStructs || doc.store.pendingDs) fail('MISSING_DEPENDENCIES');
+}
+
+/** A stable description of clocks/deletions, confined to the pinned Yjs boundary. */
+export function documentCausality(doc: Y.Doc): string {
+  return JSON.stringify({ clocks: Array.from(Y.decodeStateVector(Y.encodeStateVector(doc))).sort(([a], [b]) => a - b),
+    deleted: Array.from(Y.createDeleteSetFromStructStore(doc.store).clients)
+      .sort(([a], [b]) => a - b).map(([client, ranges]) => [client, ranges.map(r => [r.clock, r.len])]) });
 }
 
 export function validateState(snapshot: Uint8Array, updates: readonly Uint8Array[] = [], incoming?: Uint8Array, expectedSchema?: 1 | 2): { stateBytes: number; elapsedMs: number; title: string } {

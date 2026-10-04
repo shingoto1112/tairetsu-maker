@@ -35,11 +35,13 @@ export async function loadCollabRuntime() {
     await rm(directory, { recursive: true, force: true });
   };
   try {
-    const [runtime, normalization, validation] = await Promise.all([
+    const [runtime, normalization, validation, maintenance] = await Promise.all([
       compile(path.join(root, "src/collaboration/runtime.ts")), compile(path.join(root, "src/project/normalizeProject.ts")),
       compile(path.join(root, "src/collaboration/serverValidation.ts")),
+      compile(path.join(root, "src/collaboration/maintenance.ts")),
     ]);
     return { runtime: await import(pathToFileURL(runtime).href), normalization: await import(pathToFileURL(normalization).href),
-      validation: await import(pathToFileURL(validation).href), dispose };
+      validation: await import(pathToFileURL(validation).href), maintenance: await import(pathToFileURL(maintenance).href),
+      moduleUrls: [runtime, normalization, validation, maintenance].map(p => pathToFileURL(p).href), dispose };
   } catch (error) { await dispose(); throw error; }
 }

@@ -139,7 +139,7 @@ function position(value: unknown): void {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'x,y' ||
     !Number.isFinite((value as { x: number }).x) || !Number.isFinite((value as { y: number }).y)) fail();
 }
-function assertState(doc: Y.Doc): Topology {
+export function assertState(doc: Y.Doc): Topology {
   if (doc.store.pendingStructs || doc.store.pendingDs) fail("MISSING_DEPENDENCIES");
   if ([...doc.share.keys()].some(key => !['members', 'metadata', 'scenes'].includes(key))) fail();
   const metadata = doc.getMap('metadata'), members = doc.getMap('members'), scenes = doc.getMap('scenes');

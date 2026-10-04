@@ -1,5 +1,7 @@
 // @ts-ignore Deno source import; also exercised by the client contract tests.
 import { decodeBase64, validId, validateState, ValidationError, SERVER_LIMITS } from '../../../src/collaboration/serverValidation.ts';
+// @ts-ignore Deno source import.
+import { buildMaintenanceOutput } from '../../../src/collaboration/maintenance.ts';
 
 type User = { id: string; is_anonymous: boolean };
 export type Backend = {
@@ -12,7 +14,7 @@ export class RpcError extends Error {
 const uuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const revision = (v: unknown): v is string => typeof v === 'string' && /^[1-9][0-9]{0,18}$/.test(v) && BigInt(v) <= 9223372036854775807n;
 const hexDigits = Array.from({ length: 256 }, (_, b) => b.toString(16).padStart(2, '0'));
-const hex = (bytes: Uint8Array) => {
+export const hex = (bytes: Uint8Array) => {
   const chunks: string[] = [];
   for (let i = 0; i < bytes.length; i += 8192) {
     let chunk = '';
@@ -25,7 +27,7 @@ const invalid = (): never => { throw new ValidationError('INVALID_ARGUMENT'); };
 const fields = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).sort().join(',') === keys.sort().join(',');
 
 /** Stream-bound body before JSON parsing; Content-Length is not trusted. */
-async function body(request: Request, max: number): Promise<Record<string, unknown>> {
+export async function boundedBody(request: Request, max: number): Promise<Record<string, unknown>> {
   if (!request.body) return invalid();
   const reader = request.body.getReader(); let size = 0; const chunks: Uint8Array[] = [];
   try {
@@ -73,14 +75,17 @@ export function createHandler(backend: Backend, allowedOrigins: readonly string[
       if (!request.headers.get('content-type')?.startsWith('application/json')) return response(415, { error: 'JSON_REQUIRED' });
       // Create is larger, but no anonymous account can allocate a snapshot/document.
       const max = user.is_anonymous ? 360000 : Math.ceil(SERVER_LIMITS.snapshotBytes / 3) * 4 + 2048;
-      const input = await body(request, max);
+      const input = await boundedBody(request, max);
       if (input.action === 'create') {
         if (user.is_anonymous) return response(403, { error: 'PERMANENT_ACCOUNT_REQUIRED' });
         if (!fields(input, ['action', 'displayName', 'bytes']) || typeof input.displayName !== 'string' ||
           !input.displayName.trim() || [...input.displayName].length > 80) invalid();
         const bytes = decodeBase64(input.bytes, SERVER_LIMITS.snapshotBytes);
         const validated = validateState(bytes, [], undefined, 2);
-        const result = await backend.rpc('collab_v2_create_document', { p_actor: user.id, p_display_name: input.displayName, p_bytes: hex(bytes), p_title: validated.title });
+        const initial = await buildMaintenanceOutput({ documentId: crypto.randomUUID(), generation: '1', cutSeq: '0', documentSchema: 2,
+          snapshot: { id: crypto.randomUUID(), uptoSeq: '0', bytes }, updates: [] }, 'automatic', user.id, new Date().toISOString());
+        const result = await backend.rpc('collab_v2_create_document', { p_actor: user.id, p_display_name: input.displayName, p_bytes: hex(bytes), p_title: validated.title,
+          p_checkpoint: hex(initial.bytes), p_checkpoint_digest: '\\x' + initial.digest });
         return response(200, result);
       }
       const hasWriter = 'writerId' in input || 'writerSeq' in input;

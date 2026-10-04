@@ -57,6 +57,7 @@ export function createHttpTransport(config: CloudConfig, credential: Collaborati
     pull: (documentId, generation, cursor, limit, auth, signal, knownSnapshotId) => request("/rest/v1/rpc/collab_v2_get_updates", auth, signal,
       { p_document: documentId, p_generation: generation, p_cursor: cursor, p_limit: limit, p_known_snapshot_id: knownSnapshotId ?? null }),
     append: (body, auth, signal) => request("/functions/v1/collab-ingest", auth, signal, body),
+    maintenance: (body, auth, signal) => request("/functions/v1/collab-maintenance", auth, signal, body),
     confirm: (body, auth, signal) => request("/rest/v1/rpc/collab_v2_confirm_writer", auth, signal,
       { p_document: body.documentId, p_generation: body.generation, p_membership: body.membershipGeneration, p_writer: body.writerId, p_ack_through: body.ackThrough }),
   };

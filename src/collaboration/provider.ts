@@ -1,6 +1,6 @@
 import type { SaveCoordinator } from "../storage/saveCoordinator";
 import { compareRevisions, incrementRevision, RepositoryError, type CollaborationData, type CollaborationUpdate } from "../repositories/types";
-import { parseAck, parseNotice, parsePage, TransportError, uuid, type CollaborationTransport, type Credential, type PullPage } from "./transport";
+import { needsMaintenance, parseAck, parseNotice, parsePage, TransportError, uuid, type CollaborationTransport, type Credential, type PullPage } from "./transport";
 
 export type ProviderError = { kind: TransportError["kind"] | "storage" | "membership"; code: string };
 export type ProviderState = { online: boolean; realtimeConnected: boolean; syncing: boolean; pending: number; held: boolean; cursor: string; error: ProviderError | null; credentialConfirmed: boolean; pullConfirmed: boolean;
@@ -25,6 +25,10 @@ export class CollaborationProvider {
   private poll?: ReturnType<typeof setInterval>;
   private sendOnly = false;
   private queueVersion = 0;
+  private maintenanceRunning = false;
+  private maintenancePending = false;
+  private maintenanceTimer?: ReturnType<typeof setTimeout>;
+  private maintenanceAttempts = 0;
   constructor(private coordinator: SaveCoordinator, private transport: CollaborationTransport,
     private options: { pollMs?: number; backoffMs?: number; random?: () => number; lifecycle?: boolean; valid?: () => boolean } = {}) {
       this.state.pending = coordinator.collaborationProjection?.outbox.filter(e => e.status === "pending").length ?? 0;
@@ -47,25 +51,28 @@ export class CollaborationProvider {
   stop(): void {
     this.stopped = true; this.epoch++; this.controller.abort(); this.closeChannel();
     this.timers.forEach(clearTimeout); this.timers.clear(); clearInterval(this.poll);
+    clearTimeout(this.maintenanceTimer); this.maintenanceTimer = undefined;
     if (typeof window !== "undefined") {
       window.removeEventListener("online", this.onOnline); window.removeEventListener("offline", this.onOffline); document.removeEventListener("visibilitychange", this.onVisible);
     }
     this.emit();
   }
   /** After local flush, reconnect, foreground, or renewed authentication. Never flushes local edits to send. */
-  wake(): void { this.blocked.clear(); this.kick("pull"); this.kick("send"); }
+  wake(): void { this.blocked.clear(); this.kick("pull"); this.kick("send"); this.requestMaintenance(); }
   /** Coalesced durable local updates wake only the send lane. */
   wakeSend(): void { this.blocked.delete("send"); this.kick("send"); }
   committedPending(pending: number): void { this.queueVersion++; this.state.pending = pending; this.emit(); }
   backgroundSendOnly(): void {
     this.sendOnly = true; this.epoch++; this.controller.abort(); this.controller = new AbortController();
     this.closeChannel(); clearInterval(this.poll); this.timers.forEach(clearTimeout); this.timers.clear();
+    clearTimeout(this.maintenanceTimer); this.maintenanceTimer = undefined;
     this.requested.clear(); this.wakeSend();
   }
   setOnline(online: boolean): void {
     this.state.online = online; this.epoch++; this.controller.abort(); this.controller = new AbortController(); this.closeChannel();
     this.state.credentialConfirmed = false; this.state.pullConfirmed = false;
     this.timers.forEach(clearTimeout); this.timers.clear();
+    clearTimeout(this.maintenanceTimer); this.maintenanceTimer = undefined;
     this.emit(); if (online) this.wake();
   }
   private onOnline = () => this.setOnline(true);
@@ -167,7 +174,8 @@ export class CollaborationProvider {
       const request = { action: "append" as const, documentId: data.sharedDocumentId!, generation: data.generation,
         membershipGeneration: data.transportBinding!.membershipGeneration, updateId: update.updateId, bytes: update.bytes,
         writerId: data.writer!.id, writerSeq: update.writerSeq! };
-      parseAck(await this.transport.append(request, credential, signal), request);
+      const ack = parseAck(await this.transport.append(request, credential, signal), request);
+      if (this.valid(epoch) && needsMaintenance(ack.maintenance)) this.requestMaintenance();
       if (!this.valid(epoch)) return;
       this.state.pullConfirmed = false; this.kick("pull");
       if (!await this.coordinator.markOutboxSent([update.updateId])) throw new TransportError("validation", "LOCAL_ACK_COMMIT_FAILED");
@@ -197,6 +205,7 @@ export class CollaborationProvider {
       const page = parsePage(await this.transport.pull(data.sharedDocumentId!, data.generation, cursor, 32, credential, signal, knownSnapshotId), data.sharedDocumentId!, data.generation);
       if (page.documentSchema !== data.documentSchema) throw new TransportError("validation", "UNSUPPORTED_SCHEMA");
       if (!this.valid(epoch)) return false;
+      if (needsMaintenance(page.maintenance)) this.requestMaintenance();
       if (page.deleted) throw new TransportError("permission", "DOCUMENT_DELETED");
       const updates: CollaborationUpdate[] = [];
       let next = cursor;
@@ -246,5 +255,48 @@ export class CollaborationProvider {
       else this.closeChannel();
     }); } catch (error) { this.closeChannel(); throw error instanceof TransportError ? error : new TransportError("network", "REALTIME_UNAVAILABLE"); }
     if (!this.valid(epoch) || this.topicKey !== key) unsubscribe(); else this.unsubscribe = unsubscribe;
+  }
+  /** Independent from send/pull and SaveCoordinator writes. A failed automatic
+   * checkpoint never holds editing, ACKs, or outbox collection. DB lease coalesces peers. */
+  private requestMaintenance(delay = 100): void {
+    if (!this.transport.maintenance || this.sendOnly) return;
+    this.maintenancePending = true;
+    if (!this.valid(this.epoch) || this.maintenanceRunning || this.maintenanceTimer || this.state.sharing !== "active") return;
+    this.maintenanceTimer = setTimeout(() => { this.maintenanceTimer = undefined; void this.maintain(); }, delay);
+  }
+  private async maintain(): Promise<void> {
+    if (!this.transport.maintenance || !this.valid(this.epoch) || this.sendOnly) return;
+    const epoch = this.epoch, signal = this.controller.signal;
+    this.maintenanceRunning = true; this.maintenancePending = false;
+    let retry = 0;
+    try {
+      const data = await this.coordinator.getCommittedCollaboration();
+      if (!this.valid(epoch) || !data?.sharedDocumentId || !data.transportBinding) return;
+      const auth = await this.transport.credential(signal);
+      if (!this.valid(epoch) || !auth || auth.accountId !== data.transportBinding.accountId) return;
+      const membership = await this.transport.membership(data.sharedDocumentId, auth, signal);
+      if (!this.valid(epoch) || membership !== data.transportBinding.membershipGeneration) return;
+      const result = await this.transport.maintenance({ action: "maintain", documentId: data.sharedDocumentId, generation: data.generation,
+        membershipGeneration: membership }, auth, signal) as { result?: string; retryAfterMs?: number; maintenance?: unknown };
+      if (!this.valid(epoch)) return;
+      if (!result || !["NOOP","BUSY","RATE_LIMIT","DEFERRED_CAPACITY","STORED","COMPACTED"].includes(result.result ?? "")) throw new TransportError("protocol", "INVALID_MAINTENANCE_RESPONSE");
+      this.maintenanceAttempts = 0;
+      if (result.result === "COMPACTED") this.kick("pull"); // snapshot ID is committed by the existing receive transaction
+      if (["BUSY","RATE_LIMIT","DEFERRED_CAPACITY"].includes(result.result!) || needsMaintenance(result.maintenance))
+        retry = Math.max(10_000, Math.min(300_000, Number.isFinite(result.retryAfterMs) ? result.retryAfterMs! : 10_000));
+    } catch (error) {
+      if (!this.valid(epoch)) return;
+      if (!(error instanceof TransportError) || ["network","temporary","rate-limit","capacity"].includes(error.kind) ||
+        ["LEASE_EXPIRED","STALE_LEASE","SNAPSHOT_CONFLICT"].includes(error.code)) {
+        retry = Math.max(error instanceof TransportError ? error.retryAfterMs : 0,
+          Math.min(300_000, (this.options.backoffMs ?? 1000) * 2 ** Math.min(this.maintenanceAttempts++, 9)) * (0.5 + (this.options.random ?? Math.random)()));
+      }
+    } finally {
+      this.maintenanceRunning = false;
+      if (this.valid(epoch)) {
+        if (retry) this.requestMaintenance(retry);
+        else if (this.maintenancePending) this.requestMaintenance();
+      } else if (this.maintenancePending && this.valid(this.epoch)) this.requestMaintenance();
+    }
   }
 }

@@ -1,5 +1,7 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第9回-2で専用 `collab-maintenance`、lease・公開CAS・作業予約、自動／手動控え・間引き・頻度制限を追加した。[現行9b契約・最終検証](COLLABORATION_MAINTENANCE.md)を参照。以下の過去の容量・試験値は現行値ではない。配備・確認・停止手順は9bに更新した。
+
 第9回-1で未適用foundationを改訂。writer連番・ACK境界によるreceipt/sent回収、knownSnapshotId、checkpoint DTO/権限、80/32/16MiB配分を追加した。
 下記は第3回時点の記録。永続receipt4,096件の累積停止、cursor=0ごとのsnapshot、旧容量表は [現行9a契約](COLLABORATION_HISTORY.md) に置き換わる。本番適用前の実DB使用量確認が必要。
 
@@ -113,6 +115,7 @@ Dashboardでindex.tsだけ貼る方法では依存ファイルが不足します
 
 ```powershell
 supabase functions deploy collab-ingest --project-ref <PROJECT_REF> --no-verify-jwt
+supabase functions deploy collab-maintenance --project-ref <PROJECT_REF> --no-verify-jwt
 ```
 
 `--no-verify-jwt` はgatewayの旧JWT検査を外す指定です。**関数内のAuth検証は必須のまま**です。
@@ -123,8 +126,41 @@ service keyをクライアント・Git・招待URLに置いたり、確認のた
 新APIキーへの移行時はランタイム設定とこのHTTP adapterを再確認します。
 
 配備後、DashboardのFunction Testで認証ヘッダー無しのPOSTを送り、401を確認できます。
+9bでは両方の関数に対して確認します。maintenanceも同じ `COLLAB_ALLOWED_ORIGINS` とランタイム既定キーを使い、cron用の新しい秘密は不要です。共有 `_shared/backend.ts` と `src/collaboration/{maintenance,checkpoint,serverValidation,legacyServerValidation,serverSchema2,projectSchema}.ts` を含むリポジトリ一式から配備します。
 origin無しのネイティブ通信は許可します。Webはallowlist外originを403にします。
 認証済みの作成・移動・再送確認は第4回providerから行います。配備だけでUI上のボタンは増えません。
+
+### 9b追加の配備・確認
+
+詳細は [maintenance契約・検証](COLLABORATION_MAINTENANCE.md)。Linux SQL／Deno／macOS確認後に利用者が行います。今回Codexは実行していません。
+
+1. 9aに記載した実DB容量の読取り確認とバックアップを済ませ、新foundation全体を適用する。新しい `compact_updates`／`compact_bytes`／頻度／lease設定が存在することを確認する。80/32/16MiBは実容量に応じて適用前に下げる。
+2. 上のコマンドで **ingestも再配備し、maintenanceも配備**する。片方だけでは初期控え／新ACK／専用入口の契約が揃わない。CLIのhelpでオプションを確認する。
+3. 両関数の無認証401、許可外Web originの403、外された人／部外者の403を確認する。匿名ログイン済み参加ゲストはmaintenanceを呼べる。service credentialや user JWT をチャット・Git・ログへ貼らない。
+4. 新規共有を作り、初期控えまたはseq=0 dueを確認する。設定閾値に達する編集と再接続／前面復帰を行い、新snapshot IDと控えが更新されることを確認する。公開中の別端末編集も届くことを確認する。
+5. 手動控えUIは9dなので、必要なら本人の認証でFunction Testに `action: manual` と文書ID・文書世代・参加世代だけを送る。成功STORED、頻度制限429／Retry-After、容量失敗413を確認する。cutSeqや内容を入力しない。
+6. Dashboard SQL Editorで次の**読取りだけ**を行い、必要なログと予約が残ること、成功後にdue／予約が解放されることを確認する。出力はseq・bytes・時刻だけで内容・descriptorを含まない。
+
+```sql
+select compact_updates, compact_bytes, maintenance_interval,
+  actor_maintenance_interval, manual_interval, lease_duration
+from collab_v2_private.budget_settings;
+select d.id, d.generation, d.head_seq, s.upto_seq as latest_seq,
+  p.upto_seq as previous_seq, d.log_bytes, d.last_checkpoint_seq,
+  d.last_checkpoint_at, d.compaction_required
+from public.collab_v2_documents d
+left join public.collab_v2_sync_snapshots s on s.id=d.latest_snapshot_id
+left join public.collab_v2_sync_snapshots p on p.id=d.previous_snapshot_id;
+select document_id, generation, cut_seq, due_at, lease_until, retry_at
+from collab_v2_private.history_due;
+select document_id, bytes, expires_at from collab_v2_private.work_reservations;
+select document_id, count(*) as points, min(server_at), max(server_at)
+from public.collab_v2_checkpoints group by document_id;
+```
+
+7. Function logsには bytes／seq／elapsedMs／結果コードだけが出ることを確認し、実Edgeで146人×18シーンと境界入力のCPU・メモリ・HTTP/DB込み時間を測る。CPU2秒・メモリ256MBの [公式制限](https://supabase.com/docs/guides/functions/limits) への適合をNode測定だけで判断しない。Nodeの目標未達があるため、Deno／実Edge結果が出るまでは無料枠での最大入力対応を確認済みと扱わない。
+
+利用者の追加操作は、maintenanceの配備、ingest再配備、設定・実DB／実Edge測定、上記動作確認です。cronの設定や新しい秘密の登録は不要です。誰も文書を開かない期間はmaintenanceが走らず、控え作成が次回の参加者の呼出しまで遅れる仕様です。
 
 ## 匿名ログインと濫用対策
 
@@ -157,9 +193,9 @@ select tablename, rowsecurity from pg_tables
 where schemaname = 'public' and tablename like 'collab\_v2\_%' escape '\';
 
 select has_function_privilege('authenticated',
-  'public.collab_v2_append(uuid,uuid,bigint,uuid,bigint,text,bytea,bytea)', 'EXECUTE') as client_append,
+  'public.collab_v2_append(uuid,uuid,bigint,uuid,bigint,text,bytea,bytea,text,uuid,bigint)', 'EXECUTE') as client_append,
   has_function_privilege('service_role',
-  'public.collab_v2_append(uuid,uuid,bigint,uuid,bigint,text,bytea,bytea)', 'EXECUTE') as edge_append;
+  'public.collab_v2_append(uuid,uuid,bigint,uuid,bigint,text,bytea,bytea,text,uuid,bigint)', 'EXECUTE') as edge_append;
 -- false / true
 
 select c.relname,
@@ -178,13 +214,13 @@ select count(*) as document_count, coalesce(sum(log_bytes),0) as log_bytes,
 select pg_size_pretty(pg_database_size(current_database())) as entire_database_size;
 ```
 
-RLSは6テーブルともtrue、Realtimeは受信allowと送受信restrictive fenceの3ポリシーです。
+RLSはpublicの9テーブルともtrue、Realtimeは受信allowと送受信restrictive fenceの3ポリシーです。privateの設定・due・予約・lease・rateにもRLSと直接アクセス拒否を設定しています。
 このSQLは新テーブルを `supabase_realtime` publicationへ追加しません。通知は `realtime.send` 経由です。
 旧publication・旧テーブル定義・旧関数・旧ACLは維持します。
 
 ## 元に戻す方法
 
-まず新providerを停止し、Edge Functionsで `collab-ingest` を削除／停止します。
+まず新providerを停止し、Edge Functionsで `collab-ingest` と `collab-maintenance` の両方を削除／停止します。
 共有データが作られた後のDB削除は不可逆です。利用者の端末コピー／必要なバックアップを確認してから、Claude確認済みの以下をSQL Editorで実行します。
 
 ```sql
@@ -206,6 +242,9 @@ drop table if exists public.collab_v2_invites;
 drop table if exists public.collab_v2_updates;
 drop table if exists public.collab_v2_update_receipts;
 drop table if exists public.collab_v2_sync_snapshots;
+drop table if exists public.collab_v2_writers;
+drop table if exists public.collab_v2_checkpoints;
+drop table if exists public.collab_v2_checkpoint_contents;
 commit;
 ```
 

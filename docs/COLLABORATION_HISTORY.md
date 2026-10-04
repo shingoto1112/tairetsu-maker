@@ -1,7 +1,7 @@
 # 新しい共同編集 第9回-1（9a）
 
 SQL/Edge は未適用・未配備の foundation 改訂。旧11 migration、本番、Project 型、ZIP、印刷、音源本体の形式は変更していない。
-履歴画面・自動実行・圧縮・共有復元は今回まだ有効にしない。以下が9b〜9dの契約の正本。
+この冒頭から9a検証記録までは9a時点の契約。9bの専用maintenance・自動実行・圧縮は [9b実装記録](COLLABORATION_MAINTENANCE.md) に進んだ。履歴画面と共有復元は9c・9dに残る。
 
 ## receipt と端末 sent の回収
 
@@ -143,3 +143,15 @@ Claudeへの確認依頼: Linuxで `scripts/test-cloud-sql.mjs` のfoundation初
 合意を補強した点: 文書現状態枠を旧16MiBから暫定24MiBへ変更（最大8MiB snapshotを直前分と2個保持するため）、復旧DBは旧形式も送信保留、writer導入後の未採番要求を拒否、切れたログ再生をEdgeで拒否。合意した9a範囲からの機能追加はない。自動控え・間引き・圧縮・共有復元・履歴UIの実行は9b〜9dに残す。
 
 commit／push／依存追加／workflow実行／本番接続は行っていない。Project型・ZIP形式・PrintPreview・distは変更していない。
+
+## 9b の確定事項と検証記録（2026-10-04）
+
+[実装・変更一覧・詳細測定](COLLABORATION_MAINTENANCE.md)、[配備手順](COLLAB_V2_SERVER.md)を参照。未適用foundationの改訂であり、9aのwriter／端末保存／履歴DTOの契約を維持する。
+
+- 入口は専用 `collab-maintenance`。appendから重い再構成のworker負荷を分離し、現在の参加者だけが呼ぶ。文書5秒・actor10秒、手動は両方1分。NOOP／BUSYも制限し、ログはbytes・seq・時間・結果コードだけ。
+- 機会的maintenanceを採用。受付後・再接続・前面復帰にproviderがバックグラウンドで呼び、leaseで重複排除する。自動控えは固定due cutを再構成して保存し、last_checkpoint・due・lease・予約解放を原子的に更新する。初期控え、手動控え、容量延期と10分／1時間／1日粒度の間引きも追加した。
+- 圧縮公開はgeneration／baseSnapshotId／cutSeq／leaseToken／参加世代のCAS。head=cutSeqを要求しない。直前PとPより後のログ、未完了dueの再生経路を保持する。8MiB作業予約と置換後差分で判定し、通常追記が作業枠を消費しない。
+- 最終decoderで単体755件×2、追加対象34件×2、指定ブラウザー全種、typecheck、bundle、静的SQL／native／diff確認は成功。メインJSは474,341 B、基準との差0。Swift変更なし。
+- 他の試験終了後のNode単独測定ではCPU p95 281〜1,124ms、計算工程wall p95 140〜522ms、プロセス最大RSS 217〜258MiB。CPU500msは一部、最大メモリ192MBは全ケース未達。HTTP／Auth／DBを含む全工程時間とDeno／実Edgeの無料枠適合は未確認。現行上限での公開保証はせず、実測と安全な上限調整を公開前条件にする。
+- ClaudeはLinux Postgres17で補強後のSQL初回・再適用・実ロール・競争・容量・間引き3区分、Denoの型検査／実行2回／測定、macOS47件を確認する。Codexはcommit／push／workflow実行／本番接続をしていない。
+- 9cは必須直前控えをprotectedにして復元全体を原子的に確定し、世代変更で旧maintenance lease／dueを整理する。9dは手動控え・履歴・容量延期の日本語UIと独立コピーを追加する。履歴権限の確認待ち条件は9aから引き継ぐ。

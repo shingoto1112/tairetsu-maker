@@ -14,11 +14,16 @@ export function preflight() {
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');
   const functions = [...sql.matchAll(/create or replace function ([\w.]+)\([\s\S]*?\n(?:\$\$;|end \$\$;)/g)];
-  assert.equal(functions.length, 30, 'Reviewed 9a: writer confirmation/probe; history authorization, store, list, get, delete');
+  assert.equal(functions.length, 35, 'Reviewed 9b: maintenance hint, claim, thinning, publish and release');
   for (const [, name] of functions) assert(name.startsWith('public.collab_v2_') || name.startsWith('collab_v2_private.'));
   for (const [body] of functions) {
     assert.match(body, /security (invoker|definer) set search_path = ''/i);
     assert(!/\bnextval\(/i.test(body), 'No sequence-backed cursor');
+  }
+  // Catch dollar-quote damage and the PL/pgSQL CASE/THEN pitfall fixed in 9a.
+  assert(!/\bas \$(?!\$)|^end \$;$/m.test(sql), 'No truncated dollar quotes');
+  for (const [,condition] of sql.matchAll(/\b(?:if|elsif|while)\s+([^;]*?)\bthen/gi)) {
+    assert(!/(?<!\()\bcase\b/i.test(condition), 'CASE in a procedural condition must be parenthesized');
   }
   assert.match(sql, /from public, anon, authenticated, service_role/);
   assert.match(sql, /for update;/);

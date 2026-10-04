@@ -1,0 +1,5 @@
+{
+  "imports": { "yjs": "npm:yjs@13.6.33" },
+  "lock": false,
+  "compilerOptions": { "strict": true }
+}
