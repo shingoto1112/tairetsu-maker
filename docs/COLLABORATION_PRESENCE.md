@@ -1,18 +1,20 @@
-# 共同編集 第10回: 10-local
+# 共同編集 第10回: 10-local / 10-transport
 
-配信経路未選択のため、本番向けの一時通信は開始しない。SQL、RLS、RPC、Edge、Swift、Project 型、ZIP 形式、PrintPreview の内容は変更していない。
+2026-10-05 のユーザー決定で、一時情報はクライアントから private topic へ直接 Broadcast する。高頻度の DB 配信は採用しない。未適用 foundation の RLS と ACL 通知を改訂した。Swift、Project 型、ZIP 形式、PrintPreview、Edge は変更していない。本番接続・適用は今回行わない。
 
 ## 所有と接続
 
 - `SharedSessionController.ephemeral` が文書単位で所有する。V2 OFF では作成も購読も送信もしない。
-- `EphemeralTransport` を注入できる。実装には、認証済み送信者の envelope、メンバー表、資格変更通知、送信予算の取得、送信・購読停止が必要。
+- `EphemeralTransport` を注入できる。本番は `supabaseEphemeralTransport.ts`。`collab_v2_ephemeral_state` の一つの snapshot で topic・文書/ACL/参加世代・現在のメンバー表を取得する。通常30秒 poll、前面復帰、認証更新、接続失敗時の再試行で更新する。
 - DEV の明示的な `__sharedSessionMock` のときだけ、127.0.0.1 の HTTP/SSE モックを動的に読み込む。テストの actor は匿名の仮識別子で、本番の認証方式ではない。
 - App は安定した session 参照、シーン／選択の通知、lazy 表示だけを接続する。旧クラウドの `canvasSnapshot` 合成へ一時情報は渡さない。
 - close は保存を待つ前に一時 session を停止する。保存失敗時も編集・確定送信のデータは残す。dispose、認証 epoch の変化、参加資格変更も一時通信を停止する。
 
 ## プロトコル v1
 
-UTF-8 JSON。すべてに `v:1, sessionId, seq`。seq は送信 session 単位の単調増加整数。payload に actor、表示名、自由文、任意属性を許可しない。`EphemeralEnvelope.actorId` は transport の認証済み情報、名前と色は transport のメンバー表を使用する。
+UTF-8 JSON。すべてに `v:1, sessionId, seq`。seq は送信 session 単位の単調増加整数。payload に actor、表示名、自由文、任意属性を許可しない。`EphemeralEnvelope.actorId` は本人だけが発行できる topic から導く。名前と色は RPC が返すメンバー表を使用する。色は userId からサーバーの固定パレットで決め、packet では指定できない。
+
+本番の外側 envelope は `generation, aclGeneration, membershipGeneration, payload` の4項目のみ。payload は下表のJSON文字列。受信は発行 topic のメンバー・参加世代と現在の文書/ACL世代を照合し、未知の項目、世代違い、型・サイズ・有限数違反を破棄する。送信サイズは外側 envelope を含め start/presence 等16KiB、move 512B。受信は内側も同じ上限で検査する。
 
 | type | 内容 | 制限 |
 |---|---|---|
@@ -37,15 +39,15 @@ start は約 1 秒間隔を目安に通信枠が空いたとき、新しい seq 
 
 ## 状態機械と予算
 
-初期 B（予算確認）→ 有効なサーバー許可を取得しオンラインなら A（上限 3Hz）。予算未取得／取得失敗／期限切れ／許可なしでは送信しない。確定編集はこの判定に依存しない。
+初期 B（接続・予算確認）→ オンラインで有効なクライアント予算があれば A（上限3Hz）。未取得／失敗／期限切れ／許可なしでは送信しない。確定編集はこの判定に依存しない。接続回復後の45秒安定待ちも維持する。
 
 正常な送信経路で preview 到達 p95 > 500ms（20 サンプル以上）、ローカル処理 p95 > 通常処理の 110%（20 サンプル以上）、または送信失敗が連続すると 3→2→1Hz→B。悪化判定の段階変更は最短 2 秒間隔。B では drag を送受信表示せず、小さい参加・選択更新のみ最大 1Hz（予算許可がある場合）。切断からの復帰も B で待つ。
 
-45 秒安定してから A を 1Hz で再開し、各 45 秒の安定期間で 2、3Hz へ戻す。古い性能サンプルは 30 秒で判定から外す。月間枠による停止は最低 5 分保持し、その後も有効なサーバー許可が必須。開始情報／move の上限超過は B。予算値は 15 秒おきに更新するが、許可の expiresAt は常に守る。
+45 秒安定してから A を最大1Hzで再開し、各45秒の安定期間で2、3Hzへ戻す（常に予算以下）。古い性能サンプルは30秒で判定から外す。月間理由の停止は最低5分保持する共通interfaceを残すが、今回の実 transport は月間使用量を自動取得しない。開始情報／move の上限超過は B。予算値は15秒おきに更新し expiresAt を守る。配分が0.5Hz未満なら3秒の preview TTLに対して疎すぎるため B。
 
 描画 rAF p95 > 8ms では受信レイヤーを最大 10fps に間引く。送信頻度を下げる判断とは分離する。ローカル Canvas の同期処理と通知の所要時間、payload bytes、送信数、rAF 時間を bounded な測定配列で保持する。ローカル同期処理の比較は同じ操作内で通知前後を測る補助計測であり、実機の指追従遅延や総合的な負荷比較の代用にはしない。
 
-クライアントの 3Hz と bytes の測定だけでは、改変クライアントの月間消費を強制制限できない。transport の `budget()` はサーバー発行の有効期限付き許可を返し、実 transport 側も送信を拒否する必要がある。本番では認証 epoch、文書世代、参加世代、ACL 世代と許可を結び付ける。10-local の HTTP モックはサーバー拒否と許可失効の試験用で、課金予算の実装ではない。
+直接 Broadcast の `budget()` はクライアントの見積もり。サーバー発行の許可ではなく、改変クライアントの頻度・月間消費を強制できない。実 transport 自身も全packet共通の上限・bytes・接続状態を検査する。10-localのHTTPモックの予算拒否はinterface試験であり、本番のサーバー強制を意味しない。
 
 ## 表示・性能・出力
 
@@ -55,29 +57,43 @@ start は約 1 秒間隔を目安に通信枠が空いたとき、新しい seq 
 
 `data-ephemeral` を表示に付け、`exportImage.ts` は clone から除去し、直接 PNG 経路では html-to-image の filter で除外する。lazy CSS は印刷時も表示を隠す。PrintPreview は Project から独立して描画する既存方式のため変更不要。
 
-## 配信経路の比較と未解決点
+## 10-transport 採用決定と認可
 
-| 項目 | (d) 認証 RPC → server realtime.send | (a') 派生 topic へ直接 Broadcast |
-|---|---|---|
-| 解除後の新内容 | 解除 commit 後の旧 topic 送信をサーバーで防ぐ設計が可能 | ACL 通知後に残るメンバーが topic を切り替えるまで露出が残る |
-| 保持 | realtime.messages の保持分が DB 容量を使う | 想定は DB 保持なし。選定時に実際の保持経路を再確認 |
-| actor の信頼 | RPC の認証主体から envelope を作れる | 同じ topic 内の payload.actor は本人証明にならない |
-| 予算強制 | RPC の原子的な受付／拒否で実装しやすい | チャンネルへの発行権限・予算許可失効をサービス側で強制できる設計が必要 |
+採用 topic は `現在のprivate_topic + ':ephemeral:' + userId`。ランダムな確定通知topicの回転を共有し、参加世代変更も回転triggerの対象。topicのランダム性は認可の代用ではない。
 
-(a') の残余露出は、解除直後の旧 topic のプレビュー（開始座標・対象 ID・累積差分・シーン／選択）であり、名前付きの確定 Project そのものは流さない。ただし配置や操作対象を推測できる情報なので「保存しないから漏れではない」とは扱わない。既存の相談の数秒〜最大 30 秒は設計目標で、実 transport の未検証の保証ではない。通知欠落／休止タブ／再接続でもこの上限を守るには短い期限の送信資格とサーバー側 fence が必要。
+- private helper `ephemeral_allowed` は現在topicへの完全一致、現在の発行者行、受信メンバー資格、未削除を検査。INSERTにはさらに `publisher.user_id = auth.uid()`。匿名sign-inゲストはauthenticatedの現在メンバーとして扱う。
+- permissive SELECT/INSERTとrestrictive fenceに同じ限定条件を使う。旧broad policyがあっても確定通知へのclient INSERT、他人の発行topic、旧topic、未知suffix、probeとrowの不一致を拒否。prefixで例外を広く許可しない。realtime schemaに独自helper/tableは作らない。
+- 1端末につき一時用最大9 channels（server-only制御1＋最大8人分）、確定providerは別1。複数端末でもactorなりすましをRLSで防ぐ。payloadを認証済みpublisher metadataと取り違えない。
+- 一時用と確定用は別SDKクライアントなので通常2 WebSocket/端末。予算のNは一時配信の受信接続数、DashboardのConnected Clientsには確定用も含む。チャンネル数とWebSocket数も区別する。
+- `acl_changed` は旧**確定通知topicだけ**へ `{}` を送る。追加、解除、退出、参加世代変更、文書世代変更、soft/physical deleteでtransaction commit後に通知。rollbackでは通知しない。全員が制御topicを購読するため旧派生topicへの通知は不要。書込可能topicから制御通知を受け付けない。
+- 通知時は同期的に送信gateを閉じ、全channelsを閉じ、pending drag/endと相手表示を消す。その後資格・topic・メンバー表を取り直す。残るメンバーは新topicへ参加、外された人・参加世代違い・文書世代違いは停止。再接続後Aは既存の45秒安定待ちを通る。
+- token更新は既存認証所有者から渡し `realtime.setAuth` 後に再参加。offlineでは送らず、未join/切断socketではSDKのREST fallbackへ進まない。一時情報にoutboxはなく再接続で古いdrag/endを再送しない。V2 OFFは作成・購読・送信なし。
 
-direct Broadcast は payload 内 actor を捨てるだけでは不十分。選定後は、SDK／サーバーが受信側へ認証済み publisher を証明できるか確認する。できない場合は、発行権限を本人に限定した actor 別 topic から actor を導く案、または検証可能な署名 envelope 等を追加する。メンバー表の表示名を引く際もこの証明が必要。共通 topic の自己申告 actor をそのまま信用する実装は採用しない。
+**ユーザーが受け入れた解除後露出（2026-10-05）**：解除commit後、残るメンバーが通知/poll/復帰で新topicへ移るまで旧接続の外された人に開始座標・対象ID・累積差分・シーン/選択が届く可能性がある。数秒〜で厳密な30秒上限は保証しない。悪意の旧接続の強制停止も保証しない。一時情報はProject/Repository/Undo/ZIP/履歴へ保存されない。確定更新は従来のサーバー資格・世代検査を維持する。
 
-公式の [Realtime Authorization](https://supabase.com/docs/guides/realtime/authorization) では、権限は接続／新しい JWT の時に計算され、各メッセージでは DB を問い合わせず、解除後も既存接続の受信資格が残ると説明されている。したがって RLS の予算行を更新するだけでは既存接続の毎回の予算強制や 30 秒以内の遮断を保証できない。これは (a') を選ぶ前に解決が必要な設計条件。[Broadcast](https://supabase.com/docs/guides/realtime/broadcast) ではクライアント送信と DB の `realtime.send` の保持経路が異なることを確認した（2026-10-05 参照）。
+[Realtime Authorization](https://supabase.com/docs/guides/realtime/authorization) は接続/JWT更新時に認可をキャッシュし、各messageではDBへ問い合わせない。RLSでevent単位の認可・毎回の頻度制限はできない。[Broadcast](https://supabase.com/docs/guides/realtime/broadcast) のclient WebSocket経路を使い、高頻度previewのDB保持を避ける。低頻度のACL通知と既存確定通知にはtransactional `realtime.send` のDB内保持がある。
 
-## 選定後の追加作業
+## 配信予算と運用
 
-1. (d)/(a') をユーザーが選択。許容する解除後露出、DB 保持、月間枠を明文化。
-2. 認証済み publisher の証明とメンバー表更新、ACL／文書／参加世代 fence、資格失効、topic 切替・通知欠落・再接続を実装。
-3. サーバーで予算発行・消費・受付拒否を強制し、受信数／参加人数を含めた月間消費を計算。
-4. 現 interface の実 transport を追加し、Controller のモック限定接続を本番接続へ置き換える。
-5. 実経路の到達 latency を時計ずれなく測る仕組みを追加。正常回線／不調回線／休止タブ、解除 commit と送信の競合、なりすまし、予算超過を統合試験。
-6. iPad 実機で全体の指追従 p95 を V2 OFF と比較し、月間予算による停止・復帰を含めて公開判断。
+`src/config/collaborationLimits.ts` の `EPHEMERAL_BUDGET` が設定元。初期値：maxHz=3、messagesPerSecond=60、reservePerSecond=12、minimumConnections=8、maxConnections=32。観測actor/sessionは45秒で失効。人数と接続数は別で、複数tab/deviceも数える。未観測接続を完全には数えられないため最低8接続で保守的に計算する。
+
+`各端末Hz = min(3, 設定maxHz, (60 - 12) / N²)`、`N = max(最低接続数, メンバー数, 観測remote session数 + 自分1)`。
+
+各送信は送信1＋受信N-1件。N接続が同時に配分頻度で送る場合の目安48件/秒、余裕12件/秒。N=8で0.75Hz、N=16で0.1875HzのためB（参加表示だけ）。全packetは共通gateでtransport側にもgateがある。32を超えるsessionを検出したら一時送信を止める。受信漏れ・休止・複数文書・改変送信を含む**project全体60件/秒の保証ではない**。短いdrag反復・ACL通知・確定更新も使用量へ加える。
+
+1. DashboardのProject Settings → Product Reports → RealtimeでConnected Clients、Broadcast Events、Rate of Channel Joins、Message Payload Size、Response Errorsを確認。[Realtime Reports](https://supabase.com/docs/guides/realtime/reports)。本実装のpresenceもBroadcast Eventsへ計数される。OrganizationのUsage → Realtime Messages / Peak Connections / Egressで月間累計・契約上限を確認。[メッセージ計数](https://supabase.com/docs/guides/platform/manage-your-usage/realtime-messages)。画面名・契約上限は現行Dashboardを正とする。
+2. 導入時に5/8接続＋複数tabで15分以上測定しdrag duty cycle・開始bytes・送信＋受信件数を記録。projectの他利用分も含め月末予測に余裕がなくなる前にBへ。クライアントmetricsは補助でDashboardの使用量を正とする。
+3. `maxHz: 0.25` へ下げてリリースするとdragはB、参加表示だけ残る（最大0.25Hz）。月間予算超過の恐れがある場合は `enabled: false` で一時送信を全停止。確定編集は継続。`VITE_COLLABORATION_V2=0` は共同編集全体の停止なのでBの調整には使わない。
+4. 設定はビルド時。稼働中の旧版へ即時強制できない。最新版の再読込/端末更新を依頼し旧接続と使用量の減少を確認。必要なら招待・運用を制限する。改変クライアントの抑制が必須なら別の受付経路を検討する。
+
+## 本番適用後の確認（Claudeと利用者）
+
+- 最新未適用foundationを適用し新RPCとpolicyを検査。anon/guest/通常/作成者/解除/部外者、他人topicへの発行、確定topicへの発行、旧topic再joinを実サービスで確認。
+- 旧JWT・旧socketを意図的に残した解除試験：commit時刻、ACL通知受信、旧topic最終受信、新topic初回受信、UI消去を記録。通知欠落・offline・休止tab・JWT更新失敗・foreground復帰でも露出時間を実測。30秒保証として報告しない。
+- 再参加で新membershipを使うこと、旧接続から新topicへ入れないことを確認。削除/退出/Auth cascadeの通知も確認。
+- 人物別topicsのRLSを実Realtime probeで確認。SDKがpayloadに本人metadataを付ける仮定を置かない。匿名guestでも本人topicのみ送信可。
+- 5/8接続、複数tab/device、同時drag、短いdrag反復でDashboard messages/egress/peak connectionsを実測。B/全停止設定の最新版で改善を確認。
+- preview到達p95は未実測。ackはサーバー受付であり相手描画への到達ではない。時計ずれを避けた測定が必要。iPad/Safari/WKWebViewの前面復帰・JWT・指/Pencil追従も実機確認。
 
 ## ローカル検証
 
@@ -131,4 +147,27 @@ Parade の 0.1ms 付近はタイマーの分解能が支配し、1 回目の比�
 
 全寸法でホーム／共有が画面内にあり hit test できること、参加アイコンがあること、「見ています」の印が小窓内に収まることを自動確認。Stage 縦向きと Parade 横向き／スマホ等も画像を目視確認。旧来のスマホ Parade の編集領域の狭さは、この一時レイヤー追加では変更していない。
 
-未確認: 実 transport、解除競合・本人証明・月間枠のサーバー強制、実ネットワーク到達 p95、iPad／Safari 実機での指追従、macOS の Swift compilation。SQL/RLS/Edge の変更や本番接続はしていない。
+10-local時点の記録。実transportは10-transportで追加。実Supabase、実ネットワーク到達p95、iPad/Safari実機、macOS Swift compilationは引き続き未確認。直接配信の月間枠はサーバー強制しない。
+
+## 10-transport 最終ローカル確認（2026-10-05）
+
+- 最終 `npm test -- --maxWorkers 2` を2回：各97 files / 811 tests成功。新規transport15件、SDK接続1件、providerのACL連携1件を含む。追加試験も最終コードで2回確認。
+- typecheck、Vite一時build、check-collaboration-bundle、check-collab-v2、check-native-repository、git diff --check成功。buildはenvFile:false、専用一時出力を削除。main **477,762 B**（基準差0 B）、gzip **142,200 B**。共同編集・Yjs・一時UIは通常起動のstatic graph外。既存audioStorageのstatic/dynamic import警告は残る。
+- collaboration ui / shared-session / lifecycle / provider / app / device-audio / history / presence、app-storage、help-page、repository browser成功。build22は初回の最大ズーム保存後再読込assertion失敗、単独再実行成功。製品コードやassertionを変更して通したものではない。
+- presenceは既存HTTPモックの5 contexts / 146 UUID。App/小窓SVGのpreview commit renderは0/0、start最大9,731 B / move149 B（内側）、約60fps、PNG画素差0、Parade rAF p95 24.5msで既存描画間引き条件。実Supabaseの頻度・到達時間の証明ではない。画像/JSONは `output/playwright/10-transport-presence/`。
+- `node --expose-gc scripts/bench-collab-v2.mjs` 成功。146人×18シーン、履歴0/128でvalidation p95約40.3/211.3ms、最大観測heap増約32.5/49.8MiB。合成Node測定であり hosted/Edge性能の保証ではない。
+- 新SQL suiteは初回適用後と再適用後に計2回実行するLinux CIへ接続。WindowsではSQL実行していない。Claudeがpush後にPostgreSQL17の実ロール・rollback・Auth cascadeを確認する。
+- commit/push/install/gh/workflow実行、本番接続、シークレット読取はなし。未追跡 `.tmp-vite-https.config.mjs` はそのまま。
+
+10-transportの変更ファイル（19）：
+
+- 実通信：`src/collaboration/supabaseEphemeralTransport.ts`。
+- 連携：`src/collaboration/ephemeralTransport.ts`、`ephemeralSession.ts`、`supabaseTransport.ts`、`provider.ts`、`sharedSessionController.ts`。
+- 設定：`src/config/collaborationLimits.ts`。
+- SQL：`supabase/migrations/20261004000000_collab_v2_foundation.sql`、`supabase/tests/bootstrap.sql`。
+- 試験/CI：`src/collaboration/supabaseEphemeralTransport.test.ts`、`supabaseEphemeralSdk.test.ts`、`scripts/collaboration-provider.test.ts`、`scripts/testing/ephemeral-sql-suite.mjs`、`scripts/test-cloud-sql.mjs`、`scripts/check-collab-v2.mjs`、`.github/workflows/supabase-sql-test.yml`。
+- 文書：`docs/COLLABORATION_PRESENCE.md`、`COLLAB_V2_SERVER.md`、`COLLABORATION_LIFECYCLE.md`。
+
+## 第11回への申し送り
+
+旧クラウド取り込みと旧API停止は未実装。旧Projectを取り込む際は文書ごとの検証/救出を維持し、1件の不正データで一覧全体を開けなくしない。一時preview/旧topic/旧資格は保存形式や新文書へ取り込まない。旧outboxの別参加世代への自動採用も禁止。旧API/旧Realtimeの停止時は匿名アクセス・残留購読・既存permissive policyを棚卸しし、新しい限定fenceを維持する。現在は旧クラウドコード・既存APIの定義/ACLを変更していない。共通認証所有者と動的ロード境界を維持する。

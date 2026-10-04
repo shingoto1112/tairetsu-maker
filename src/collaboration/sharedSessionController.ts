@@ -19,6 +19,7 @@ import { CollaborationHistory, createHistoryTransport } from './historyApi';
 import { HistoryController } from './historyController';
 import { EphemeralSession } from './ephemeralSession';
 import type { EphemeralTransport } from './ephemeralTransport';
+import { createSupabaseEphemeralTransport, type SupabaseEphemeralTransport } from './supabaseEphemeralTransport';
 
 export type SharedSessionOptions = {
   ephemeralTransport?: EphemeralTransport;
@@ -35,6 +36,7 @@ export class SharedSessionController {
   provider: CollaborationProvider | null = null;
   historyUi: HistoryController | null = null;
   ephemeral: EphemeralSession | null = null;
+  private ephemeralRealtime?: SupabaseEphemeralTransport;
   private visibleProject!: Project;
   private detached = false;
   private disposed = false;
@@ -99,12 +101,12 @@ export class SharedSessionController {
           events.onmessage = event => notice(JSON.parse(event.data)); events.onopen = () => status(true); events.onerror = () => status(false);
           return () => events.close();
         }) : createSupabaseTransport(options.config, auth.credential);
-        owner.provider = new CollaborationProvider(owner.coordinator, owner.transport, { valid: () => owner.authValid() });
+        owner.provider = new CollaborationProvider(owner.coordinator, owner.transport, { valid: () => owner.authValid(), aclChanged: () => owner.ephemeralRealtime?.invalidate() });
         owner.releases.push(owner.provider.subscribe(() => { owner.update(); owner.historyUi?.wake(); }));
         owner.releases.push(subscribeCloudAuth(() => {
           if (!owner.authValid()) {
             owner.provider?.stop(); owner.update(); owner.finishDrain?.();
-          } else owner.provider?.wake();
+          } else { owner.ephemeralRealtime?.invalidate(); owner.provider?.wake(); }
         }));
       }
       await owner.reviewAudio();
@@ -113,6 +115,14 @@ export class SharedSessionController {
         if (!ephemeralTransport && options.mock && import.meta.env.DEV && options.config && record.collaboration?.transportBinding) {
           const { createMockEphemeralTransport } = await import('./testing/mockEphemeralTransport');
           ephemeralTransport = createMockEphemeralTransport(options.config.url, record.collaboration.sharedDocumentId!, record.collaboration.transportBinding.accountId);
+        }
+        if (!ephemeralTransport && !options.mock && options.config && record.collaboration?.transportBinding && owner.transport) {
+          owner.ephemeralRealtime = createSupabaseEphemeralTransport(options.config, { enabled: options.enabled,
+            documentId: record.collaboration.sharedDocumentId!, generation: record.collaboration.generation,
+            membershipGeneration: record.collaboration.transportBinding.membershipGeneration,
+            actorId: record.collaboration.transportBinding.accountId, credential: owner.transport.credential,
+            valid: () => owner.authValid() && owner.current() && (!owner.provider || owner.provider.snapshot.sharing === 'active') });
+          ephemeralTransport = owner.ephemeralRealtime;
         }
         if (ephemeralTransport) owner.ephemeral = new EphemeralSession(ephemeralTransport, { project: () => owner.visibleProject, updateId: () => owner.editor.lastLocalUpdateId });
       }

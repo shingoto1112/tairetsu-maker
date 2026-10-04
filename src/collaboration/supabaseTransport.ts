@@ -69,6 +69,9 @@ export function createSupabaseTransport(config: CloudConfig, credential: Collabo
     await client.realtime.setAuth(auth.accessToken);
     const channel = client.channel(topic, { config: { private: true } });
     channel.on("broadcast", { event: "update" }, ({ payload }) => notice(payload));
+    channel.on("broadcast", { event: "acl_changed" }, ({ payload }) => {
+      if (payload && typeof payload === 'object' && Object.keys(payload).length === 0) notice({ type: 'acl-changed' });
+    });
     channel.subscribe(value => { if (value === "SUBSCRIBED") status(true); else if (["TIMED_OUT", "CLOSED", "CHANNEL_ERROR"].includes(value)) status(false); });
     return () => { void client.removeChannel(channel); };
   });

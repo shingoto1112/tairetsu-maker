@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { migration, preflight } from './check-collab-v2.mjs';
 import { runMaintenanceSqlSuite } from './testing/maintenance-sql-suite.mjs';
 import { runRestoreSqlSuite } from './testing/restore-sql-suite.mjs';
+import { runEphemeralSqlSuite } from './testing/ephemeral-sql-suite.mjs';
 
 assert.equal(process.platform, 'linux', 'Linux CI only'); assert.equal(process.argv.length, 2, 'No overrides accepted');
 const files = preflight();
@@ -255,9 +256,11 @@ try {
 const owner = create(20); join(21, invite(20, owner.documentId).token); join(20, invite(1,id).token);
 assert.equal(json(service(appendSql('account-history',2,20))).seq,'3');
 const accountTopic = scalar(`private_topic from public.collab_v2_documents where id=${q(id)}`);
+const ownedAccountTopic = scalar(`private_topic from public.collab_v2_documents where id=${q(owner.documentId)}`);
 const accountInvite = invite(20,id);
 run(`insert into public.projects(title,created_by) values('legacy account fixture',${q(uid(20))});`);
 const deletion = json(asUser(20, "select row_to_json(t) from public.delete_current_account('DELETE_MY_ACCOUNT') t")); assert.equal(deletion.success,true);
+for (const oldTopic of [accountTopic, ownedAccountTopic]) assert(Number(scalar(`count(*) from realtime.messages where topic=${q(oldTopic)} and event='acl_changed' and payload='{}'::jsonb and private`)) >= 1, 'Auth cascade sends content-free committed invalidation');
 assert.equal(scalar(`count(*) from public.collab_v2_documents where id=${q(owner.documentId)}`),'0');
 assert.equal(json(asUser(21, `select public.collab_v2_access_status(${q(owner.documentId)})`)).status, 'ended');
 assert.equal(json(asUser(9, `select public.collab_v2_access_status(${q(owner.documentId)})`)).status, 'unavailable');
@@ -365,11 +368,14 @@ assert.equal(scalar(`head_seq from public.collab_v2_documents where id=${q(lid)}
 // Rerun with populated v2 tables. Confirm content, state, legacy function ACLs.
 await runMaintenanceSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});
 await runRestoreSqlSuite({run,service,asUser,deny,create,join,invite,membership,uid,q,json,scalar,identity,concurrent,initial,pbytes});
+await runEphemeralSqlSuite({run,asUser,deny,create,join,invite,uid,q,json,scalar});
 const before = scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`);
 run(readFileSync(migration,'utf8'));
 assert.equal(scalar(`md5(row_to_json(d)::text) from public.collab_v2_documents d where id=${q(id)}`),before);
 assert.equal(scalar(`count(*) from test_support.legacy_functions b join pg_proc p on p.oid=b.oid where b.definition is distinct from pg_get_functiondef(p.oid) or b.proacl is distinct from p.proacl`),'0');
 assert.equal(scalar(`count(*) from test_support.legacy_tables b join pg_class c on c.oid=b.oid where b.relacl is distinct from c.relacl or b.relrowsecurity is distinct from c.relrowsecurity`),'0');
+// Repeat the new transport oracle after reapplication, with fresh disposable data.
+await runEphemeralSqlSuite({run,asUser,deny,create,join,invite,uid,q,json,scalar});
 asUser(1,`select public.collab_v2_delete_document(${q(id)})`);
 assert.equal(scalar(`deleted_at is not null and latest_snapshot_id is null from public.collab_v2_documents where id=${q(id)}`),'t');
 for (const table of ['updates','update_receipts','sync_snapshots','invites']) assert.equal(scalar(`count(*) from public.collab_v2_${table} where document_id=${q(id)}`),'0');

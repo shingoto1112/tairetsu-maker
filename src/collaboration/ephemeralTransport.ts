@@ -1,5 +1,5 @@
-/** Transport identity is trusted metadata, never a field in the wire payload.
- * Production implementations must fence send/subscription/budget by ACL epoch. */
+/** Actor comes from an owner-only publication topic, never from the wire payload.
+ * Direct Broadcast budgets are cooperative client estimates, not server permits. */
 export type EphemeralMember = { actorId: string; displayName: string; color: string };
 export type EphemeralBudget = { allowed: boolean; maxHz: number; expiresAt: number; reason?: 'monthly' | 'capacity' };
 export type EphemeralEnvelope = { actorId: string; payload: string; latencyMs?: number };

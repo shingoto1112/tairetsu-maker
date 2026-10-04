@@ -1,5 +1,11 @@
 # 共同編集 第7回 — 共有開始・招待・参加・終了 API
 
+第10回-transportのユーザー決定（2026-10-05）：ドラッグ中の位置とプレゼンスは派生private topicへの直接Broadcastとする。解除/退出/文書削除/参加世代変更のcommitで、サーバーは旧確定通知topicへ内容なしの `acl_changed` を送る。残るクライアントは同期的に一時送信と表示を止め、最新資格・topicへ移る。外されたクライアントは送受信を停止し一時表示を消す。通知が届かなければ既存30秒poll・前面復帰で回復する。
+
+直接Broadcastの認可は接続/JWT更新時にキャッシュされる。解除commit後、残るメンバーが新topicへ移るまで旧接続の外された人にpreview（開始座標、対象ID、累積差分、シーン/選択）が届く可能性をユーザーが受け入れた。数秒〜で、休止/通知欠落等もあるため厳密な30秒保証はない。悪意の残留socketの強制停止をクライアントの協力に依存して保証しない。topic回転は旧topicへの新規参加/発行認可を拒否する。確定した編集は従来どおりサーバー側で現在資格と世代を厳密に検査する。
+
+previewはProject/履歴/Repository/ZIPへ保存しない。高頻度情報のDB配信は採用しないが、低頻度の内容なしACL通知と確定通知はtransactional `realtime.send` を使う。実socketを残した露出時間・旧topic再join・再参加世代・messages実測は [本番確認手順](COLLABORATION_PRESENCE.md) に従う。
+
 2026-10-04、基準 HEAD `9359499`。UI・本番適用・配備は行っていない。
 第6回の [全 Project 写像](COLLABORATION_PROJECT.md)、[保存](COLLABORATION_STORAGE.md)、
 [provider](COLLABORATION_PROVIDER.md)、[iPad 保存](COLLABORATION_NATIVE_STORAGE.md)を継承する。

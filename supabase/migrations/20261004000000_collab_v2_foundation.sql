@@ -276,6 +276,7 @@ create or replace function collab_v2_private.member_changed()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare v_document uuid := coalesce(new.document_id, old.document_id);
 begin
+  if tg_op = 'UPDATE' and new.membership_generation is not distinct from old.membership_generation then return null; end if;
   update public.collab_v2_documents set acl_generation = acl_generation + 1,
     private_topic = 'collab-v2:' || pg_catalog.gen_random_uuid()::text where id = v_document;
   if tg_op = 'DELETE' then
@@ -291,8 +292,60 @@ begin
   return null;
 end $$;
 drop trigger if exists collab_v2_member_changed on public.collab_v2_members;
-create trigger collab_v2_member_changed after insert or delete on public.collab_v2_members
+create trigger collab_v2_member_changed after insert or delete or update of membership_generation on public.collab_v2_members
   for each row execute function collab_v2_private.member_changed();
+
+-- Transactional, content-free invalidation on the OLD server-only control topic.
+-- realtime.send is visible after commit (rollback produces no notification).
+-- Do not put control events on writable actor topics: clients could forge them.
+create or replace function collab_v2_private.acl_changed()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if tg_op = 'DELETE' then
+    perform realtime.send('{}'::jsonb, 'acl_changed', old.private_topic, true);
+    return old;
+  end if;
+  if new.private_topic is distinct from old.private_topic or new.acl_generation is distinct from old.acl_generation
+    or new.generation is distinct from old.generation or new.deleted_at is distinct from old.deleted_at then
+    perform realtime.send('{}'::jsonb, 'acl_changed', old.private_topic, true);
+  end if;
+  return new;
+end $$;
+drop trigger if exists collab_v2_acl_changed on public.collab_v2_documents;
+create trigger collab_v2_acl_changed before update or delete on public.collab_v2_documents
+  for each row execute function collab_v2_private.acl_changed();
+
+-- Exact current derived topic, current reader membership, and publication owner.
+-- Neither random topic knowledge nor legacy permissive policies grant access.
+create or replace function collab_v2_private.ephemeral_allowed(p_topic text, p_send boolean)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select auth.uid() is not null and exists (
+    select 1 from public.collab_v2_documents d
+      join public.collab_v2_members publisher on publisher.document_id = d.id
+      join auth.users u on u.id = publisher.user_id
+    where d.deleted_at is null and d.private_topic = pg_catalog.split_part(p_topic, ':ephemeral:', 1)
+      and d.private_topic || ':ephemeral:' || publisher.user_id::text = p_topic
+      and collab_v2_private.is_member(d.id) and (not p_send or publisher.user_id = auth.uid()))
+$$;
+
+-- One MVCC snapshot for topic, generations, and roster; no Project contents.
+create or replace function public.collab_v2_ephemeral_state(p_document uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare v_user uuid := collab_v2_private.require_user(); v_state jsonb;
+begin
+  select pg_catalog.jsonb_build_object('documentId', d.id, 'generation', d.generation::text,
+    'aclGeneration', d.acl_generation::text, 'topic', d.private_topic,
+    'membershipGeneration', mine.membership_generation,
+    'members', (select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('userId', m.user_id,
+      'displayName', m.display_name, 'membershipGeneration', m.membership_generation,
+      'color', (array['#2563eb','#db2777','#059669','#9333ea','#ea580c','#0891b2','#4f46e5','#be123c'])
+        [1 + pg_catalog.ascii(pg_catalog.substr(m.user_id::text, 1, 1)) % 8]) order by m.user_id)
+      from public.collab_v2_members m where m.document_id = d.id)) into v_state
+    from public.collab_v2_documents d join public.collab_v2_members mine on mine.document_id = d.id
+    where d.id = p_document and d.deleted_at is null and mine.user_id = v_user;
+  if v_state is null then raise exception using errcode = '42501', message = 'NOT_MEMBER'; end if;
+  return v_state;
+end $$;
 
 -- Deferred snapshot FK permits auth.users -> document -> snapshot cascades.
 -- Existing delete_current_account eventually deletes auth.users, so no override.
@@ -944,13 +997,23 @@ create policy collab_v2_private_receive on realtime.messages for select to authe
 -- Restrictive fence prevents legacy permissive policies from granting v2 topics.
 drop policy if exists collab_v2_receive_fence on realtime.messages;
 create policy collab_v2_receive_fence on realtime.messages as restrictive for select to anon, authenticated using (
-  topic not like 'collab-v2:%' or
+  (topic not like 'collab-v2:%' and coalesce((select realtime.topic()), '') not like 'collab-v2:%') or
   (topic = (select realtime.topic()) and extension = 'broadcast' and exists (select 1 from public.collab_v2_documents d
-    where d.private_topic = (select realtime.topic()) and d.deleted_at is null and collab_v2_private.is_member(d.id)))
+    where d.private_topic = (select realtime.topic()) and d.deleted_at is null and collab_v2_private.is_member(d.id))) or
+  (topic = (select realtime.topic()) and extension = 'broadcast' and collab_v2_private.ephemeral_allowed(topic, false))
+);
+drop policy if exists collab_v2_ephemeral_receive on realtime.messages;
+create policy collab_v2_ephemeral_receive on realtime.messages for select to authenticated using (
+  topic = (select realtime.topic()) and extension = 'broadcast' and collab_v2_private.ephemeral_allowed(topic, false)
+);
+drop policy if exists collab_v2_ephemeral_send on realtime.messages;
+create policy collab_v2_ephemeral_send on realtime.messages for insert to authenticated with check (
+  topic = (select realtime.topic()) and extension = 'broadcast' and collab_v2_private.ephemeral_allowed(topic, true)
 );
 drop policy if exists collab_v2_send_fence on realtime.messages;
 create policy collab_v2_send_fence on realtime.messages as restrictive for insert to anon, authenticated
-  with check (topic not like 'collab-v2:%' and coalesce((select realtime.topic()), '') not like 'collab-v2:%');
+  with check ((topic not like 'collab-v2:%' and coalesce((select realtime.topic()), '') not like 'collab-v2:%') or
+    (topic = (select realtime.topic()) and extension = 'broadcast' and collab_v2_private.ephemeral_allowed(topic, true)));
 
 -- 9b: a claim contains a consistent, fixed cut. No lock survives the RPC.
 create or replace function public.collab_v2_claim_maintenance(p_document uuid, p_actor uuid, p_generation bigint,
@@ -1373,7 +1436,7 @@ do $$ declare v_function record; begin
     execute pg_catalog.format('revoke all on function %s from public, anon, authenticated, service_role', v_function.signature);
     if v_function.proname in ('collab_v2_create_document', 'collab_v2_ingest_state', 'collab_v2_append','collab_v2_probe_writer','collab_v2_store_checkpoint','collab_v2_claim_maintenance','collab_v2_publish_maintenance','collab_v2_release_maintenance','collab_v2_accept_restore','collab_v2_restore_state','collab_v2_publish_restore','collab_v2_release_restore') then
       execute pg_catalog.format('grant execute on function %s to service_role', v_function.signature);
-    elsif v_function.nspname = 'public' or v_function.proname in ('is_member', 'require_user', 'read_state','history_allowed','maintenance_hint') then
+    elsif v_function.nspname = 'public' or v_function.proname in ('is_member', 'require_user', 'read_state','history_allowed','maintenance_hint','ephemeral_allowed') then
       execute pg_catalog.format('grant execute on function %s to authenticated', v_function.signature);
     end if;
   end loop;

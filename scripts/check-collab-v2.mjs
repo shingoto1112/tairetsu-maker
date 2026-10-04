@@ -14,7 +14,7 @@ export function preflight() {
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');
   const functions = [...sql.matchAll(/create or replace function ([\w.]+)\([\s\S]*?\n(?:\$\$;|end \$\$;)/g)];
-  assert.equal(functions.length, 40, 'Reviewed 9c: accept, state/lease, atomic publish/release and confirmation restore');
+  assert.equal(functions.length, 43, '10-transport: owner topic predicate, atomic roster and transactional ACL notification');
   const limits = readFileSync('src/config/collaborationLimits.ts','utf8');
   for (const [field, setting, value] of [['snapshotBytes','max_snapshot_bytes',2097152],['logBytes','max_log_bytes',1048576],
     ['entries','max_log_entries',512],['compactEntries','compact_updates',64],['compactBytes','compact_bytes',262144]]) {

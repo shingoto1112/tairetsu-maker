@@ -30,7 +30,7 @@ export class CollaborationProvider {
   private maintenanceTimer?: ReturnType<typeof setTimeout>;
   private maintenanceAttempts = 0;
   constructor(private coordinator: SaveCoordinator, private transport: CollaborationTransport,
-    private options: { pollMs?: number; backoffMs?: number; random?: () => number; lifecycle?: boolean; valid?: () => boolean } = {}) {
+    private options: { pollMs?: number; backoffMs?: number; random?: () => number; lifecycle?: boolean; valid?: () => boolean; aclChanged?: () => void } = {}) {
       this.state.pending = coordinator.collaborationProjection?.outbox.filter(e => e.status === "pending").length ?? 0;
     }
   get snapshot(): ProviderState { return { ...this.state, error: this.state.error ? { ...this.state.error } : null }; }
@@ -246,6 +246,11 @@ export class CollaborationProvider {
     let unsubscribe: () => void;
     try { unsubscribe = await this.transport.subscribe(page.topic, credential, value => {
       if (!this.valid(epoch) || this.topicKey !== key) return;
+      if (value && typeof value === 'object' && 'type' in value && value.type === 'acl-changed') {
+        this.epoch++; this.controller.abort(); this.controller = new AbortController(); this.closeChannel();
+        this.state.credentialConfirmed = false; this.state.pullConfirmed = false;
+        this.options.aclChanged?.(); this.emit(); this.wake(); return;
+      }
       const notice = parseNotice(value);
       if (notice?.documentId === page.documentId && notice.generation === page.generation && notice.aclGeneration === page.aclGeneration && compareRevisions(notice.headSeq, this.state.cursor) > 0) this.kick("pull");
     }, connected => {

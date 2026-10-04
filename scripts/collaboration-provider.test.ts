@@ -87,6 +87,23 @@ describe('round-3 contract oracle with real Edge ingest', () => {
   });
 });
 describe('provider durable boundaries and failure states', () => {
+  it('immediately invalidates the ephemeral lane and refreshes ACL/membership from a server-only notification', async () => {
+    const s = await setup(); const invalidate = vi.fn();
+    const provider = new CollaborationProvider(s.coordinator, s.transport, { lifecycle: false, pollMs: 60000, aclChanged: invalidate });
+    provider.start();
+    try {
+      await until(() => provider.snapshot.pullConfirmed && s.backend.sinks.size > 0);
+      const oldTopic = s.backend.topic; const sinks = [...s.backend.sinks];
+      s.backend.rotate(actors[0]);
+      sinks.forEach(sink => sink.send({ type: 'acl-changed' }));
+      expect(invalidate).toHaveBeenCalledOnce(); expect(provider.snapshot.pullConfirmed).toBe(false);
+      await until(() => provider.snapshot.pullConfirmed && [...s.backend.sinks].some(sink => sink.topic !== oldTopic));
+      [...s.backend.sinks].forEach(sink => sink.send({ type: 'acl-changed' }));
+      s.backend.members.delete(actors[0]); s.backend.rotate(actors[0]);
+      provider.wake(); await until(() => provider.snapshot.sharing === 'removed');
+      expect(provider.snapshot.held).toBe(true);
+    } finally { provider.stop(); }
+  });
   it('remembers the initial snapshot ID even at head=0 and does not download it on every pull', async () => {
     const s=await setup(), pages: unknown[]=[]; const pull=s.transport.pull;
     s.transport.pull=async(...args)=>{const page=await pull(...args);pages.push(page);return page;};

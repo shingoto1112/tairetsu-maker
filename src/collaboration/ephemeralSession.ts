@@ -109,7 +109,8 @@ export class EphemeralSession {
     if (this.started || this.closed) return; this.started = true;
     this.release = this.transport.subscribe(this.receive, online => {
       this.online = online;
-      if (!online) { this.clearRemote(); this.mode('B', '再接続を待っています', 0); this.healthyAt = this.now(); this.degradedAt = this.now() || 1; }
+      if (!online) { this.local = undefined; this.pendingEnds = []; this.budgetValue = undefined; this.budgetAt = 0;
+        this.clearRemote(); this.mode('B', '再接続を待っています', 0); this.healthyAt = this.now(); this.degradedAt = this.now() || 1; }
       else { this.presenceDirty = true; void this.refreshBudget(); }
     }, () => this.stop());
     if (this.options.autoTick !== false) this.timer = setInterval(() => { void this.tick(); }, 50);
@@ -245,7 +246,8 @@ export class EphemeralSession {
     if (!budget || !budget.allowed || budget.expiresAt <= now || budget.maxHz <= 0 || !this.online || now < this.monthlyUntil) { this.mode('B', now < this.monthlyUntil ? '月間予算による停止' : '送信許可を確認中', 0); return; }
     const { localP95, latencyP95 } = this.measurements;
     const bad = this.failures >= 2 || this.metrics.latencyMs.length >= 20 && latencyP95 > 500 || this.baseline > 0 && this.metrics.localMs.length >= 20 && localP95 > this.baseline * 1.1;
-    if (bad) this.degrade();
+    if (budget.maxHz < .5) this.mode('B', '接続数に応じて確定時だけ反映', 0);
+    else if (bad) this.degrade();
     else if (this.degradedAt && now - this.healthyAt >= 45000) {
       const hz = this.snapshot.mode === 'B' ? 1 : Math.min(3, this.snapshot.hz + 1);
       this.mode('A', hz < 3 ? '一時表示を段階的に再開中' : '', Math.min(hz, budget.maxHz)); this.healthyAt = now;

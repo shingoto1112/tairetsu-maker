@@ -1,5 +1,17 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+第10回-transport（2026-10-05）は、ユーザー選択の直接 private Broadcast を追加。未適用foundationの改訂で、適用済み本番への操作は行っていない。詳細は [配信・認可・予算・実測手順](COLLABORATION_PRESENCE.md) を参照。
+
+本番適用時の追加操作：
+
+1. ClaudeのLinux SQL CI成功後、最新の `20261004000000_collab_v2_foundation.sql` をレビューして適用する。新RPC `collab_v2_ephemeral_state`、private helper `ephemeral_allowed`、ACL通知trigger、派生topicのSELECT/INSERTと限定restrictive fenceを確認する。旧permissive policyとの共存を試験する。確定通知topicへのclient INSERT禁止を確認。realtime schemaへ独自table/functionを作らず、private schemaをData APIへ公開しない。
+2. Dashboard → Realtime Settingsでpublic accessを無効にし、private channelを使う。Broadcastは通常有効。確定/ACL通知のDB Broadcastは既存 `realtime.send` の仕組みを使い、アプリtableのPostgres Changes購読や新Edge functionは追加しない。SQL Editorの適用ロールがRealtime policy作成とsend呼出を扱えることを確認する。
+3. 最新Web/端末アプリを配布し再読込する。1文書8人で一時用最大9 channels/端末、確定用別1。複数タブ・端末を人数と別に数える。DashboardのProject Settings → Product Reports → RealtimeとOrganization Usage（Realtime Messages/Peak Connections/Egress）を確認する。[公式Reports](https://supabase.com/docs/guides/realtime/reports)。
+4. 残るメンバー/解除側の旧JWT・旧socketを残し、解除commitから旧topic最終preview、新topic移行までを実測する。通知欠落・休止・offline・foreground・token更新・退出・削除・再参加を確認。数秒〜の残余露出はユーザー決定で許容し、厳密な30秒上限は約束しない。確定編集は引き続きサーバー資格検査で拒否する。
+5. 5/8接続＋複数tabの実messagesを測り、月間上限へ近づく前に `EPHEMERAL_BUDGET.maxHz=0.25` でB（離した時だけ確定反映）、必要なら `enabled=false` で一時送信を停止して再配布する。既に開いている旧版へ即時強制できないので最新版へ更新する。無料枠・全体60件/秒をサーバーで自動保証する実装ではない。
+
+LinuxでClaudeが確認：改訂SQL初回/再適用、anon/guest/通常/作成者/解除/部外者の派生topic送受信、本人以外の発行と確定topicへの発行拒否、ACL/参加世代回転で旧topicの新規認可拒否、remove/leave/soft/physical delete/rollbackの内容なし通知。`scripts/testing/ephemeral-sql-suite.mjs` は既存Linux試験に接続済み。Realtime認可cache・残留接続・実配信率はLinux PostgreSQLの代用ではなく、適用後の実サービス確認が必要。
+
 第9回-3で専用 `collab-restore` と履歴クライアントAPIを追加し、未適用foundationを改訂した。[9c契約・新上限・検証・9d申し送り](COLLABORATION_RESTORE.md)を参照。現行ネットワーク受付はsnapshot2MiB／ログ1MiB・512件／圧縮64更新または256KiB、復元update256KiB。端末保存上限とSwiftは変更なし。以下の過去の容量表は現行値ではない。
 
 配備前にClaudeがLinuxのSQL初回・再適用、Deno check／実行2回／新上限9ケース測定、macOS47件を確認する。Node測定だけでEdge適合としない。SQLに追加した `accept_restore / restore_state / publish_restore / release_restore` はservice専用、`confirm_restore` は現在の要求actor限定のauthenticated RPC。原子的復元は公開CASを失ったら新しいEdge呼び出しで計画し直す。
