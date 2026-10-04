@@ -132,7 +132,7 @@ final class CollaborationTests: XCTestCase {
         }
         let saved = try read(r), data = try attachment(saved)
         XCTAssertEqual((data["outbox"] as? [[String: Any]])?.count, 2)
-        XCTAssertEqual(data["serverCursor"] as? String, "7")
+        XCTAssertEqual(data["serverCursor"] as? String, (f["acknowledged"] as? [String: Any])?["serverCursor"] as? String)
         _ = try call(r, "renameProject", ["id": "project_a", "title": "metadata only", "updatedAt": "2026-02-01T00:00:00.000Z", "operationId": "shared-rename", "expectedRepositoryRevision": "4", "localRevision": "5"] as [String: Any])
         _ = try call(r, "touchOpened", ["id": "project_a", "openedAt": "2026-02-02T00:00:00.000Z"] as [String: Any])
         let touched = try read(r), held = try attachment(touched)
@@ -177,7 +177,10 @@ final class CollaborationTests: XCTestCase {
         _ = try call(r, "commitProject", request(f, "acknowledged", 1))
         let original = try XCTUnwrap(f["acknowledged"] as? [String: Any])
         var variants: [[String: Any]] = []
-        for (name, value) in [("serverCursor", "6"), ("generation", "2"), ("sharedDocumentId", "different")] {
+        let cursorText = try XCTUnwrap(original["serverCursor"] as? String)
+        let cursor = try XCTUnwrap(Int(cursorText))
+        XCTAssertGreaterThan(cursor, 0)
+        for (name, value) in [("serverCursor", String(cursor - 1)), ("generation", "2"), ("sharedDocumentId", "different")] {
             var v = original; v[name] = value; variants.append(v)
         }
         var dropped = original; dropped["outbox"] = [[String: Any]](); variants.append(dropped)
