@@ -10,6 +10,7 @@ export type SharedSessionSnapshot = {
   label: string;
   history: HistoryResult | null;
   historyEvent?: number;
+  historyDeferred?: boolean;
   error?: { kind: string; code: string } | null;
 };
 export function sessionSnapshot(localId: string, provider: ProviderState | null, save: SaveState | null, history: HistoryResult | null): SharedSessionSnapshot {
@@ -22,7 +23,7 @@ export function sessionSnapshot(localId: string, provider: ProviderState | null,
   const sharingLabels = { removed: "共有から外れました", ended: "共有は終了しました", "auth-required": "ログインが必要です", "membership-changed": "参加し直しが必要です" };
   const label = ["RECEIPT_RECLAIMED", "RECOVERY_CONFIRMATION_REQUIRED"].includes(provider?.error?.code ?? "") ? "古い送信記録です。編集内容を残して再同期・確認が必要です" : sync === "保存失敗" ? sync : sharing !== "active" ? sharingLabels[sharing] :
     sync === "資格保留" ? "接続を確認中" : sync === "送信待ち" ? pending === 0 ? "端末に保存中" : `送信待ち ${pending} 件${save?.dirty ? "（端末保存中）" : ""}` : sync;
-  return { localId, sharing, sync, pending, label, history,
+  return { localId, sharing, sync, pending, label, history, ...(provider?.historyDeferred ? { historyDeferred: true } : {}),
     error: save?.error ? { kind: "storage", code: save.error.code } : provider?.error ?? null };
 }
 export const sessionTone = (snapshot: SharedSessionSnapshot): "success" | "neutral" | "warning" =>

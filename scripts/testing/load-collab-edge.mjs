@@ -9,13 +9,13 @@ export async function loadCollabEdge() {
     const validation = await readFile('src/collaboration/serverValidation.ts', 'utf8');
     const handler = (await readFile('supabase/functions/collab-ingest/handler.ts', 'utf8'))
       .replace('../../../src/collaboration/serverValidation.ts', './validation.mjs');
-    const dependencies = await Promise.all(['legacyServerValidation', 'serverSchema2', 'projectSchema', 'maintenance', 'checkpoint'].map(async name =>
+    const dependencies = await Promise.all(['legacyServerValidation', 'serverSchema2', 'projectSchema', 'maintenance', 'checkpoint', 'jsonEqual'].map(async name =>
       [name, await readFile(`src/collaboration/${name}.ts`, 'utf8')]));
     for (const [name, source] of [['validation', validation], ['handler', handler], ...dependencies, ['limits', await readFile('src/config/collaborationLimits.ts', 'utf8')]]) {
       const resolved = source.replaceAll('./legacyServerValidation.ts', './legacyServerValidation.mjs')
         .replaceAll('./serverSchema2.ts', './serverSchema2.mjs').replaceAll('./projectSchema.ts', './projectSchema.mjs')
         .replaceAll('../../../src/collaboration/maintenance.ts', './maintenance.mjs').replaceAll('./checkpoint.ts', './checkpoint.mjs')
-        .replaceAll('./serverValidation.ts', './validation.mjs').replaceAll('../config/collaborationLimits.ts', './limits.mjs');
+        .replaceAll('./serverValidation.ts', './validation.mjs').replaceAll('./jsonEqual.ts', './jsonEqual.mjs').replaceAll('../config/collaborationLimits.ts', './limits.mjs');
       await writeFile(path.join(directory, `${name}.mjs`), ts.transpileModule(resolved, {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
       }).outputText);

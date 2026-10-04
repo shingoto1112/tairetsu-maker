@@ -83,7 +83,7 @@ describe('9c retained-map restore', () => {
     expect(observeRestore(state,{documentId,generation:'1',cursor:'1',doc,pending:0},dto)).toBe(state);
     expect(observeRestore(state,{documentId,generation:'1',cursor:'2',doc,pending:0},dto)).toMatchObject({phase:'applied',differences:[]});
     doc.getMap('settings').set('title',{title:'同時編集'});
-    expect(observeRestore(state,{documentId,generation:'1',cursor:'3',doc,pending:0},dto).message).toBe('その後の共同編集により、指定状態と異なる項目があります');
+    expect(observeRestore(state,{documentId,generation:'1',cursor:'3',doc,pending:0},dto).message).toBe('その後の共同編集により、指定した状態と異なる項目があります');
     expect(observeRestore(state,{documentId,generation:'1',cursor:'2',doc,pending:1},dto).hasUnsentChanges).toBe(true);
     doc.destroy();
   });

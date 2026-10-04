@@ -1,5 +1,7 @@
 # 新しい共同編集 第9回-2（9b）
 
+9dは[控えの画面・復元メモリ削減とDeno予算検査](./COLLABORATION_HISTORY_UI.md)を追加。自動控えの容量不足延期をproviderから日本語表示する。固定due・間引き・保守SQL契約は不変。
+
 第9回-3で履歴取得・独立コピー・専用共有復元APIを実装した。[9cの現行上限・原子性・測定・9d申し送り](COLLABORATION_RESTORE.md)を参照。以下の8MiB作業予約／128更新・1MiB圧縮閾値は9b時点の記録で、9cでは2MiB予約／64更新・256KiB閾値へ変更した。共有復元はprotected直前控えと同一transactionで確定し、旧leaseを無効化する。保存済みcut／旧世代dueだけ整理し、同世代の未完了固定dueは再実行待ちへ戻す。
 
 2026-10-04、開始 HEAD `740dfe3`。編集担当 Codex 1人。未適用 foundation の改訂で、本番接続・配備・commit・push・依存追加は行っていない。

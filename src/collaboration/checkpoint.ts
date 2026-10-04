@@ -3,6 +3,8 @@ import * as Y from "yjs";
 import { validateState, assertValidatedDocument, ValidationError, SERVER_LIMITS } from "./serverValidation.ts";
 // @ts-ignore Deno source import.
 import { sceneMaps } from "./projectSchema.ts";
+// @ts-ignore Deno source import.
+import { same } from "./jsonEqual.ts";
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type MapDTO = { [key: string]: Json };
@@ -75,8 +77,7 @@ export function materializeCheckpoint(dto: Pick<CheckpointDTO, "content" | "song
     if (dto.content.hasSong) doc.getMap("settings").set("song", dto.song);
     assertValidatedDocument(doc, dto.sharedSchemaVersion);
     const projected = projectCheckpointContent(doc, dto.sharedSchemaVersion);
-    if (new TextDecoder().decode(canonicalCheckpointContent({ formatVersion: 1, sharedSchemaVersion: dto.sharedSchemaVersion, ...projected })) !==
-      new TextDecoder().decode(canonicalCheckpointContent({ formatVersion: 1, ...dto }))) invalid();
+    if (!same(projected.content, dto.content) || !same(projected.song, dto.song)) invalid();
     return doc;
   } catch (error) { doc.destroy(); throw error; }
 }
@@ -101,7 +102,10 @@ export async function checkpointFromConfirmedDocument(doc: Y.Doc, metadata: Omit
   const dto: CheckpointDTO = { ...metadata, ...payload, digest: await digest(canonicalCheckpointContent(payload)) };
   return validateCheckpointDTO(dto);
 }
-export async function validateCheckpointDTO(value: unknown): Promise<CheckpointDTO> {
+/** Callback runs against the single validated target Doc, before it is released.
+ * Server restore can retain a small effective projection without retaining a Doc.
+ * No detached DTO copy is needed in that request-local path. */
+export async function inspectCheckpointDTO<T>(value: unknown, inspect: (doc: Y.Doc, dto: CheckpointDTO) => T): Promise<T> {
   if (!exact(value, ["documentId", "generation", "confirmedSeq", "formatVersion", "sharedSchemaVersion", "content", "song", "digest", "reason", "serverAt", "requestedBy", "automatic"])) invalid();
   const dto = value as CheckpointDTO;
   if (!uuid(dto.documentId) || !revision(dto.generation) || dto.generation === "0" || !revision(dto.confirmedSeq) || dto.formatVersion !== 1 || ![1,2].includes(dto.sharedSchemaVersion) ||
@@ -110,6 +114,9 @@ export async function validateCheckpointDTO(value: unknown): Promise<CheckpointD
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(dto.serverAt) || !Number.isFinite(Date.parse(dto.serverAt)) || !/^[0-9a-f]{64}$/.test(dto.digest)) invalid();
   const bytes = canonicalCheckpointContent(dto);
   if (await digest(bytes) !== dto.digest) throw new ValidationError("CHECKPOINT_DIGEST_MISMATCH");
-  const doc = materializeCheckpoint(dto); doc.destroy();
-  return JSON.parse(JSON.stringify(dto)) as CheckpointDTO;
+  const doc = materializeCheckpoint(dto);
+  try { return inspect(doc, dto); } finally { doc.destroy(); }
+}
+export async function validateCheckpointDTO(value: unknown): Promise<CheckpointDTO> {
+  return inspectCheckpointDTO(value, (_doc, dto) => structuredClone(dto));
 }

@@ -1,5 +1,7 @@
 # 第9回-3（9c）：履歴API・独立コピー・原子的な共有復元
 
+**9d実装・検証・第10／11回への申し送りは [COLLABORATION_HISTORY_UI.md](./COLLABORATION_HISTORY_UI.md) を参照。** 以下は9c時点の契約・記録。9dでは画面・永続操作記録を追加し、重複Docと復元write配列の保持を減らす。SQL契約・受付上限は不変。
+
 9aの履歴権限、9bの固定cut・間引き契約を維持する。画面は9d。未適用foundationの改訂で、本番接続・配備・commit/pushは行っていない。
 
 ## APIと復元計画

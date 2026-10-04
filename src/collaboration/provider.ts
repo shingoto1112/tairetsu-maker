@@ -4,7 +4,7 @@ import { needsMaintenance, parseAck, parseNotice, parsePage, TransportError, uui
 
 export type ProviderError = { kind: TransportError["kind"] | "storage" | "membership"; code: string };
 export type ProviderState = { online: boolean; realtimeConnected: boolean; syncing: boolean; pending: number; held: boolean; cursor: string; error: ProviderError | null; credentialConfirmed: boolean; pullConfirmed: boolean;
-  sharing: "active" | "removed" | "ended" | "membership-changed" | "auth-required" };
+  sharing: "active" | "removed" | "ended" | "membership-changed" | "auth-required"; historyDeferred?: boolean };
 /** Notification only, durable queue only. One instance owns one active coordinator session. */
 export class CollaborationProvider {
   private state: ProviderState = { online: true, realtimeConnected: false, syncing: false, pending: 0, held: false, cursor: "0", error: null, sharing: "active", credentialConfirmed: false, pullConfirmed: false };
@@ -281,11 +281,13 @@ export class CollaborationProvider {
       if (!this.valid(epoch)) return;
       if (!result || !["NOOP","BUSY","RATE_LIMIT","DEFERRED_CAPACITY","STORED","COMPACTED"].includes(result.result ?? "")) throw new TransportError("protocol", "INVALID_MAINTENANCE_RESPONSE");
       this.maintenanceAttempts = 0;
+      this.state.historyDeferred = result.result === 'DEFERRED_CAPACITY'; this.emit();
       if (result.result === "COMPACTED") this.kick("pull"); // snapshot ID is committed by the existing receive transaction
       if (["BUSY","RATE_LIMIT","DEFERRED_CAPACITY"].includes(result.result!) || needsMaintenance(result.maintenance))
         retry = Math.max(10_000, Math.min(300_000, Number.isFinite(result.retryAfterMs) ? result.retryAfterMs! : 10_000));
     } catch (error) {
       if (!this.valid(epoch)) return;
+      if (error instanceof TransportError && error.kind === 'capacity') { this.state.historyDeferred = true; this.emit(); }
       if (!(error instanceof TransportError) || ["network","temporary","rate-limit","capacity"].includes(error.kind) ||
         ["LEASE_EXPIRED","STALE_LEASE","SNAPSHOT_CONFLICT"].includes(error.code)) {
         retry = Math.max(error instanceof TransportError ? error.retryAfterMs : 0,

@@ -39,3 +39,16 @@
 .collab-banner--removed { background: #fff2de; color: #744919; }.collab-banner--ended { background: #eaf0f5; color: #33485a; }
 .collab-banner--auth-required { background: #fff6cc; color: #695712; }.collab-banner--membership-changed { background: #f4ecfb; color: #644079; }
 @media (max-width: 780px) { .collab-home { padding: 14px; }.collab-dialog { max-height: 93dvh; }.collab-dialog-body { padding: 14px 16px; }.collab-heading { align-items: flex-start; }.collab-actions { justify-content: flex-start; } }
+.collab-history-panel h3 { margin-top: 0; }
+.collab-dialog .collab-history-list li { display: block; padding: 16px 0; }
+.collab-history-list time { font-weight: 600; }
+.collab-history-list p { margin: 6px 0 10px; }
+.collab-history-item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.collab-history-item-actions button { flex: 1 1 220px; white-space: normal; text-align: left; }
+.collab-history-confirm { padding: 14px; margin: 14px 0; background: #fff8e9; border: 1px solid #e6c587; border-radius: 12px; }
+.collab-history-confirm h4 { margin: 0; }
+.collab-history-confirm .collab-actions { margin-top: 12px; }
+.collab-history-warning { color: #744919; background: #fff8e9; padding: 10px; border-radius: 8px; }
+.collab-history-result:empty { display: none; }
+.collab-notice { margin: 4px 12px; padding: 8px 12px; background: #edf9f4; border-radius: 8px; color: #155e57; font-size: 13px; }
+@media (max-width: 480px) { .collab-history-item-actions { flex-direction: column; }.collab-history-item-actions button { flex: auto; width: 100%; }.collab-history-confirm .collab-actions button { width: 100%; } }

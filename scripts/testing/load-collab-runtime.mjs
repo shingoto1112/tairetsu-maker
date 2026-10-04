@@ -45,6 +45,7 @@ export async function loadCollabRuntime() {
     return { runtime: await import(pathToFileURL(runtime).href), normalization: await import(pathToFileURL(normalization).href),
       validation: await import(pathToFileURL(validation).href), maintenance: await import(pathToFileURL(maintenance).href),
       restoration: await import(pathToFileURL(restoration).href),
-      moduleUrls: [runtime, normalization, validation, maintenance, restoration].map(p => pathToFileURL(p).href), dispose };
+      moduleUrls: [runtime, normalization, validation, maintenance, restoration].map(p => pathToFileURL(p).href),
+      loadSource: async relative => import(pathToFileURL(await compile(path.resolve(root, relative))).href), dispose };
   } catch (error) { await dispose(); throw error; }
 }

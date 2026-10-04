@@ -15,6 +15,8 @@ import type { HistoryResult } from "./commands";
 import type { CollaborationTransport } from "./transport";
 import { describeAudio, mergeAudioBindings, sameSong, songKey, validateAudioBindings } from "../repositories/audioBindings";
 import { chooseDeviceAudio, deviceAudioCandidates } from "./deviceAudio";
+import { CollaborationHistory, createHistoryTransport } from './historyApi';
+import { HistoryController } from './historyController';
 
 export type SharedSessionOptions = {
   enabled: boolean; config: CloudConfig | null; platform: "web" | "ipad"; mock?: boolean;
@@ -28,6 +30,7 @@ export class SharedSessionController {
   editor!: SharedProjectEditor;
   attached = false;
   provider: CollaborationProvider | null = null;
+  historyUi: HistoryController | null = null;
   private detached = false;
   private disposed = false;
   private authEpoch = cloudAuthIdentity().epoch;
@@ -48,6 +51,10 @@ export class SharedSessionController {
     this.releases.push(this.coordinator.subscribeCommits(event => {
       if (event.id !== localId || this.disposed) return;
       this.provider?.committedPending(event.pendingCount);
+      this.historyUi?.wake();
+      // A successful retry may have no new outbox entry (remote-only save).
+      // Resume the receive lane that was fenced after its storage failure.
+      if (this.provider?.snapshot.error?.kind === 'storage') this.provider.wake();
       if (!event.pendingUpdateIds.length) return;
       // A microtask merges several commits; ACK/cursor/view-only commits do not wake.
       if (this.sendQueued) return;
@@ -70,6 +77,13 @@ export class SharedSessionController {
         const auth = createParticipantAuth(options.config, options.platform);
         // Guest recovery belongs to the common session owner before capturing identity.
         auth.state(); owner.authEpoch = cloudAuthIdentity().epoch;
+        if (record.collaboration.transportBinding) owner.historyUi = new HistoryController({
+          localId: owner.localId, repository, identity: record.collaboration,
+          history: new CollaborationHistory(repository, createHistoryTransport(options.config, auth.credential)),
+          valid: () => owner.authValid() && auth.state().status === 'signed-in' && cloudAuthIdentity().accountId === record.collaboration!.transportBinding!.accountId &&
+            (!owner.provider || owner.provider.snapshot.sharing === 'active'),
+          wake: () => owner.provider?.wake(),
+        });
         owner.transport = options.mock && import.meta.env.DEV ? createHttpTransport(options.config, auth.credential, async (topic, credential, notice, status) => {
           const url = new URL(options.config!.url);
           if (url.protocol !== "http:" || url.hostname !== "127.0.0.1") throw new Error("試験接続はローカルのみです。");
@@ -78,7 +92,7 @@ export class SharedSessionController {
           return () => events.close();
         }) : createSupabaseTransport(options.config, auth.credential);
         owner.provider = new CollaborationProvider(owner.coordinator, owner.transport, { valid: () => owner.authValid() });
-        owner.releases.push(owner.provider.subscribe(() => owner.update()));
+        owner.releases.push(owner.provider.subscribe(() => { owner.update(); owner.historyUi?.wake(); }));
         owner.releases.push(subscribeCloudAuth(() => {
           if (!owner.authValid()) {
             owner.provider?.stop(); owner.update(); owner.finishDrain?.();
@@ -181,7 +195,7 @@ export class SharedSessionController {
   }
   dispose() {
     if (this.disposed) return;
-    this.disposed = true; this.provider?.stop(); clearTimeout(this.drainTimer);
+    this.disposed = true; this.provider?.stop(); this.historyUi?.stop(); clearTimeout(this.drainTimer);
     this.releases.splice(0).forEach(release => release()); this.editor?.destroy();
     const finish = this.finishDrain; this.finishDrain = undefined; finish?.();
   }

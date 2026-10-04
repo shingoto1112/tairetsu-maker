@@ -52,9 +52,10 @@ export class MockMaintenanceBackend extends MockCollabBackend {
           if(l.operation==='manual')this.fail('54000','CHECKPOINT_QUOTA_EXCEEDED');
           l.result={result:'DEFERRED_CAPACITY',maintenance:this.hint(),retryAfterMs:10};
         } else {
-          this.checkpoints.push({cut:l.cut,reason:l.operation,bytes:JSON.parse(bytes.toString('utf8'))});
+          const id=randomUUID();
+          this.checkpoints.push({id,cut:l.cut,reason:l.operation,bytes:JSON.parse(bytes.toString('utf8')),digest:args.p_digest.slice(2),serverAt:new Date().toISOString(),requestedBy:args.p_actor});
           this.lastCheckpointSeq=l.cut;this.lastCheckpointAt=Date.now();if(l.operation==='automatic')this.due=null;
-          l.result={result:'STORED',maintenance:this.hint()};
+          l.result={result:'STORED',id,maintenance:this.hint()};
         }
         return l.result;
       }

@@ -6,6 +6,7 @@ import { subscribeCloudAuth, readCloudAuthSession } from "../cloud/session";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { sessionTone } from "../storage/sharedSessionState";
 import "./collaboration.css";
+import CollaborationHistoryPanel from './CollaborationHistoryPanel';
 
 type Props = { bridge: CollaborationUiBridge; view: "library" | "editor"; localId?: string; attached?: boolean };
 export default function CollaborationSurface(props: Props) {
@@ -82,6 +83,7 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
     </section>}
     {view === "editor" && attached && <SharedIndicators service={service} session={session} localId={localId!} />}
     {view === "editor" && ui.error && !ui.screen && <p className="collab-error" role="alert">{ui.error}</p>}
+    {view === "editor" && ui.notice && !ui.screen && <p className="collab-notice" role="status">{ui.notice}</p>}
     {ui.screen && createPortal(<div className="collab-backdrop" onPointerDown={() => service.close()}>
       <section className="collab-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true"
         aria-label={ui.screen === "manage" ? "みんなで編集" : ui.screen === "invite" ? "招待されています" : "アカウント"}
@@ -100,6 +102,8 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
               <p>編集内容のクラウドへの送信は自動です。「この端末に保存」は端末への保存操作です。</p>
               <button type="button" disabled={ui.busy} onClick={() => run(() => service.refreshManagement())}>最新の状態を確認</button>
               {canManage && <>
+                {active?.historyUi && <CollaborationHistoryPanel key={localId} controller={active.historyUi} members={ui.members} creator={creator} session={session}
+                  open={(record, message) => service.openHistoryCopy(record, message)} />}
                 <section><h3>招待リンク</h3><p>1人につき1リンク。24時間以内に1回だけ参加できます。</p>
                   <button type="button" disabled={ui.busy} onClick={() => run(() => service.invite())}>招待リンクを作成</button>
                   {ui.issued && <div className="collab-issued"><label>作成した招待リンク<input aria-label="作成した招待リンク" readOnly value={ui.issued.link} /></label>{linkTools(ui.issued.link)}</div>}

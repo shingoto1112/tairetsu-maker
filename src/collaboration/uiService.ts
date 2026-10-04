@@ -188,6 +188,11 @@ export class CollaborationUiService {
     if (!await this.options().open(record, fixed)) throw new Error("コピーを保存しました。追加の編集があるため元の隊列表を表示しています。");
     this.rescue = null; this.patch({ screen: null });
   }
+  async openHistoryCopy(record: ProjectRecord, message: string) {
+    if (!await this.options().open(record)) return false;
+    this.patch({ screen: null, notice: message.includes('未設定') ? message : '控えを新しい隊列表として開きました。' });
+    return true;
+  }
   async removeLocal() {
     const record = await this.sharedRecord();
     await this.options().transform(async id => {

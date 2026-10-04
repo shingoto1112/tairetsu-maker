@@ -187,7 +187,7 @@ export class MockCollabBackend {
   }
 }
 
-export async function startMockServer(backend, createHandler, origin = process.env.COLLABORATION_TEST_ORIGIN ?? 'http://127.0.0.1:5179') {
+export async function startMockServer(backend, createHandler, origin = process.env.COLLABORATION_TEST_ORIGIN ?? 'http://127.0.0.1:5179', extra = {}) {
   if (new URL(origin).hostname !== '127.0.0.1' || new URL(origin).protocol !== 'http:') throw new Error('Loopback test origin only');
   const handler = createHandler(backend, [origin]);
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -235,6 +235,17 @@ export async function startMockServer(backend, createHandler, origin = process.e
         res.end(JSON.stringify(membership ? [{ membership_generation: membership }] : [])); return;
       }
       const input = JSON.parse(body);
+      if (extra.restore && url.pathname === '/functions/v1/collab-restore' || extra.maintenance && url.pathname === '/functions/v1/collab-maintenance') {
+        const handler = url.pathname.endsWith('collab-restore') ? extra.restore : extra.maintenance;
+        const response = await handler(new Request('http://mock.invalid' + url.pathname, {
+          method: 'POST', headers: { authorization: `Bearer ${actor}`, 'content-type': 'application/json', origin }, body }));
+        if (url.pathname.endsWith('collab-restore') && backend.loseRestoreReply && input.action === 'restore' && response.ok) {
+          // Deterministically lose the successful receipt, after DB commit.
+          // A socket close can be transparently retried by Chromium itself.
+          backend.loseRestoreReply = false; res.writeHead(503).end(JSON.stringify({error:'SERVER_UNAVAILABLE'})); return;
+        }
+        res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(await response.text()); return;
+      }
       if (url.pathname === '/functions/v1/collab-maintenance') {
         // Pre-maintenance browser scenarios have no scheduled work; keep their
         // protocol complete without introducing a second snapshot implementation.

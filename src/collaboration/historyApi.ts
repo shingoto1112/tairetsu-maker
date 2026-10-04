@@ -19,6 +19,8 @@ export interface HistoryTransport {
   get(documentId: string, checkpointId: string, auth: Credential, signal: AbortSignal): Promise<unknown>;
   restore(request: RestoreRequest, auth: Credential, signal: AbortSignal): Promise<unknown>;
   confirmRestore?(request: RestoreRequest, auth: Credential, signal: AbortSignal): Promise<unknown>;
+  manual?(request: Omit<RestoreRequest, 'checkpointId' | 'requestId' | 'action'>, auth: Credential, signal: AbortSignal): Promise<unknown>;
+  remove?(documentId: string, checkpointId: string, auth: Credential, signal: AbortSignal): Promise<unknown>;
 }
 export function createHistoryTransport(config: CloudConfig, credential: HistoryTransport['credential'], fetcher: typeof fetch = fetch): HistoryTransport {
   const request = createCollaborationRequest(config, fetcher);
@@ -27,6 +29,8 @@ export function createHistoryTransport(config: CloudConfig, credential: HistoryT
       { p_document: id, p_limit: limit, p_before_at: cursor?.serverAt ?? null, p_before_id: cursor?.id ?? null }),
     get: (id, checkpoint, auth, signal) => request('/rest/v1/rpc/collab_v2_get_checkpoint', auth, signal, { p_document: id, p_checkpoint: checkpoint }),
     restore: (body, auth, signal) => request('/functions/v1/collab-restore', auth, signal, body),
+    manual: (body, auth, signal) => request('/functions/v1/collab-maintenance', auth, signal, { ...body, action: 'manual' }),
+    remove: (id, checkpoint, auth, signal) => request('/rest/v1/rpc/collab_v2_delete_checkpoint', auth, signal, { p_document: id, p_checkpoint: checkpoint }),
     confirmRestore: (body, auth, signal) => request('/rest/v1/rpc/collab_v2_confirm_restore',auth,signal,
       {p_document:body.documentId,p_generation:body.generation,p_membership:body.membershipGeneration,p_request:body.requestId}) };
 }
@@ -45,6 +49,22 @@ export function parseRestoreReceipt(value: unknown, request: RestoreRequest): Re
 export class CollaborationHistory {
   constructor(private repository: ProjectRepository, private transport: HistoryTransport) {}
   private async auth(signal: AbortSignal) { const auth = await this.transport.credential(signal); if (!auth) throw new TransportError('auth', 'AUTH_REQUIRED'); return auth; }
+  async manual(identity: Omit<RestoreRequest, 'checkpointId' | 'requestId' | 'action'>, signal = new AbortController().signal) {
+    if (!this.transport.manual) throw new TransportError('protocol', 'UNSUPPORTED_HISTORY');
+    let value: { result?: string; id?: string };
+    try { value = await this.transport.manual(identity, await this.auth(signal), signal) as typeof value; }
+    catch (error) {
+      if (error instanceof TransportError && error.kind === 'rate-limit') throw new TransportError('rate-limit', 'RATE_LIMIT', error.retryAfterMs);
+      throw error;
+    }
+    if (value?.result === 'DEFERRED_CAPACITY') throw new TransportError('capacity', 'CHECKPOINT_QUOTA_EXCEEDED');
+    if (value?.result === 'BUSY' || value?.result === 'RATE_LIMIT') throw new TransportError('rate-limit', 'RATE_LIMIT');
+    if (value?.result !== 'STORED' || !uuid(value.id)) invalid();
+  }
+  async remove(documentId: string, checkpointId: string, signal = new AbortController().signal) {
+    if (!uuid(documentId) || !uuid(checkpointId) || !this.transport.remove) throw new TransportError('validation', 'INVALID_ARGUMENT');
+    await this.transport.remove(documentId, checkpointId, await this.auth(signal), signal);
+  }
   async list(documentId: string, limit = 32, cursor: CheckpointCursor | null = null, signal = new AbortController().signal) {
     if (!uuid(documentId) || !Number.isInteger(limit) || limit < 1 || limit > 64 || cursor && (cursor.documentId !== documentId || !uuid(cursor.id) || !date(cursor.serverAt))) throw new TransportError('validation', 'INVALID_ARGUMENT');
     const raw = await this.transport.list(documentId, limit, cursor, await this.auth(signal), signal);
@@ -73,7 +93,7 @@ export class CollaborationHistory {
   async restore(request: RestoreRequest, onState: (state: RestoreState) => void, signal = new AbortController().signal): Promise<RestoreState> {
     if (!uuid(request.documentId) || !uuid(request.checkpointId) || !uuid(request.requestId) || !uuid(request.membershipGeneration) || !revision(request.generation) || request.generation === '0') throw new TransportError('validation', 'INVALID_ARGUMENT');
     const auth = await this.auth(signal);
-    onState({ phase: 'requesting', requestId: request.requestId, message: '復元要求を送信しています' });
+    onState({ phase: 'requesting', requestId: request.requestId, message: '戻す要求を送信しています' });
     const accepted = await this.transport.restore({ ...request, action: 'accept' }, auth, signal) as { result: string; targetSeq: string; requestId: string };
     if (accepted?.result === 'COMMITTED') {
       const receipt = parseRestoreReceipt(accepted, request), state = { phase: 'committed' as const, requestId: request.requestId, targetSeq: receipt.targetSeq, restoreSeq: receipt.restoreSeq, receipt, message: '共有へ確定しました。この端末への反映を待っています' }; onState(state); return state;

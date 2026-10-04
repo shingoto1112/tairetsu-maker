@@ -23,7 +23,9 @@ for(let i=0;i<12;i++) {
   const used=process.cpuUsage(cpu);cpus.push((used.user+used.system)/1000);samples.push(performance.now()-start);sample();
 }
 samples.sort((a,b)=>a-b);cpus.sort((a,b)=>a-b);
+const peakRss=process.resourceUsage().maxRSS/1024,peakHeap=Math.max(...heaps)/1048576;
+const restoreMemoryBudget=operation==='restore'&&workload!=='boundary'?{heapMiB:120,rssMiB:240,pass:peakHeap<=120&&peakRss<=240}:null;
 console.log(JSON.stringify({runtime:`Deno ${Deno.version.deno}`,workload,operation,trials:12,snapshotBytes:cut.snapshot.bytes.length,
   logBytes:cut.updates.reduce((n,u)=>n+u.bytes.length,0),outputBytes:output,cpuP95Ms:cpus[11],wallP95Ms:samples[11],
-  maxSampledRssMiB:Math.max(...rss)/1048576,processPeakRssMiB:process.resourceUsage().maxRSS/1024,maxSampledHeapMiB:Math.max(...heaps)/1048576,errors:[...new Set(errors)],expectedRejections:[...new Set(rejected)],scope:'native Deno; binary pipeline and input decode; no hosted network/DB'}));
-if(errors.length)Deno.exit(1);
+  maxSampledRssMiB:Math.max(...rss)/1048576,processPeakRssMiB:peakRss,maxSampledHeapMiB:peakHeap,restoreMemoryBudget,errors:[...new Set(errors)],expectedRejections:[...new Set(rejected)],scope:'native Deno; binary pipeline and input decode; no hosted network/DB'}));
+if(errors.length||restoreMemoryBudget?.pass===false)Deno.exit(1);
