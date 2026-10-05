@@ -1045,6 +1045,19 @@ function App() {
   const [memberColorEditorPosition, setMemberColorEditorPosition] =
     useState<FloatingMenuPosition | null>(null);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
+  useEffect(() => {
+    if (appView !== "library") return;
+    setIsMemberSelectionMode(false);
+    setSelectedMemberIds((previous) => previous.length ? [] : previous);
+    setSelected(null);
+    setContextMenu(null);
+    setContextMenuPosition(null);
+    setSceneContextMenu(null);
+    setSceneContextMenuPosition(null);
+    setMemberColorEditor(null);
+    setMemberColorEditorPosition(null);
+  }, [appView]);
+
   const undoStackRef = useRef<HistoryEntry[]>([]);
   const sharedEditorRef = useRef<SharedProjectEditor | null>(null);
   const redoStackRef = useRef<HistoryEntry[]>([]);
@@ -5168,6 +5181,7 @@ function App() {
     setSelectedFrameId(nextProject.frames[0]?.id ?? null);
     setSelected(null);
     setSelectedMemberIds([]);
+    setIsMemberSelectionMode(false);
     setMode("members");
     setActivePanelTab("members");
     setViewerPerspective(nextProject.viewerPerspective ?? "audience");

@@ -52,6 +52,62 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  const selectMultiple = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "選択モード" }));
+    const picker = screen.getByRole("region", { name: "このシーンの表示" });
+    for (const name of [/^Anna/, /^Ben/]) fireEvent.click(within(picker).getByRole("button", { name }));
+    expect(canvas.selectedMemberIds).toEqual(["m_anna", "m_ben"]);
+  };
+  const expectSingleSelection = () => {
+    expect(screen.getByRole("button", { name: "選択モード" }).getAttribute("aria-pressed")).toBe("false");
+    expect(canvas.selectedMemberIds).toEqual([]);
+    const picker = screen.getByRole("region", { name: "このシーンの表示" });
+    for (const name of [/^Anna/, /^Ben/]) fireEvent.click(within(picker).getByRole("button", { name }));
+    expect(canvas.selectedMemberIds).toEqual([]);
+    expect(within(picker).getByRole("button", { name: /^Anna/ }).getAttribute("aria-pressed")).toBe("false");
+    expect(within(picker).getByRole("button", { name: /^Ben/ }).getAttribute("aria-pressed")).toBe("true");
+  };
+  it.each(["stage", "parade"] as const)("resets selection through home for the same and another project in %s", async mode => {
+    testProject = { ...testProject, mode };
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    const other = { ...createSampleProject(), id: "other-selection", title: "別の隊列表", mode };
+    await act(async () => { await testRepository.commit({ project: other, localRevision: "1", expectedRepositoryRevision: null, operationId: "seed-other" }); });
+    for (const title of ["削除検証", "別の隊列表"]) {
+      await selectMultiple();
+      fireEvent.click(screen.getByRole("button", { name: "隊列一覧へ戻る" }));
+      fireEvent.click(await screen.findByRole("button", { name: `${title}を開く` }));
+      await screen.findByRole("button", { name: "選択モード" });
+      expectSingleSelection();
+    }
+  }, INTEGRATION_TIMEOUT_MS);
+  it.each(["stage", "parade"] as const)("retains selection on scenes and failures, resets on direct reload in %s", async mode => {
+    testProject = { ...testProject, mode };
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    await selectMultiple();
+    const first = canvas.selectedFrameId;
+    fireEvent.keyDown(window, { key: "PageDown", metaKey: true });
+    expect(canvas.selectedFrameId).not.toBe(first);
+    expect(screen.getByRole("button", { name: "選択モード中" }).getAttribute("aria-pressed")).toBe("true");
+    const commit = vi.spyOn(testRepository, "commit").mockRejectedValue(new RepositoryError("CONFLICT"));
+    fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "未保存選択検証" } });
+    fireEvent.click(screen.getByRole("button", { name: "隊列一覧へ戻る" }));
+    await screen.findByRole("alert", { name: "端末保存エラー" });
+    expect(screen.getByRole("button", { name: "選択モード中" }).getAttribute("aria-pressed")).toBe("true");
+    const selection = [...canvas.selectedMemberIds];
+    const get = vi.spyOn(testRepository, "get").mockRejectedValue(new RepositoryError("ACCESS_DENIED"));
+    fireEvent.click(screen.getByRole("button", { name: "読み込み直す" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "隊列表を読み込み直す" })).getByRole("button", { name: "読み込み直す" }));
+    await screen.findByText(/保存領域にアクセスできません/);
+    expect(screen.getByRole("button", { name: "選択モード中" }).getAttribute("aria-pressed")).toBe("true");
+    expect(canvas.selectedMemberIds).toEqual(selection);
+    get.mockRestore(); commit.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "読み込み直す" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "隊列表を読み込み直す" })).getByRole("button", { name: "読み込み直す" }));
+    await screen.findByRole("button", { name: "選択モード" });
+    expectSingleSelection();
+  }, INTEGRATION_TIMEOUT_MS);
   it.each(["stage", "parade"] as const)("applies the three remaining templates and saves coordinates in %s", async mode => {
     testProject = { ...createSampleProject(), id: "template-check", title: "整列検証", mode };
     const members = testProject.members.slice(0, 3);
