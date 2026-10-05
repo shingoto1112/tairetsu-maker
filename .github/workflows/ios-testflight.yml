@@ -57,6 +57,8 @@ jobs:
         env:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          # New collaboration (Yjs, collab_v2 server). Server side was switched on 2026-10-05.
+          VITE_COLLABORATION_V2: "1"
         run: npm run build
 
       - name: Sync Capacitor iOS project
