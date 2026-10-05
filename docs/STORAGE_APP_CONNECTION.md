@@ -1,5 +1,17 @@
 # 保存方式の作り直し 第5回（第5・6回統合）
 
+## 第11回：反復計測と旧書込みの撤去（2026-10-05）
+
+反復計測・前後比較・iPad実機項目は [STORAGE_PERFORMANCE.md](./STORAGE_PERFORMANCE.md)、依存を変更しない監査は [STORAGE_DEPENDENCY_AUDIT.md](./STORAGE_DEPENDENCY_AUDIT.md) を参照。下記の単発435/1,203/656msは過去の記録で、今回のp95として使わない。
+
+一覧→本文1件のRepository接続と正規化は維持し、画面外のシーン小窓SVGを遅延描画、可視SVGをmemo化する。全シーンの固定サイズのボタン・ラベル・presenceは維持する。Project/ZIP/PrintPreview/座標/保存・復旧の形式は変更しない。性能目標の判定は開発サーバーと実機の違いを明記した上記記録で行う。
+
+旧 `utils/storage.ts` の通常保存と書き戻すhydrate、`platform/projectStorage.ts` の旧ミラーwriter/queueは通常Appにも救出にも参照がないため撤去した。現在の移行・救出はread-onlyの`storage/legacyReaders.ts`に一本化済み。読取不能1件で保存領域全体を開けなくする検証は追加しない。利用者の旧原本は自動削除しない。
+
+旧本人クラウドdraftのwriterも第11回-2で撤去済みで、下記第5回の「既存下書き保存を維持」は過去の記録。現行の明示取込み・救出は [STORAGE_MIGRATION.md](./STORAGE_MIGRATION.md) の第11回-2を参照。
+
+第11回の最終確認：Vitest 99ファイル/834件×2、typecheck、一時build、bundle/nativeチェック、指定browser全試験成功。build22と追加小窓試験はDEV条件で各2回、待機前提を直したhistory/presenceも各2回。main JSは371,369 B（基準から+1,294 B）。開く1秒/一覧300ms/フレーム落ちなしは全条件では未達で、V2 ON後半の遅延変動とiPad実機は申し送りに残す。詳細・失敗した試験環境の修正経緯は性能記録を参照。
+
 ## 接続と判断
 
 - ローカル隊列表の正本はWeb/WindowsではIndexedDB、iPadアプリではSwift SQLite Repository。Appから旧localStorageの3キーと `projects/*.json` ミラーへの通常保存・hydrateを呼ばない。旧データは削除しない。旧ビルドへの戻りは保証しない。

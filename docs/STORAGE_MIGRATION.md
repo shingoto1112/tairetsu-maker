@@ -1,5 +1,25 @@
 # 保存方式 第4回: 古いデータの引っ越し
 
+## 第11回の整理（2026-10-05）
+
+性能は [STORAGE_PERFORMANCE.md](./STORAGE_PERFORMANCE.md) に記録する。廃止APIの全参照検索は、src/scripts/iosを含め、node_modules・ビルド済み公開asset・履歴資料を呼出し元とは扱わず実施した。以下の通常App呼出しは0件で、相互参照と旧writerの試験だけだった。
+
+| 撤去した処理 | 理由・残す経路 |
+|---|---|
+| `saveProjectsToStorage` / `saveProjectToStorage` | 旧localStorage 3キーへの全件・単体書込み。現在の正本はRepository |
+| `hydrateProjectsFromNativeStorage` | 読取り後にlocalStorageとiPadミラーへ書き戻す旧hydrate。現在のbootstrapと並行利用してはいけない |
+| `saveNativeProjectsMirror` / `writeNativeProjectsMirror` / write queue / envelope | 旧projects primary/pending/backupファイルへの書込み。Filesystem write/rename/deleteによる旧修復も含む |
+| 旧モジュールの未使用reader / `clearProjectFromStorage` | 旧writer群にのみ接続された旧loader/sort/clear。必要なreadは`legacyReaders.ts`、明示cleanupはmaintenanceに既にあり、重複入口を維持しない |
+| 旧 `storage.test.ts` | 廃止writerによるミラー修復を前提とする試験。現行の読み取り専用移行・不正項目の隔離・focusMemberId保持の回帰を`legacyWriteBoundary.test.ts`と既存移行試験で確認する |
+
+旧音源へのwriterは第7回で既に置換済みで、今回さらに消せるwriterは見つからない。Web/Windowsの`saveAudioBlobToIndexedDb`、iPadのbegin/append/finish uploadは現在も音源取込み/ZIPに必要なので残す。旧 `.data/.json` 読取りとbase64 fallback、Swift `migrateLegacy` の新領域へのコピー、移行台帳・復元候補・旧本人draftの明示救出、検証条件付き「古い保存データを整理」は残す。UI設定/診断/ゲストsessionのlocalStorage、エクスポートのCache、共同編集journalは旧Project保存ではないので撤去しない。
+
+nativeの未使用公開メソッド一覧：**該当なし**。ProjectRepositoryの18メソッド、AudioDocumentPickerの7メソッド、ExportShareのshareFilesはTSの現行adapter/maintenance/音源/ZIPから使われる。AudioStoreのmigrateLegacy/importFile/resolve/confirmReference/collectUnusedもnative内部に参照がある。旧Projectミラーは汎用Capacitor Filesystem経由で、撤去に対応する独自Swiftメソッドはない。汎用Filesystemを他用途があるのに削除しない。Swiftの編集・コンパイル・実機実行は今回しない。
+
+旧localStorage・iPadミラー・旧音源の原本を削除する時期や移行判定は変更しない。一部不正データがあっても正常文書の利用と復元候補の救出を維持する。
+
+撤去後の確認：Vitest全834件×2、App保存browser a〜l、legacy-local（3runtime OFF・旧API参照0）、legacy-import（正常/破損候補の個別隔離・再実行・救出）、IndexedDB契約/移行30ケースとRepository browser、native事前チェックは成功。追加のlegacyWriteBoundaryでfocusMemberId保持とlocal/native原本へのwrite/delete不使用を確認した。Swift実行・実機の旧音源コピー/原本保持/再起動は未確認。
+
 ## 第11回-2の追記（現行の旧クラウド・下書き救出）
 
 下記第4回の記録は部品実装時の履歴。現在の通常bootstrapは本人draftを扱わない。

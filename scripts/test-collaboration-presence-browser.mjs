@@ -11,7 +11,20 @@ import { loadCollabEdge } from './testing/load-collab-edge.mjs';
 
 process.env.VITE_COLLABORATION_V2 = '1';
 const origin = 'http://127.0.0.1:5189';
-const vite = await createServer({ envFile: false, server: { host: '127.0.0.1', port: 5189, strictPort: true }, logLevel: 'warn' });
+// Actual component calls are measured separately from commit Fiber flags.
+// A reused Fiber can retain PerformedWork after a descendant-only update.
+const renderProbe = { name:'presence-component-render-probe', enforce:'pre', transform(code,id) {
+  if (id.endsWith('/src/App.tsx')) {
+    assert(code.includes('function App() {'));
+    return code.replace('function App() {', 'function App() { if (window.__componentRenders) window.__componentRenders.app++;');
+  }
+  if (id.endsWith('/src/components/SceneThumbnailPreview.tsx')) {
+    const signature=/function SceneThumbnailPreview\([\s\S]*?\)\s*\{/;
+    assert(signature.test(code));
+    return code.replace(signature, matched=>matched+' if (visible && window.__componentRenders) window.__componentRenders.thumbnail++;');
+  }
+} };
+const vite = await createServer({ envFile: false, plugins:[renderProbe], server: { host: '127.0.0.1', port: 5189, strictPort: true }, logLevel: 'warn' });
 await vite.listen();
 const { createHandler, RpcError } = await loadCollabEdge();
 const backend = new MockCollabBackend(null, RpcError);
@@ -64,6 +77,7 @@ async function addPage(i, data) {
 async function observeRenders(page) {
   await page.evaluate(() => {
     window.__renderCounts = { app: 0, thumbnail: 0 };
+    window.__componentRenders = { app: 0, thumbnail: 0 };
     const hook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
     if (!hook) throw Error('Missing test-only React hook');
     hook.onCommitFiberRoot = (_id, root) => {
@@ -84,7 +98,10 @@ try {
   await until(() => pages[1].locator('.remote-avatar').count().then(n => n > 0), 'participant icons', 22000).catch(async error => {
     console.log('PRESENCE_DIAGNOSTIC', JSON.stringify({ sessions: await Promise.all([0, 1].map(i => ephemeral(i, s => ({ snapshot: s.getSnapshot(), sceneId: s.sceneId, metrics: s.metrics.sent })))), records: relay.records.map(r => ({ actor: people.indexOf(r.actor), type: r.type })), dom: await pages[1].locator('.toolbar').innerText() })); throw error;
   });
-  await pages[1].waitForTimeout(500);
+  // Opening emits a 3-second success toast owned by App. Its expiry is not a
+  // presence update; let it finish before asserting traffic causes zero renders.
+  await expect(pages[1].locator('.status-toast')).not.toHaveClass(/is-visible/,{timeout:6000});
+  await pages[1].evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
   const before = await snapshot(1); await observeRenders(pages[1]);
   relay.state.drop.add('start'); await begin(0); await pages[1].waitForTimeout(600); assert.equal(await ephemeral(1, s => s.drags.size), 0);
   relay.state.drop.clear(); await until(() => ephemeral(1, s => s.drags.size === 1), 'lost start renewal');
@@ -93,7 +110,9 @@ try {
   relay.flushReverse(); relay.state.reverse = false; relay.state.duplicate = false;
   assert.deepEqual(await snapshot(1), before);
   measurements.previewRenders = await pages[1].evaluate(() => window.__renderCounts);
+  measurements.componentRenders = await pages[1].evaluate(() => window.__componentRenders);
   assert.equal(measurements.previewRenders.app, 0); assert.equal(measurements.previewRenders.thumbnail, 0);
+  assert.equal(measurements.componentRenders.app, 0); assert.equal(measurements.componentRenders.thumbnail, 0);
   checks.push('2 independent browsers: lost start, reverse/duplicate, Project/Undo/revision/outbox/cursor isolation and zero App/thumbnail SVG renders');
   await addPage(2, data); await addPage(3, data); await addPage(4, data);
   await until(() => ephemeral(4, s => s.drags.size > 0), 'late join sees renewed 146-target start');

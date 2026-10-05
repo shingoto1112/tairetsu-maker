@@ -26,7 +26,14 @@ const title=p=>p.getByRole('textbox',{name:'隊列表名',exact:true}),dialog=p=
 const row=(p,id)=>p.locator(`[data-checkpoint-id="${id}"]`);
 const manage=async p=>{await p.getByRole('button',{name:'共有と書き出し',exact:true}).click();await p.getByRole('button',{name:/みんなで編集/}).click();await expect(panel(p)).toBeVisible();};
 const close=p=>p.getByRole('button',{name:'共同編集画面を閉じる',exact:true}).click();
-const list=async p=>{await panel(p).getByRole('button',{name:/控えを見る|控えの一覧を更新/}).click();await expect(panel(p).locator('li').first()).toBeVisible();};
+const list=async p=>{
+  // Resume can briefly remount the panel / disable its refresh button while
+  // checking the durable journal. Retry only this read-only list operation.
+  await expect(async()=>{
+    await panel(p).getByRole('button',{name:/控えを見る|控えの一覧を更新/}).click({timeout:1500});
+    await expect(panel(p).locator('li').first()).toBeVisible({timeout:750});
+  }).toPass({timeout:10000});
+};
 const action=async(p,id,name)=>{const item=row(p,id),toggle=item.locator('.collab-history-row');if(await toggle.getAttribute('aria-expanded')!=='true')await toggle.click();return item.getByRole('button',{name,exact:true});};
 const read=p=>p.evaluate(async()=>{const {IndexedDbProjectRepository}=await import('/src/repositories/indexedDbRepository.ts');const r=new IndexedDbProjectRepository();await r.initialize();try{return await r.get('project_a');}finally{r.close();}});
 const openShared=async(p,name)=>{const cards=p.getByRole('button',{name:`${name}を開く`,exact:true});await cards.filter({has:p.locator('.formation-card__badge').filter({hasText:/共有中|クラウド保存/})}).click();await expect(title(p)).toHaveValue(name);};
