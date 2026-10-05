@@ -917,6 +917,7 @@ function App() {
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [localSaveState, setLocalSaveState] = useState<SaveState | null>(null);
   const repositoryRef = useRef<ProjectRepository | null>(null);
+  const storagePreparationRef = useRef<Promise<boolean> | null>(null);
   const audioEditorProtectionRef = useRef<Promise<() => void> | null>(null);
   const saveCoordinatorRef = useRef<SaveCoordinator | null>(null);
   const editorLoadGenerationRef = useRef(0);
@@ -1140,21 +1141,27 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     let repository: ProjectRepository | null = null;
-    void (async () => {
+    const preparation = (async () => {
       try {
         const prepared = await prepareAppRepository(progress => {
           if (!cancelled && progress.total) setStorageStatus(`隊列表を新しい保存方式へ移行しています（${progress.completed}／${progress.total}件）`);
         });
         repository = prepared.repository;
-        if (cancelled) { if ("close" in repository) (repository as ProjectRepository & { close(): void }).close(); return; }
+        if (cancelled) { if ("close" in repository) (repository as ProjectRepository & { close(): void }).close(); return false; }
         repositoryRef.current = repository;
         const failures = prepared.result.failures.map(f => f.code === "INTERRUPTED" ? "移行を中断しました。次回起動時に再開します。" : REPOSITORY_ERROR_MESSAGES[f.code]);
         if (failures.length) setStorageWarning([...new Set(failures)].join(" "));
-        if (!prepared.result.canContinue) { setStorageCorrupt(prepared.result.failures.some(f => f.code === "CORRUPT")); setStorageStatus(null); return; }
+        if (!prepared.result.canContinue) { setStorageCorrupt(prepared.result.failures.some(f => f.code === "CORRUPT")); setStorageStatus(null); return false; }
         saveCoordinatorRef.current = createLocalCoordinator(repository);
         await refreshLocalLibrary();
-        if (cancelled) return;
+        if (cancelled) return false;
         setStorageReady(true); setStorageStatus(null);
+        return true;
+      } catch (error) { if (!cancelled) { setStorageCorrupt(repositoryError(error).code === "CORRUPT"); setStorageWarning(repositoryError(error).message); setStorageStatus(null); } return false; }
+    })();
+    storagePreparationRef.current = preparation;
+    void preparation.then(async ready => {
+      if (ready && !cancelled) {
         try {
           const shared = readProjectFromHash();
           if (shared) {
@@ -1162,8 +1169,8 @@ function App() {
             if (!cancelled) { setIsSharedProject(true); setSharedAudioNotice(true); }
           }
         } catch (error) { setNotice(error instanceof Error ? error.message : "共有データを読み込めませんでした。"); }
-      } catch (error) { if (!cancelled) { setStorageCorrupt(repositoryError(error).code === "CORRUPT"); setStorageWarning(repositoryError(error).message); setStorageStatus(null); } }
-    })();
+      }
+    });
     return () => {
       cancelled = true; ++editorLoadGenerationRef.current;
       const closingShared = sharedSession.shutdown(); sharedEditorRef.current = null;
@@ -5092,6 +5099,8 @@ function App() {
       loadGeneration?: number;
     } = {},
   ) => {
+    // External file events can arrive before startup maintenance/migration ends.
+    if (!await storagePreparationRef.current) return false;
     await (audioEditorProtectionRef.current ??= protectAudioEditor());
     const generation = options.loadGeneration ?? ++editorLoadGenerationRef.current;
     if (!await flushPendingAutoSave() || generation !== editorLoadGenerationRef.current) return false;
@@ -5259,7 +5268,7 @@ function App() {
 
   const localAction = async (action: (repository: ProjectRepository) => Promise<void>) => {
     try {
-      if (!storageReady || !repositoryRef.current) throw new RepositoryError("BUSY");
+      if (!await storagePreparationRef.current || !repositoryRef.current) throw new RepositoryError("BUSY");
       await action(repositoryRef.current);
     } catch (error) {
       setNotice(repositoryError(error).message);
@@ -5388,7 +5397,7 @@ function App() {
   };
 
   const importTairetsuProjectFiles = async (files: File[]) => {
-    if (!storageReady || !repositoryRef.current) return;
+    if (!await storagePreparationRef.current || !repositoryRef.current) return;
     try {
       const { importBackupFiles } = await import("./storage/bulkBackup");
       const report = await importBackupFiles(repositoryRef.current, files, { confirmManifest: async (manifest, missing) =>

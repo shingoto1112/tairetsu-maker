@@ -132,8 +132,8 @@ export class IndexedDbProjectRepository implements ProjectRepository, MigrationR
   private async transaction<T>(stores: string[], mode: IDBTransactionMode,
     work: Parameters<typeof runIdbTransaction<T>>[3], operationId?: string, unlocked = false): Promise<T> {
     try {
-      const db = await this.connection();
-      const run = () => runIdbTransaction(db, stores, mode, work, error => classifyIndexedDbError(error, operationId));
+      // A queued writer must not retain a connection closed while it waited.
+      const run = async () => runIdbTransaction(await this.connection(), stores, mode, work, error => classifyIndexedDbError(error, operationId));
       return await (mode === "readwrite" && !unlocked ? withStorageWrite(run) : run());
     } catch (error) { throw classifyIndexedDbError(error, operationId); }
   }
