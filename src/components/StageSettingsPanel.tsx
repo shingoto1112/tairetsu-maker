@@ -1,9 +1,9 @@
+import { HorizontalCountingCards } from "./HorizontalCountingCards";
+import { toHorizontalCountingMode, toParadeHorizontalMeasureMode } from "../utils/horizontalRuler";
 import {
   FormationMode,
   FrontDirection,
-  HorizontalGuideMode,
   OriginMode,
-  ParadeHorizontalMeasureMode,
   ParadeSettings,
   StageConfig,
 } from "../types";
@@ -149,7 +149,7 @@ export const StageSettingsPanel = ({
 
   if (mode === "parade") {
     return (
-      <section className="panel-section">
+      <section className="panel-section stage-settings-panel">
         <PanelStickyHeader
           title="パレード設定"
           meta={`現在: 全体距離${effectiveParadeSettings.totalDistance}m / 後方${effectiveParadeSettings.backwardDistanceMeters ?? 0}m / 横幅${effectiveParadeSettings.width}m`}
@@ -211,22 +211,9 @@ export const StageSettingsPanel = ({
               }
             />
           </label>
-          <label>
-            横方向表示方式
-            <select
-              value={effectiveParadeSettings.horizontalMeasureMode ?? "centerSplit"}
-              disabled={disabled}
-              onChange={(event) =>
-                onParadeSettingsChange?.({
-                  horizontalMeasureMode: event.target
-                    .value as ParadeHorizontalMeasureMode,
-                })
-              }
-            >
-              <option value="centerSplit">センター割り方式</option>
-              <option value="normalMeter">通常m表示</option>
-            </select>
-          </label>
+          <HorizontalCountingCards compact disabled={disabled}
+            value={toHorizontalCountingMode(effectiveParadeSettings.horizontalMeasureMode)}
+            onChange={(value) => onParadeSettingsChange?.({ horizontalMeasureMode: toParadeHorizontalMeasureMode(value) })} />
           <label>
             距離目盛り
             <select
@@ -276,14 +263,14 @@ export const StageSettingsPanel = ({
         {displaySettings}
         {disabled && <p className="notice warning">{readOnlyNotice}</p>}
         <p className="notice muted">
-          後方表示距離を増やすと、0mラインより後ろに -1m、-2m... の範囲を追加できます。横方向表示方式は表示だけを切り替えます。
+          後方表示距離を増やすと、0mラインより後ろに -1m、-2m... の範囲を追加できます。横の数え方は目盛りだけを切り替えます。
         </p>
       </section>
     );
   }
 
   return (
-    <section className="panel-section">
+    <section className="panel-section stage-settings-panel">
       <PanelStickyHeader
         title="ステージ設定"
         meta={`現在: 横${stage.widthMeters}m / 縦${stage.depthMeters}m / ${
@@ -336,21 +323,8 @@ export const StageSettingsPanel = ({
           onValueChange={(gridSizeMeters) => onChange({ gridSizeMeters })}
         />
       </label>
-      <label>
-        横方向の表示
-        <select
-          value={stage.horizontalGuideMode ?? "meters"}
-          disabled={disabled}
-          onChange={(event) =>
-            onChange({
-              horizontalGuideMode: event.target.value as HorizontalGuideMode,
-            })
-          }
-        >
-          <option value="meters">通常メートル表示</option>
-          <option value="centerSplit">センター割り表示</option>
-        </select>
-      </label>
+      <HorizontalCountingCards compact disabled={disabled} value={stage.horizontalGuideMode ?? "meters"}
+        onChange={(horizontalGuideMode) => onChange({ horizontalGuideMode })} />
       <label>
         メンバー円の直径
         <NumericInput
@@ -368,11 +342,7 @@ export const StageSettingsPanel = ({
     <p className="notice muted">
       現在: {useGlobalStageSize ? `全シーン共通 横${stage.widthMeters}m × 縦${stage.depthMeters}m` : "シーンごとのサイズを使用"}
     </p>
-    <p className="notice muted">
-      {(stage.horizontalGuideMode ?? "meters") === "centerSplit"
-        ? "センター割り表示: 横方向の目盛りラベルだけを中心からの番号で表示します。内部座標はmのままです。"
-        : "通常メートル表示: -5m, 0m, +5m のように実寸mで表示します。"}
-    </p>
+
     <details className="settings-disclosure">
       <summary>ステージ詳細設定</summary>
       <div className="settings-grid">

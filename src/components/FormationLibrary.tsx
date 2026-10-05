@@ -14,7 +14,8 @@ import type {
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
 
 import { LegalLinks } from "./LegalLinks";
-import { NumericInput } from "./NumericInput";
+import { HorizontalCountingCards } from "./HorizontalCountingCards";
+import { toHorizontalCountingMode, toParadeHorizontalMeasureMode } from "../utils/horizontalRuler";
 
 export type NewFormationInput = {
   title: string;
@@ -86,6 +87,26 @@ const formatProjectDate = (project: ProjectSummary): string => {
 const isActivationKey = (event: KeyboardEvent<HTMLElement>): boolean =>
   event.key === "Enter" || event.key === " ";
 
+type CreationNumberFieldProps = {
+  name: string; label: string; min: number; step: string; value: number;
+  onChange: (value: number) => void; error?: string;
+};
+const CreationNumberField = ({ name, label, min, step, value, onChange, error }: CreationNumberFieldProps) => (
+  <div className="creation-number-field">
+    <label>
+      {label}
+      <span className="meter-input">
+        <input type="number" name={name} aria-label={label} data-number-field data-field-label={label}
+          min={min} step={step} value={Number.isFinite(value) ? value : ""}
+          aria-invalid={Boolean(error)} aria-describedby={error ? "create-" + name + "-error" : undefined}
+          onChange={(event) => onChange(event.target.valueAsNumber)} />
+        m
+      </span>
+    </label>
+    {error && <small id={"create-" + name + "-error"} className="formation-field-error">{error}</small>}
+  </div>
+);
+
 export const FormationLibrary = ({
   projects,
   disabled = false,
@@ -114,7 +135,7 @@ export const FormationLibrary = ({
   const [useGlobalStageSize, setUseGlobalStageSize] = useState(true);
   const [gridSizeMeters, setGridSizeMeters] = useState(0.25);
   const [horizontalGuideMode, setHorizontalGuideMode] =
-    useState<HorizontalGuideMode>("meters");
+    useState<HorizontalGuideMode>("centerSplit");
   const [memberDiameterMeters, setMemberDiameterMeters] = useState(0.5);
   const [paradeTotalDistance, setParadeTotalDistance] = useState(100);
   const [paradeWidthMeters, setParadeWidthMeters] = useState(20);
@@ -126,6 +147,8 @@ export const FormationLibrary = ({
   const [paradeEmphasizeEvery5m, setParadeEmphasizeEvery5m] = useState(true);
   const [paradeEmphasizeEvery10m, setParadeEmphasizeEvery10m] = useState(true);
   const [audioFile, setAudioFile] = useState<AudioSelection | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [libraryMenu, setLibraryMenu] = useState<LibraryMenu | null>(null);
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
@@ -178,13 +201,15 @@ export const FormationLibrary = ({
   }, [libraryMenu]);
 
   const resetDialog = () => {
+    setFieldErrors({});
+    setAdvancedOpen(false);
     setFormationMode("stage");
     setTitle("");
     setWidthMeters(12);
     setHeightMeters(8);
     setUseGlobalStageSize(true);
     setGridSizeMeters(0.25);
-    setHorizontalGuideMode("meters");
+    setHorizontalGuideMode("centerSplit");
     setMemberDiameterMeters(0.5);
     setParadeTotalDistance(100);
     setParadeWidthMeters(20);
@@ -230,32 +255,25 @@ export const FormationLibrary = ({
     }
   };
 
-  const validatePositive = (value: number, label: string): string | null => {
-    if (!Number.isFinite(value) || value <= 0) {
-      return `${label}は0より大きい数値にしてください。`;
-    }
-    return null;
-  };
-
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setError("隊列表名を入力してください。");
-      return;
-    }
-    const validationError =
-      formationMode === "parade"
-        ? validatePositive(paradeTotalDistance, "全体距離") ??
-          validatePositive(paradeWidthMeters, "横幅") ??
-          validatePositive(paradeCellSizeMeters, "1マスあたりの距離") ??
-          validatePositive(memberDiameterMeters, "メンバー円の直径")
-        : validatePositive(widthMeters, "ステージ横幅") ??
-          validatePositive(heightMeters, "ステージ縦幅") ??
-          validatePositive(gridSizeMeters, "グリッド間隔") ??
-          validatePositive(memberDiameterMeters, "メンバー円の直径");
-    if (validationError) {
-      setError(validationError);
+    const errors: Record<string, string> = {};
+    if (!trimmedTitle) errors.title = "隊列表名を入力してください。";
+    form.querySelectorAll<HTMLInputElement>('input[data-number-field]').forEach(input => {
+      const value = input.valueAsNumber;
+      if (!Number.isFinite(value) || value < Number(input.min)) {
+        errors[input.name] = input.dataset.fieldLabel + "は" + input.min + "以上の数値にしてください。";
+      }
+    });
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) {
+      const input = form.elements.namedItem(Object.keys(errors)[0]) as HTMLInputElement | null;
+      // Reveal every invalid advanced field, even when the first error is elsewhere.
+      if (Object.keys(errors).some(key => form.elements.namedItem(key) instanceof HTMLInputElement &&
+        (form.elements.namedItem(key) as HTMLInputElement).closest("details"))) setAdvancedOpen(true);
+      requestAnimationFrame(() => input?.focus());
       return;
     }
     const isParade = formationMode === "parade";
@@ -598,6 +616,7 @@ export const FormationLibrary = ({
         <div className="new-formation-backdrop" onPointerDown={closeDialog}>
           <form
             className="new-formation-dialog"
+            noValidate
             onSubmit={(event) => void submit(event)}
             onPointerDown={(event) => event.stopPropagation()}
             role="dialog"
@@ -623,6 +642,9 @@ export const FormationLibrary = ({
             <label>
               隊列表名
               <input
+                name="title"
+                aria-invalid={Boolean(fieldErrors.title)}
+                aria-describedby={fieldErrors.title ? "create-title-error" : undefined}
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="例：2026春 オープニング"
@@ -630,8 +652,10 @@ export const FormationLibrary = ({
               />
             </label>
 
+            {fieldErrors.title && <small id="create-title-error" className="formation-field-error">{fieldErrors.title}</small>}
+
             <div className="new-formation-field">
-              <span>音源</span>
+              <span>音源（任意）</span>
               <AudioFilePickerButton
                 className="audio-file-picker-button"
                 onError={setError}
@@ -648,145 +672,47 @@ export const FormationLibrary = ({
 
             {formationMode === "stage" ? (
               <section className="new-formation-size">
-                <h3>ステージ設定</h3>
-                <p className="notice muted">
-                  現在: 横{widthMeters || 0}m / 縦{heightMeters || 0}m /{" "}
-                  {useGlobalStageSize ? "全シーン固定ON" : "シーン別サイズ"}
-                </p>
+                <h3>ステージの大きさ</h3>
+
+                <CreationNumberField name="widthMeters" label="横幅" min={0.1} step="0.1"
+                  value={widthMeters} onChange={setWidthMeters} error={fieldErrors.widthMeters} />
+                <CreationNumberField name="heightMeters" label="縦幅" min={0.1} step="0.1"
+                  value={heightMeters} onChange={setHeightMeters} error={fieldErrors.heightMeters} />
+
+                <HorizontalCountingCards value={horizontalGuideMode} onChange={setHorizontalGuideMode} />
+                <details className="settings-disclosure" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+                  <summary>詳しい設定（あとから変更できます）</summary>
+                <CreationNumberField name="gridSizeMeters" label="グリッド間隔" min={0.05} step="0.05"
+                  value={gridSizeMeters} onChange={setGridSizeMeters} error={fieldErrors.gridSizeMeters} />
                 <label>
-                  全シーン固定
+                  すべてのシーンで同じ大きさを使う
                   <select
                     value={String(useGlobalStageSize)}
                     onChange={(event) => setUseGlobalStageSize(event.target.value === "true")}
                   >
-                    <option value="true">ON</option>
-                    <option value="false">OFF</option>
+                    <option value="true">同じ大きさ</option>
+                    <option value="false">シーンごとに設定</option>
                   </select>
                 </label>
-                <label>
-                  横幅
-                  <span className="meter-input">
-                    <NumericInput
-                      min={0.1}
-                      step="0.1"
-                      value={widthMeters}
-                      onValueChange={setWidthMeters}
-                    />
-                    m
-                  </span>
-                </label>
-                <label>
-                  縦幅
-                  <span className="meter-input">
-                    <NumericInput
-                      min={0.1}
-                      step="0.1"
-                      value={heightMeters}
-                      onValueChange={setHeightMeters}
-                    />
-                    m
-                  </span>
-                </label>
-                <label>
-                  グリッド間隔
-                  <span className="meter-input">
-                    <NumericInput
-                      min={0.05}
-                      step="0.05"
-                      value={gridSizeMeters}
-                      onValueChange={setGridSizeMeters}
-                    />
-                    m
-                  </span>
-                </label>
-                <label>
-                  横方向の表示
-                  <select
-                    value={horizontalGuideMode}
-                    onChange={(event) =>
-                      setHorizontalGuideMode(event.target.value as HorizontalGuideMode)
-                    }
-                  >
-                    <option value="meters">通常メートル表示</option>
-                    <option value="centerSplit">センター割り表示</option>
-                  </select>
-                </label>
-                <label>
-                  メンバー円の直径
-                  <span className="meter-input">
-                    <NumericInput
-                      min={0.1}
-                      step="0.05"
-                      value={memberDiameterMeters}
-                      onValueChange={setMemberDiameterMeters}
-                    />
-                    m
-                  </span>
-                </label>
+
+                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.1} step="0.05"
+                  value={memberDiameterMeters} onChange={setMemberDiameterMeters} error={fieldErrors.memberDiameterMeters} />
+                </details>
               </section>
             ) : (
               <section className="new-formation-size">
                 <h3>パレード設定</h3>
-                <p className="notice muted">
-                  現在: 全体距離{paradeTotalDistance || 0}m / 横幅
-                  {paradeWidthMeters || 0}m / 1マス={paradeCellSizeMeters || 0}m
-                </p>
-                <label>
-                  全体距離
-                  <span className="meter-input">
-                    <NumericInput
-                      min={1}
-                      step="1"
-                      value={paradeTotalDistance}
-                      onValueChange={setParadeTotalDistance}
-                    />
-                    m
-                  </span>
-                </label>
-                <label>
-                  横幅
-                  <span className="meter-input">
-                    <NumericInput
-                      min={1}
-                      step="0.5"
-                      value={paradeWidthMeters}
-                      onValueChange={setParadeWidthMeters}
-                    />
-                    m
-                  </span>
-                </label>
-                <label>
-                  1マスあたりの距離
-                  <span className="meter-input">
-                    <NumericInput
-                      min={0.1}
-                      step="0.1"
-                      value={paradeCellSizeMeters}
-                      onValueChange={setParadeCellSizeMeters}
-                    />
-                    m
-                  </span>
-                </label>
-                <label>
-                  横方向表示方式
-                  <select
-                    value={paradeHorizontalMeasureMode}
-                    onChange={(event) =>
-                      setParadeHorizontalMeasureMode(
-                        event.target.value as ParadeHorizontalMeasureMode,
-                      )
-                    }
-                  >
-                    <option value="centerSplit">センター割り方式</option>
-                    <option value="normalMeter">通常m表示</option>
-                  </select>
-                </label>
-                <label>
-                  進行方向
-                  <select value="up" disabled>
-                    <option value="up">上方向</option>
-                  </select>
-                </label>
+
+                <CreationNumberField name="paradeTotalDistance" label="全体距離" min={1} step="1"
+                  value={paradeTotalDistance} onChange={setParadeTotalDistance} error={fieldErrors.paradeTotalDistance} />
+                <CreationNumberField name="paradeWidthMeters" label="横幅" min={1} step="0.5"
+                  value={paradeWidthMeters} onChange={setParadeWidthMeters} error={fieldErrors.paradeWidthMeters} />
+                <CreationNumberField name="paradeCellSizeMeters" label="1マスあたりの距離" min={0.1} step="0.1"
+                  value={paradeCellSizeMeters} onChange={setParadeCellSizeMeters} error={fieldErrors.paradeCellSizeMeters} />
+                <HorizontalCountingCards value={toHorizontalCountingMode(paradeHorizontalMeasureMode)} onChange={(value) => setParadeHorizontalMeasureMode(toParadeHorizontalMeasureMode(value))} />
+                <details className="settings-disclosure" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+                  <summary>詳しい設定（あとから変更できます）</summary>
+
                 <label>
                   距離目盛り表示
                   <select
@@ -817,18 +743,9 @@ export const FormationLibrary = ({
                   />
                   10mごとのライン強調
                 </label>
-                <label>
-                  メンバー円の直径
-                  <span className="meter-input">
-                    <NumericInput
-                      min={0.1}
-                      step="0.05"
-                      value={memberDiameterMeters}
-                      onValueChange={setMemberDiameterMeters}
-                    />
-                    m
-                  </span>
-                </label>
+                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.1} step="0.05"
+                  value={memberDiameterMeters} onChange={setMemberDiameterMeters} error={fieldErrors.memberDiameterMeters} />
+                </details>
                 <small>作成後の初期表示はスタート地点です。</small>
               </section>
             )}

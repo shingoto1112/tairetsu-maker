@@ -1,3 +1,4 @@
+import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import type { CSSProperties, Ref } from "react";
 import {
   FormationFrame,
@@ -54,12 +55,6 @@ type PrintMetrics = {
   orientation: PrintOrientation;
   pageUsableHeightMm: number;
   stageWidthMm: number;
-};
-
-type CenterSplitLabel = {
-  key: string;
-  label: string;
-  positionMeters: number;
 };
 
 type AssignmentPrintEntry = {
@@ -163,50 +158,6 @@ const formatMeter = (value: number): string => {
   const rounded = Number(value.toFixed(2));
   const normalized = Object.is(rounded, -0) ? 0 : rounded;
   return normalized > 0 ? `+${normalized}m` : `${normalized}m`;
-};
-
-const formatHorizontalRulerLabel = (
-  tick: number,
-  widthMeters: number,
-  mode: Project["stage"]["horizontalGuideMode"],
-): string => {
-  const centeredMeters = tick - widthMeters / 2;
-  if (mode !== "centerSplit") {
-    return formatMeter(centeredMeters);
-  }
-  if (Math.abs(centeredMeters) < 0.001) {
-    return "";
-  }
-  const absolute = Math.abs(centeredMeters);
-  return Number.isInteger(absolute) ? String(absolute) : String(Number(absolute.toFixed(2)));
-};
-
-const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
-  const safeWidth = Math.max(0, widthMeters);
-  const center = safeWidth / 2;
-  const leftCount = Math.floor(center + 0.001);
-  const rightCount = Math.floor(safeWidth - center + 0.001);
-  const labels: CenterSplitLabel[] = [];
-
-  for (let index = leftCount; index >= 1; index -= 1) {
-    labels.push({
-      key: `left-${index}`,
-      label: String(index),
-      positionMeters: center - index + 0.5,
-    });
-  }
-
-  for (let index = 1; index <= rightCount; index += 1) {
-    labels.push({
-      key: `right-${index}`,
-      label: String(index),
-      positionMeters: center + index - 0.5,
-    });
-  }
-
-  return labels.filter(
-    (item) => item.positionMeters >= 0 && item.positionMeters <= safeWidth,
-  );
 };
 
 const getTickStep = (meters: number): number => {
@@ -853,8 +804,7 @@ const PrintStagePreview = ({
       ? "centerSplit"
       : "meters"
     : project.stage.horizontalGuideMode ?? "meters";
-  const centerSplitLabels = createCenterSplitLabels(commonWidthMeters);
-  const xTicks = buildTicks(commonWidthMeters);
+  const horizontalLabels = createHorizontalRulerLabels(commonWidthMeters, toHorizontalCountingMode(horizontalGuideMode));
   const yTicks = buildTicks(verticalRange.depthMeters);
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
   const totalDepthMeters = verticalRange.depthMeters + gapMeters;
@@ -1202,42 +1152,11 @@ const PrintStagePreview = ({
         <>
           <div className="print-ruler-corner" />
           <div className="print-ruler print-ruler-x">
-            {horizontalGuideMode === "centerSplit"
-              ? centerSplitLabels.map((item) => (
-                  <span
-                    key={`x-center-split-${item.key}`}
-                    style={{
-                      left: metersToPrintCenteredMm(
-                        item.positionMeters,
-                        metrics,
-                        PRINT_RULER_X_LABEL_WIDTH_MM,
-                      ),
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                ))
-              : xTicks.map((tick) => {
-                  const label = formatHorizontalRulerLabel(
-                    tick,
-                    commonWidthMeters,
-                    horizontalGuideMode,
-                  );
-                  return (
-                    <span
-                      key={`x-${tick}`}
-                      style={{
-                        left: metersToPrintCenteredMm(
-                          tick,
-                          metrics,
-                          PRINT_RULER_X_LABEL_WIDTH_MM,
-                        ),
-                      }}
-                    >
-                      {label}
-                    </span>
-                  );
-                })}
+            {horizontalLabels.map((item) => (
+              <span key={`x-${item.key}`} style={{
+                left: metersToPrintCenteredMm(item.positionMeters, metrics, PRINT_RULER_X_LABEL_WIDTH_MM),
+              }}>{item.label}</span>
+            ))}
           </div>
           <div className="print-ruler print-ruler-y print-ruler-y--left">
             {verticalRulerLabels.map((item) => (

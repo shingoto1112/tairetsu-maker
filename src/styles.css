@@ -522,6 +522,14 @@
   --ink: #182233;
   --muted: #66758a;
   --accent: #0d8b78;
+  --stage-border-width: 1px;
+  --stage-grid-line-width: 1px;
+  --stage-center-line-width: 2px;
+  --stage-border-color: #cbd5e1;
+  --stage-ruler-color: #111827;
+  --stage-ruler-font-size: 10px;
+  --stage-grid-color: rgba(100, 116, 139, 0.16);
+  --stage-center-color: rgba(13, 139, 120, 0.35);
   --accent-strong: #087968;
   --danger: #dc2626;
   --warning: #b45309;
@@ -3915,8 +3923,8 @@ h2 {
 }
 
 .meter-ruler {
-  color: #111827;
-  font-size: 10px;
+  color: var(--stage-ruler-color);
+  font-size: var(--stage-ruler-font-size);
   line-height: 1;
   pointer-events: none;
   position: relative;
@@ -3994,7 +4002,7 @@ h2 {
 
 .stage-surface {
   background-color: #ffffff;
-  border: 1px solid #cbd5e1;
+  border: var(--stage-border-width) solid var(--stage-border-color);
   border-radius: 4px;
   max-height: 100%;
   max-width: 100%;
@@ -4017,18 +4025,18 @@ h2 {
 }
 
 .stage-grid-line {
-  background: rgba(100, 116, 139, 0.16);
+  background: var(--stage-grid-color);
   position: absolute;
 }
 
 .stage-grid-line--vertical {
   bottom: 0;
   top: 0;
-  width: 1px;
+  width: var(--stage-grid-line-width);
 }
 
 .stage-grid-line--horizontal {
-  height: 1px;
+  height: var(--stage-grid-line-width);
   left: 0;
   right: 0;
 }
@@ -4038,14 +4046,14 @@ h2 {
 }
 
 .center-line {
-  background: rgba(13, 139, 120, 0.35);
+  background: var(--stage-center-color);
   bottom: 0;
   left: 50%;
   pointer-events: none;
   position: absolute;
   top: 0;
   transform: translateX(-50%);
-  width: 2px;
+  width: var(--stage-center-line-width);
   z-index: 2;
 }
 
@@ -7503,3 +7511,40 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .shared-audio-controls p { margin: 0; line-height: 1.5; }
 .shared-audio-controls .file-picker-inline { white-space: normal; min-height: 44px; justify-content: center; text-align: center; }
 .shared-audio-controls select { max-width: 100%; }
+
+.horizontal-counting { border: 0; padding: 0; margin: 12px 0; min-width: 0; grid-column: 1 / -1; }
+.horizontal-counting legend { font-weight: 700; margin-bottom: 8px; }
+.horizontal-counting__cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.new-formation-dialog .counting-card, .counting-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 2px solid var(--border); border-radius: 10px; cursor: pointer; min-width: 0; }
+.counting-card.is-selected { border-color: var(--accent); }
+.counting-card:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.counting-card__heading { display: flex; align-items: flex-start; gap: 6px; }
+.counting-card__heading input[type="radio"] { width: auto; margin: 3px 0 0; padding: 0; min-height: 0; flex-shrink: 0; }
+.counting-card__heading strong { font-size: 13px; line-height: 1.5; }
+.counting-card__check { margin-left: auto; width: 14px; flex-shrink: 0; font-weight: bold; }
+.counting-card small { font-size: 12px; line-height: 1.5; }
+.counting-diagram { display: block; width: 100%; max-height: 100px; }
+.counting-diagram__stage { fill: white; stroke: var(--stage-border-color); stroke-width: var(--stage-border-width); }
+.counting-diagram__grid { stroke: var(--stage-grid-color); stroke-width: var(--stage-grid-line-width); }
+.counting-diagram__center { stroke: var(--stage-center-color); stroke-width: var(--stage-center-line-width); }
+/* The diagram is scaled down from its 240-unit viewBox, so the label size is in viewBox units (about 10-11px on screen). */
+.counting-diagram text { fill: var(--stage-ruler-color); font-size: 15px; font-weight: 600; font-family: inherit; text-anchor: middle; }
+.counting-diagram__member { fill: var(--accent); stroke: white; stroke-width: 1; }
+.horizontal-counting--compact .horizontal-counting__cards { grid-template-columns: minmax(0, 1fr); }
+.horizontal-counting--compact .counting-diagram { max-height: 75px; }
+.new-formation-dialog .settings-disclosure { margin-top: 12px; }
+.new-formation-dialog .settings-disclosure summary { cursor: pointer; font-weight: 600; padding: 10px 12px; }
+.new-formation-dialog [aria-invalid="true"] { border-color: #b91c1c; }
+.formation-field-error { color: #b91c1c; font-size: 12px; }
+@media (max-width: 480px) { .horizontal-counting__cards { grid-template-columns: minmax(0, 1fr); } }
+
+.new-formation-size > .settings-disclosure { grid-column: 1 / -1; min-width: 0; }
+.new-formation-size > .settings-disclosure[open] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.new-formation-size > .settings-disclosure summary { grid-column: 1 / -1; }
+.creation-number-field { min-width: 0; }
+.creation-number-field > .formation-field-error { display: block; margin-top: 4px; }
+@media (max-width: 480px) {
+  .new-formation-size, .new-formation-size > .settings-disclosure[open] { grid-template-columns: minmax(0, 1fr); }
+}
+
+.stage-settings-panel .panel-sticky-header { background: #ffffff; }

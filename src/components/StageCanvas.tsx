@@ -1,3 +1,4 @@
+import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
 import {
   Camera,
   FlipHorizontal2,
@@ -204,12 +205,6 @@ type SnapGuide = {
   value: number;
 };
 
-type CenterSplitLabel = {
-  key: string;
-  label: string;
-  positionMeters: number;
-};
-
 type MemberDisplayOffset = {
   x: number;
   y: number;
@@ -241,34 +236,6 @@ const createMajorTicks = (lengthMeters: number): number[] => {
     ticks.push(safeLength);
   }
   return ticks;
-};
-
-const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
-  const safeWidth = Math.max(0, widthMeters);
-  const center = safeWidth / 2;
-  const leftCount = Math.floor(center + 0.001);
-  const rightCount = Math.floor(safeWidth - center + 0.001);
-  const labels: CenterSplitLabel[] = [];
-
-  for (let index = leftCount; index >= 1; index -= 1) {
-    labels.push({
-      key: `left-${index}`,
-      label: String(index),
-      positionMeters: center - index + 0.5,
-    });
-  }
-
-  for (let index = 1; index <= rightCount; index += 1) {
-    labels.push({
-      key: `right-${index}`,
-      label: String(index),
-      positionMeters: center + index - 0.5,
-    });
-  }
-
-  return labels.filter(
-    (item) => item.positionMeters >= 0 && item.positionMeters <= safeWidth,
-  );
 };
 
 const oppositeDirection: Record<FrontDirection, FrontDirection> = {
@@ -478,15 +445,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const isDenseProject = project.members.length >= 120;
     const simplifyMemberLabels =
       isDenseProject && (isMemberDragging || isStagePanning);
-    const horizontalTicks = useMemo(
-      () => createMajorTicks(stage.widthMeters),
-      [stage.widthMeters],
-    );
-    const centerSplitLabels = useMemo(
-      () => createCenterSplitLabels(stage.widthMeters),
-      [stage.widthMeters],
-    );
     const horizontalGuideMode = stage.horizontalGuideMode ?? "meters";
+    const horizontalLabels = useMemo(
+      () => createHorizontalRulerLabels(stage.widthMeters, horizontalGuideMode),
+      [stage.widthMeters, horizontalGuideMode],
+    );
     const verticalTicks = useMemo(
       () => createMajorTicks(stage.depthMeters),
       [stage.depthMeters],
@@ -2043,8 +2006,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             <div className="ruler-reference-labels">
               <span>
                 {horizontalGuideMode === "centerSplit"
-                  ? "横: センター割り表示（中心0は空欄）"
-                  : "横: センター0m（左がマイナス / 右がプラス）"}
+                  ? "横: センターから0.5mずらし（センターは空欄）"
+                  : "横: センターから1m刻み（センターは空欄）"}
               </span>
               <span>縦: 最前0m（奥へ行くほどプラス）</span>
             </div>
@@ -2100,35 +2063,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             >
               <div className="ruler-corner" aria-hidden="true" />
               <div className="meter-ruler meter-ruler--horizontal" aria-hidden="true">
-                {horizontalGuideMode === "centerSplit"
-                  ? centerSplitLabels.map((item) => (
-                      <span
-                        key={`center-split-${item.key}`}
-                        className="meter-ruler__tick meter-ruler__tick--label-only"
-                        style={{
-                          left: `${(item.positionMeters / stage.widthMeters) * 100}%`,
-                        }}
-                      >
-                        {item.label}
-                      </span>
-                    ))
-                  : horizontalTicks.map((tick) => (
-                      <span
-                        key={`x-${tick}`}
-                        className="meter-ruler__tick"
-                        style={{ left: `${(tick / stage.widthMeters) * 100}%` }}
-                      >
-                        {coordinateLabel(
-                          "x",
-                          tick,
-                          stage.widthMeters,
-                          stage.depthMeters,
-                          originMode,
-                          frontDirection,
-                          viewerPerspective,
-                        )}
-                      </span>
-                    ))}
+                {horizontalLabels.map((item) => (
+                  <span key={item.key}
+                    className={horizontalGuideMode === "centerSplit" ? "meter-ruler__tick meter-ruler__tick--label-only" : "meter-ruler__tick"}
+                    style={{ left: String((item.positionMeters / stage.widthMeters) * 100) + "%" }}>
+                    {item.label}
+                  </span>
+                ))}
               </div>
               <div className="ruler-corner ruler-corner--right" aria-hidden="true" />
               <div

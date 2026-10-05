@@ -1,3 +1,4 @@
+import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -43,7 +44,6 @@ import {
 } from "../utils/memberLabel";
 import {
   clampParadeObjectTopY,
-  formatSignedMeterLabel,
   getSafeParadeBackwardDistance,
   getSafeParadeCanvasDistance,
   normalizeParadeHorizontalMeasureMode,
@@ -205,12 +205,6 @@ type TouchContextMenuState = {
   timerId: number;
 };
 
-type CenterSplitLabel = {
-  key: string;
-  label: string;
-  positionMeters: number;
-};
-
 type MemberDisplayOffset = {
   x: number;
   y: number;
@@ -315,34 +309,6 @@ const isMeterMultiple = (value: number, intervalMeters: number) => {
     return false;
   }
   return Math.abs(value / intervalMeters - Math.round(value / intervalMeters)) < 0.001;
-};
-
-const createCenterSplitLabels = (widthMeters: number): CenterSplitLabel[] => {
-  const safeWidth = Math.max(0, widthMeters);
-  const center = safeWidth / 2;
-  const leftCount = Math.floor(center + 0.001);
-  const rightCount = Math.floor(safeWidth - center + 0.001);
-  const labels: CenterSplitLabel[] = [];
-
-  for (let index = leftCount; index >= 1; index -= 1) {
-    labels.push({
-      key: `left-${index}`,
-      label: String(index),
-      positionMeters: center - index + 0.5,
-    });
-  }
-
-  for (let index = 1; index <= rightCount; index += 1) {
-    labels.push({
-      key: `right-${index}`,
-      label: String(index),
-      positionMeters: center + index - 0.5,
-    });
-  }
-
-  return labels.filter(
-    (item) => item.positionMeters >= 0 && item.positionMeters <= safeWidth,
-  );
 };
 
 const getObjectState = (
@@ -549,26 +515,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       [backwardDistanceMeters, gridStepMeters, settings.totalDistance],
     );
 
-    const horizontalTicks = useMemo(() => {
-      const ticks: number[] = [];
-      const step = Math.max(0.5, Math.min(1, settings.cellSizeMeters || 1));
-      for (let value = 0; value <= settings.width + 0.001; value += step) {
-        const rounded = roundMeters(value);
-        if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
-          ticks.push(Math.round(rounded));
-        }
-      }
-      return Array.from(new Set(ticks));
-    }, [settings.cellSizeMeters, settings.width]);
-
-    const centerSplitLabels = useMemo(
-      () => createCenterSplitLabels(settings.width),
-      [settings.width],
+    const horizontalLabels = useMemo(
+      () => createHorizontalRulerLabels(settings.width, toHorizontalCountingMode(settings.horizontalMeasureMode)),
+      [settings.width, settings.horizontalMeasureMode],
     );
-
-    const formatHorizontalTick = (xMeters: number) => {
-      return formatSignedMeterLabel(xMeters - settings.width / 2);
-    };
 
     const memberDisplayOffsets = useMemo(() => {
       const clusters = new Map<string, string[]>();
@@ -2341,23 +2291,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               className="parade-horizontal-ruler"
               style={{ width: canvasWidthPx, height: horizontalRulerHeight }}
             >
-              {settings.horizontalMeasureMode === "centerSplit"
-                ? centerSplitLabels.map((item) => (
-                    <span
-                      key={`horizontal-center-${item.key}`}
-                      style={{ left: item.positionMeters * pxPerMeter }}
-                    >
-                      {item.label}
-                    </span>
-                  ))
-                : horizontalTicks.map((meter) => (
-                    <span
-                      key={`horizontal-${meter}`}
-                      style={{ left: meter * pxPerMeter }}
-                    >
-                      {formatHorizontalTick(meter)}
-                    </span>
-                  ))}
+              {horizontalLabels.map((item) => (
+                <span key={item.key} style={{ left: item.positionMeters * pxPerMeter }}>{item.label}</span>
+              ))}
             </div>
             <div className="parade-ruler-spacer" />
             {leftRulerVisible && (
