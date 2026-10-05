@@ -40,10 +40,14 @@
 .collab-banner--auth-required { background: #fff6cc; color: #695712; }.collab-banner--membership-changed { background: #f4ecfb; color: #644079; }
 @media (max-width: 780px) { .collab-home { padding: 14px; }.collab-dialog { max-height: 93dvh; }.collab-dialog-body { padding: 14px 16px; }.collab-heading { align-items: flex-start; }.collab-actions { justify-content: flex-start; } }
 .collab-history-panel h3 { margin-top: 0; }
-.collab-dialog .collab-history-list li { display: block; padding: 16px 0; }
+.collab-dialog .collab-history-list li { display: block; padding: 4px 0; }
+.collab-dialog button.collab-history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; background: transparent; border-color: transparent; overflow-wrap: anywhere; }
+.collab-dialog button.collab-history-row:hover, .collab-dialog button.collab-history-row[aria-expanded="true"] { background: #f1f5f9; }
+.collab-history-description { display: block; color: #546772; font-size: 13px; margin-top: 4px; }
 .collab-history-list time { font-weight: 600; }
 .collab-history-list p { margin: 6px 0 10px; }
-.collab-history-item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.collab-history-item-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 14px 10px; }
+.collab-history-item-actions[hidden] { display: none; }
 .collab-history-item-actions button { flex: 1 1 220px; white-space: normal; text-align: left; }
 .collab-history-confirm { padding: 14px; margin: 14px 0; background: #fff8e9; border: 1px solid #e6c587; border-radius: 12px; }
 .collab-history-confirm h4 { margin: 0; }

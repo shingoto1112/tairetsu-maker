@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import fixture from "../../supabase/tests/fixtures/legacy-export-v1.json";
 import { LegacyCloudImporter, sourceKey } from "./importer";
-import { validateSnapshot, snapshotProject, validateIndependentProject } from "./validation";
-import { validateLegacyPage, legacyFailureMessage, type LegacyListItem } from "./api";
+import { validateSnapshot, snapshotProject, validateIndependentProject, LegacyImportError } from "./validation";
+import { validateLegacyPage, legacyFailureMessage, legacyFailureDetail, type LegacyListItem } from "./api";
 import { enumerateDrafts, draftVariant, rescueDraft } from "./drafts";
 import { MemoryMigrationRepository } from "../storage/testing/MemoryMigrationRepository";
 
@@ -24,6 +24,16 @@ const mutations: [string, (s: any) => void][] = [
   ["危険キー", s => s.resources.push({ ...s.resources[0], resource_key: "__proto__" })],
 ];
 describe("11b strict export contract", () => {
+  it("presents readable errors while retaining diagnostics", () => {
+    for (const [code, detail] of [["INCOMPLETE", "scenes: sceneOrderが参照するsceneが欠けています"], ["INCOMPLETE", "resources: 5種類のresourceが揃っていません"], ["UNSUPPORTED_SCHEMA", "schema_version: 2"], ["INVALID_RESPONSE", "応答JSONが不正です。"], ["EXPORT_UPGRADE_REQUIRED", "migrationを適用してください"]]) {
+      const error = new LegacyImportError(code, detail);
+      expect(legacyFailureMessage(error)).toContain("元のデータはそのままです");
+      expect(legacyFailureMessage(error)).not.toMatch(/sceneOrder|resource|schema|JSON|migration/);
+      expect(legacyFailureDetail(error)).toBe(detail);
+    }
+    expect(legacyFailureDetail(new LegacyImportError("SOURCE_CHANGED", "内容が変わりました。"))).toBeUndefined();
+    expect(legacyFailureMessage({ name: "AbortError" })).toBe("中断しました。再開できます。");
+  });
   it("fixture and zero scenes are complete without defaults", () => {
     const p = snapshotProject(validateSnapshot(fixture, row.projectId), "independent");
     expect(validateIndependentProject(p)).toEqual(p); expect(p.frames[0].notes).toBe("Synthetic notes");
@@ -57,6 +67,9 @@ describe("11b source ledger", () => {
     const api = { list: async () => { throw new Error(); }, export: async (id: string) => { const s = clone(); s.project.id = id; if (id === bad.projectId) s.scenes = []; return s; } };
     const importer = new LegacyCloudImporter(repository, api, "env", "account", async () => null), results: string[] = [];
     await importer.run([bad, row], r => results.push(r.status)); expect(results).toEqual(["recovery", "imported"]);
+    const result = await importer.importOne(bad);
+    expect(result.message).toContain("一部のシーンが欠けている");
+    expect(result.detail).toBe("scenes: sceneOrderが参照するsceneが欠けています");
     expect((await repository.list({ limit: 100 })).items).toHaveLength(1);
   });
   it("replays after edit/delete and isolates changed successful source", async () => {
@@ -110,7 +123,7 @@ describe("11b login-independent draft rescue", () => {
     const candidates = sources.filter(s => s.role === "draft"); expect(candidates).toHaveLength(5);
     expect(candidates.find(s => s.source.endsWith("bad.json"))!.issue).toBe("CORRUPT");
     expect(candidates.find(s => s.source.endsWith("denied.json"))!.issue).toBe("ACCESS_DENIED");
-    expect(candidates.filter(s => s.status === "ok").map(draftVariant).sort()).toEqual(["バックアップ（backup）", "保存途中（pending）", "通常ファイル（primary）"].sort());
+    expect(candidates.filter(s => s.status === "ok").map(draftVariant).sort()).toEqual(["予備の下書き", "保存途中の下書き", "通常の下書き"].sort());
     const repository = new MemoryMigrationRepository(); await repository.initialize();
     for (const s of candidates.filter(s => s.status === "ok")) await rescueDraft(repository, s, async () => null);
     expect((await repository.list({ limit: 100 })).items).toHaveLength(3);

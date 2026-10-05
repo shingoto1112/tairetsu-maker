@@ -68,7 +68,8 @@ try {
   assert(additional.some(chunk => Object.keys(chunk.modules).some(isYjs)), "Probe must actually bundle Yjs");
   assert(!additional.some(chunk => startup.includes(chunk)), "Runtime leaked into startup graph");
   assert(additional.some(chunk => Object.keys(chunk.modules).some(id => /\/collaboration\/provider\.ts$/.test(id.replaceAll("\\", "/")))), "Probe must actually include provider");
-  assert(!probeChunks.some(chunk => Object.keys(chunk.modules).some(id => /\/testing\//.test(id.replaceAll("\\", "/")))), "Test helpers leaked into provider bundle");
+  const leakedHelpers = probeChunks.flatMap(chunk => Object.keys(chunk.modules).filter(id => /\/testing\//.test(id.replaceAll("\\", "/"))));
+  assert.deepEqual(leakedHelpers, [], "Test helpers leaked into provider bundle");
   const additionalSizes = await Promise.all(additional.map(chunk => measure(probeDir, chunk)));
   const dependencies = [...new Set(additional.flatMap(chunk => staticGraph(chunk, probeChunks)))].filter(chunk => !additional.includes(chunk));
   const dependencySizes = await Promise.all(dependencies.map(chunk => measure(probeDir, chunk)));

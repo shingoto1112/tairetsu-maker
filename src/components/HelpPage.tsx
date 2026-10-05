@@ -51,7 +51,7 @@ export default function HelpPage({ onClose }: { onClose: () => void }) {
           </button></h3>
           <div className="help-page-content" id={`${id}-section-${index}`} role="region" aria-labelledby={`${id}-heading-${index}`} hidden={!expanded.has(index)}>
             {section.location && <p className="help-page-location"><strong>場所:</strong> {section.location}</p>}
-            {section.collaboration ? <p>準備中です。</p> : <ul>{section.items.map(item => <li key={item}><HelpText text={item} /></li>)}</ul>}
+            <ul>{section.items.map(item => <li key={item}><HelpText text={item} /></li>)}</ul>
           </div>
         </section>)}
       </div>

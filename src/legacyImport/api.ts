@@ -6,18 +6,27 @@ export type LegacyListItem = { projectId: string; title: string; mode: "stage" |
 export type LegacyPage = { contractVersion: 1; items: LegacyListItem[]; nextCursor: LegacyCursor | null; exportUntil: string };
 export interface LegacyExportApi { list(cursor?: LegacyCursor, signal?: AbortSignal): Promise<LegacyPage>; export(projectId: string, signal?: AbortSignal): Promise<unknown>; }
 export const legacyFailureMessage = (e: unknown): string => {
-  if (e instanceof LegacyImportError) return e.message;
+  if (e instanceof LegacyImportError) {
+    if (e.code === "INCOMPLETE") return e.message === "scenes: sceneOrderが参照するsceneが欠けています"
+      ? "一部のシーンが欠けているため取り込めませんでした。元のデータはそのままです。"
+      : "データの一部が欠けているか、内容を読み取れないため取り込めませんでした。元のデータはそのままです。";
+    if (e.code === "UNSUPPORTED_SCHEMA") return "このデータの形式には対応していないため取り込めませんでした。元のデータはそのままです。";
+    if (["INVALID_RESPONSE", "EXPORT_UPGRADE_REQUIRED"].includes(e.code)) return "旧クラウドから受け取った内容を読み取れませんでした。元のデータはそのままです。時間をおいて再試行してください。";
+    return e.message;
+  }
   if (object(e) && e.name === "AbortError") return "中断しました。再開できます。";
   const code = object(e) ? e.code : null;
   return code === "QUOTA_EXCEEDED" ? "端末の空き容量が不足しています。" : code === "ACCESS_DENIED" ? "保存領域へのアクセスが拒否されました。"
     : code === "CONFLICT" ? "別の画面で処理中です。再試行してください。" : code === "CORRUPT" ? "保存結果または台帳が不正です。この文書の処理を停止しました。"
     : "取得または端末保存に失敗しました。通信と保存領域を確認して再試行してください。";
 };
+/** Preserve diagnostics separately from the message presented to the user. */
+export const legacyFailureDetail = (e: unknown): string | undefined => e instanceof LegacyImportError && e.message !== legacyFailureMessage(e) ? e.message : undefined;
 const errors: Record<string, string> = {
   LEGACY_EXPORT_EXPIRED: "旧クラウドの取り込み期限が終了しました。端末の下書きやZIPは引き続き救出できます。",
   PERMANENT_ACCOUNT_REQUIRED: "旧クラウドで使ったアカウントにログインしてください。ゲストでは取り込めません。",
   LEGACY_PROJECT_UNAVAILABLE: "所有者として取得できない文書です（削除済みの文書を含みます）。",
-  LEGACY_EXPORT_INCOMPLETE: "旧クラウドのresourceが欠けています。管理者に救出を依頼してください。",
+  LEGACY_EXPORT_INCOMPLETE: "旧クラウドのデータの一部が欠けているため取り込めませんでした。元のデータはそのままです。管理者に救出を依頼してください。",
   LEGACY_EXPORT_TOO_LARGE: "旧文書が取り込み上限を超えています。管理者による救出が必要です。",
 };
 /** Bound bytes before JSON allocation; never fetch attachments/URLs from content. */

@@ -4,7 +4,8 @@ import { chromium, expect } from "@playwright/test";
 
 // Real App, isolated browser storage; no shared start/invite/presence UI, no
 // server lifecycle or production connection. Seed a shared repository record.
-const origin = "http://127.0.0.1:5179", project = JSON.parse(await readFile("src/repositories/contract/fixtures/commitProjects.json", "utf8")).stage;
+const origin = process.env.REPOSITORY_TEST_ORIGIN ?? "http://127.0.0.1:5179", project = JSON.parse(await readFile("src/repositories/contract/fixtures/commitProjects.json", "utf8")).stage;
+assert(new URL(origin).protocol === 'http:' && ['127.0.0.1','localhost'].includes(new URL(origin).hostname));
 const browser = await chromium.launch({ headless: true }), context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage(), errors = [], denied = [];
 await context.route("**/*", route => {

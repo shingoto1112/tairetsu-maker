@@ -1,3 +1,4 @@
+import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,9 +15,9 @@ await vite.listen();
 const { createHandler, RpcError } = await loadCollabEdge();
 const backend = new MockCollabBackend(null, RpcError), server = await startMockServer(backend, createHandler, origin);
 const browser = await chromium.launch({ headless: true }), contexts = [], pages = [], errors = [], denied = [], legacy = [], checks = [], shots = [], bounds = [];
-const shotDir = process.platform === 'win32' ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-8b' : path.resolve('.tmp-shots-8b');
+const shotDir = process.env.ROUND12_SHOT_DIR ?? (process.platform === 'win32' ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-8b' : path.resolve('.tmp-shots-8b'));
 const fixture = JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json', 'utf8')).stage;
-const dims = [[744,1133],[1133,744],[1032,1376],[1376,1032]];
+const dims = round12Dimensions;
 const wav = seconds => {
   const n = 8000 * seconds, bytes = Buffer.alloc(44 + n * 2);
   bytes.write('RIFF'); bytes.writeUInt32LE(bytes.length - 8, 4); bytes.write('WAVEfmt ', 8); bytes.writeUInt32LE(16, 16);
@@ -51,7 +52,7 @@ async function capture(page, label) {
     const detail = await status.evaluate(el => { const r=el.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(el);const text=range.getBoundingClientRect();return {label:el.textContent,x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,textRight:text.right,textBottom:text.bottom}; });
     assert(detail.scrollWidth<=detail.clientWidth && detail.right<=width && detail.bottom<=height && detail.textRight<=detail.right+1 && detail.textBottom<=detail.bottom+1, JSON.stringify(detail));
     bounds.push({screen:label,width,height,status:detail});
-    const name=`${label}-${width}x${height}.png`;await page.screenshot({path:path.join(shotDir,name)});shots.push(name);
+    const name=`${label}-${width}x${height}.png`;await checkRound12Layout(page,label,'.toolbar'); await checkRound12Layout(page,`${label}-panel`,'.audio-panel'); await page.screenshot({path:path.join(shotDir,name)});shots.push(name);
   }
 }
 try {

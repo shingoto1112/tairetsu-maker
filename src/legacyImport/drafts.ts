@@ -16,8 +16,8 @@ export const enumerateDrafts = async (readers?: LegacyReaderOptions): Promise<Le
     native: { draftNames: () => native.draftNames(), readText: path => path.startsWith("personal-cloud-drafts/") ? native.readText(path) : Promise.resolve(null) },
   })).filter(s => s.role === "draft" || s.source === "personal-cloud-drafts");
 };
-export const draftVariant = (source: LegacySource): string => source.source.endsWith(".pending.json") ? "保存途中（pending）"
-  : source.source.endsWith(".backup.json") ? "バックアップ（backup）" : source.role === "draft" ? "通常ファイル（primary）" : "下書きフォルダ";
+export const draftVariant = (source: LegacySource): string => source.source.endsWith(".pending.json") ? "保存途中の下書き"
+  : source.source.endsWith(".backup.json") ? "予備の下書き" : source.role === "draft" ? "通常の下書き" : "下書きフォルダ";
 export async function rescueDraft(repository: ImportRepository, source: LegacySource, resolveAudio = deviceAudioResolver(repository), signal?: AbortSignal) {
   signal?.throwIfAborted();
   if (source.status !== "ok" || !source.projects?.[0] || !source.draft) throw new LegacyImportError("UNREADABLE", "この候補は読めません。元ファイルはそのまま残っています。");

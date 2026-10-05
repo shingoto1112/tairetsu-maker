@@ -12,6 +12,7 @@ export default function CollaborationHistoryPanel({ controller, members, creator
   const ui = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const status = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [expanded, setExpanded] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ item: CheckpointSummary; action: 'restore' | 'delete' } | null>(null);
   const confirmation = useRef<HTMLDivElement>(null);
   const result = useRef<HTMLDivElement>(null);
@@ -20,6 +21,7 @@ export default function CollaborationHistoryPanel({ controller, members, creator
   const run = (fn: () => Promise<void>) => void controller.run(fn);
   const name = (item: CheckpointSummary) => item.automatic ? '自動' : members.find(m => m.userId === item.requestedBy)?.displayName ?? '以前の参加者';
   const when = (item: CheckpointSummary) => new Date(item.serverAt).toLocaleString('ja-JP');
+  const description = (item: CheckpointSummary) => item.automatic ? reasons[item.reason] : `${name(item)} · ${reasons[item.reason]}`;
   const phase = ui.restore?.phase;
   return <section className="collab-history-panel" aria-label="控え（履歴）" aria-busy={ui.busy}>
     <h3>控え（履歴）</h3>
@@ -46,7 +48,7 @@ export default function CollaborationHistoryPanel({ controller, members, creator
     </div>
     {confirm && <div className="collab-history-confirm" role="group" aria-label={confirm.action === 'restore' ? '共有中の隊列表を戻す確認' : '控えを削除する確認'} ref={confirmation} tabIndex={-1}>
       <h4>{confirm.action === 'restore' ? '共有中の隊列表をこの状態に戻しますか？' : 'この控えを削除しますか？'}</h4>
-      <p>{when(confirm.item)} · {name(confirm.item)} · {reasons[confirm.item.reason]}</p>
+      <p>{when(confirm.item)} · {description(confirm.item)}</p>
       {confirm.action === 'restore' ? <><p>全員の画面に反映されます。戻す直前の状態も自動で控えに残ります。その後に他の人が同時に編集すると、完全には一致しない場合があります。</p>
         <button className="collab-primary" type="button" disabled={ui.busy} onClick={() => run(() => controller.copy(confirm.item.id, open))}>新しい隊列表として開く</button>
       </> : <p>この控えから開いたり戻したりできなくなります。戻す処理で使われている控えは削除できません。</p>}
@@ -58,8 +60,12 @@ export default function CollaborationHistoryPanel({ controller, members, creator
     {expanded && <>
       {ui.loaded && !ui.items.length && <p>控えはまだありません。</p>}
       <ul className="collab-history-list">{ui.items.map(item => <li key={item.id} data-checkpoint-id={item.id}>
-        <div><time dateTime={item.serverAt}>{when(item)}</time><p>{name(item)} · {reasons[item.reason]}</p></div>
-        <div className="collab-history-item-actions">
+        <button className="collab-history-row" type="button" aria-expanded={selectedId === item.id} aria-controls={`checkpoint-actions-${item.id}`}
+          onClick={() => setSelectedId(previous => previous === item.id ? null : item.id)}>
+          <span><time dateTime={item.serverAt}>{when(item)}</time><span className="collab-history-description">{description(item)}</span></span>
+          <span aria-hidden="true">{selectedId === item.id ? '▴' : '▾'}</span>
+        </button>
+        <div className="collab-history-item-actions" id={`checkpoint-actions-${item.id}`} hidden={selectedId !== item.id}>
           <button className="collab-primary" type="button" disabled={ui.busy} onClick={() => run(() => controller.copy(item.id, open))}>新しい隊列表として開く</button>
           <button type="button" disabled={ui.busy || ui.retry} onClick={() => setConfirm({ item, action: 'restore' })}>共有中の隊列表をこの状態に戻す</button>
           {creator && <button type="button" disabled={ui.busy} onClick={() => setConfirm({ item, action: 'delete' })}>控えを削除</button>}

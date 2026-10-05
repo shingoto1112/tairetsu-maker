@@ -722,6 +722,10 @@ h2 {
   margin-bottom: 6px !important;
 }
 
+@media (max-width: 480px) {
+  .library-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+}
+
 .library-notice,
 .library-empty {
   background: #f0fdfa;

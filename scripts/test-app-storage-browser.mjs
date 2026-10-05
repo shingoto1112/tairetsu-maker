@@ -2,6 +2,7 @@ import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
+import { syntheticZipFixtures } from './testing/synthetic-zip-fixtures.mjs';
 
 // Uses only isolated contexts and an already-running local dev server.
 const origin = process.env.REPOSITORY_TEST_ORIGIN ?? "http://127.0.0.1:5179";
@@ -80,15 +81,15 @@ try {
     await expect(page.locator(".formation-card--saved")).toHaveCount(1);
     await page.reload(); await ready(page); await expect(page.locator(".formation-card--saved")).toHaveCount(1);
   });
-  await fresh("d approved real ZIP imports (contents never logged)", async page => {
+  await fresh("d synthetic ZIP imports (stage/parade)", async page => {
     await page.goto(origin); await ready(page);
-    for (const file of ["C:/Users/shing/Downloads/sailing_kobe_隊列名前入り.zip", "C:/Users/shing/Downloads/2025どまつりパレード.zip"]) {
+    for (const file of await syntheticZipFixtures(page)) {
       await page.locator('input[type="file"][accept*=".zip"]').setInputFiles(file);
       await expect(page.getByRole("textbox",{name:"隊列表名",exact:true})).toBeVisible({timeout:60000});
       await back(page);
     }
     await page.reload(); await ready(page); await expect(page.locator(".formation-card--saved")).toHaveCount(2);
-    // Both cards open after reloading; suppress real titles from output.
+    // Both anonymous cards open after reloading.
     for (let i=0; i<2; i++) { await page.locator(".formation-card--saved").nth(i).click(); await expect(page.getByRole("textbox",{name:"隊列表名",exact:true})).toBeVisible(); await back(page); }
   });
   await fresh("e quota retains edits + ZIP escape + retry", async page => {

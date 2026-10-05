@@ -21,8 +21,13 @@ describe("HelpPage", () => {
       await user.click(button);
       expect(button.getAttribute("aria-expanded")).toBe("true");
       const region = within(dialog).getByRole("region", { name: section.title });
-      if (section.collaboration) expect(region.textContent).toBe("準備中です。");
-      else expect(within(region).getAllByRole("listitem")).toHaveLength(section.items.length);
+      expect(within(region).getAllByRole("listitem")).toHaveLength(section.items.length);
+      if (section.collaboration) {
+        expect(section.items).toHaveLength(11);
+        expect(region.textContent).toContain("共有先への送信と確認が済んでいます");
+        expect(region.textContent).toContain("日時の行を押すと操作が出ます");
+        expect(region.textContent).not.toContain("準備中");
+      }
       if (section.location) expect(within(region).getByText("場所:")).toBeTruthy();
     }
     const first = within(dialog).getByRole("button", { name: sections[0].title });

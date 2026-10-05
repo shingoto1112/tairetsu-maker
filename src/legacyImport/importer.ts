@@ -4,11 +4,11 @@ import { RepositoryError } from "../repositories/types";
 import { canonicalJson, migrationIdentity, migrationStates, type MigrationRepository, type MigrationItem } from "../repositories/migrationTypes";
 import { requestDigest } from "../repositories/indexedDbFormat";
 import { LegacyImportError, validateSnapshot, snapshotProject } from "./validation";
-import { legacyFailureMessage, type LegacyExportApi, type LegacyListItem } from "./api";
+import { legacyFailureMessage, legacyFailureDetail, type LegacyExportApi, type LegacyListItem } from "./api";
 
 export type ImportRepository = ProjectRepository & MigrationRepository;
 export type ImportResult = { sourceId: string; title: string; status: "imported" | "already" | "recovery" | "failed";
-  message: string; targetId?: string; recoveryId?: string; canRescueChanged?: boolean };
+  message: string; detail?: string; targetId?: string; recoveryId?: string; canRescueChanged?: boolean };
 export type ImportIdentity = { environment: string; accountId: string; sourceId: string; kind: string };
 export const sourceKey = async (identity: ImportIdentity) => `legacy-rescue-v1-${await requestDigest(canonicalJson(identity))}`;
 const abort = (signal?: AbortSignal) => { signal?.throwIfAborted(); };
@@ -109,15 +109,15 @@ export class LegacyCloudImporter {
           : `端末に独立コピーを保存しました。${project.audio && !mapped ? "音源情報は保持しました。本体は音源タブで選び直してください。" : ""}` };
     } catch (e) {
       if (signal?.aborted) throw e;
-      const message = legacyFailureMessage(e);
+      const message = legacyFailureMessage(e), detail = legacyFailureDetail(e);
       if (raw !== undefined && ((e instanceof LegacyImportError && ["INCOMPLETE", "UNSUPPORTED_SCHEMA", "SOURCE_CHANGED"].includes(e.code)) ||
         (e instanceof RepositoryError && e.code === "CORRUPT"))) {
-        try { const recoveryId = await quarantine(this.repository, identity, raw, message);
-          return { sourceId: row.projectId, title: row.title, status: "recovery", message, recoveryId,
+        try { const recoveryId = await quarantine(this.repository, identity, raw, detail ?? message);
+          return { sourceId: row.projectId, title: row.title, status: "recovery", message, detail, recoveryId,
             canRescueChanged: e instanceof LegacyImportError && e.code === "SOURCE_CHANGED" }; }
-        catch (saveError) { return { sourceId: row.projectId, title: row.title, status: "failed", message: `${message} 隔離保存にも失敗しました。${legacyFailureMessage(saveError)}` }; }
+        catch (saveError) { return { sourceId: row.projectId, title: row.title, status: "failed", detail, message: `${message} 救出用の保存にも失敗しました。${legacyFailureMessage(saveError)}` }; }
       }
-      return { sourceId: row.projectId, title: row.title, status: "failed", message };
+      return { sourceId: row.projectId, title: row.title, status: "failed", message, detail };
     }
   }
   async run(rows: LegacyListItem[], onResult: (result: ImportResult, completed: number) => void, signal?: AbortSignal) {

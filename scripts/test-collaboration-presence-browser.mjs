@@ -1,3 +1,4 @@
+import { checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -17,7 +18,7 @@ const backend = new MockCollabBackend(null, RpcError);
 const people = [...actors, ...Array.from({ length: 3 }, randomUUID)], generations = [...memberships, ...Array.from({ length: 3 }, randomUUID)];
 people.forEach((id, i) => { backend.users.set(id, { id, is_anonymous: false }); backend.members.set(id, generations[i]); backend.details.set(id, { displayName: `参加者${i + 1}`, isGuest: false }); });
 const relay = mockEphemeralRelay(backend, documentId), server = await startMockServer(backend, createHandler, origin, { ephemeral: relay.handler });
-const shotDir = process.env.PRESENCE_SHOT_DIR ?? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-10';
+const shotDir = process.env.ROUND12_SHOT_DIR ?? process.env.PRESENCE_SHOT_DIR ?? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-10';
 const browser = await chromium.launch({ headless: true }), contexts = [], pages = [], errors = [], denied = [], shots = [], checks = [], measurements = {};
 const base = JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json', 'utf8')).stage;
 const ids = Array.from({ length: 146 }, randomUUID);
@@ -200,7 +201,7 @@ try {
       assert(bounds.every(r => r.hit && r.left >= 0 && r.right <= width && r.top >= 0 && r.bottom <= height), `${mode} ${width}x${height}: ${JSON.stringify(bounds)}`);
       assert(await pages[1].locator('.remote-avatar').count() > 0); assert(await pages[1].locator('.remote-scene-presence').count() > 0);
       assert(await pages[1].locator('.remote-scene-presence').first().evaluate(el => { const r = el.getBoundingClientRect(), card = el.closest('.scene-thumbnail-card').getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.left >= card.left && r.right <= card.right && r.top >= card.top && r.bottom <= card.bottom; }), `${mode} ${width}x${height}: clipped scene presence mark`);
-      const filename = `${mode}-${width}x${height}.png`; await pages[1].screenshot({ path: path.join(shotDir, filename) }); shots.push(filename);
+      const filename = `${mode}-${width}x${height}.png`; await checkRound12Layout(pages[1],`${mode}-presence`,'.toolbar'); await pages[1].screenshot({ path: path.join(shotDir, filename) }); shots.push(filename);
     }
     if (mode === 'parade') {
       await pages[1].setViewportSize({ width: 1376, height: 1032 });

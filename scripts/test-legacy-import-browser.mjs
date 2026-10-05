@@ -1,3 +1,4 @@
+import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
@@ -12,8 +13,8 @@ const {createHandler,RpcError}=await loadCollabEdge();
 const backend=new MockCollabBackend(null,RpcError,{fresh:true}),server=await startMockServer(backend,createHandler,origin);
 const browser=await chromium.launch({headless:true}), context=await browser.newContext({viewport:{width:744,height:1133}}), errors=[], requests=[], shots=[];
 const fixture=JSON.parse(await readFile('supabase/tests/fixtures/legacy-export-v1.json','utf8'));
-const shotDir=process.platform==='win32'?'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-11b':path.join(process.cwd(),'.tmp-shots-11b');
-const dims=[[744,1133],[1133,744],[1032,1376],[1376,1032],[390,844]];
+const shotDir = process.env.ROUND12_SHOT_DIR ?? (process.platform==='win32'?'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-11b':path.join(process.cwd(),'.tmp-shots-11b'));
+const dims = round12Dimensions;
 await context.route('**/*',route=>{
  const url=new URL(route.request().url()); if(![origin,server.url].includes(url.origin) && !['data:','blob:'].includes(url.protocol))return route.abort();
  if(url.pathname.startsWith('/rest/'))requests.push(url.pathname);
@@ -30,7 +31,7 @@ await context.route('**/*',route=>{
 await context.addInitScript(config=>{window.__sharedSessionMock=config;},{url:server.url,anonKey:'synthetic-public'});
 const capture=async(page,label)=>{await mkdir(shotDir,{recursive:true});for(const[width,height]of dims){await page.setViewportSize({width,height});
  await page.waitForTimeout(80);const dialog=page.getByRole('dialog');const bounds=await dialog.boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=width+1);assert(bounds.y>=0&&bounds.y+bounds.height<=height+1);
- assert(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'dialog has no horizontal overflow');const file=`${label}-${width}x${height}.png`;await page.screenshot({path:path.join(shotDir,file)});shots.push(file);}};
+ assert(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'dialog has no horizontal overflow');const file=`${label}-${width}x${height}.png`;await checkRound12Layout(page,label,'.collab-dialog, .legacy-rescue-dialog'); await page.screenshot({path:path.join(shotDir,file)});shots.push(file);}};
 try {
  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);
  const checks=await page.evaluate(async()=>{const{runLegacyIndexedDbSuite}=await import('/src/legacyImport/testing/browserSuite.ts');return runLegacyIndexedDbSuite();});
@@ -50,7 +51,10 @@ try {
  await dialog.getByRole('button',{name:'選んだ隊列表を取り込む / 再開',exact:true}).click();await dialog.getByRole('button',{name:'中断',exact:true}).click();release();
  await expect(dialog.getByText('中断しました。再開できます。',{exact:true})).toBeVisible();
  await expect(dialog.getByText(/まで）/)).toBeVisible();await dialog.getByRole('button',{name:'選んだ隊列表を取り込む / 再開',exact:true}).click();await expect(dialog.getByText('保存しました',{exact:true})).toBeVisible();checks.push('UI interruption/resume and hidden candidates stay unselected');
- await expect(dialog.getByText('救出候補・隔離',{exact:true})).toBeVisible();await capture(page,'import');
+ await expect(dialog.getByText('取り込めなかった隊列表',{exact:true})).toBeVisible();await expect(dialog.getByText('一部のシーンが欠けているため取り込めませんでした。元のデータはそのままです。',{exact:true})).toBeVisible();
+ const detail=dialog.getByText('scenes: sceneOrderが参照するsceneが欠けています',{exact:true});await expect(detail).toBeHidden();
+ await dialog.getByText('詳しい理由',{exact:true}).click();await expect(detail).toBeVisible();await dialog.getByText('詳しい理由',{exact:true}).click();
+ await capture(page,'import');
  await page.route('**/rest/v1/rpc/legacy_export_project',route=>{
   if(route.request().postDataJSON().p_project_id!==fixture.project.id)return route.fallback();
   const raw=structuredClone(fixture);raw.project.title='別内容の試験用旧隊列表';return route.fulfill({json:raw});
@@ -67,9 +71,12 @@ try {
     draftNames:async()=>['old.json','old.pending.json','old.backup.json','bad.json','denied.json'],
     readText:async path=>{if(path.includes('denied'))throw Object.assign(new Error(),{name:'NotAllowedError'});return path.includes('bad')?'{':path.startsWith('personal-cloud-drafts/')?raw:null;}}};
  });
- await page.getByRole('button',{name:'この端末に残っている旧クラウドの下書き',exact:true}).last().click();await dialog.getByRole('button',{name:'端末の下書きを調べる',exact:true}).click();
+ await page.getByRole('button',{name:'この端末に残っている旧クラウドの下書き',exact:true}).last().click();await expect(dialog.getByRole('heading',{name:'旧クラウドの下書き',exact:true})).toBeVisible();await dialog.getByRole('button',{name:'端末の下書きを調べる',exact:true}).click();
  await expect(dialog.getByText('読取りが拒否されました。',{exact:true})).toBeVisible();await expect(dialog.getByText('破損しているため読めません。',{exact:true})).toBeVisible();
- await dialog.getByRole('button',{name:'この下書きを独立コピーとして救出',exact:true}).first().click();await expect(dialog.getByText('独立コピーを保存しました。元ファイルは残っています。',{exact:true})).toBeVisible();await capture(page,'draft');
+ await dialog.getByRole('button',{name:'この下書きを独立コピーとして救出',exact:true}).first().click();await expect(dialog.getByText('独立コピーを保存しました。元ファイルは残っています。',{exact:true})).toBeVisible();for(const label of ['通常の下書き','保存途中の下書き','予備の下書き'])await expect(dialog.getByText(label,{exact:false}).last()).toBeVisible();
+ await expect(dialog.getByText('old.pending.json',{exact:true})).toBeHidden();
+ await dialog.locator('li').filter({hasText:'保存途中の下書き'}).locator('summary').click();await expect(dialog.getByText('old.pending.json',{exact:true})).toBeVisible();
+ await capture(page,'draft');
  await page.evaluate(()=>{delete window.__legacyDraftReaders;});
  await page.getByRole('button',{name:'救出画面を閉じる',exact:true}).click();
  // Expired backend denial is shown, without disabling local draft rescue.

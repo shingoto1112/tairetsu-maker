@@ -1,3 +1,4 @@
+import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,8 +15,8 @@ await vite.listen();
 const { createHandler, RpcError } = await loadCollabEdge();
 const backend = new MockCollabBackend(null,RpcError,{fresh:true}), server = await startMockServer(backend,createHandler,origin);
 const browser = await chromium.launch({headless:true}), contexts=[], pages=[], errors=[], denied=[], legacy=[], checks=[], shots=[], bounds=[];
-const shotDir = process.platform === 'win32' ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-8a2' : path.join(process.cwd(),'.tmp-shots-8a2');
-const dims=[[744,1133],[1133,744],[1032,1376],[1376,1032]];
+const shotDir = process.env.ROUND12_SHOT_DIR ?? (process.platform === 'win32' ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-8a2' : path.join(process.cwd(),'.tmp-shots-8a2'));
+const dims = round12Dimensions;
 const title = page => page.getByRole('textbox',{name:'隊列表名',exact:true});
 const dialog = page => page.getByRole('dialog',{name:'みんなで編集',exact:true});
 const close = page => page.getByRole('button',{name:'共同編集画面を閉じる',exact:true}).click();
@@ -52,6 +53,10 @@ async function capture(page,label,toolbar=false) {
   await mkdir(shotDir,{recursive:true});
   for (const [width,height] of dims) {
     await page.setViewportSize({width,height}); await page.waitForTimeout(100);
+    if(label==='home-v2') {
+      await checkRound12Layout(page,'home-header','.library-header');
+      if(width<=480)assert(await page.locator('.library-header h1').evaluate(el=>el.offsetHeight<=parseFloat(getComputedStyle(el).lineHeight)+1),'home title remains one line');
+    }
     if(toolbar){
       const controls=await page.locator('.toolbar').getByRole('button').evaluateAll(elements=>elements.filter(el=>['隊列一覧へ戻る','共有と書き出し'].includes(el.getAttribute('aria-label'))).map(el=>{const r=el.getBoundingClientRect();return {label:el.getAttribute('aria-label'),x:r.x,y:r.y,right:r.right,bottom:r.bottom};}));
       // Toolbar itself may use header rather than .toolbar: exact controls below.
@@ -62,7 +67,7 @@ async function capture(page,label,toolbar=false) {
       assert.equal(await page.locator('.collab-status-pill').getAttribute('data-tone'),label.includes('removed')||label.includes('ended')?'warning':'success');
       bounds.push({label,width,height,controls:rects,toolbar:bar,status});void controls;
     }
-    const name=`${label}-${width}x${height}.png`;await page.screenshot({path:path.join(shotDir,name)});shots.push(name);
+    const name=`${label}-${width}x${height}.png`;await checkRound12Layout(page,label,toolbar ? '.toolbar' : '.collab-home, .collab-dialog'); await page.screenshot({path:path.join(shotDir,name)});shots.push(name);
   }
 }
 try {

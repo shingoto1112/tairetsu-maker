@@ -1,6 +1,7 @@
 import { chromium, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { syntheticZipFixtures } from './testing/synthetic-zip-fixtures.mjs';
 
 // Local server only. ZIPs are read through the app, never logged/written.
 const origin = process.env.REPOSITORY_TEST_ORIGIN ?? 'http://127.0.0.1:5179';
@@ -54,9 +55,11 @@ const visibleTarget = async kind => page.evaluate(kind => {
 },kind);
 const emptyPoint = async selector => page.evaluate(selector => {
   const el=document.querySelector(selector),r=el.getBoundingClientRect();
+  const interactive='button,input,select,[role="button"],.member-token,.parade-member,.stage-object,.parade-object';
   for(const fx of [.5,.8,.2,.95])for(const fy of [.35,.5,.65]){
-    const x=r.left+r.width*fx,y=r.top+r.height*fy,target=document.elementFromPoint(x,y);
-    if(el.contains(target)&&!target.closest('button,input,select,[role="button"]'))return {x,y};
+    const x=r.left+r.width*fx,y=r.top+r.height*fy;
+    // Chromium adjusts touch hits to nearby targets. Leave a finger-sized margin.
+    if([-12,0,12].every(dx=>[-12,0,12].every(dy=>{const target=document.elementFromPoint(x+dx,y+dy);return el.contains(target)&&!target.closest(interactive);})))return {x,y};
   }throw new Error('No empty gesture area');
 },selector);
 const pinch = async (selector,factor) => {
@@ -77,7 +80,9 @@ const pinch = async (selector,factor) => {
   await wait(35);const before=await center('[data-pinch-probe]');
   const diagnostics=()=>page.evaluate(()=>{
     const v=document.querySelector('.parade-viewport'),s=document.querySelector('.parade-stage'),p=document.querySelector('.parade-pinch-preview');
-    return v?{scroll:v.scrollTop,width:s.offsetWidth,height:s.offsetHeight,transform:p.style.transform}:null;
+    if(v)return{scroll:v.scrollTop,width:s.offsetWidth,height:s.offsetHeight,transform:p.style.transform};
+    const viewport=document.querySelector('.stage-fit-area'),stage=document.querySelector('.stage-surface'),preview=document.querySelector('.stage-pinch-preview');
+    const box=stage.getBoundingClientRect();return{scroll:{x:viewport.scrollLeft,y:viewport.scrollTop},viewport:{width:viewport.clientWidth,height:viewport.clientHeight},width:stage.offsetWidth,height:stage.offsetHeight,rect:{x:box.x,y:box.y,width:box.width,height:box.height},transform:preview.style.transform};
   });
   const beforeView=await diagnostics();
   await send('touchEnd',[]); await wait(80);const after=await center('[data-pinch-probe]');
@@ -106,14 +111,14 @@ const verifySceneView = async kind => {
 try {
   await fs.mkdir(output,{recursive:true});
   await page.goto(url);await expect(page.getByRole('button',{name:'追加',exact:false})).toBeEnabled();
-  phase='approved ZIP imports';
-  for(const file of ['C:/Users/shing/Downloads/sailing_kobe_隊列名前入り.zip','C:/Users/shing/Downloads/2025どまつりパレード.zip']){
+  phase='synthetic ZIP imports';
+  for(const file of await syntheticZipFixtures(page)){
     await page.locator('input[type="file"][accept*=".zip"]').setInputFiles(file);
     await page.locator('.toolbar').waitFor({timeout:60000});
     await page.getByRole('button',{name:'隊列一覧へ戻る',exact:true}).click();
     await expect(page.getByRole('button',{name:'追加',exact:false})).toBeEnabled();
   }
-  // Rename only the isolated browser's copies. No real data/name is emitted.
+  // Rename only the isolated browser's generated copies.
   const imported=await page.evaluate(async()=>{
     const {IndexedDbProjectRepository}=await import('/src/repositories/indexedDbRepository.ts');
     const r=new IndexedDbProjectRepository();await r.initialize(); const list=await r.list({limit:100});const meta=[];
@@ -157,12 +162,15 @@ try {
       await checkShell();
       let pan=null;
       if(kind==='parade'){
+        // An anonymous fixture starts at 0; an upward-scroll assertion needs room
+        // above it. Start inside the route and exclude draggable targets.
+        await page.locator('.parade-viewport').evaluate(v=>{v.scrollTop=Math.max(200,v.scrollTop);});await wait(100);
         const p=await emptyPoint('.parade-viewport');
         const read=()=>page.locator('.parade-viewport').evaluate(e=>e.scrollTop);
-        const initial=await read();await send('touchStart',[[1,p.x,p.y]]);
+        const initial=await read();assert(initial>72,'pan starts away from route edge');await send('touchStart',[[1,p.x,p.y]]);
         for(let i=1;i<=6;i++){await send('touchMove',[[1,p.x,p.y+i*12]]);await wait(20);}
         const release=await read();await send('touchEnd',[]);await wait(150);const coast=await read();await wait(2500);const stopped=await read();await wait(150);
-        assert.ok(release<initial,'one-finger scroll');assert.ok(coast<release,'inertia advances');assert.equal(await read(),stopped);
+        assert.ok(release<initial,`one-finger scroll ${JSON.stringify({initial,release,coast,stopped,p})}`);assert.ok(coast<release,'inertia advances');assert.equal(await read(),stopped);
         pan={moved:initial-release,coast:release-coast,stopped};
       }
       results.push({kind,size:`${width}x${height}`,titleWidth:s.titleWidth,pinch:metrics,shrink,pan});

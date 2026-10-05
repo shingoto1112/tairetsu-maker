@@ -965,9 +965,20 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (mode === "restore") { clearTransientZoom(); stagePinchZoomRef.current = null; return; }
       if (pinch.finishing) return;
       pinch.finishing = true;
-      pinch.continuousZoom = clampStageZoom(pinch.continuousZoom);
+      // Commit the preview's exact scale. Rounding only on release moves distant
+      // labels by several pixels even when the gesture midpoint stays fixed.
+      pinch.continuousZoom = Math.min(STAGE_ZOOM_MAX, Math.max(STAGE_ZOOM_MIN, pinch.continuousZoom));
       stageHorizontalViewInitializedRef.current = true;
       drawTransientPinch(pinch);
+      // Re-measure once at release, including the rendered border, rulers and
+      // clamped scroll. The committed layout must preserve this visible anchor.
+      const previewRect = stageRef.current?.getBoundingClientRect();
+      if (previewRect && previewRect.width > 0 && previewRect.height > 0) {
+        pinch.geometry.anchorMeters = {
+          x: (pinch.lastAnchor.clientX - previewRect.left) / previewRect.width * pinch.geometry.stageMeters.width,
+          y: (pinch.lastAnchor.clientY - previewRect.top) / previewRect.height * pinch.geometry.stageMeters.height,
+        };
+      }
       setStageZoom(pinch.continuousZoom);
       setIsStagePinching(false);
     }

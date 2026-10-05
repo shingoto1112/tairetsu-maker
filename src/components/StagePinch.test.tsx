@@ -66,7 +66,7 @@ describe("stage view-only pinch", () => {
     expect([...view.container.querySelectorAll(".member-token__label")]).toEqual(labels);
     expect(set).not.toHaveBeenCalled();
     fireEvent.pointerUp(viewport,touch(2,557)); fireEvent.pointerUp(viewport,touch(1,300)); flush();
-    expect(set).toHaveBeenCalledTimes(1); expect(p.viewStates!.get("one")?.zoom).toBe(1.29);
+    expect(set).toHaveBeenCalledTimes(1); expect(p.viewStates!.get("one")?.zoom).toBeCloseTo(1.285, 8);
     expect(preview.style.transform).toBe(""); expect(p.project).toEqual(before);
     expect(p.onBeginProjectEdit).not.toHaveBeenCalled(); expect(p.onSaveFrame).not.toHaveBeenCalled();
   });

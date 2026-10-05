@@ -1,3 +1,4 @@
+import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -7,10 +8,10 @@ import { MockCollabBackend, startMockServer, actors, memberships, documentId } f
 import { loadCollabEdge } from './testing/load-collab-edge.mjs';
 
 // Disposable browsers, anonymous fixtures and loopback mock only. No .env.
-const shotDir = process.env.HELP_SHOT_DIR ?? (process.platform === 'win32'
+const shotDir = process.env.ROUND12_SHOT_DIR ?? process.env.HELP_SHOT_DIR ?? (process.platform === 'win32'
   ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-help'
   : path.resolve('output/playwright/shots-help'));
-const dimensions = [[744,1133],[1133,744],[1032,1376],[1376,1032],[390,844]];
+const dimensions = round12Dimensions;
 const shots = [], bounds = [], errors = [], denied = [], checks = [];
 const browser = await chromium.launch({ headless: true });
 const fixture = JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json', 'utf8')).stage;
@@ -19,6 +20,10 @@ async function capture(page, label, status = false) {
   for (const [width,height] of dimensions) {
     await page.setViewportSize({width,height});
     await page.waitForTimeout(100);
+    if (label === 'help-v2-collaboration') await page.locator('.help-page-body').evaluate(body => {
+      const section = [...body.querySelectorAll('.help-page-section')].find(el => el.textContent.includes('みんなで同時に編集する（共同編集）'));
+      body.scrollTop += section.getBoundingClientRect().top - body.getBoundingClientRect().top;
+    });
     const selector = status ? '.collab-status-pill' : '.help-page';
     const geometry = await page.locator(selector).evaluate(element => {
       const box = element.getBoundingClientRect();
@@ -42,7 +47,13 @@ async function capture(page, label, status = false) {
       await expect(page.getByRole('button',{name:'使い方を閉じる',exact:true})).toBeInViewport();
     }
     const file = `${label}-${width}x${height}.png`;
-    await page.screenshot({path:path.join(shotDir,file)}); shots.push(file);
+    await checkRound12Layout(page,label,status ? '.toolbar' : '.help-page'); await page.screenshot({path:path.join(shotDir,file)}); shots.push(file);
+    if (label === 'help-v2-collaboration') {
+      await page.locator('.help-page-body').evaluate(body => { body.scrollTop = body.scrollHeight; });
+      await checkRound12Layout(page,'help-v2-collaboration-end','.help-page');
+      const endFile=`help-v2-collaboration-end-${width}x${height}.png`;
+      await page.screenshot({path:path.join(shotDir,endFile)}); shots.push(endFile);
+    }
     bounds.push({label,width,height,...geometry});
   }
 }
@@ -110,7 +121,7 @@ async function run(enabled) {
       await expect(heading).toHaveAttribute('aria-expanded','true');
       const body = page.locator(`[id="${await heading.getAttribute('aria-controls')}"]`);
       await expect(body).toBeVisible();
-      if ((await heading.textContent()).includes('共同編集')) await expect(body).toHaveText('準備中です。');
+      if ((await heading.textContent()).includes('共同編集')) { await expect(body.locator('li')).toHaveCount(11); await expect(body).toContainText('共有先への送信と確認が済んでいます'); await expect(body).not.toContainText('準備中'); }
       await heading.click(); await expect(body).toBeHidden();
     }
     await dialog.getByRole('button',{name:'困ったとき',exact:true}).click();
@@ -131,7 +142,7 @@ async function run(enabled) {
     await menuFooter.getByRole('button',{name:'使い方',exact:true}).click(); await expect(dialog).toBeVisible();
     if (enabled) {
       await dialog.getByRole('button',{name:'みんなで同時に編集する（共同編集）',exact:true}).click();
-      await capture(page,'help-v2-preparing');
+      await capture(page,'help-v2-collaboration');
     }
     await page.getByRole('button',{name:'使い方を閉じる',exact:true}).click(); await expect(dialog).toHaveCount(0);
     await expect(page.getByRole('button',{name:'メニューを開く',exact:true})).toBeFocused();
