@@ -49,6 +49,8 @@
 | 保存 11 | `52b6047` | 反復計測と改善（開く p95 1094→981ms 等）、旧書き込み処理の整理、依存監査 |
 | 依存 | `0abe913` | 互換範囲の更新で audit の high 4件・実行時2件を解消（残り dev moderate 3件） |
 | 本番準備 | `a5dcfb0` | Edge 配備の手動 workflow（ユーザー決定: GitHub の自動処理、CAPTCHA は最初は入れない）。手順は workspace の artifacts/production-apply-plan.md |
+| 本番切替（サーバー） | `98ec1d6` | 2026-10-05 実施。SQL 3本の適用と確認、Edge 3関数の配備（タグ `edge-deploy-20261005-1`、すべて ACTIVE）と許可 origin の登録、Realtime の公開アクセス無効化、Confirm email オフ、匿名ログイン オン。未ログインの確認で旧方式の公開チャンネル・変更通知・表の読み取りは拒否、新方式の private topic も未ログインは拒否。旧クラウドの取り込み期限は 2026-11-04 16:48（日本時間）。Web 版（main）と TestFlight は新方式 OFF のまま（未反映） |
+| 起動時の読み込み | `ae7bb1f` | 保存準備中に届いたファイル（LINE からの「このアプリで開く」等）の読み込みが「保存できませんでした」になる不具合を修正。読み込み・通常操作は準備完了を待ち、音源 GC は保存が先行していればスキップ、IndexedDB の書き込みはロック取得後に接続を取得。試験 `scripts/test-startup-storage-browser.mjs`。調査記録 [STARTUP_STORAGE_RACE.md](STARTUP_STORAGE_RACE.md)。iPad（Swift）は macOS の XCTest・実機で未確認 |
 
 本番適用で利用者にお願いする操作（DB バックアップ、SQL 適用、Edge 配備、許可 origin、Realtime の公開アクセス無効化、匿名ログイン有効化（旧 API 停止の後）、Confirm email オフ、CAPTCHA（公開ゲスト募集の前））は [COLLABORATION_LIFECYCLE.md](COLLABORATION_LIFECYCLE.md) の「本番適用時に利用者が行うこと」。
 
