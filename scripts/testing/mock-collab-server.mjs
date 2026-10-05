@@ -99,8 +99,8 @@ export class MockCollabBackend {
     if (name === 'collab_v2_create_invite') {
       this.requireMember(args.p_actor);
       if (this.invites.size >= 256 || [...this.invites.values()].filter(i => i.issuedAt > Date.now() - 3600000).length >= 32) this.fail('54000', 'INVITE_RATE_LIMIT');
-      const token = randomBytes(32).toString('hex'), inviteId = randomUUID(), expiresAt = Date.now() + 7 * 86400000;
-      this.invites.set(createHash('sha256').update(token).digest('hex'), { inviteId, issuedBy: args.p_actor, issuedAt: Date.now(), expiresAt, multiUse: true, uses: new Map() });
+      const token = randomBytes(32).toString('hex'), inviteId = randomUUID(), issuedAt = Date.now(), expiresAt = issuedAt + 7 * 86400000;
+      this.invites.set(createHash('sha256').update(token).digest('hex'), { inviteId, issuedBy: args.p_actor, issuedAt, expiresAt, multiUse: true, uses: new Map() });
       return { inviteId, token, expiresAt: new Date(expiresAt).toISOString() };
     }
     if (name === 'collab_v2_revoke_invite') {
