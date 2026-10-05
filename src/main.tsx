@@ -7,17 +7,12 @@ import { installGlobalDiagnosticCapture } from "./utils/diagnostics";
 import "./styles.css";
 import { getAppFeatureFlags } from "./platform/runtime";
 import { invitationOrigins } from "./config/collaborationLinks";
-import { rememberInvitation } from "./storage/invitationMemory";
 
 async function mount() {
 // Strip the fragment before App effects, diagnostics and StrictMode rendering.
-if (getAppFeatureFlags().collaborationV2 && new URLSearchParams(location.hash.slice(1)).has("invite")) {
-  const { takeInvitationLink } = await import("./collaboration/invitations");
-  try { rememberInvitation(takeInvitationLink(invitationOrigins)); }
-  catch {
-    const clean = new URL(location.href); clean.hash = "";
-    history.replaceState(history.state, "", clean.href); rememberInvitation("", true);
-  }
+if (getAppFeatureFlags().collaborationV2) {
+  const { installInvitationRouting } = await import("./collaboration/invitationRouting");
+  installInvitationRouting(invitationOrigins);
 }
 document.documentElement.dataset.appRuntime = getAppRuntime();
 installGlobalDiagnosticCapture();

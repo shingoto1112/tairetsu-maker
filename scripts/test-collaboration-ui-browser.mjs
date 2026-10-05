@@ -79,9 +79,34 @@ try {
   await expect(a.locator('.collab-status-pill')).toHaveText('同期済み');assert.equal((await a.locator('.app-top-region').boundingBox()).height,topBeforeSharing.height,'shared status adds no top-region row');
   await home(a);await expect(a.locator('.formation-card__badge').getByText('クラウド保存',{exact:true})).toBeVisible();
   await a.getByRole('button',{name:'共同編集画面試験を開く',exact:true}).click();await expect(title(a)).toHaveValue('共同編集画面試験');
-  await manage(a);const link=await invite(a);await close(a);
+  await manage(a);const link=await invite(a);
+  await a.getByRole('button',{name:'リンクをコピー',exact:true}).click();
+  await expect(a.getByRole('button',{name:'コピーしました ✓',exact:true})).toBeVisible();
+  await expect(a.locator('.collab-issued [role="status"]')).toHaveText('リンクをコピーしました。');
+  await close(a);
   const beforeJoin=backend.managementCalls.filter(n=>n==='collab_v2_join').length;
+  // Address-bar fragment navigation must preserve the mounted editor and edits.
+  const editedTitle='招待受付中の編集内容';await title(a).fill(editedTitle);
+  const mountsBefore=await a.evaluate(()=>performance.timeOrigin);
+  await a.evaluate(value=>{location.hash=new URL(value).hash;},link);
+  await expect(a.getByRole('dialog',{name:'招待されています'})).toBeVisible();
+  assert.equal(new URL(a.url()).hash,'');assert.equal(await a.evaluate(()=>performance.timeOrigin),mountsBefore);
+  await expect(title(a)).toHaveValue(editedTitle);
+  assert.equal(backend.managementCalls.filter(n=>n==='collab_v2_join').length,beforeJoin);
+  await close(a);await title(a).fill('共同編集画面試験');await a.locator('.toolbar-save-button').click();
   const b=await newBrowser(link);await expect(b.getByRole('dialog',{name:'招待されています'})).toBeVisible();assert.equal(new URL(b.url()).hash,'');assert.equal(backend.managementCalls.filter(n=>n==='collab_v2_join').length,beforeJoin);
+  await b.getByLabel('招待リンク',{exact:true}).fill('');
+  await b.evaluate(value=>navigator.clipboard.writeText(`隊列表に参加してください　${value}。`),link);
+  await b.getByRole('button',{name:'クリップボードから貼り付け',exact:true}).click();
+  await expect(b.getByLabel('招待リンク',{exact:true})).toHaveValue(`隊列表に参加してください　${link}。`);
+  await b.evaluate(()=>{window.originalClipboardWrite=navigator.clipboard.writeText.bind(navigator.clipboard);navigator.clipboard.writeText=()=>Promise.reject(new Error('denied'));});
+  await b.getByRole('button',{name:'リンクをコピー',exact:true}).click();
+  const fallback=b.getByLabel('iPadアプリに貼り付ける招待リンク',{exact:true});
+  await expect(fallback).toBeFocused();
+  assert(await fallback.evaluate(el=>el.selectionStart===0&&el.selectionEnd===el.value.length));
+  await expect(b.locator('.collab-issued [role="status"]')).toContainText('コピーできませんでした。');
+  await b.evaluate(()=>{navigator.clipboard.writeText=window.originalClipboardWrite;});
+  checks.push('clipboard success feedback, failed copy selection, body-text paste, same-tab hash receipt preserves editor without automatic join');
   await b.evaluate(async()=>{
     const {IndexedDbProjectRepository}=await import('/src/repositories/indexedDbRepository.ts');
     const {RepositoryError}=await import('/src/repositories/types.ts');

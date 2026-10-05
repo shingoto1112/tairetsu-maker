@@ -4,11 +4,13 @@ import { chromium } from '@playwright/test';
 import { MockCollabBackend, startMockServer, actors, documentId } from './testing/mock-collab-server.mjs';
 import { loadCollabEdge } from './testing/load-collab-edge.mjs';
 
-const origin = 'http://127.0.0.1:5179', inert = `${origin}/__lifecycle_test__`;
+const origin = process.env.REPOSITORY_TEST_ORIGIN ?? 'http://127.0.0.1:5179', inert = `${origin}/__lifecycle_test__`;
+const testUrl = new URL(origin);
+assert(testUrl.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(testUrl.hostname));
 const { createHandler, RpcError } = await loadCollabEdge();
 const browser = await chromium.launch({ headless: true }), checks = [];
 async function scenario(accountDeletion) {
-  const backend = new MockCollabBackend(null, RpcError, { fresh: true }), server = await startMockServer(backend, createHandler);
+  const backend = new MockCollabBackend(null, RpcError, { fresh: true }), server = await startMockServer(backend, createHandler, origin);
   const contexts = [], pages = [], dbs = [0,1].map(() => `lifecycle-test-${randomUUID()}`), errors = [];
   const load = async (i, localId) => {
     await pages[i].goto(inert);

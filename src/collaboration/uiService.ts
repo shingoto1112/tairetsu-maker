@@ -53,6 +53,8 @@ export class CollaborationUiService {
   private auth: ReturnType<typeof createParticipantAuth> | null = null;
   private ready: Promise<void> | null = null;
   private afterLogin: "manage" | null = null;
+  private linkRevision = 0;
+  private receivedInvitation = readInvitation();
   constructor(private options: () => CollaborationUiOptions) {
     const invitation = readInvitation();
     this.state = { screen: invitation ? "invite" : null, busy: false, error: invitation?.invalid ? messages.INVALID_INVITE_LINK : null,
@@ -82,19 +84,37 @@ export class CollaborationUiService {
   }
   async run(action: () => Promise<void>) {
     if (this.state.busy) return;
+    this.linkRevision++;
     this.patch({ busy: true, error: null, notice: null });
     try { await this.initialize(); await action(); }
     catch (error) { this.patch({ error: collaborationUiError(error) }); }
     finally { this.patch({ busy: false }); }
   }
-  close() { if (!this.state.busy) this.patch({ screen: null, error: null }); }
-  account() { this.patch({ screen: "account", error: null }); }
+  close() { if (!this.state.busy) { this.linkRevision++; this.patch({ screen: null, error: null }); } }
+  account() { this.linkRevision++; this.patch({ screen: "account", error: null }); }
   invitation(link?: string) {
     if (this.state.busy) return;
-    if (link !== undefined) { this.fixed = null; rememberInvitation(link); }
+    this.linkRevision++;
+    if (link !== undefined) { this.fixed = null; rememberInvitation(link); this.receivedInvitation = readInvitation(); }
     this.patch({ screen: "invite", ...(link !== undefined ? { link } : {}), error: null });
   }
-  setLink(link: string) { if (!this.state.busy && !this.fixed) this.patch({ link }); }
+  receiveInvitation(value: { link: string; invalid?: boolean }) {
+    if (value === this.receivedInvitation) return true;
+    if (this.state.busy || this.fixed) return false;
+    this.receivedInvitation = value;
+    this.linkRevision++;
+    this.patch({ screen: "invite", link: value.link, error: value.invalid ? messages.INVALID_INVITE_LINK : null });
+    return true;
+  }
+  setLink(link: string) { if (!this.state.busy && !this.fixed) { this.linkRevision++; this.patch({ link }); } }
+  async paste(readText: () => Promise<string>): Promise<void> {
+    if (this.state.busy || this.fixed) return;
+    const revision = ++this.linkRevision;
+    let link: string;
+    try { link = await readText(); } // Start in the click's user activation, outside run().
+    catch (error) { if (revision === this.linkRevision && this.state.screen === "invite") throw error; return; }
+    if (revision === this.linkRevision && this.state.screen === "invite") this.setLink(link);
+  }
   async refresh(more = false) {
     const epoch = cloudAuthEpoch();
     if (this.auth?.state().status !== "signed-in") { this.patch({ documents: [], cursor: null }); return; }

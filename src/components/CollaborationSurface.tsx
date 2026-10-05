@@ -7,6 +7,8 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { sessionTone } from "../storage/sharedSessionState";
 import "./collaboration.css";
 import CollaborationHistoryPanel from './CollaborationHistoryPanel';
+import InvitationLinkTools from './InvitationLinkTools';
+import { readInvitation, subscribeInvitation } from '../storage/invitationMemory';
 
 type Props = { bridge: CollaborationUiBridge; view: "library" | "editor"; localId?: string; attached?: boolean };
 export default function CollaborationSurface(props: Props) {
@@ -16,6 +18,11 @@ export default function CollaborationSurface(props: Props) {
 }
 function Surface({ service, view, localId, attached }: Props & { service: CollaborationUiService }) {
   const ui = useSyncExternalStore(service.subscribe, service.getSnapshot);
+  const invitation = useSyncExternalStore(subscribeInvitation, readInvitation);
+  const received = useRef<ReturnType<typeof readInvitation>>(null);
+  useEffect(() => {
+    if (invitation && invitation !== received.current && service.receiveInvitation(invitation)) received.current = invitation;
+  }, [invitation, service, ui.busy, ui.screen, ui.link]);
   const initialized = useRef(false);
   useEffect(() => {
     const release = subscribeCloudAuth(() => service.authChanged());
@@ -30,22 +37,24 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
   const [register, setRegister] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const focus = useModalFocus(dialogRef, !!ui.screen);
   const signed = ui.auth.status === "signed-in" ? ui.auth : null;
   const run = (fn: () => Promise<void>) => void service.run(fn);
-  const copy = (link: string) => run(async () => {
-    try { await navigator.clipboard.writeText(link); setCopyNotice("リンクをコピーしました。"); }
-    catch { throw new Error("コピーできませんでした。リンクの入力欄を長押ししてコピーしてください。"); }
-  });
+  const paste = () => {
+    setPasteNotice(null);
+    void service.paste(() => navigator.clipboard.readText()).catch(() => {
+      setPasteNotice("入力欄を長押し（PC は Ctrl+V）して貼り付けてください");
+    });
+  };
   const share = (link: string) => run(async () => {
     const { Share } = await import("@capacitor/share");
     try { await Share.share({ title: "隊列メーカーの招待", text: "隊列表に参加してください", url: link }); }
     catch { throw new Error("共有シートを開けませんでした。リンクをコピーして共有してください。"); }
   });
   useEffect(() => {
-    if (!ui.screen) { setPassword(""); setDeleting(false); setConfirmDelete(false); setCopyNotice(null); }
+    if (!ui.screen) { setPassword(""); setDeleting(false); setConfirmDelete(false); setPasteNotice(null); }
     if (!ui.screen) return;
     const listener = (event: KeyboardEvent) => { if (event.key === "Escape") service.close(); };
     window.addEventListener("keydown", listener); return () => window.removeEventListener("keydown", listener);
@@ -58,10 +67,8 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
   const localDocuments = new Set(service.optionsNow.summaries().filter(summary => signed && summary.sharing?.accountId === signed.userId).map(summary => summary.sharing!.documentId));
   const missingDocuments = ui.documents.filter(document => !localDocuments.has(document.documentId));
   const localCount = ui.documents.length - missingDocuments.length;
-  const linkTools = (link: string) => <div className="collab-actions">
-    <button type="button" disabled={ui.busy} onClick={() => copy(link)}>リンクをコピー</button>
-    {service.optionsNow.platform === "ipad" && <button type="button" disabled={ui.busy} onClick={() => share(link)}>共有シートを開く</button>}
-  </div>;
+  const linkTools = (link: string, label: string) => <InvitationLinkTools link={link} label={label} disabled={ui.busy}
+    share={service.optionsNow.platform === "ipad" ? () => share(link) : undefined} />;
   return <>
     {view === "library" && <section className="collab-home" aria-label="アカウントとクラウドの隊列表" aria-busy={ui.busy || ui.auth.status === "restoring"}>
       <div className="collab-heading"><h2>クラウドの隊列表</h2>
@@ -92,7 +99,6 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
           <button type="button" disabled={ui.busy} aria-label="共同編集画面を閉じる" onClick={() => service.close()}>閉じる</button></header>
         <div className="collab-dialog-body">
           {ui.error && <p className="collab-error" role="alert">{ui.error}</p>}{ui.notice && <p role="status">{ui.notice}</p>}
-          {copyNotice && <p role="status">{copyNotice}</p>}
           {ui.screen === "manage" && <>
             {!isShared ? <><p>クラウドに保存して別の端末でも開けます。一人だけでも使えます。</p>
               <p>共有を始めるには恒久アカウントでログインしてください。</p>
@@ -106,7 +112,7 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
                   open={(record, message) => service.openHistoryCopy(record, message)} />}
                 <section><h3>招待リンク</h3><p>1人につき1リンク。24時間以内に1回だけ参加できます。</p>
                   <button type="button" disabled={ui.busy} onClick={() => run(() => service.invite())}>招待リンクを作成</button>
-                  {ui.issued && <div className="collab-issued"><label>作成した招待リンク<input aria-label="作成した招待リンク" readOnly value={ui.issued.link} /></label>{linkTools(ui.issued.link)}</div>}
+                  {ui.issued && linkTools(ui.issued.link, "作成した招待リンク")}
                   <ul>{ui.invites.map(invite => <li key={invite.inviteId}><span>期限：{new Date(invite.expiresAt).toLocaleString("ja-JP")} · {{ active: "未使用", used: "使用済み", expired: "期限切れ", revoked: "取り消し済み" }[invite.status]}</span>
                     {invite.status === "active" && <button type="button" disabled={ui.busy} onClick={() => run(() => service.revoke(invite.inviteId))}>招待を取り消す</button>}</li>)}</ul>
                 </section>
@@ -128,13 +134,14 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
           {ui.screen === "invite" && <>
             <p>表示名を入力し、「参加する」を押すまで招待は使用しません。</p>
             <label>招待リンク<input type="text" value={ui.link} disabled={ui.busy || service.saveRetry} onChange={event => service.setLink(event.target.value)} placeholder="招待リンクをここに貼り付け" autoComplete="off" /></label>
-            <button type="button" disabled={ui.busy || service.saveRetry} onClick={() => run(async () => service.setLink(await navigator.clipboard.readText()))}>クリップボードから貼り付け</button>
+            <button type="button" disabled={ui.busy || service.saveRetry} onClick={paste}>クリップボードから貼り付け</button>
+            {pasteNotice && <p role="status">{pasteNotice}</p>}
             <p className="collab-muted">貼り付けボタンが使えない場合は、入力欄を長押しして貼り付けてください。</p>
             <label>参加する表示名<input value={name} maxLength={80} disabled={ui.busy || service.saveRetry} onChange={event => setName(event.target.value)} /></label>
             {!signed && <p>{service.optionsNow.platform === "ipad" ? "ログイン後、この招待の参加画面に戻ります。アプリを再起動した場合はリンクを貼り付け直してください。" : "ゲストとして参加します。ブラウザのデータを消すと入り直しになります。"}</p>}
             <button className="collab-primary" type="button" disabled={ui.busy || !ui.link || !name.trim()} onClick={() => run(() => service.join(name))}>
               {service.saveRetry ? "保存を再試行して開く" : service.optionsNow.platform === "ipad" && !signed ? "ログインして参加する" : "参加する"}</button>
-            {service.optionsNow.platform === "web" && ui.link && <section><h3>iPadアプリで参加する場合</h3><p>アプリで参加するにはリンクをコピーしてアプリに貼り付けてください。アプリではアカウントでログインします。</p>{linkTools(ui.link)}</section>}
+            {service.optionsNow.platform === "web" && ui.link && <section><h3>iPadアプリで参加する場合</h3><p>アプリで参加するにはリンクをコピーしてアプリに貼り付けてください。アプリではアカウントでログインします。</p>{linkTools(ui.link, "iPadアプリに貼り付ける招待リンク")}</section>}
           </>}
           {ui.screen === "account" && <>
             {signed && !signed.isGuest ? <><p>{signed.displayName || "アカウント"} · {readCloudAuthSession()?.user.email}</p>

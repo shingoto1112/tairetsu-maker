@@ -1,6 +1,14 @@
 import { TransportError } from "./transport";
 
 const tokenPattern = /^[0-9a-f]{64}$/;
+export const invitationInputLimit = 2000;
+/** Only whitespace delimits URLs. Strip this fixed set of prose punctuation. */
+export function extractInvitationLink(input: string): string {
+  if (input.length > invitationInputLimit) throw new TransportError("validation", "INVALID_INVITE_LINK");
+  const urls = input.match(/https?:\/\/[^\s]+/gi) ?? [];
+  if (urls.length > 1) throw new TransportError("validation", "INVALID_INVITE_LINK");
+  return urls.length === 1 ? urls[0].replace(/[。、．，.,)）\]」』】!?！？]+$/u, "") : input.trim();
+}
 export function displayName(value: string): string {
   const name = value.trim();
   if (!name || [...name].length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(name))
@@ -10,11 +18,11 @@ export function displayName(value: string): string {
 /** Tokens never enter query/path parameters, analytics or unauthenticated RPCs. */
 export function invitationToken(link: string, allowedOrigins: readonly string[]): string {
   try {
-    const url = new URL(link.trim());
+    const url = new URL(extractInvitationLink(link));
     const params = new URLSearchParams(url.hash.slice(1));
     const token = params.get("invite");
     if (!["https:", "http:"].includes(url.protocol) || url.username || url.password ||
-      !allowedOrigins.includes(url.origin) || url.search || params.size !== 1 || !token || !tokenPattern.test(token)) throw new Error();
+      !allowedOrigins.includes(url.origin) || url.search || Array.from(params.entries()).length !== 1 || !token || !tokenPattern.test(token)) throw new Error();
     return token;
   } catch { throw new TransportError("validation", "INVALID_INVITE_LINK"); }
 }
