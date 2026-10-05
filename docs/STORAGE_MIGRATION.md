@@ -1,5 +1,25 @@
 # 保存方式 第4回: 古いデータの引っ越し
 
+## 第11回-2の追記（現行の旧クラウド・下書き救出）
+
+下記第4回の記録は部品実装時の履歴。現在の通常bootstrapは本人draftを扱わない。
+11bでは[旧クラウド停止・取り込み](./LEGACY_CLOUD_SHUTDOWN.md#11b実装2026-10-05)の通り、
+V2欄の明示操作でowner文書を独立した端末コピーにする。下書きはログイン不要で利用者が個別に選ぶ。
+primary/pendingの時刻比較による自動採用や本人所属の推定は行わない。元ファイルは削除しない。
+
+既存MigrationRepositoryの原子的create-only処理を別namespace/batchで再利用。
+環境＋account＋source＋種別がキー、digestは別保持、target IDは固定。written台帳で確定を証明し、
+再実行で編集・削除を戻さない。sourceのdigest違いは自動追加しない。
+provenanceは既存`sources:string[]`内のJSON文字列で、台帳schema・TS/Swift型・bridge・backup形式に追加フィールドはない。
+不正exportの隔離JSONはobjectの`legacyExport`に保持して、既存nativeのbackup/音源GC object検証と整合させる。
+原文を補完してProjectとして採用せず、旧bootstrapの復元候補にも混ぜない。
+DB initialize/upgradeで本文・台帳の全件検証や補完を行わない。破損は対象読取り時に個別報告する。
+通常ProjectRecord.sync/collaborationはnull、V2 attachment/outboxは作らない。
+旧draft writerは撤去、`legacyReaders.ts`のread-only readerを救出用に残す。
+native実ファイル、低容量/再起動、既存47 XCTestとbackup復元の最終確認は第12回のmacOS/iPad項目。
+
+## 第4回時点の記録
+
 App未接続。旧localStorage・iPadミラー・本人下書き・音源・ZIP・Project型・クラウド・本番SQLには書き込まない。旧データを削除しない。編集担当はCodexのみ。commit / push / install / workflow実行なし。
 
 ## 変更ファイル

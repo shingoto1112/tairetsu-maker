@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { migration, shutdownMigration } from '../check-collab-v2.mjs';
+import { migration, shutdownMigration, rescueListingMigration } from '../check-collab-v2.mjs';
 
 const tables = ['projects','project_members','project_resources','scenes','edit_locks',
   'snapshots','audit_logs','project_invites','scene_cell_versions','user_contacts','profiles'];
 const fixture = JSON.parse(readFileSync('supabase/tests/fixtures/legacy-export-v1.json','utf8'));
 const shutdown = readFileSync(shutdownMigration,'utf8');
 const foundation = readFileSync(migration,'utf8');
+const rescueListing = readFileSync(rescueListingMigration,'utf8');
 const q = value => `'${String(value).replaceAll("'","''")}'`;
 const uid = n => `11000000-0000-0000-0001-${String(n).padStart(12,'0')}`;
 
@@ -106,6 +107,10 @@ export async function runLegacyShutdownSqlSuite({ run, concurrent, foundationAft
   if (foundationAfterShutdown) {
     run(foundation); run(foundation); assertStopped(); beforeV2=v2Acl();
   }
+  run(rescueListing);
+  run(rescueListing);
+  assertStopped();
+  assert.equal(scalar('row_to_json(s)::text from legacy_cloud_private.shutdown_settings s'),settings,'11b rerun retains cutover/deadline');
   run(`insert into auth.users(id,email,is_anonymous) values(${q(uid(13))},null,true)`);
   assert.equal(scalar(`count(*) from public.profiles where user_id=${q(uid(13))}`),'0','v2 signup no longer creates legacy profiles');
   const id = fixture.project.id;
@@ -123,8 +128,13 @@ export async function runLegacyShutdownSqlSuite({ run, concurrent, foundationAft
   deny(1,`select public.legacy_export_project('${'f'.repeat(8)}-ffff-ffff-ffff-ffffffffffff')`,'LEGACY_PROJECT_UNAVAILABLE');
   assert.deepEqual(json(asUser(3,'select public.legacy_list_owned_projects()')).items,[]);
   assert.deepEqual(json(asUser(1,'select public.legacy_list_owned_projects()')),{
-    contractVersion:1,items:[{projectId:id,title:fixture.project.title,mode:'stage',schemaVersion:1,createdAt:fixture.project.created_at}],nextCursor:null
+    contractVersion:1,items:[{projectId:id,title:fixture.project.title,mode:'stage',schemaVersion:1,createdAt:fixture.project.created_at,hidden:false}],nextCursor:null,
+    exportUntil:JSON.parse(settings).export_until
   });
+  run(`update public.project_members set hidden_at=now() where project_id=${q(id)} and user_id=${q(uid(1))}`);
+  assert.equal(json(asUser(1,'select public.legacy_list_owned_projects()')).items[0].hidden,true,'hidden owner remains a separate rescue candidate');
+  assert.deepEqual(exported(),fixture,'hidden marker does not enter document body');
+  run(`update public.project_members set hidden_at=null where project_id=${q(id)} and user_id=${q(uid(1))}`);
   for (const args of ['null','0','51',`1,null,${q(id)}`,"1,'infinity',null",`1,'infinity',${q(id)}`])
     deny(1,`select public.legacy_list_owned_projects(${args})`,'INVALID_ARGUMENT');
   const secondId='11000000-0000-0000-0000-000000000002';
@@ -252,7 +262,7 @@ export async function runLegacyShutdownSqlSuite({ run, concurrent, foundationAft
     assert.equal(scalar(`count(*) from public.${t} where ${c}=${q(uid(4))}`),'0');
   deny(4,`select public.legacy_export_project(${q(id)})`,'PERMANENT_ACCOUNT_REQUIRED');
   assert.equal(deletion(4,"'DELETE_MY_ACCOUNT'").reason,'user_not_found');
-  run(foundation); assertStopped(); run(shutdown); assertStopped();
+  run(foundation); assertStopped(); run(shutdown); assertStopped(); run(rescueListing); assertStopped();
   assert.deepEqual(v2Acl(),beforeV2,'reruns preserve v2 definitions/table and column ACLs');
   assert.equal(json(asUser(1,`select public.collab_v2_access_status(${q(v2id)})`)).status,'active');
   console.log(`PASS: 11a ${foundationAfterShutdown ? 'old → shutdown → v2' : 'old → v2 → shutdown'}, reruns, effective ACLs, snapshot/export fixture, deadlines, account cascade, old/v2 topics`);

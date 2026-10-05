@@ -1,6 +1,10 @@
 import type { CloudConfig } from "./config";
-import type { CloudAccountDeleteResult } from "./api";
-import { CloudApiError } from "./api";
+import { CloudApiError } from "./errors";
+
+export type CloudAccountDeleteResult = {
+  deleted_project_count: number; transferred_project_count: number;
+  reason: string; success: boolean;
+};
 
 /** Shared Auth lifecycle RPC, independent of either document API version. */
 export async function deleteCurrentAccount(config: CloudConfig, accessToken: string): Promise<CloudAccountDeleteResult> {

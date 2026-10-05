@@ -6,11 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 export const migration = 'supabase/migrations/20261004000000_collab_v2_foundation.sql';
 export const shutdownMigration = 'supabase/migrations/20261005000000_legacy_cloud_shutdown.sql';
+export const rescueListingMigration = 'supabase/migrations/20261005001000_legacy_rescue_listing.sql';
 export function preflight() {
   process.chdir(fileURLToPath(new URL('../', import.meta.url)));
   const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort();
   assert.equal(files.filter(f => f < '20261004').length, 11, 'Exactly 11 legacy migrations');
-  assert.deepEqual(files.filter(f => f >= '20261004'), [migration.split('/').at(-1), shutdownMigration.split('/').at(-1)], 'v2 foundation plus independent 11a shutdown');
+  assert.deepEqual(files.filter(f => f >= '20261004'), [migration.split('/').at(-1), shutdownMigration.split('/').at(-1), rescueListingMigration.split('/').at(-1)], 'v2 foundation, shutdown and additive rescue-list metadata');
+  const listing = readFileSync(rescueListingMigration, 'utf8');
+  assert.match(listing, /require_export_account\(\)/); assert.match(listing, /m\.role='owner'/);
+  assert.match(listing, /m\.hidden_at is not null as hidden/); assert.match(listing, /'exportUntil'/);
+  assert.match(listing, /p\.deleted_at is null/); assert.match(listing, /set search_path = ''/);
+  assert(!/\b(?:update|delete from|insert into|drop|alter table)\b/i.test(listing), '11b does not mutate legacy data');
   const sql = readFileSync(migration, 'utf8');
   assert.match(sql, /\bbegin;/i); assert.match(sql, /commit;\s*$/i);
   assert(!/\b(?:alter|drop|insert into|update|delete from)\s+(?:table\s+)?public\.(?!collab_v2_)/i.test(sql), 'No legacy table mutations');

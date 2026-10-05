@@ -1,40 +1,8 @@
 import type { AudioSelection } from "../platform/audioStorage";
-import {
-  ChangeEvent,
-  FormEvent,
-  KeyboardEvent,
-  MouseEvent,
-  lazy,
-  Suspense,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import {
-  CircleHelp,
-  Cloud,
-  CloudUpload,
-  Copy,
-  Download,
-  Edit3,
-  EyeOff,
-  ExternalLink,
-  Folder,
-  LogIn,
-  LogOut,
-  MoreHorizontal,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Upload,
-  UserRoundCog,
-  Users,
-  X,
-} from "lucide-react";
+import { ChangeEvent, FormEvent, KeyboardEvent, MouseEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
-import type { CloudProjectSummary } from "../cloud";
+
 import type {
   FormationMode,
   HorizontalGuideMode,
@@ -42,11 +10,9 @@ import type {
   ParadeRulerPosition,
   ParadeSettings,
 } from "../types";
-const CloudCollaborationHelpModal = lazy(() => import("./CloudCollaborationHelpModal").then(module => ({ default: module.CloudCollaborationHelpModal })));
+
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
-import type { CloudAccountDeleteResponse } from "./CloudAccountModal";
-const CloudAccountModal = lazy(() => import("./CloudAccountModal").then(module => ({ default: module.CloudAccountModal })));
-import type { CloudPasswordChangeResponse } from "./CloudPasswordModal";
+
 import { LegalLinks } from "./LegalLinks";
 import { NumericInput } from "./NumericInput";
 
@@ -73,42 +39,7 @@ type FormationLibraryProps = {
   renderProjectBadge?: (summary: ProjectSummary) => ReactNode;
   onJoinInvitation?: () => void;
   onImportProjectFiles?: (files: File[]) => void | Promise<void>;
-  cloud?: {
-    configured: boolean;
-    error?: string | null;
-    isBusy: boolean;
-    personalMode?: boolean;
-    legacyEnabled?: boolean;
-    pendingInviteToken?: string | null;
-    projects: CloudProjectSummary[];
-    userDisplayName?: string;
-    userEmail?: string;
-    onAcceptInvite: (inviteToken: string) => void | Promise<void>;
-    onChangePassword: (
-      currentPassword: string,
-      newPassword: string,
-    ) => Promise<CloudPasswordChangeResponse>;
-    onCopyCloudProjectToLocal: (project: CloudProjectSummary) => void | Promise<void>;
-    onDeleteCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
-    onDeleteAccount: (password: string) => Promise<CloudAccountDeleteResponse>;
-    onHideCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
-    onOpenCloudProject: (project: CloudProjectSummary) => void | Promise<void>;
-    onRefresh: () => void | Promise<void>;
-    onRequestPasswordReset: (
-      email: string,
-    ) => Promise<CloudPasswordChangeResponse>;
-    onResendConfirmation: (
-      email: string,
-    ) => Promise<CloudPasswordChangeResponse>;
-    onSignIn: (email: string, password: string) => void | Promise<void>;
-    onSignOut: () => void | Promise<void>;
-    onSignUp: (
-      email: string,
-      password: string,
-      displayName: string,
-    ) => void | Promise<void>;
-    onUploadProject: (projectId: string) => void | Promise<void>;
-  };
+
   onCreate: (input: NewFormationInput) => void | Promise<void>;
   onOpenProject: (projectId: string) => void | Promise<void>;
   onRenameProject: (projectId: string, title: string) => void | Promise<void>;
@@ -155,18 +86,6 @@ const formatProjectDate = (project: ProjectSummary): string => {
 const isActivationKey = (event: KeyboardEvent<HTMLElement>): boolean =>
   event.key === "Enter" || event.key === " ";
 
-const formatCloudProjectRole = (role: CloudProjectSummary["role"]): string => {
-  if (role === "owner") {
-    return "所有者";
-  }
-  if (role === "editor") {
-    return "編集者";
-  }
-  return "閲覧のみ";
-};
-
-const CLOUD_PASSWORD_MIN_LENGTH = 6;
-
 export const FormationLibrary = ({
   projects,
   disabled = false,
@@ -177,7 +96,6 @@ export const FormationLibrary = ({
   renderProjectBadge,
   onJoinInvitation,
   onImportProjectFiles,
-  cloud,
   onCreate,
   onOpenProject,
   onRenameProject,
@@ -213,22 +131,12 @@ export const FormationLibrary = ({
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ProjectSummary | null>(null);
-  const [cloudDeleteTarget, setCloudDeleteTarget] =
-    useState<CloudProjectSummary | null>(null);
-  const [cloudHideTarget, setCloudHideTarget] =
-    useState<CloudProjectSummary | null>(null);
+
   const [exportTarget, setExportTarget] = useState<ProjectSummary | null>(null);
   const [includeAudioInExport, setIncludeAudioInExport] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [cloudDisplayName, setCloudDisplayName] = useState("");
-  const [cloudEmail, setCloudEmail] = useState("");
-  const [cloudPassword, setCloudPassword] = useState("");
-  const [cloudFormError, setCloudFormError] = useState<string | null>(null);
-  const [cloudFormNotice, setCloudFormNotice] = useState<string | null>(null);
-  const [cloudInviteToken, setCloudInviteToken] = useState("");
-  const [isCloudHelpOpen, setIsCloudHelpOpen] = useState(false);
-  const [isCloudAccountOpen, setIsCloudAccountOpen] = useState(false);
+
   const menuRef = useRef<HTMLDivElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -242,19 +150,10 @@ export const FormationLibrary = ({
     [projects],
   );
 
-  useEffect(() => {
-    if (cloud?.pendingInviteToken) {
-      setCloudInviteToken(cloud.pendingInviteToken);
-    }
-  }, [cloud?.pendingInviteToken]);
-
   const menuProject =
     libraryMenu === null
       ? null
       : sortedProjects.find((project) => project.id === libraryMenu.projectId) ?? null;
-  const visibleCloudProjects = cloud?.personalMode
-    ? cloud.projects.filter((project) => project.role === "owner")
-    : cloud?.projects ?? [];
 
   useEffect(() => {
     if (!libraryMenu) {
@@ -439,18 +338,6 @@ export const FormationLibrary = ({
     setDeleteTarget(null);
   };
 
-  const submitCloudDelete = async () => {
-    if (!cloud || !cloudDeleteTarget) return;
-    await cloud.onDeleteCloudProject(cloudDeleteTarget);
-    setCloudDeleteTarget(null);
-  };
-
-  const submitCloudHide = async () => {
-    if (!cloud || !cloudHideTarget) return;
-    await cloud.onHideCloudProject(cloudHideTarget);
-    setCloudHideTarget(null);
-  };
-
   const submitExport = async () => {
     if (!exportTarget) return;
     setIsExporting(true);
@@ -461,77 +348,6 @@ export const FormationLibrary = ({
     } finally {
       setIsExporting(false);
     }
-  };
-
-  const submitCloudAuth = async (mode: "signIn" | "signUp") => {
-    const displayName = cloudDisplayName.trim();
-    const email = cloudEmail.trim();
-    if (!cloud) {
-      return;
-    }
-    if (mode === "signUp" && !displayName) {
-      setCloudFormError("新規登録では表示名を入力してください。");
-      return;
-    }
-    if (!email || !cloudPassword) {
-      setCloudFormError("メールアドレスとパスワードを入力してください。");
-      return;
-    }
-    if (mode === "signUp" && cloudPassword.length < CLOUD_PASSWORD_MIN_LENGTH) {
-      setCloudFormError(
-        `新規登録のパスワードは${CLOUD_PASSWORD_MIN_LENGTH}文字以上で入力してください。`,
-      );
-      return;
-    }
-    setCloudFormError(null);
-    setCloudFormNotice(null);
-    if (mode === "signIn") {
-      await cloud.onSignIn(email, cloudPassword);
-    } else {
-      await cloud.onSignUp(email, cloudPassword, displayName);
-    }
-  };
-
-  const submitCloudEmailAction = async (
-    mode: "passwordReset" | "resendConfirmation",
-  ) => {
-    if (!cloud) {
-      return;
-    }
-    const email = cloudEmail.trim();
-    if (!email) {
-      setCloudFormNotice(null);
-      setCloudFormError("メールアドレスを入力してください。");
-      return;
-    }
-    setCloudFormError(null);
-    setCloudFormNotice(null);
-    const result =
-      mode === "passwordReset"
-        ? await cloud.onRequestPasswordReset(email)
-        : await cloud.onResendConfirmation(email);
-    if (result.success) {
-      setCloudFormNotice(result.message);
-    } else {
-      setCloudFormError(result.message);
-    }
-  };
-
-  const submitCloudInvite = async () => {
-    if (!cloud) {
-      return;
-    }
-    const token = cloudInviteToken.trim();
-    if (!token) {
-      setCloudFormError("招待リンクまたは招待コードを入力してください。");
-      return;
-    }
-    const inviteToken = token.includes("#cloudInvite=")
-      ? token.split("#cloudInvite=")[1] ?? ""
-      : token;
-    setCloudFormError(null);
-    await cloud.onAcceptInvite(decodeURIComponent(inviteToken));
-    setCloudInviteToken("");
   };
 
   return (
@@ -547,275 +363,6 @@ export const FormationLibrary = ({
       {notice && <p className="library-notice" role="status">{notice}</p>}
       {storageTools}
       {collaborationSlot}
-
-      {cloud && (
-        <section className="library-cloud-panel" aria-label="クラウド">
-          <div className="library-cloud-panel__header">
-            <div>
-              <h2>
-                <Cloud size={18} />
-                クラウド
-              </h2>
-              <p>
-                {cloud.legacyEnabled === false ? "共同編集のアカウントでログインできます。" : cloud.userEmail
-                  ? cloud.personalMode
-                    ? "自分専用のクラウド隊列表を保存・読み込みできます。"
-                    : "クラウド隊列表を開いて、共有管理からメンバーを招待できます。"
-                  : cloud.personalMode
-                    ? "ログインすると、隊列表を自分専用のクラウドへ保存できます。"
-                    : "ログインすると、隊列表をクラウド保存してほかの人と共同作業できます。"}
-              </p>
-            </div>
-            <div className="library-cloud-header-actions">
-              {cloud.legacyEnabled !== false && !cloud.personalMode && (
-                <button
-                  className="mini-button"
-                  onClick={() => setIsCloudHelpOpen(true)}
-                  type="button"
-                >
-                  <CircleHelp size={14} />
-                  共同作業の使い方
-                </button>
-              )}
-              {cloud.userEmail && (
-                <div className="library-cloud-account">
-                  <span>{cloud.userDisplayName || "ログイン中"}</span>
-                  <button
-                    type="button"
-                    className="mini-button"
-                    onClick={() => setIsCloudAccountOpen(true)}
-                    disabled={cloud.isBusy}
-                  >
-                    <UserRoundCog size={14} />
-                    アカウント
-                  </button>
-                  <button
-                    type="button"
-                    className="mini-button"
-                    onClick={() => void cloud.onSignOut()}
-                    disabled={cloud.isBusy}
-                  >
-                    <LogOut size={14} />
-                    ログアウト
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {!cloud.configured ? (
-            <p className="library-cloud-message">
-              Supabase接続が未設定です。.envに VITE_SUPABASE_URL と
-              VITE_SUPABASE_ANON_KEY を設定すると使えます。
-            </p>
-          ) : cloud.userEmail ? (
-            <>
-              {cloud.legacyEnabled !== false && <div className="library-cloud-actions">
-                <button
-                  type="button"
-                  className="mini-button"
-                  onClick={() => void cloud.onRefresh()}
-                  disabled={cloud.isBusy}
-                >
-                  <RefreshCw size={14} />
-                  更新
-                </button>
-                <span>ローカルカードのメニューからクラウドへアップロードできます。</span>
-              </div>}
-              {cloud.error && <p className="dialog-error">{cloud.error}</p>}
-              {cloud.legacyEnabled !== false && !cloud.personalMode && (
-                <div className="library-cloud-invite">
-                  <label>
-                    招待リンク / 招待コード
-                    <input
-                      value={cloudInviteToken}
-                      onChange={(event) => setCloudInviteToken(event.target.value)}
-                      placeholder="招待リンクを貼り付け"
-                    />
-                  </label>
-                  <button
-                    className="mini-button"
-                    disabled={cloud.isBusy}
-                    onClick={() => void submitCloudInvite()}
-                    type="button"
-                  >
-                    参加
-                  </button>
-                </div>
-              )}
-              {cloud.legacyEnabled !== false && <div className="library-cloud-list">
-                {visibleCloudProjects.length === 0 ? (
-                  <p className="library-cloud-message">
-                    {cloud.personalMode
-                      ? "自分専用のクラウド隊列表はまだありません。過去の隊列表が表示されない場合は、更新を押してください。"
-                      : "クラウドプロジェクトはまだありません。過去のクラウド隊列表が表示されない場合は、更新を押してください。"}
-                  </p>
-                ) : (
-                  visibleCloudProjects.map((cloudProject) => (
-                    <article
-                      key={cloudProject.id}
-                      className="library-cloud-project"
-                    >
-                      <button
-                        type="button"
-                        className="library-cloud-project__main"
-                        onClick={() => void cloud.onOpenCloudProject(cloudProject)}
-                        disabled={cloud.isBusy}
-                      >
-                        <strong>{cloudProject.title || "名称未設定"}</strong>
-                        <span>
-                          {cloudProject.mode === "parade" ? "パレード" : "ステージ"} /{" "}
-                          {cloud.personalMode
-                            ? "自分専用"
-                            : formatCloudProjectRole(cloudProject.role)}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="mini-button library-cloud-project__copy"
-                        onClick={() => void cloud.onCopyCloudProjectToLocal(cloudProject)}
-                        disabled={cloud.isBusy}
-                      >
-                        ローカルへ複製
-                      </button>
-                      <div className="library-cloud-project__actions">
-                        {cloudProject.role === "owner" ? (
-                          <button
-                            type="button"
-                            className="mini-button danger"
-                            onClick={() => setCloudDeleteTarget(cloudProject)}
-                            disabled={cloud.isBusy}
-                            aria-label="クラウド隊列表を削除"
-                          >
-                            <Trash2 size={14} />
-                            削除
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="mini-button"
-                            onClick={() => setCloudHideTarget(cloudProject)}
-                            disabled={cloud.isBusy}
-                            aria-label="クラウド隊列表を一覧から非表示"
-                          >
-                            <EyeOff size={14} />
-                            非表示
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>}
-            </>
-          ) : (
-            <form
-              className="library-cloud-login"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitCloudAuth("signIn");
-              }}
-            >
-              <label>
-                表示名
-                <input
-                  type="text"
-                  value={cloudDisplayName}
-                  onChange={(event) => setCloudDisplayName(event.target.value)}
-                  autoComplete="name"
-                  placeholder="例: しんご"
-                />
-                <span className="library-cloud-password-hint">
-                  {cloud.personalMode
-                    ? "新規登録時にアカウントへ設定する名前です"
-                    : "新規登録時に、ほかの参加者へこの名前だけが表示されます"}
-                </span>
-              </label>
-              <label>
-                メールアドレス
-                <input
-                  type="email"
-                  value={cloudEmail}
-                  onChange={(event) => setCloudEmail(event.target.value)}
-                  autoComplete="email"
-                />
-              </label>
-              <label>
-                パスワード
-                <input
-                  type="password"
-                  value={cloudPassword}
-                  onChange={(event) => setCloudPassword(event.target.value)}
-                  autoComplete="current-password"
-                  aria-describedby="cloud-password-hint"
-                />
-                <span className="library-cloud-password-hint" id="cloud-password-hint">
-                  新規登録は{CLOUD_PASSWORD_MIN_LENGTH}文字以上
-                </span>
-              </label>
-              {(cloudFormError || cloud.error) && (
-                <p className="dialog-error">{cloudFormError ?? cloud.error}</p>
-              )}
-              {cloudFormNotice && (
-                <p className="library-cloud-success">{cloudFormNotice}</p>
-              )}
-              <div className="library-cloud-actions">
-                <button
-                  type="submit"
-                  className="mini-button primary"
-                  disabled={cloud.isBusy}
-                >
-                  <LogIn size={14} />
-                  ログイン
-                </button>
-                <button
-                  type="button"
-                  className="mini-button"
-                  disabled={cloud.isBusy}
-                  onClick={() => void submitCloudAuth("signUp")}
-                >
-                  新規登録
-                </button>
-              </div>
-              <div className="library-cloud-recovery-actions">
-                <button
-                  className="library-link-button"
-                  disabled={cloud.isBusy}
-                  onClick={() => void submitCloudEmailAction("passwordReset")}
-                  type="button"
-                >
-                  パスワードを忘れた場合
-                </button>
-                <button
-                  className="library-link-button"
-                  disabled={cloud.isBusy}
-                  onClick={() => void submitCloudEmailAction("resendConfirmation")}
-                  type="button"
-                >
-                  確認メールを再送
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
-      )}
-
-      {cloud && cloud.legacyEnabled !== false && !cloud.personalMode && isCloudHelpOpen && (
-        <Suspense fallback={<div role="status">使い方を読み込み中…</div>}><CloudCollaborationHelpModal onClose={() => setIsCloudHelpOpen(false)} /></Suspense>
-      )}
-
-      {cloud?.userEmail && isCloudAccountOpen && (
-        <Suspense fallback={<div role="status">アカウントを読み込み中…</div>}>
-        <CloudAccountModal
-          displayName={cloud.userDisplayName}
-          email={cloud.userEmail}
-          isBusy={cloud.isBusy}
-          onClose={() => setIsCloudAccountOpen(false)}
-          onChangePassword={cloud.onChangePassword}
-          onDeleteAccount={cloud.onDeleteAccount}
-        />
-        </Suspense>
-      )}
 
       <section className="library-grid" aria-label="隊列表一覧">
         <button
@@ -904,17 +451,7 @@ export const FormationLibrary = ({
             <Download size={15} />
             書き出し
           </button>
-          {cloud?.userEmail && cloud.legacyEnabled !== false && (
-            <button
-              type="button"
-              onClick={() =>
-                runMenuAction(() => cloud.onUploadProject(menuProject.id))
-              }
-            >
-              <CloudUpload size={15} />
-              クラウドへアップロード
-            </button>
-          )}
+
           <button
             className="danger"
             type="button"
@@ -1455,101 +992,6 @@ export const FormationLibrary = ({
         </div>
       )}
 
-      {cloudDeleteTarget && (
-        <div
-          className="new-formation-backdrop"
-          onPointerDown={() => setCloudDeleteTarget(null)}
-        >
-          <div
-            className="new-formation-dialog library-small-dialog"
-            onPointerDown={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="クラウド隊列表を削除"
-          >
-            <header>
-              <h2>クラウドから削除しますか？</h2>
-              <button
-                className="share-export-close"
-                onClick={() => setCloudDeleteTarget(null)}
-                type="button"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </header>
-            <p className="notice">
-              「{cloudDeleteTarget.title || "名称未設定"}」をクラウド一覧から削除します。
-              参加者全員の一覧から表示されなくなります。
-            </p>
-            <footer>
-              <button
-                className="mini-button"
-                onClick={() => setCloudDeleteTarget(null)}
-                type="button"
-              >
-                キャンセル
-              </button>
-              <button
-                className="mini-button danger"
-                onClick={() => void submitCloudDelete()}
-                type="button"
-                disabled={cloud?.isBusy}
-              >
-                削除する
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
-
-      {cloudHideTarget && (
-        <div
-          className="new-formation-backdrop"
-          onPointerDown={() => setCloudHideTarget(null)}
-        >
-          <div
-            className="new-formation-dialog library-small-dialog"
-            onPointerDown={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="クラウド隊列表を非表示"
-          >
-            <header>
-              <h2>一覧から非表示にしますか？</h2>
-              <button
-                className="share-export-close"
-                onClick={() => setCloudHideTarget(null)}
-                type="button"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </header>
-            <p className="notice">
-              「{cloudHideTarget.title || "名称未設定"}」を自分のクラウド一覧から隠します。
-              クラウド上のデータや他の参加者の一覧には影響しません。
-            </p>
-            <footer>
-              <button
-                className="mini-button"
-                onClick={() => setCloudHideTarget(null)}
-                type="button"
-              >
-                キャンセル
-              </button>
-              <button
-                className="mini-button"
-                onClick={() => void submitCloudHide()}
-                type="button"
-                disabled={cloud?.isBusy}
-              >
-                非表示にする
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
     </main>
   );
 };

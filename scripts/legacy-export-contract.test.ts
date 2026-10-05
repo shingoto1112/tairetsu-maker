@@ -1,28 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { buildProjectFromCloudParts } from '../src/cloud/projectParts';
-import type { CloudProjectParts } from '../src/cloud/types';
+import { validateSnapshot, snapshotProject } from '../src/legacyImport/validation';
 import fixture from '../supabase/tests/fixtures/legacy-export-v1.json';
 
 describe('11a legacy export v1 fixture for the 11b adapter', () => {
-  it('preserves domain data usable by the existing Project mapper', () => {
-    const parts: CloudProjectParts = {
-      id: 'synthetic-fixed-target',
-      createdAt: fixture.project.created_at,
-      updatedAt: fixture.project.updated_at,
-      project: {
-        title: fixture.project.title, mode: 'stage',
-        schemaVersion: fixture.project.schema_version,
-        legacyProjectId: fixture.project.legacy_project_id,
-      },
-      resources: Object.fromEntries(fixture.resources.map(r => [r.resource_key, {
-        resourceKey: r.resource_key, data: r.data, version: r.version, schemaVersion: r.schema_version,
-      }])) as CloudProjectParts['resources'],
-      scenes: fixture.scenes.map(s => ({
-        sceneId: s.scene_id, data: s.data, version: s.version, schemaVersion: s.schema_version,
-      })),
-    };
-    const project = buildProjectFromCloudParts(parts);
+  it('preserves domain data after proving export completeness', () => {
+    const project = snapshotProject(validateSnapshot(fixture, fixture.project.id), 'synthetic-fixed-target');
     expect(project.id).toBe('synthetic-fixed-target');
     expect(project.title).toBe(fixture.project.title);
     expect(project.stage.widthMeters).toBe(10);

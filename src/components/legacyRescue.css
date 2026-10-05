@@ -1,0 +1,19 @@
+.legacy-rescue-entry { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.legacy-rescue-entry > button { min-height: 44px; flex: 1 1 280px; white-space: normal; }
+.legacy-rescue-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 12px; background: rgb(12 24 42 / 55%); }
+.legacy-rescue-dialog { width: min(720px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto; background: white; color: #17253b; border-radius: 16px; padding: 20px; box-sizing: border-box; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.legacy-rescue-dialog header { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.legacy-rescue-dialog h2 { margin: 0; font-size: 20px; }
+.legacy-rescue-dialog header button { flex-shrink: 0; }
+.legacy-rescue-dialog p { line-height: 1.6; margin: 10px 0; }
+.legacy-rescue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.legacy-rescue-dialog button { min-height: 44px; white-space: normal; }
+.legacy-rescue-list { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 10px; }
+.legacy-rescue-list li { border: 1px solid #ccd7e5; border-radius: 10px; padding: 12px; }
+.legacy-rescue-list label { display: flex; gap: 10px; align-items: center; min-height: 44px; }
+.legacy-rescue-list input { width: 20px; height: 20px; flex-shrink: 0; }
+.legacy-rescue-list small { display: block; color: #4b5f76; }
+.legacy-rescue-result { background: #f1f5fa; padding: 10px; margin-top: 8px; border-radius: 6px; }
+.legacy-rescue-dialog summary { cursor: pointer; padding: 12px 0; }
+.legacy-rescue-message { border-left: 4px solid #47698c; padding: 10px; background: #f1f5fa; }
+@media (max-width: 480px) { .legacy-rescue-dialog { padding: 14px; } .legacy-rescue-dialog h2 { font-size: 18px; } .legacy-rescue-actions > button { width: 100%; } }

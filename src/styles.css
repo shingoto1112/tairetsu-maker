@@ -770,60 +770,6 @@ h2 {
   padding-top: 14px;
 }
 
-.library-cloud-panel {
-  background: #f8fafc;
-  border: 1px solid #dbe7ef;
-  border-radius: 14px;
-  display: grid;
-  gap: 12px;
-  margin: 0 0 24px;
-  padding: 14px;
-}
-
-.library-cloud-panel__header {
-  align-items: start;
-  display: flex;
-  gap: 14px;
-  justify-content: space-between;
-}
-
-.library-cloud-panel h2 {
-  align-items: center;
-  color: #233047;
-  display: flex;
-  font-size: 15px;
-  gap: 8px;
-  margin: 0 0 4px;
-}
-
-.library-cloud-panel p {
-  color: #64748b;
-  font-size: 12px;
-  margin: 0;
-}
-
-.library-cloud-account {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.library-cloud-account span {
-  color: #334155;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.library-cloud-header-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 .library-cloud-login {
   align-items: end;
   display: grid;
@@ -842,21 +788,6 @@ h2 {
   margin-top: 4px;
 }
 
-.library-cloud-success {
-  color: #047857 !important;
-  font-size: 12px;
-  font-weight: 700;
-  grid-column: 1 / -1;
-}
-
-.library-cloud-recovery-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  grid-column: 1 / -1;
-}
-
 .library-link-button {
   background: transparent;
   border: 0;
@@ -869,117 +800,13 @@ h2 {
   text-underline-offset: 3px;
 }
 
-@media (max-width: 560px) {
-  .cloud-account-security {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}
-
 .library-link-button:disabled {
   color: #94a3b8;
 }
 
-.library-cloud-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.library-cloud-actions span,
-.library-cloud-message {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.library-cloud-invite {
-  align-items: end;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(220px, 1fr) auto;
-}
-
-.library-cloud-invite label {
-  color: #334155;
-  display: grid;
-  font-size: 12px;
-  font-weight: 700;
-  gap: 4px;
-}
-
-.library-cloud-list {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-}
-
-.library-cloud-project {
-  background: #ffffff;
-  border: 1px solid #dbe7ef;
-  border-radius: 10px;
-  color: #233047;
-  display: grid;
-  gap: 8px;
-  padding: 8px;
-}
-
-.library-cloud-project:hover,
-.library-cloud-project:focus-within {
-  border-color: #99f6e4;
-}
-
-.library-cloud-project strong {
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.library-cloud-project span {
-  color: #64748b;
-  font-size: 11px;
-}
-
-.library-cloud-project__main {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  display: grid;
-  gap: 4px;
-  padding: 2px;
-  text-align: left;
-}
-
-.library-cloud-project__main:focus-visible {
-  outline: 2px solid #99f6e4;
-  outline-offset: 3px;
-}
-
-.library-cloud-project__copy {
-  justify-self: start;
-}
-
-.library-cloud-project__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 @media (max-width: 720px) {
-  .library-cloud-panel__header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .library-cloud-account {
-    justify-content: flex-start;
-  }
 
   .library-cloud-login {
-    align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
-  .library-cloud-invite {
     align-items: stretch;
     grid-template-columns: 1fr;
   }
@@ -1144,108 +971,6 @@ h2 {
 .library-small-dialog {
   max-width: 420px;
   width: min(100%, 420px);
-}
-
-.cloud-account-backdrop {
-  z-index: 1400;
-}
-
-.cloud-account-dialog {
-  max-width: 560px;
-  width: min(100%, 560px);
-}
-
-.cloud-account-dialog label {
-  color: #334155;
-  display: grid;
-  font-size: 13px;
-  font-weight: 800;
-  gap: 6px;
-}
-
-.cloud-account-dialog input {
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  color: #0f172a;
-  font-size: 16px;
-  min-height: 44px;
-  padding: 0 12px;
-}
-
-.cloud-account-dialog input:focus-visible {
-  border-color: var(--accent);
-  outline: 2px solid #99f6e4;
-  outline-offset: 1px;
-}
-
-.cloud-account-identity {
-  display: grid;
-  gap: 2px;
-}
-
-.cloud-account-identity strong {
-  color: #1e293b;
-  font-size: 14px;
-}
-
-.cloud-account-identity span {
-  color: #64748b;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.cloud-account-security {
-  align-items: center;
-  background: #f8fafc;
-  border: 1px solid #dbe7ef;
-  border-radius: 12px;
-  display: flex;
-  gap: 14px;
-  justify-content: space-between;
-  padding: 14px;
-}
-
-.cloud-account-security h3 {
-  align-items: center;
-  color: #1e293b;
-  display: flex;
-  font-size: 15px;
-  gap: 7px;
-  margin: 0 0 4px;
-}
-
-.cloud-account-security p {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.55;
-  margin: 0;
-}
-
-.cloud-account-danger {
-  background: #fff7f7;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
-  display: grid;
-  gap: 8px;
-  padding: 14px;
-}
-
-.cloud-account-danger__heading {
-  align-items: center;
-  color: #b91c1c;
-  display: flex;
-  gap: 8px;
-}
-
-.cloud-account-danger h3 {
-  font-size: 15px;
-}
-
-.cloud-account-danger p {
-  color: #7f1d1d;
-  font-size: 13px;
-  line-height: 1.65;
-  margin: 0;
 }
 
 .cloud-password-backdrop {
@@ -1415,26 +1140,6 @@ h2 {
   gap: 8px;
 }
 
-.cloud-project-banner {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1e3a8a;
-}
-
-.cloud-project-banner span {
-  color: #385b8f;
-}
-
-.cloud-project-banner__update {
-  color: #1d4ed8 !important;
-  font-weight: 700;
-}
-
-.cloud-project-banner__presence {
-  color: #2563eb !important;
-  font-weight: 700;
-}
-
 .modal-backdrop {
   align-items: center;
   background: rgba(15, 23, 42, 0.36);
@@ -1444,10 +1149,6 @@ h2 {
   padding: 24px;
   position: fixed;
   z-index: 80;
-}
-
-.cloud-share-backdrop {
-  z-index: 1200;
 }
 
 .app-confirm-backdrop,
@@ -1639,173 +1340,6 @@ h2 {
   font-weight: 800;
   letter-spacing: 0;
   margin: 0 0 2px;
-}
-
-.cloud-share-modal {
-  background: #ffffff;
-  border: 1px solid #dbe7ef;
-  border-radius: 16px;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
-  color: #233047;
-  display: grid;
-  gap: 16px;
-  max-height: min(720px, calc(100vh - 48px));
-  max-width: 760px;
-  overflow: auto;
-  padding: 20px;
-  width: min(760px, calc(100vw - 48px));
-}
-
-.cloud-share-invite {
-  align-items: end;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) 140px auto;
-}
-
-.cloud-share-contact-form {
-  align-items: end;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) auto;
-}
-
-.cloud-share-invite label,
-.cloud-share-contact-form label,
-.cloud-share-section label {
-  color: #334155;
-  display: grid;
-  font-size: 12px;
-  font-weight: 700;
-  gap: 4px;
-}
-
-.cloud-share-link {
-  align-items: center;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.cloud-share-link input {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 12px;
-}
-
-.cloud-share-section {
-  display: grid;
-  gap: 8px;
-}
-
-.cloud-share-section h3 {
-  color: #172033;
-  font-size: 14px;
-  margin: 0;
-}
-
-.cloud-share-section__header {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-}
-
-.cloud-share-list {
-  border: 1px solid #dbe7ef;
-  border-radius: 10px;
-  display: grid;
-  overflow: hidden;
-}
-
-.cloud-share-row {
-  align-items: center;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 10px;
-}
-
-.cloud-share-row:last-child {
-  border-bottom: 0;
-}
-
-.cloud-share-row strong {
-  display: block;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.cloud-share-row span {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.cloud-share-row__actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.cloud-help-modal {
-  background: #ffffff;
-  border: 1px solid #dbe7ef;
-  border-radius: 16px;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.22);
-  color: #233047;
-  display: grid;
-  gap: 16px;
-  max-height: min(720px, calc(100vh - 48px));
-  max-width: 680px;
-  overflow: auto;
-  padding: 20px;
-  width: min(680px, calc(100vw - 48px));
-}
-
-.cloud-help-list {
-  display: grid;
-  gap: 10px;
-}
-
-.cloud-help-list article {
-  align-items: start;
-  background: #f8fafc;
-  border: 1px solid #dbe7ef;
-  border-radius: 10px;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: auto minmax(0, 1fr);
-  padding: 12px;
-}
-
-.cloud-help-list svg {
-  color: var(--accent);
-  margin-top: 2px;
-}
-
-.cloud-help-list h3 {
-  color: #172033;
-  font-size: 14px;
-  margin: 0 0 3px;
-}
-
-.cloud-help-list p,
-.cloud-help-note {
-  color: #52627a;
-  font-size: 13px;
-  line-height: 1.65;
-  margin: 0;
-}
-
-.cloud-help-note {
-  background: #f0fdfa;
-  border: 1px solid #ccfbf1;
-  border-radius: 10px;
-  color: #0f766e;
-  font-weight: 700;
-  padding: 10px 12px;
 }
 
 .new-formation-dialog header,
@@ -6705,30 +6239,6 @@ h2 {
 }
 
 @media (max-width: 720px) {
-  .cloud-share-backdrop {
-    align-items: stretch;
-    padding: 10px;
-  }
-
-  .cloud-share-modal {
-    max-height: calc(100vh - 20px);
-    width: 100%;
-  }
-
-  .cloud-share-invite,
-  .cloud-share-contact-form {
-    align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
-  .cloud-share-row {
-    align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
-  .cloud-share-row__actions {
-    justify-content: flex-start;
-  }
 
   .share-export-backdrop {
     align-items: stretch;

@@ -1,6 +1,6 @@
 import type { CloudConfig } from "../cloud/config";
 import { createCloudAuthClient, type CloudAuthSession } from "../cloud/auth";
-import type { CloudAccountDeleteResult } from "../cloud/api";
+import type { CloudAccountDeleteResult } from "../cloud/account";
 import { deleteCurrentAccount } from "../cloud/account";
 import { readCloudAuthSession, saveCloudAuthSession, clearCloudAuthSession } from "../cloud/session";
 import { TransportError } from "./transport";
