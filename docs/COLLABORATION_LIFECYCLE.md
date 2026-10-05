@@ -39,8 +39,8 @@ const api = new runtime.CollaborationLifecycle(repository, management, transport
    accountId/membershipGeneration を原子的に確定する。返却 record を開き直す。
    旧本人クラウドの sync がある文書は併用拒否。既に共有済みの文書は再作成しない。
 2. `createInvite(documentId)` → `{inviteId, expiresAt, link}`。
-   256bit token、fragment `#invite=...`、24時間、1回消費。DB は SHA-256 hash のみ。
-   `revokeInvite(documentId, inviteId)` は誰でも実行可能。
+   256bit token、fragment `#invite=...`。新規は7日間・複数人参加、既存は24時間・単回。
+   DB は SHA-256 hash のみ。`revokeInvite(documentId, inviteId)` は任意のメンバーが実行可能。
 3. Web は `takeInvitationLink(allowedOrigins)` で fragment をメモリに取り出し、
    browser history の現在 URL から消す。返却 URL/token をログ・永続保存・analytics に渡さない。
    未認証の入口では文書内容・メンバー・文書名を取得しない。
@@ -155,6 +155,56 @@ Auth と private table を含む実 DB 容量を監視する。20回制限は複
 CAPTCHA/Auth の IP 制限の代わりにはならない。
 
 ## 本番適用時に利用者が行うこと
+
+### 2026-10-05決定：1リンクで複数人参加・新規リンクは7日間
+
+- 作成者を含む現在の参加者は最大8人。参加資格には期限がない。
+- 新規リンクは7日間有効。同じリンクから新規参加できるのはのべ64回まで。
+  一覧の `joinedCount` は異なる利用者の累計数で、現在の人数ではない。
+- 既存リンクは単回・24時間、`used_*` と期限を維持する。
+- 同じmembership generationの参加履歴がある本人は、満員・期限切れ・取消後も
+  receiptだけ再取得できる。名前・履歴・ACLを変更しない。
+- 外された人は同じリンクで再参加できない。別の新しいリンクなら参加できる。
+  有効なリンクを既存メンバーが使っても履歴やACLは増えない。
+- 任意のメンバーによる発行・取消・メンバー解除の権限は変更しない。
+  発行者の離脱・アカウント削除で有効な招待を取り消す。
+- `invite_uses` は非公開・RLS有効・全APIロールからアクセス禁止。
+  `user_id` はauthへのFKを持たずUUIDを保持する。削除で利用回数が減るのを防ぎ、
+  指定主キーを維持するため。招待・文書の削除時には履歴も消える。
+- ユーザー削除は関連文書をID順にロックしてから招待を更新する。
+  join/発行は先に本人のauth行をKEY SHAREで固定し、本人削除とFK書き込みの逆順も防ぐ。
+  一覧はactive/used/expired/revokedの4値を維持し、追加項目を無視するbuild 23にも互換。
+
+foundation・旧API停止・救出一覧migrationは本番適用済み。今回の適用は追加ファイルだけ。
+
+1. ClaudeがLinux CI（Postgres 17）のSQL試験を成功させたことを確認する。
+2. 利用者がSupabase SQL Editorで
+   `supabase/migrations/20261006000000_collab_v2_multi_use_invites.sql` の**全文**を貼って実行する。
+   BEGIN/COMMITを含む1 transaction。失敗時はROLLBACKし、原因を解消して全文を再実行する。
+   既存行・履歴・期限・権限を維持して再適用できる。既存foundationは再適用しない。
+3. `supabase/verify/20261006_multi_use_invites_verify.sql` の全文を別クエリで実行する。
+   読み取り専用で列・RLS・制約・関数security definer/search_path/EXECUTE・履歴権限のみ確認する。
+   multi_useはboolean/NOT NULL/default false、履歴のRLSはtrue、期限は単回24h/複数回7days。
+   5関数はprosecdef=true、proconfigに空search_path。公開3RPCのみauthenticated_execute=true、
+   anon/service/publicはfalse。private trigger2関数は全APIロールfalse。
+   history_access/public_history_accessもすべてfalseであること。トークンや内容は表示しない。
+4. migration後に新UIを公開する。Edge・Swiftの変更/再配備は不要。
+   Web/build 23で発行・複数人参加・取消・資格維持を利用者が確認する。
+
+以下は初期導入時の記録。今回の追加migration適用に既存foundationの再実行は不要。
+
+今回のWindowsローカル確認（2026-10-05）：
+
+- 最終クライアント/mockの `npm test -- --maxWorkers 2` を2回、各104ファイル・896件成功。
+- typecheck・静的preflight・SQL runner/suiteのJavaScript構文・git diff --check成功。
+- Vite通常/V2有効ビルド成功。mainは両方371478 bytes、gzipは通常114803/V2有効114808 bytes。
+  通常の静的起動graphには共同編集/Yjs/ヘルプなし、試験用harnessの本番混入なし。
+- provider/App/lifecycle/UI/history/presenceのブラウザー試験6種成功。
+  参加人数表示・同一リンクの別guest参加・コピー/貼付け・保存再試行を実画面で確認。
+  loopbackの専用サーバーのみ使用。今回作成したbuild/画像フォルダと試験用サーバーは片付けた。
+- PostgreSQL実行環境がないため、migration/ロール/並行SQLはLinux CIで確認する（未実行）。
+  build 23と実Supabaseは未確認。Edge/Swift/既存migration/保存形式/PrintPreview/distは変更なし。
+  本番アクセス・install・commit/push・workflow実行は行っていない。
 
 本番操作は今回ゼロ。以下は Claude の Linux 確認後、UI と公開前の対策が揃ってから行う。
 

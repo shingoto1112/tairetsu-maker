@@ -7,11 +7,21 @@ import { fileURLToPath } from 'node:url';
 export const migration = 'supabase/migrations/20261004000000_collab_v2_foundation.sql';
 export const shutdownMigration = 'supabase/migrations/20261005000000_legacy_cloud_shutdown.sql';
 export const rescueListingMigration = 'supabase/migrations/20261005001000_legacy_rescue_listing.sql';
+export const multiUseMigration = 'supabase/migrations/20261006000000_collab_v2_multi_use_invites.sql';
 export function preflight() {
   process.chdir(fileURLToPath(new URL('../', import.meta.url)));
   const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort();
   assert.equal(files.filter(f => f < '20261004').length, 11, 'Exactly 11 legacy migrations');
-  assert.deepEqual(files.filter(f => f >= '20261004'), [migration.split('/').at(-1), shutdownMigration.split('/').at(-1), rescueListingMigration.split('/').at(-1)], 'v2 foundation, shutdown and additive rescue-list metadata');
+  assert.deepEqual(files.filter(f => f >= '20261004'), [migration, shutdownMigration, rescueListingMigration, multiUseMigration].map(p => p.split('/').at(-1)));
+  const multi = readFileSync(multiUseMigration, 'utf8');
+  assert.match(multi, /^begin;$/m); assert.match(multi, /commit;\s*$/);
+  assert.match(multi, /default false/); assert.match(multi, /interval '7 days'/);
+  assert.match(multi, /primary key\(invite_id,user_id,membership_generation\)/);
+  assert.match(multi, /order by d.id for update/);
+  assert.match(multi, /count\(\*\).*invite_uses[^\n]*>= 64/);
+  for (const [body] of multi.matchAll(/create or replace function [\s\S]*?end \$\$;/g)) assert.match(body, /security definer set search_path = ''/);
+  const multiCode = multi.replace(/'(?:''|[^'])*'/g, "''");
+  for (const [, condition] of multiCode.matchAll(/\b(?:if|elsif|while)\s+([^;]*?)\bthen/gi)) assert(!/(?<!\()\bcase\b/i.test(condition));
   const listing = readFileSync(rescueListingMigration, 'utf8');
   assert.match(listing, /require_export_account\(\)/); assert.match(listing, /m\.role='owner'/);
   assert.match(listing, /m\.hidden_at is not null as hidden/); assert.match(listing, /'exportUntil'/);
@@ -86,7 +96,8 @@ export function preflight() {
     const edge = readFileSync(`supabase/functions/collab-ingest/${file}`, 'utf8');
     assert(!/console\.(?:log|error)\(/.test(edge), 'Never log tokens, document data or credentials');
   }
-  for (const path of [migration, shutdownMigration, 'scripts/testing/legacy-shutdown-sql-suite.mjs',
+  for (const path of [migration, shutdownMigration, multiUseMigration, 'scripts/testing/multi-use-invites-sql-suite.mjs',
+    'supabase/verify/20261006_multi_use_invites_verify.sql', 'scripts/testing/legacy-shutdown-sql-suite.mjs',
     'scripts/test-legacy-cloud-sql.mjs', 'scripts/legacy-export-contract.test.ts',
     'supabase/tests/fixtures/legacy-export-v1.json', 'docs/LEGACY_CLOUD_SHUTDOWN.md',
     '.github/workflows/supabase-sql-test.yml', 'supabase/tests/bootstrap.sql',

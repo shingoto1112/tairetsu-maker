@@ -5,11 +5,12 @@ import { chromium } from '@playwright/test';
 import { MockCollabBackend, startMockServer, actors, memberships, documentId } from './testing/mock-collab-server.mjs';
 import { loadCollabEdge } from './testing/load-collab-edge.mjs';
 
-const origin = 'http://127.0.0.1:5179'; // Never starts/stops the user's Vite server.
+const origin = process.env.REPOSITORY_TEST_ORIGIN ?? 'http://127.0.0.1:5179'; // Never starts/stops the user's Vite server.
+assert(new URL(origin).protocol === 'http:' && ['127.0.0.1','localhost'].includes(new URL(origin).hostname));
 const { createHandler, RpcError } = await loadCollabEdge();
 const fixture = JSON.parse(await readFile('src/repositories/contract/fixtures/collaboration.json', 'utf8'));
 const backend = new MockCollabBackend(fixture.initial.base, RpcError);
-const server = await startMockServer(backend, createHandler);
+const server = await startMockServer(backend, createHandler, origin);
 const browser = await chromium.launch({ headless: true });
 const contexts = [], pages = [], dbNames = [0, 1].map(() => `provider-test-${randomUUID()}`), errors = [], checks = [];
 const inert = `${origin}/__provider_test__`;

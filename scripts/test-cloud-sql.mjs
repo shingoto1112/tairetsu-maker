@@ -8,6 +8,7 @@ import { migration, preflight } from './check-collab-v2.mjs';
 import { runMaintenanceSqlSuite } from './testing/maintenance-sql-suite.mjs';
 import { runRestoreSqlSuite } from './testing/restore-sql-suite.mjs';
 import { runEphemeralSqlSuite } from './testing/ephemeral-sql-suite.mjs';
+import { runMultiUseInvitesSqlSuite } from './testing/multi-use-invites-sql-suite.mjs';
 
 assert.equal(process.platform, 'linux', 'Linux CI only'); assert.equal(process.argv.length, 2, 'No overrides accepted');
 const files = preflight();
@@ -386,3 +387,4 @@ assert.equal(json(asUser(3, `select public.collab_v2_access_status(${q(id)})`)).
 deny(2,`select public.collab_v2_get_updates(${q(id)},1,0)`,'DOCUMENT_DELETED');
 deny(null,appendSql('deleted',2),'DOCUMENT_DELETED','service_role');
 console.log('PASS: 11 legacy + v2 + rerun; guest and 8-user race; ACL/topic fences; NULL/outsider/direct-write denials; seq commit ordering; durable receipts; quotas; creator/account deletion');
+await runMultiUseInvitesSqlSuite({run,asUser,deny,create,join,invite,uid,q,json,scalar,identity,concurrent});

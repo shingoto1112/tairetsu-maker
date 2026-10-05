@@ -19,6 +19,29 @@ function setup(platform: 'web' | 'ipad' = 'web') {
 }
 beforeEach(() => { forgetInvitation(); history.replaceState({}, '', '/'); });
 afterEach(() => { cleanup(); forgetInvitation(); vi.restoreAllMocks(); });
+it('shows multi-use statuses/counts and preserves old single-use labels', async () => {
+  const options: CollaborationUiOptions = { config:null,platform:'web',mock:true,repository:()=>null,
+    active:()=>({attached:true,localId:'local'}) as ReturnType<CollaborationUiOptions['active']>,
+    store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() };
+  const service = new CollaborationUiService(()=>options);
+  vi.spyOn(service,'initialize').mockResolvedValue();
+  const snapshot: ReturnType<typeof service.getSnapshot> = { ...service.getSnapshot(),screen:'manage',
+    auth:{status:'signed-in',userId:'owner',isGuest:false,displayName:'作成者',sessionPersistence:'existing-account'},
+    members:[{userId:'owner',displayName:'作成者',isCreator:true,isGuest:false}],
+    invites:[
+      {inviteId:'a',expiresAt:'2026-10-12',status:'active',multiUse:true,joinedCount:7},
+      {inviteId:'b',expiresAt:'2026-10-12',status:'used',multiUse:true,joinedCount:64},
+      {inviteId:'c',expiresAt:'2026-10-12',status:'used'},
+    ] };
+  vi.spyOn(service,'getSnapshot').mockReturnValue(snapshot);
+  render(<CollaborationSurface bridge={{options,get:async()=>service}} view="editor" localId="local" attached />);
+  await screen.findByText('このリンクは7日間、何人でも参加に使えます（作成者を含めて合計8人まで）。参加した人に期限はありません。');
+  expect(screen.getByText(/有効 · このリンクで参加：7人/)).toBeTruthy();
+  expect(screen.getByText(/上限に達しました · このリンクで参加：64人/)).toBeTruthy();
+  expect(screen.getByText(/使用済み$/)).toBeTruthy();
+  expect(screen.getAllByRole('button',{name:'招待を取り消す'})).toHaveLength(1);
+  expect(screen.getByText('取り消すと、まだ参加していない人はこのリンクで参加できなくなります。参加済みの人はそのままです。')).toBeTruthy();
+});
 it.each(['web', 'ipad'] as const)('pastes using the actual service outside busy; platform=%s', async platform => {
   const readText = vi.fn().mockResolvedValue(link);
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText } });

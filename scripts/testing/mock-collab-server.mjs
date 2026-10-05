@@ -68,22 +68,29 @@ export class MockCollabBackend {
       if (!/^[0-9a-f]{64}$/.test(args.p_token ?? '') || !args.p_display_name?.trim() || [...args.p_display_name].length > 80) return { error: 'INVALID_ARGUMENT' };
       const hash = createHash('sha256').update(args.p_token).digest('hex'), invite = this.invites.get(hash);
       if (!invite || this.deleted) return { error: 'INVALID_INVITE' };
-      if (invite.usedBy === actor && invite.usedMembership === this.members.get(actor)) return this.receipt(actor);
-      if (invite.revoked || invite.usedBy || invite.expiresAt <= time || !this.members.has(invite.issuedBy)) return { error: 'INVALID_INVITE' };
+      const uses = invite.uses ?? new Map();
+      if (invite.multiUse && uses.get(actor) === this.members.get(actor) && uses.has(actor)) return this.receipt(actor);
+      if (invite.multiUse && uses.has(actor)) return { error: 'INVALID_INVITE' };
+      if (!invite.multiUse && invite.usedBy === actor && invite.usedMembership === this.members.get(actor)) return this.receipt(actor);
+      if (invite.revoked || (!invite.multiUse && invite.usedBy) || invite.expiresAt <= time || !this.members.has(invite.issuedBy) || (invite.multiUse && uses.size >= 64)) return { error: 'INVALID_INVITE' };
       if (!this.members.has(actor)) {
         if (this.members.size >= 8) return { error: 'MEMBER_LIMIT' };
         this.members.set(actor, randomUUID()); this.details.set(actor, { displayName: args.p_display_name, isGuest: this.users.get(actor).is_anonymous });
         this.departures.delete(actor); this.rotate(actor);
+        if (invite.multiUse) uses.set(actor, this.members.get(actor));
       }
-      invite.usedBy = actor; invite.usedMembership = this.members.get(actor); return this.receipt(actor);
+      if (invite.multiUse) invite.uses = uses;
+      else { invite.usedBy = actor; invite.usedMembership = this.members.get(actor); }
+      return this.receipt(actor);
     }
     if (args.p_document !== documentId) this.fail('42501', 'NOT_MEMBER');
     if (name === 'collab_v2_access_status') return this.access(args.p_actor);
     if (name === 'collab_v2_open_existing') { this.requireMember(args.p_actor); return this.receipt(args.p_actor); }
     if (name === 'collab_v2_list_invites') {
       this.requireMember(args.p_actor);
-      return [...this.invites.values()].map(invite => ({ inviteId: invite.inviteId, expiresAt: new Date(invite.expiresAt).toISOString(),
-        status: invite.revoked ? 'revoked' : invite.usedBy ? 'used' : invite.expiresAt <= Date.now() ? 'expired' : 'active' }));
+      return [...this.invites.values()].reverse().map(invite => ({ inviteId: invite.inviteId, expiresAt: new Date(invite.expiresAt).toISOString(),
+        multiUse: !!invite.multiUse, joinedCount: invite.multiUse ? (invite.uses?.size ?? 0) : invite.usedBy ? 1 : 0,
+        status: invite.revoked ? 'revoked' : invite.multiUse ? (invite.expiresAt <= Date.now() ? 'expired' : invite.uses?.size >= 64 ? 'used' : 'active') : invite.usedBy ? 'used' : invite.expiresAt <= Date.now() ? 'expired' : 'active' }));
     }
     if (name === 'collab_v2_list_members') {
       this.requireMember(args.p_actor);
@@ -92,8 +99,8 @@ export class MockCollabBackend {
     if (name === 'collab_v2_create_invite') {
       this.requireMember(args.p_actor);
       if (this.invites.size >= 256 || [...this.invites.values()].filter(i => i.issuedAt > Date.now() - 3600000).length >= 32) this.fail('54000', 'INVITE_RATE_LIMIT');
-      const token = randomBytes(32).toString('hex'), inviteId = randomUUID(), expiresAt = Date.now() + 86400000;
-      this.invites.set(createHash('sha256').update(token).digest('hex'), { inviteId, issuedBy: args.p_actor, issuedAt: Date.now(), expiresAt });
+      const token = randomBytes(32).toString('hex'), inviteId = randomUUID(), expiresAt = Date.now() + 7 * 86400000;
+      this.invites.set(createHash('sha256').update(token).digest('hex'), { inviteId, issuedBy: args.p_actor, issuedAt: Date.now(), expiresAt, multiUse: true, uses: new Map() });
       return { inviteId, token, expiresAt: new Date(expiresAt).toISOString() };
     }
     if (name === 'collab_v2_revoke_invite') {
@@ -105,7 +112,7 @@ export class MockCollabBackend {
       this.requireMember(args.p_actor); const user = name === 'collab_v2_leave' ? args.p_actor : args.p_user;
       if (user === this.creator) this.fail('42501', 'CREATOR_PROTECTED');
       if (!this.members.delete(user)) this.fail('22023', 'NOT_MEMBER');
-      for (const invite of this.invites.values()) if (invite.issuedBy === user && !invite.usedBy) invite.revoked = true;
+      for (const invite of this.invites.values()) if (invite.issuedBy === user && !invite.revoked && invite.expiresAt > Date.now() && (invite.multiUse || !invite.usedBy)) invite.revoked = true;
       this.departures.set(user, 'removed'); this.rotate(user); return null;
     }
     if (name === 'collab_v2_delete_document') {
@@ -178,7 +185,7 @@ export class MockCollabBackend {
     this.acl = String(BigInt(this.acl) + 1n); this.topic = `collab-v2:${randomUUID()}`;
   }
   deleteAccount(actor) {
-    for (const invite of this.invites.values()) if (invite.issuedBy === actor && !invite.usedBy) invite.revoked = true;
+    for (const invite of this.invites.values()) if (invite.issuedBy === actor && !invite.revoked && invite.expiresAt > Date.now() && (invite.multiUse || !invite.usedBy)) invite.revoked = true;
     if (actor === this.creator) {
       for (const member of this.members.keys()) if (member !== actor) this.departures.set(member, 'ended');
       this.members.clear(); this.deleted = true; this.created = false; this.base = null; this.log = []; this.receipts.clear(); this.invites.clear();

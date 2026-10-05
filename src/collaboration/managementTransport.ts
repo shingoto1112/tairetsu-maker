@@ -7,7 +7,7 @@ export type SharedMember = { userId: string; displayName: string; isGuest: boole
 export type AccessStatus = { status: "active"; membershipGeneration: string } | { status: "removed" | "ended" | "unavailable" };
 export type DocumentCursor = { createdAt: string; documentId: string };
 export type SharedDocumentSummary = { documentId: string; title: string; createdAt: string; isCreator: boolean; memberCount: number; documentSchema: 1 | 2 };
-export type SharedInvite = { inviteId: string; expiresAt: string; status: "active" | "used" | "expired" | "revoked" };
+export type SharedInvite = { inviteId: string; expiresAt: string; status: "active" | "used" | "expired" | "revoked"; multiUse?: boolean; joinedCount?: number };
 export interface ManagementTransport {
   listMyDocuments(limit: number, cursor: DocumentCursor | null, auth: Credential, signal: AbortSignal): Promise<{ items: SharedDocumentSummary[]; nextCursor: DocumentCursor | null }>;
   openExisting(documentId: string, auth: Credential, signal: AbortSignal): Promise<MembershipReceipt>;
@@ -55,7 +55,9 @@ export function createManagementTransport(config: CloudConfig, fetcher: typeof f
     invites: async (documentId, auth, signal) => {
       const result = await rpc("list_invites", { p_document: documentId }, auth, signal);
       if (!Array.isArray(result) || result.length > 256 || result.some(v => !obj(v) || !uuid(v.inviteId) || typeof v.expiresAt !== "string" ||
-        !Number.isFinite(Date.parse(v.expiresAt)) || !["active", "used", "expired", "revoked"].includes(v.status as string))) invalid();
+        !Number.isFinite(Date.parse(v.expiresAt)) || !["active", "used", "expired", "revoked"].includes(v.status as string) ||
+        v.multiUse !== undefined && typeof v.multiUse !== "boolean" ||
+        v.joinedCount !== undefined && (!Number.isInteger(v.joinedCount) || (v.joinedCount as number) < 0 || (v.joinedCount as number) > 64))) invalid();
       return result as SharedInvite[];
     },
     create: async (bytes, displayName, auth, signal) => parseMembershipReceipt(await request("/functions/v1/collab-ingest", auth, signal, { action: "create", bytes, displayName })),

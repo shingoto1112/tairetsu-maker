@@ -50,6 +50,29 @@ async function setup() {
 }
 
 describe("sharing lifecycle API", () => {
+  it("uses one 7-day link for multiple people and replays only the current membership after expiry/revocation", async () => {
+    const s = await setup(); await s.creator.lifecycle.startSharing("project_a", "作成者");
+    const link = await s.creator.lifecycle.createInvite(documentId);
+    const invite = [...s.backend.invites.values()].find(i => i.inviteId === link.inviteId)!;
+    expect(invite.multiUse).toBe(true); expect(invite.expiresAt - invite.issuedAt).toBe(7 * 86400000);
+    const a = s.client(actors[1]), b = s.client(s.backend.guest("二人目").user.id);
+    const [first, second] = await Promise.all([a.lifecycle.prepareJoin(link.link,"一人目"),b.lifecycle.prepareJoin(link.link,"二人目")]);
+    expect(first.collaboration).not.toBeNull(); expect(second.collaboration).not.toBeNull();
+    expect(invite.uses.size).toBe(2); expect(s.backend.members.size).toBe(3);
+    const acl = s.backend.acl;
+    await a.lifecycle.prepareJoin(link.link,"変更しない名前");
+    expect(invite.uses.size).toBe(2); expect(s.backend.acl).toBe(acl);
+    expect(s.backend.details.get(actors[1]).displayName).toBe("一人目");
+    invite.expiresAt = Date.now()-1; invite.revoked = true;
+    expect((await a.lifecycle.prepareJoin(link.link,"再送")).collaboration?.transportBinding)
+      .toEqual(first.collaboration?.transportBinding);
+    expect(s.backend.acl).toBe(acl);
+    await s.creator.lifecycle.removeMember(documentId,actors[1]);
+    await expect(a.lifecycle.prepareJoin(link.link,"再参加")).rejects.toMatchObject({code:"INVALID_INVITE"});
+    const next = await s.creator.lifecycle.createInvite(documentId);
+    await a.lifecycle.prepareJoin(next.link,"新しい資格");
+    await expect(a.lifecycle.prepareJoin(link.link,"古いリンク")).rejects.toMatchObject({code:"INVALID_INVITE"});
+  });
   it("lists lightweight current membership and resumes exact local attachments without consuming invitations", async () => {
     const s = await setup(); const record = await s.creator.lifecycle.startSharing("project_a", "作成者");
     expect((await s.creator.lifecycle.listMyDocuments()).items[0]).toMatchObject({ documentId, isCreator: true, memberCount: 1, title: record.project.title });

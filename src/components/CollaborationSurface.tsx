@@ -110,10 +110,11 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
               {canManage && <>
                 {active?.historyUi && <CollaborationHistoryPanel key={localId} controller={active.historyUi} members={ui.members} creator={creator} session={session}
                   open={(record, message) => service.openHistoryCopy(record, message)} />}
-                <section><h3>招待リンク</h3><p>1人につき1リンク。24時間以内に1回だけ参加できます。</p>
+                <section><h3>招待リンク</h3><p>このリンクは7日間、何人でも参加に使えます（作成者を含めて合計8人まで）。参加した人に期限はありません。</p>
                   <button type="button" disabled={ui.busy} onClick={() => run(() => service.invite())}>招待リンクを作成</button>
                   {ui.issued && linkTools(ui.issued.link, "作成した招待リンク")}
-                  <ul>{ui.invites.map(invite => <li key={invite.inviteId}><span>期限：{new Date(invite.expiresAt).toLocaleString("ja-JP")} · {{ active: "未使用", used: "使用済み", expired: "期限切れ", revoked: "取り消し済み" }[invite.status]}</span>
+                  <p>取り消すと、まだ参加していない人はこのリンクで参加できなくなります。参加済みの人はそのままです。</p>
+                  <ul>{ui.invites.map(invite => <li key={invite.inviteId}><span>期限：{new Date(invite.expiresAt).toLocaleString("ja-JP")} · {(invite.multiUse ? { active: "有効", used: "上限に達しました", expired: "期限切れ", revoked: "取り消し済み" } : { active: "未使用", used: "使用済み", expired: "期限切れ", revoked: "取り消し済み" })[invite.status]}{invite.multiUse && invite.joinedCount !== undefined && ` · このリンクで参加：${invite.joinedCount}人`}</span>
                     {invite.status === "active" && <button type="button" disabled={ui.busy} onClick={() => run(() => service.revoke(invite.inviteId))}>招待を取り消す</button>}</li>)}</ul>
                 </section>
                 <section><h3>参加メンバー（{ui.members.length}人）</h3><ul>{ui.members.map(member => <li key={member.userId}>

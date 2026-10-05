@@ -127,7 +127,9 @@ try {
   const fixedRequests=await b.evaluate(()=>window.joinSaveRequests);assert.equal(fixedRequests.length,2);assert.equal(fixedRequests[0],fixedRequests[1]);
   await Promise.all([title(a).fill('同時編集の隊列表'),b.locator('.member-manager button.primary').click()]);await Promise.all([a.locator('.toolbar-save-button').click(),b.locator('.toolbar-save-button').click()]);await expect(title(b)).toHaveValue('同時編集の隊列表');
   await manage(a);await expect(dialog(a).getByText('試験ゲスト',{exact:false})).toBeVisible();await expect(dialog(a).getByText('ゲスト',{exact:true})).toBeVisible();
-  await expect(dialog(a).getByText(/使用済み/)).toBeVisible();const revokedLink=await invite(a);const latest=[...backend.invites.values()].at(-1);await a.getByRole('button',{name:'招待を取り消す',exact:true}).last().click();await expect(dialog(a).getByText(/取り消し済み/)).toBeVisible();assert(latest.revoked);
+  await expect(dialog(a).getByText(/有効 · このリンクで参加：1人/)).toBeVisible();
+  await expect(dialog(a).getByText(/このリンクは7日間/)).toBeVisible();
+  const revokedLink=await invite(a);const latest=[...backend.invites.values()].at(-1);await a.getByRole('button',{name:'招待を取り消す',exact:true}).first().click();await expect(dialog(a).getByText(/取り消し済み/)).toBeVisible();assert(latest.revoked);
   const expiredLink=await invite(a);[...backend.invites.values()].at(-1).expiresAt=Date.now()-1;await a.getByRole('button',{name:'最新の状態を確認',exact:true}).click();await expect(dialog(a).getByText(/期限切れ/)).toBeVisible();await close(a);
   const a2=await newBrowser();await login(a2);await expect(a2.getByRole('button',{name:'同時編集の隊列表をクラウドから開く',exact:true})).toBeVisible();const joins=backend.managementCalls.filter(n=>n==='collab_v2_join').length;
   await a2.getByRole('button',{name:'同時編集の隊列表をクラウドから開く',exact:true}).click();await expect(title(a2)).toHaveValue('同時編集の隊列表');assert.equal(backend.managementCalls.filter(n=>n==='collab_v2_join').length,joins);assert.equal(backend.members.size,2);
@@ -155,11 +157,12 @@ try {
   const rescued=await b.evaluate(()=>({id:window.__sharedSession.active?.localId??null}));assert.equal(rescued.id,null);
   // A separate current participant remains for the ended banner.
   await manage(a);const endLink=await invite(a);await close(a);const c=await newBrowser(endLink);await c.getByLabel('参加する表示名').fill('終了確認ゲスト');await c.getByRole('button',{name:'参加する',exact:true}).click();await expect(title(c)).toHaveValue('同時編集の隊列表');
-  for(const bad of [revokedLink,expiredLink,link]){const p=await newBrowser(bad);await p.getByLabel('参加する表示名').fill('無効招待試験');await p.getByRole('button',{name:'参加する',exact:true}).click();await expect(p.getByRole('alert')).toContainText('期限切れ、使用済み、または取り消されています');}
+  const d=await newBrowser(link);await d.getByLabel('参加する表示名').fill('同じリンクの別ゲスト');await d.getByRole('button',{name:'参加する',exact:true}).click();await expect(title(d)).toHaveValue('同時編集の隊列表');
+  for(const bad of [revokedLink,expiredLink]){const p=await newBrowser(bad);await p.getByLabel('参加する表示名').fill('無効招待試験');await p.getByRole('button',{name:'参加する',exact:true}).click();await expect(p.getByRole('alert')).toContainText('期限切れ、使用済み、または取り消されています');}
   await manage(a);await a.getByRole('button',{name:'共有を終了（クラウドから削除）',exact:true}).click();await close(a);await expect(c.getByLabel('共有状態 ended')).toBeVisible({timeout:35000});
   await capture(a,'ended-v2',true);
   await home(a);await a.getByRole('button',{name:'アカウント',exact:true}).click();await a.getByRole('button',{name:'アカウント削除',exact:true}).click();await a.getByLabel('現在のパスワード').fill('mock-pass');await a.getByLabel('削除内容を確認しました').check();await a.getByRole('button',{name:'アカウントを削除する',exact:true}).click();await expect(a.getByText('アカウントを削除しました。この端末のコピーは残っています。')).toBeVisible();
-  checks.push('revoked/expired/used invitation errors, removed rescue retains unsent edits, ended banner, V2 account deletion RPC');
+  checks.push('multi-use/count UI, same-link second guest, revoked/expired errors, removed rescue retains unsent edits, ended banner, V2 account deletion RPC');
   assert.deepEqual(legacy,[]);assert.deepEqual(denied,[]);assert.deepEqual(errors,[]);
   await writeFile(path.join(shotDir,'bounds.json'),JSON.stringify(bounds,null,2));
   console.log('COLLABORATION_UI_BROWSER',JSON.stringify({checks,shots,bounds,legacyCalls:legacy.length,productionNetwork:false,shotDir}));

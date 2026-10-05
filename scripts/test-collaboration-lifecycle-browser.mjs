@@ -75,14 +75,14 @@ async function scenario(accountDeletion) {
       assert.equal((await call(1,'joinExtra',expired.link)).code,'INVALID_INVITE');
       const revoked = await call(0,'invite',documentId); await call(1,'revoke',documentId,revoked.inviteId);
       assert.equal((await call(0,'joinExtra',revoked.link)).code,'INVALID_INVITE');
-      assert.equal((await call(0,'joinExtra',invite.link)).code,'INVALID_INVITE');
-      for (let i=0;i<5;i++) assert.equal((await call(i%2,'joinExtra',(await call(0,'invite',documentId)).link)).joined,true);
+      assert.equal((await call(0,'joinExtra',invite.link)).joined,true);
+      for (let i=0;i<4;i++) assert.equal((await call(i%2,'joinExtra',invite.link)).joined,true);
       assert.equal(backend.members.size,7);
       const raceInvites = [await call(0,'invite',documentId),await call(1,'invite',documentId)];
       const race = await Promise.all([call(0,'joinExtra',raceInvites[0].link),call(1,'joinExtra',raceInvites[1].link)]);
       assert.equal(race.filter(r=>r.joined).length,1); assert.equal(race.find(r=>!r.joined).code,'MEMBER_LIMIT'); assert.equal(backend.members.size,8);
       assert.equal((await call(0,'joinExtra',(await call(0,'invite',documentId)).link)).code,'MEMBER_LIMIT');
-      checks.push('expired/used/revoked invites denied; 8th/9th simultaneous race admits only one');
+      checks.push('expired/revoked invites denied; multi-use link admits multiple people; 8th/9th simultaneous race admits only one');
       await call(0,'deleteShared',documentId);
     } else {
       backend.deleteAccount(actors[0]);
