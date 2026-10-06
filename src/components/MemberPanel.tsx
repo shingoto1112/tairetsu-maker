@@ -512,11 +512,27 @@ export const MemberPanel = ({
   return (
     <section className="panel-section member-manager" ref={panelRef}>
       {portrait ? visibilityPicker : (
-      <PanelStickyHeader
-        title="メンバー"
-        meta={`表示 ${visibleMembers.length}人 / 非表示 ${hiddenMembers.length}人 / 選択中 ${selectedMemberIds.length}人`}
-        actions={headerActions}
-      >
+        <div className="panel-manager-header">
+          <h2>メンバー</h2>
+          <div className="panel-sticky-meta">表示 {visibleMembers.length}人 / 非表示 {hiddenMembers.length}人 / 選択中 {selectedMemberIds.length}人</div>
+          <div className="panel-heading-actions">{headerActions}</div>
+        </div>
+      )}
+      <div className="panel-manager-body">
+        {portrait && <p className="muted-text portrait-add-target">
+          現在の追加先:
+          {isVisibleTab
+            ? " このシーンでステージに表示"
+            : " このシーンでは隊列外・非表示"}
+        </p>}
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
+
+      {!portrait && visibilityPicker}
+
+      {!portrait && <PanelStickyHeader>
         <div className="panel-visibility-summary">
           <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
             <button
@@ -535,21 +551,10 @@ export const MemberPanel = ({
             </button>
           </div>
         </div>
-      </PanelStickyHeader>
-      )}
-      <div className="panel-manager-body">
-        <p className={portrait ? "muted-text portrait-add-target" : "muted-text"}>
-          現在の追加先:
-          {isVisibleTab
-            ? " このシーンでステージに表示"
-            : " このシーンでは隊列外・非表示"}
+        <p className="muted-text panel-add-target">
+          追加先: {isVisibleTab ? "このシーンに表示" : "このシーンでは非表示"}
         </p>
-      {projectDisabled && (
-        <p className="notice warning">{projectReadOnlyMessage}</p>
-      )}
-      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
-
-      {!portrait && visibilityPicker}
+      </PanelStickyHeader>}
 
       <div className="member-management-block">
         <div className="panel-section__header">

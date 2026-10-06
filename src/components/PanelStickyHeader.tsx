@@ -1,7 +1,7 @@
 import { ReactNode, RefObject, useEffect, useRef } from "react";
 
 type PanelStickyHeaderProps = {
-  title: string;
+  title?: string;
   meta?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
@@ -47,10 +47,10 @@ export const PanelStickyHeader = ({
   useStickyHeightOnPanel(headerRef);
   return (
     <div className="panel-sticky-header" ref={headerRef}>
-      <div className="panel-sticky-title">
-        <h2>{title}</h2>
+      {(title || meta) && <div className="panel-sticky-title">
+        {title && <h2>{title}</h2>}
         {meta && <div className="panel-sticky-meta">{meta}</div>}
-      </div>
+      </div>}
       {actions && <div className="panel-sticky-actions">{actions}</div>}
       {children}
     </div>

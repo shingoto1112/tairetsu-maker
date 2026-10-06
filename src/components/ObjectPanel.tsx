@@ -190,8 +190,8 @@ export const ObjectPanel = ({
   const isVisibleTab = visibilityTab === "visible";
   const projectDisabled = !canEditProject;
   useEffect(() => { setOpenPickerObjectId(null); }, [currentFrameId, visibilityTab]);
-  // "非表示の人だけ" starts on when the panel opens and survives prop/scene switches.
-  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(true);
+  // The optional hidden-only filter survives prop/scene switches.
+  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(false);
   const assignmentSceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
     isShown: (member) => isMemberShownInScene(member, memberVisibility),
     hiddenOnly: hiddenMembersOnly,
@@ -354,18 +354,30 @@ export const ObjectPanel = ({
   return (
     <section className="panel-section object-manager" ref={panelRef}>
       {portrait ? visibilityPicker : (
-      <PanelStickyHeader
-        title="道具"
-        meta={
-          selected?.type === "object"
-            ? `選択中: ${
-                objects.find((object) => object.id === selected.id)?.name ??
-                "道具"
-              } / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`
-            : `選択中: なし / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`
-        }
-        actions={headerActions}
-      >
+        <div className="panel-manager-header">
+          <h2>道具</h2>
+          <div className="panel-sticky-meta">
+            選択中: {selected?.type === "object" ? objects.find(object => object.id === selected.id)?.name ?? "道具" : "なし"}
+            {` / 表示 ${visibleObjects.length}個 / 非表示 ${hiddenObjects.length}個`}
+          </div>
+          <div className="panel-heading-actions">{headerActions}</div>
+        </div>
+      )}
+      <div className="panel-manager-body">
+        {portrait && <p className="muted-text portrait-add-target">
+          現在の追加先:
+          {isVisibleTab
+            ? " このシーンでステージに表示"
+            : " このシーンではステージ外・非表示"}
+        </p>}
+      {projectDisabled && (
+        <p className="notice warning">{projectReadOnlyMessage}</p>
+      )}
+      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
+
+      {!portrait && visibilityPicker}
+
+      {!portrait && <PanelStickyHeader>
         <div className="panel-visibility-summary">
           <div className="member-visibility-tabs" role="tablist" aria-label="表示状態">
             <button
@@ -384,21 +396,10 @@ export const ObjectPanel = ({
             </button>
           </div>
         </div>
-      </PanelStickyHeader>
-      )}
-      <div className="panel-manager-body">
-        <p className={portrait ? "muted-text portrait-add-target" : "muted-text"}>
-          現在の追加先:
-          {isVisibleTab
-            ? " このシーンでステージに表示"
-            : " このシーンではステージ外・非表示"}
+        <p className="muted-text panel-add-target">
+          追加先: {isVisibleTab ? "このシーンに表示" : "このシーンでは非表示"}
         </p>
-      {projectDisabled && (
-        <p className="notice warning">{projectReadOnlyMessage}</p>
-      )}
-      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
-
-      {!portrait && visibilityPicker}
+      </PanelStickyHeader>}
 
       <section className="object-group-manager" aria-label="グループ一覧">
         <div className="object-visibility-list__header">
@@ -788,7 +789,7 @@ export const ObjectPanel = ({
                 />
               </div>
               <label>
-                zIndex
+                重なり順（大きいほど手前）
                 <NumericInput
                   value={state?.zIndex ?? object.zIndex}
                   disabled={sceneDisabled}

@@ -4,8 +4,6 @@ import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle } fro
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import {
-  ArrowDownToLine,
-  ArrowUpToLine,
   Camera,
   Lock,
   Maximize2,
@@ -47,6 +45,7 @@ import {
   splitMemberLabel,
 } from "../utils/memberLabel";
 import {
+  internalYToParadeDistance,
   clampParadeObjectTopY,
   getSafeParadeBackwardDistance,
   getSafeParadeCanvasDistance,
@@ -390,10 +389,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     };
     const [zoom, setZoom] = useState(currentFrame?.sceneViewState?.zoom ?? 1);
     const [dragState, setDragState] = useState<DragState | null>(null);
-    const [reflectTarget, setReflectTarget] = useState<"all" | "group">("all");
-    const [reflectGroupId, setReflectGroupId] = useState(
-      project.memberGroups?.[0]?.id ?? "",
-    );
+    const [reflectGroupId, setReflectGroupId] = useState("");
+    const activeReflectGroupId = (project.memberGroups ?? []).some(group => group.id === reflectGroupId)
+      ? reflectGroupId : "";
+    useEffect(() => {
+      if (reflectGroupId && !activeReflectGroupId) setReflectGroupId("");
+    }, [reflectGroupId, activeReflectGroupId]);
+    const reflectTarget: "all" | "group" = activeReflectGroupId ? "group" : "all";
     const [reflectDirection, setReflectDirection] = useState<
       "forward" | "backward" | "left" | "right"
     >("forward");
@@ -472,6 +474,15 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         ),
       [assignedMemberIds, project.members, snapshot.memberVisibility],
     );
+
+    const frontDistance = useMemo(() => {
+      const finiteY = visibleMembers.map(member => snapshot.positions[member.id]?.y)
+        .filter((y): y is number => typeof y === "number" && Number.isFinite(y));
+      return finiteY.length ? internalYToParadeDistance(
+        finiteY.reduce((min, y) => Math.min(min, y), Infinity),
+        settings.totalDistance, settings.backwardDistanceMeters,
+      ) : undefined;
+    }, [visibleMembers, snapshot.positions, settings.totalDistance, settings.backwardDistanceMeters]);
 
     const visibleObjects = useMemo(
       () => {
@@ -1808,27 +1819,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (pending) onSelect(pending.selection, pending.options);
     }
 
-    const jumpToStart = () => {
-      touchScrollerRef.current?.stop();
-      if (!scrollRef.current) {
-        return;
-      }
-      scrollRef.current.scrollTop = Math.max(
-        0,
-        scrollRef.current.scrollHeight - scrollRef.current.clientHeight,
-      );
-      scheduleSaveViewState();
-    };
-
-    const jumpToGoal = () => {
-      touchScrollerRef.current?.stop();
-      if (!scrollRef.current) {
-        return;
-      }
-      scrollRef.current.scrollTop = 0;
-      scheduleSaveViewState();
-    };
-
     const startMemberDrag = (
       memberId: string,
       position: Position,
@@ -2056,8 +2046,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             <div className="parade-control-panel__heading">
               <strong>パレード操作</strong>
               <span>{selectedFrameLabel}</span>
+              <span className="parade-front-distance">最前 {frontDistance === undefined ? "—" : frontDistance + "m"}</span>
             </div>
-            <div className="parade-history-controls" aria-label="編集履歴">
+            <div className="parade-history-controls" aria-label="パレードの操作">
               <button
                 className="mini-button icon-only undo-redo-button"
                 type="button"
@@ -2078,6 +2069,42 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               >
                 <Redo2 size={17} />
               </button>
+              {onCaptureStageImage && (
+                <button
+                  type="button"
+                  className="mini-button icon-only"
+                  title="ステージを画像保存"
+                  aria-label="ステージを画像保存"
+                  onClick={onCaptureStageImage}
+                >
+                  <Camera size={16} />
+                </button>
+              )}
+              <button
+                type="button"
+                className={`mini-button icon-only stage-pinch-lock-button ${isPinchLocked ? "is-locked" : ""}`}
+                title={
+                  isPinchLocked
+                    ? "ピンチ拡大縮小のロックを解除"
+                    : "ピンチ拡大縮小をロック"
+                }
+                aria-label={
+                  isPinchLocked
+                    ? "ピンチ拡大縮小のロックを解除"
+                    : "ピンチ拡大縮小をロック"
+                }
+                onClick={() => setIsPinchLocked((locked) => !locked)}
+              >
+                {isPinchLocked ? <Lock size={16} /> : <Unlock size={16} />}
+              </button>
+              <button
+                type="button" className="mini-button icon-only"
+                title="パレードフルスクリーン"
+                aria-label={isFullscreen ? "全画面を終了" : "全画面"}
+                onClick={onToggleFullscreen}
+              >
+                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
             </div>
           </div>
           {isReadOnly && (
@@ -2094,7 +2121,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               disabled={isReadOnly}
               onClick={() =>
                 onReflectPreviousFrame({
-                  target: "all",
+                  target: reflectTarget,
+                  groupId: activeReflectGroupId || undefined,
                   direction: "forward",
                   moveMeters: 0,
                   moveObjects: reflectMoveObjects,
@@ -2106,28 +2134,15 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             <label>
               対象
               <select
-                value={reflectTarget}
-                onChange={(event) => setReflectTarget(event.target.value as "all" | "group")}
+                value={activeReflectGroupId}
+                onChange={(event) => setReflectGroupId(event.target.value)}
               >
-                <option value="all">全員</option>
-                <option value="group">指定グループ</option>
+                <option value="">全員</option>
+                {(project.memberGroups ?? []).map(group => (
+                  <option key={group.id} value={group.id}>{group.name}</option>
+                ))}
               </select>
             </label>
-            {reflectTarget === "group" && (
-              <label>
-                グループ
-                <select
-                  value={reflectGroupId}
-                  onChange={(event) => setReflectGroupId(event.target.value)}
-                >
-                  {(project.memberGroups ?? []).map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             <label>
               方向
               <select
@@ -2171,7 +2186,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               onClick={() =>
                 onReflectPreviousFrame({
                   target: reflectTarget,
-                  groupId: reflectTarget === "group" ? reflectGroupId : undefined,
+                  groupId: activeReflectGroupId || undefined,
                   direction: reflectDirection,
                   moveMeters: reflectMoveMeters,
                   moveObjects: reflectMoveObjects,
@@ -2181,62 +2196,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               反映して移動
             </button>
           </section>
-          <section className="parade-control-section">
-            <h3>表示</h3>
-            <div className="parade-control-row">
-              <button type="button" className="icon-button" title="スタートへ" onClick={jumpToStart}>
-                <ArrowDownToLine size={16} />
-              </button>
-              <button type="button" className="icon-button" title="ゴールへ" onClick={jumpToGoal}>
-                <ArrowUpToLine size={16} />
-              </button>
-              <button type="button" className="mini-button" onClick={() => updateZoom(1)}>
-                100%
-              </button>
-              {onCaptureStageImage && (
-                <button
-                  type="button"
-                  className="icon-button"
-                  title="ステージを画像保存"
-                  aria-label="ステージを画像保存"
-                  onClick={onCaptureStageImage}
-                >
-                  <Camera size={16} />
-                </button>
-              )}
-              <button
-                type="button"
-                className={`icon-button stage-pinch-lock-button ${isPinchLocked ? "is-locked" : ""}`}
-                title={
-                  isPinchLocked
-                    ? "ピンチ拡大縮小のロックを解除"
-                    : "ピンチ拡大縮小をロック"
-                }
-                aria-label={
-                  isPinchLocked
-                    ? "ピンチ拡大縮小のロックを解除"
-                    : "ピンチ拡大縮小をロック"
-                }
-                onClick={() => setIsPinchLocked((locked) => !locked)}
-              >
-                {isPinchLocked ? <Lock size={16} /> : <Unlock size={16} />}
-              </button>
-            </div>
-            <div className="parade-control-row">
-              <button type="button" className="mini-button" title="スタート地点を表示" onClick={jumpToStart}>
-                スタートへ
-              </button>
-            </div>
-            <button
-              type="button"
-              className="mini-button"
-              title={isFullscreen ? "フルスクリーンを終了" : "フルスクリーン"}
-              onClick={onToggleFullscreen}
-            >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              {isFullscreen ? "解除" : "全画面"}
-            </button>
-          </section>
+
         </aside>
 
         <div

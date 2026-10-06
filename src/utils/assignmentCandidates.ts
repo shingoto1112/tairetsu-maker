@@ -13,14 +13,3 @@ export const isMemberShownInScene = (
 /** Assigning a member to a prop hides them in that scene (see assignMemberToObject). */
 export const shownMemberAssignmentNotice = (name: string): string =>
   `${name}さんは表示中です。割り当てると、このシーンでは非表示になります。`;
-
-/** Hidden members first, shown members after; each part keeps the incoming order. */
-export const splitBySceneVisibility = <T extends Pick<Member, "id" | "visible">>(
-  members: readonly T[],
-  isShown: (member: T) => boolean,
-): { hidden: T[]; shown: T[] } => {
-  const hidden: T[] = [];
-  const shown: T[] = [];
-  members.forEach((member) => (isShown(member) ? shown : hidden).push(member));
-  return { hidden, shown };
-};

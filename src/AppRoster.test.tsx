@@ -377,9 +377,12 @@ describe("App roster confirmation integration", () => {
       expect(confirm.textContent).toContain("1個の道具の担当が変わります");
       await user.click(within(confirm).getByRole("button", { name: "反映する" }));
     } else if (action === "add") {
-      // Anna is shown in this scene: the list starts with hidden members only, and assigning a shown member asks inline first.
+      // Anna is shown in this scene: the list starts with everyone (filter off), and assigning a shown member asks inline first.
+      const hiddenOnly = within(view).getByRole("checkbox", { name: "このシーンで非表示の人だけ" }) as HTMLInputElement;
+      expect(hiddenOnly.checked).toBe(false);
+      await user.click(hiddenOnly);
       expect(within(view).queryByRole("button", { name: /^Anna 未所属/ })).toBeNull();
-      await user.click(within(view).getByRole("checkbox", { name: "このシーンで非表示の人だけ" }));
+      await user.click(hiddenOnly);
       await user.click(within(view).getByRole("button", { name: "Anna 未所属 表示中" }));
       expect(within(view).getByRole("status").textContent).toContain("Annaさんは表示中です。");
       await user.click(within(view).getByRole("button", { name: "割り当てる" }));

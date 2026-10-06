@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Member } from "../types";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { MemberPicker } from "./MemberPicker";
+import { MEMBER_PICKER_ORDER_KEY } from "../hooks/useMemberPickerOrder";
 
-const key = "tairetsu-maker:member-picker-order";
+const key = MEMBER_PICKER_ORDER_KEY;
 const members: Member[] = [
   { id: "u", name: "メンバー10", color: "#000000" },
   { id: "b", name: "メンバー2", color: "#000000" },

@@ -16,6 +16,7 @@ import { MemoryProjectRepository } from "../repositories/contract/testing/Memory
 import { MemoryTransport } from "./testing/memoryTransport";
 import { validateState } from "./serverValidation";
 import { orderedIds, orderKey, deleted } from "./projectModel";
+import { sortFrames } from "../utils/interpolation";
 
 const resources: { destroy(): void }[] = [];
 const keep = <T extends { destroy(): void }>(resource: T): T => { resources.push(resource); return resource; };
@@ -52,6 +53,19 @@ const converge = (s: ReturnType<typeof peers>, reverse = true) => {
 };
 
 describe("schema 2 full Project mapping", () => {
+  it("display time ordering is stable and emits no Yjs updates or saved order changes", () => {
+    const p = fixture();
+    p.frames = [p.frames[2], { ...p.frames[0], timeSec: 10 }, p.frames[1]];
+    const s = peers(p);
+    const update = vi.fn(); s.docs[0].on("update", update);
+    const before = Y.encodeStateAsUpdate(s.docs[0]);
+    const projected = s.project();
+    expect(sortFrames(projected.frames).map(f => f.id)).toEqual(["f_001", "f_002", "f_003"]);
+    expect(projected.frames.map(f => f.id)).toEqual(["f_003", "f_001", "f_002"]);
+    expect(s.project().frames.map(f => f.id)).toEqual(p.frames.map(f => f.id));
+    expect(Y.encodeStateAsUpdate(s.docs[0])).toEqual(before);
+    expect(update).not.toHaveBeenCalled();
+  });
   it.each(["stage", "parade"])("round trips every declared %s field, geometry, paths, orders, null/empty/local state", mode => {
     const p = mode === "stage" ? fixture() : { ...fixture(), ...normalize(fixtures.parade), audio: fixture().audio };
     const doc = keep(createSharedDocument(p)), joined = keep(joinSharedDocument(Y.encodeStateAsUpdate(doc)));

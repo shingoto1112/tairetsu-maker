@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { FormationFrame } from "../types";
 import { formatTime } from "../utils/time";
+import { SceneTimeInput } from "./SceneTimeInput";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
@@ -28,7 +29,6 @@ type TimelineProps = {
   canEditProject?: boolean;
   canEditScene?: boolean;
   canAddFrame?: boolean;
-  canSortFrames?: boolean;
   projectReadOnlyMessage?: string;
   addFrameReadOnlyMessage?: string;
   sceneReadOnlyMessage?: string;
@@ -40,8 +40,6 @@ type TimelineProps = {
   onSeekToFrame: (timeSec: number) => void;
   onUpdateFrame: (id: string, patch: Partial<FormationFrame>) => void;
   onDeleteFrame: (id: string) => void;
-  onReorderFrame: (draggedId: string, targetId: string) => void;
-  onSortFramesByTime: () => void;
   onCopyFrame: () => void;
   onPasteFrame: () => void;
   onPasteFrameIntoCurrent: () => void;
@@ -68,7 +66,6 @@ export const Timeline = ({
   canEditProject = true,
   canEditScene = true,
   canAddFrame = canEditProject,
-  canSortFrames = canEditProject,
   projectReadOnlyMessage = "初期クラウド編集では、シーン追加・削除・並び替え・名称変更は編集できません。",
   addFrameReadOnlyMessage = projectReadOnlyMessage,
   sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
@@ -80,8 +77,6 @@ export const Timeline = ({
   onSeekToFrame,
   onUpdateFrame,
   onDeleteFrame,
-  onReorderFrame,
-  onSortFramesByTime,
   onCopyFrame,
   onPasteFrame,
   onPasteFrameIntoCurrent,
@@ -89,8 +84,6 @@ export const Timeline = ({
   sceneOrderSaveStatus,
   onApplyPreviousSceneState,
 }: TimelineProps) => {
-  const [draggingFrameId, setDraggingFrameId] = useState<string | null>(null);
-  const [dragOverFrameId, setDragOverFrameId] = useState<string | null>(null);
   const [includePreviousObjectVisibility, setIncludePreviousObjectVisibility] =
     useState(false);
   const inlineDetailsRef = useRef<HTMLElement | null>(null);
@@ -101,7 +94,6 @@ export const Timeline = ({
     : -1;
   const projectDisabled = !canEditProject;
   const addFrameDisabled = !canAddFrame;
-  const sortFramesDisabled = !canSortFrames;
   const sceneDisabled = !canEditScene;
 
   useEffect(() => {
@@ -112,7 +104,7 @@ export const Timeline = ({
       });
     });
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [selectedFrameId]);
+  }, [selectedFrameId, selectedFrame?.timeSec, selectedIndex]);
 
   const renderSceneDetails = (frame: FormationFrame, index: number) => (
     <section
@@ -148,39 +140,18 @@ export const Timeline = ({
           />
         </label>
         <label>
-          セクション
-          <input
-            value={frame.section ?? ""}
-            disabled={projectDisabled}
-            title={projectDisabled ? projectReadOnlyMessage : undefined}
-            onChange={(event) =>
-              onUpdateFrame(frame.id, { section: event.target.value })
-            }
-            placeholder="Intro / Aメロ / サビ"
-          />
-        </label>
-        <label>
           時刻（秒）
-          <NumericInput
-            min={0}
-            step="0.1"
+          <SceneTimeInput
+            key={frame.id}
             value={frame.timeSec}
             disabled={projectDisabled}
             title={projectDisabled ? projectReadOnlyMessage : undefined}
-            onValueChange={(timeSec) =>
-              onUpdateFrame(frame.id, {
-                timeSec,
-              })
-            }
+            onCommit={(timeSec) => onUpdateFrame(frame.id, { timeSec })}
           />
         </label>
       </div>
 
-      {useGlobalStageSize ? (
-        <p className="notice muted">
-          ステージサイズは全シーン共通です: 横{defaultStageWidth}m × 縦{defaultStageDepth}m
-        </p>
-      ) : (
+      {!useGlobalStageSize && (
         <>
           <div className="settings-grid">
             <label>
@@ -241,12 +212,7 @@ export const Timeline = ({
 
       <section className="previous-scene-sync">
         <div className="previous-scene-sync__header">
-          <div>
-            <h3>前シーン反映</h3>
-            <p>
-                    現在シーンのメンバー位置と道具の位置・大きさを、直前シーンの状態で上書きします。
-            </p>
-          </div>
+          <h3>前シーン反映</h3>
           <span>
             直前:{" "}
             {previousFrame
@@ -254,6 +220,9 @@ export const Timeline = ({
               : "なし"}
           </span>
         </div>
+        <p className="previous-scene-sync__description">
+          メンバーの位置と道具の位置・大きさを、直前のシーンと同じにします。
+        </p>
         <label className="checkbox-row compact">
           <input
             type="checkbox"
@@ -299,7 +268,7 @@ export const Timeline = ({
       <div className="card-actions wrap">
         <button className="mini-button" onClick={onCopyFrame} type="button">
           <Copy size={14} />
-          このシーンをコピー
+          コピー
         </button>
         <button
           className="mini-button danger"
@@ -320,11 +289,11 @@ export const Timeline = ({
           className="mini-button danger"
           onClick={() => onDeleteFrame(frame.id)}
           disabled={projectDisabled || frames.length <= 1}
-          title={projectDisabled ? projectReadOnlyMessage : undefined}
+          aria-label="このシーンを削除"
+          title="このシーンを削除"
           type="button"
         >
-          <Trash2 size={14} />
-          このシーンを削除
+          <Trash2 size={14} aria-hidden="true" />
         </button>
       </div>
     </section>
@@ -370,16 +339,6 @@ export const Timeline = ({
             >
               <Plus size={15} />
               現在時刻で追加
-            </button>
-            <button
-              className="mini-button"
-              onClick={onSortFramesByTime}
-              disabled={sortFramesDisabled || frames.length <= 1}
-              title={sortFramesDisabled ? projectReadOnlyMessage : undefined}
-              type="button"
-            >
-              <Clock size={15} />
-              時刻順
             </button>
             <button className="mini-button" onClick={onCopyFrame} type="button">
               コピー
@@ -438,47 +397,8 @@ export const Timeline = ({
                 className={[
                   "timeline-card compact",
                   isSelected ? "is-selected" : "",
-                  draggingFrameId === frame.id ? "is-dragging" : "",
-                  dragOverFrameId === frame.id && draggingFrameId !== frame.id
-                    ? "is-drop-target"
-                    : "",
                 ].join(" ")}
-                draggable={!projectDisabled}
                 onClick={() => onSelectFrame(frame.id)}
-                onDragStart={(event) => {
-                  if (projectDisabled) {
-                    event.preventDefault();
-                    return;
-                  }
-                  setDraggingFrameId(frame.id);
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", frame.id);
-                }}
-                onDragOver={(event) => {
-                  if (projectDisabled) {
-                    return;
-                  }
-                  event.preventDefault();
-                  setDragOverFrameId(frame.id);
-                }}
-                onDragLeave={() => setDragOverFrameId(null)}
-                onDrop={(event) => {
-                  if (projectDisabled) {
-                    return;
-                  }
-                  event.preventDefault();
-                  const draggedId =
-                    draggingFrameId || event.dataTransfer.getData("text/plain");
-                  setDraggingFrameId(null);
-                  setDragOverFrameId(null);
-                  if (draggedId) {
-                    onReorderFrame(draggedId, frame.id);
-                  }
-                }}
-                onDragEnd={() => {
-                  setDraggingFrameId(null);
-                  setDragOverFrameId(null);
-                }}
               >
                 <div className="timeline-card__top">
                   <div>

@@ -181,7 +181,7 @@ try {
   if(!process.env.BUILD22_ROSTER){
   phase='stage scene views';await open('stage');await verifySceneView('stage');phase='parade scene views';await open('parade');await verifySceneView('parade');
   phase='parade maximum zoom';await page.setViewportSize({width:1376,height:1032});await open('parade');
-  await page.getByRole('button',{name:'100%',exact:true}).click();await wait(200);
+  await expect(page.getByRole('button',{name:'100%',exact:true})).toHaveCount(0);await wait(200);
   const baseWidth=await page.locator('.parade-stage').evaluate(e=>e.offsetWidth);
   for(let i=0;i<5;i++)await pinch('.parade-viewport',2);
   assert.equal(await page.locator('.parade-stage').evaluate(e=>e.offsetWidth),baseWidth*6);
@@ -213,7 +213,7 @@ try {
     const count=sheet.querySelectorAll('[data-member-id]').length;sheet.remove();return {count,valid,width:plan.width,height:plan.height,font:plan.fontSize};
   });assert.equal(heading.count,146);assert.equal(heading.valid,true);
   if(process.env.BUILD22_ROSTER){console.log('PASS roster');process.exitCode=0;}
-  phase='long parade';await open('long');await page.getByRole('button',{name:'100%',exact:true}).click();await wait(100);
+  phase='long parade';await open('long');await expect(page.getByRole('button',{name:'100%',exact:true})).toHaveCount(0);await wait(100);
   phase='drag, selection, long press, lock, wheel';
   const positionViewport=async()=>{await page.locator('.parade-viewport').evaluate(v=>{v.scrollTop=15500;v.scrollLeft=0;});await wait(350);};
   await positionViewport();let target=await visibleTarget('parade');assert.ok(target);

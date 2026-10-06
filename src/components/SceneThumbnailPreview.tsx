@@ -4,6 +4,7 @@ import type { FormationFrame, Project, StageObject } from "../types";
 import { createDefaultObjectState, getSnapshotForFrame } from "../utils/interpolation";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import { getSafeParadeCanvasDistance } from "../utils/parade";
+import { formationVerticalRange } from "../utils/formationExportLayout";
 
 const getFrameStageSize = (
   project: Project,
@@ -43,18 +44,26 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
   const width = Math.max(1, stageSize.widthMeters);
   const depth = Math.max(1, stageSize.depthMeters);
   const isDenseProject = project.members.length >= 120;
+  // Parade routes are long: show only the span people and props occupy, as exports do.
+  // Annotation lines far from everyone may be cut off.
+  const isParade = project.mode === "parade";
+  const range = isParade ? formationVerticalRange(project, { ...frame, ...snapshot }) : { top: 0, bottom: depth };
+  const top = range.top;
+  const height = Math.max(1, range.bottom - range.top);
+  // Keep parade dots about as large on screen as on a 12m stage.
+  const radiusScale = isParade ? Math.max(1, width / 12) : 1;
   return (
     <svg
       className="scene-thumbnail-preview"
-      viewBox={`0 0 ${width} ${depth}`}
+      viewBox={`0 ${top} ${width} ${height}`}
       preserveAspectRatio="xMidYMid meet"
       aria-hidden="true"
     >
       <rect
         x="0"
-        y="0"
+        y={top}
         width={width}
-        height={depth}
+        height={height}
         rx="0.08"
         fill="#ffffff"
         stroke="#d8e2ec"
@@ -62,9 +71,9 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
       />
       <line
         x1={width / 2}
-        y1="0"
+        y1={top}
         x2={width / 2}
-        y2={depth}
+        y2={top + height}
         stroke="#0d8b78"
         strokeOpacity="0.35"
         strokeWidth="0.035"
@@ -112,13 +121,13 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
             key={member.id}
             cx={position.x}
             cy={position.y}
-            r={isDenseProject ? "0.075" : "0.11"}
+            r={(isDenseProject ? 0.075 : 0.11) * radiusScale}
             fill={getMemberDisplayColor(member, {
               groups: project.memberGroups ?? [],
               snapshot,
             })}
             stroke="#ffffff"
-            strokeWidth={isDenseProject ? "0.025" : "0.04"}
+            strokeWidth={(isDenseProject ? 0.025 : 0.04) * radiusScale}
           />
         );
       })}

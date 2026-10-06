@@ -180,13 +180,48 @@ describe("parade pinch lifecycle", () => {
     await act(async () => { fireEvent.pointerMove(window, { pointerId: 1, clientX: 130, clientY: 100 }); });
     expect(move).toHaveBeenCalled();
   });
-  it("retains 100% and pinch lock, removes zoom buttons, and accepts Ctrl/Command wheel", () => {
+  it("retains pinch lock and Ctrl/Command wheel while removing navigation and reset buttons", () => {
     const { p, view, viewport } = setup();
     expect(view.queryByTitle("拡大")).toBeNull(); expect(view.queryByTitle("縮小")).toBeNull();
-    expect(view.getByRole("button", { name: "100%" })).toBeTruthy();
+    expect(view.queryByRole("button", { name: "100%" })).toBeNull();
+    expect(view.queryByTitle("スタートへ")).toBeNull(); expect(view.queryByTitle("ゴールへ")).toBeNull();
+    expect(view.getByRole("button", { name: "全画面" }).closest(".parade-history-controls")).toBeTruthy();
     fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100, clientX: 300, clientY: 250 }); flush();
     expect(p.onFrameViewStateChange).toHaveBeenLastCalledWith("one", expect.objectContaining({ zoom: 1.14 }));
     fireEvent.wheel(viewport, { metaKey: true, deltaY: 100, clientX: 300, clientY: 250 }); flush();
     expect(p.onFrameViewStateChange).toHaveBeenLastCalledWith("one", expect.objectContaining({ zoom: 1 }));
+  });
+  it("uses one group select for both reflection actions and resets deleted groups to all", () => {
+    const { p, view } = setup();
+    p.project.memberGroups = [{ id: "red", name: "赤組", memberIds: ["m0"] }];
+    view.rerender(<ParadeCanvas {...p} />);
+    const select = view.getByLabelText("対象") as HTMLSelectElement;
+    expect([...select.options].map(o => o.text)).toEqual(["全員", "赤組"]);
+    fireEvent.change(select, { target: { value: "red" } });
+    fireEvent.click(view.getByRole("button", { name: "前シーンを反映" }));
+    expect(p.onReflectPreviousFrame).toHaveBeenLastCalledWith(expect.objectContaining({ target: "group", groupId: "red", moveMeters: 0 }));
+    fireEvent.click(view.getByRole("button", { name: "反映して移動" }));
+    expect(p.onReflectPreviousFrame).toHaveBeenLastCalledWith(expect.objectContaining({ target: "group", groupId: "red", moveMeters: 5 }));
+    view.rerender(<ParadeCanvas {...p} project={{ ...p.project, memberGroups: [] }} />);
+    expect(select.value).toBe("");
+    fireEvent.click(view.getByRole("button", { name: "前シーンを反映" }));
+    expect(p.onReflectPreviousFrame).toHaveBeenLastCalledWith(expect.objectContaining({ target: "all", groupId: undefined }));
+  });
+  it("shows the foremost finite visible member center, excluding assignments, and keeps it outside the image", () => {
+    const { p, view } = setup();
+    const project = { ...p.project, members: p.project.members.slice(0, 5),
+      paradeSettings: { totalDistance: 120, backwardDistanceMeters: 10, width: 18, cellSizeMeters: 1,
+        direction: "up" as const, rulerPosition: "both" as const, emphasizeEvery5m: true, emphasizeEvery10m: true } };
+    project.members[0] = { ...project.members[0], visible: false };
+    project.frames[0] = { ...project.frames[0], objectAssignments: { flag: ["m1"] } };
+    const snapshot = { ...p.snapshot, positions: { m0: { x: 1, y: 0 }, m1: { x: 1, y: 1 },
+      m2: { x: 1, y: 8.25 }, m3: { x: 1, y: NaN }, m4: { x: 1, y: 15 } } };
+    view.rerender(<ParadeCanvas {...p} project={project} snapshot={snapshot} />);
+    expect(view.getByText("最前 111.75m")).toBeTruthy();
+    expect(view.container.querySelector(".parade-stage-wrap")!.textContent).not.toContain("最前");
+    view.rerender(<ParadeCanvas {...p} project={project} snapshot={{ ...snapshot, positions: { ...snapshot.positions, m2: { x: 1, y: 20 } } }} />);
+    expect(view.getByText("最前 105m")).toBeTruthy();
+    view.rerender(<ParadeCanvas {...p} project={project} snapshot={{ ...snapshot, memberVisibility: { m2: false, m3: false, m4: false } }} />);
+    expect(view.getByText("最前 —")).toBeTruthy();
   });
 });

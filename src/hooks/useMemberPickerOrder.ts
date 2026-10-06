@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { MemberPickerOrder } from "../utils/memberOrdering";
 
-export const MEMBER_PICKER_ORDER_KEY = "tairetsu-maker:member-picker-order";
+// v2 (build 26): everyone starts again from グループ順 once; later choices are remembered.
+export const MEMBER_PICKER_ORDER_KEY = "tairetsu-maker:member-picker-order-v2";
 const orderChanged = "member-picker-order-changed";
 const readOrder = (): MemberPickerOrder => {
   try {

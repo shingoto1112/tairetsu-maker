@@ -95,7 +95,7 @@
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .parade-control-panel__heading {
@@ -120,6 +120,7 @@
 .parade-history-controls {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -153,6 +154,20 @@
   min-height: 32px;
   padding: 4px 8px;
   width: 100%;
+}
+
+.parade-control-section label.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.parade-control-section input[type="checkbox"] {
+  flex: 0 0 auto;
+  min-height: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
 }
 
 .parade-control-row {
@@ -4737,6 +4752,7 @@ h2 {
 }
 
 .previous-scene-sync__header {
+  flex-wrap: wrap;
   align-items: start;
   display: flex;
   gap: 10px;
@@ -4748,7 +4764,7 @@ h2 {
   margin: 0 0 3px;
 }
 
-.previous-scene-sync__header p {
+.previous-scene-sync__description {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
@@ -4758,7 +4774,7 @@ h2 {
 .previous-scene-sync__header span {
   color: var(--muted);
   font-size: 11px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .scene-notes-textarea.compact {
@@ -7130,6 +7146,14 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 
 /* Roster controls share one sticky region and the normal vertical content flow. */
 .panel-manager-body { display: contents; }
+.panel-manager-header { display: grid; gap: 8px; margin-bottom: 12px; }
+.panel-manager-header h2 { font-size: 15px; margin: 0; }
+.panel-manager-header .panel-heading-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+:is(.member-manager, .object-manager) .panel-manager-body > .panel-sticky-header {
+  margin-top: 0;
+  background: #ffffff;
+}
+.panel-add-target { margin: 0; }
 .panel-group-form { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .panel-group-form > button { margin-top: 10px; }
 :is(.member-manager, .object-manager) > .panel-sticky-header .panel-visibility-summary {

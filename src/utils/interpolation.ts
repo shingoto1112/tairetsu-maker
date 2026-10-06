@@ -30,7 +30,13 @@ const quadraticPoint = (
 };
 
 export const sortFrames = (frames: FormationFrame[]): FormationFrame[] =>
-  [...frames].sort((a, b) => a.timeSec - b.timeSec);
+  frames.map((frame, index) => ({ frame, index }))
+    .sort((a, b) => {
+      const left = Number.isFinite(a.frame.timeSec) ? a.frame.timeSec : Infinity;
+      const right = Number.isFinite(b.frame.timeSec) ? b.frame.timeSec : Infinity;
+      return left === right ? a.index - b.index : left - right;
+    })
+    .map(({ frame }) => frame);
 
 const SCENE_TIME_EPSILON = 0.0001;
 

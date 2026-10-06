@@ -733,6 +733,7 @@ export const PrintStagePreview = ({
   options,
   viewport,
   highlightedObjectId,
+  hideLabels = false,
 }: {
   commonWidthMeters: number;
   frame: FormationFrame;
@@ -745,6 +746,8 @@ export const PrintStagePreview = ({
   viewport?: { leftMeters: number; rightMeters: number; sideMm: number; topMm: number; bottomMm: number; wholeMembersWithinRange?: boolean };
   /** Read-only previews (roster assignment) outline one prop; exports never pass it. */
   highlightedObjectId?: string;
+  /** Read-only previews may omit member and prop names; exports always draw them. */
+  hideLabels?: boolean;
 }) => {
   const annotationClipId = useId();
   const isParade = project.mode === "parade";
@@ -921,13 +924,13 @@ export const PrintStagePreview = ({
           zIndex,
         }}
       >
-        <span className="print-member__label" aria-hidden="true">
+        {!hideLabels && <span className="print-member__label" aria-hidden="true">
           {labelLines.map((line, index) => (
             <span className="print-member__label-line" key={`${key}-print-label-${index}`}>
               {line}
             </span>
           ))}
-        </span>
+        </span>}
       </span>
     );
   };
@@ -1167,7 +1170,7 @@ export const PrintStagePreview = ({
                 zIndex: 2 + state.zIndex,
               }}
             >
-              {object.name}
+              {!hideLabels && object.name}
             </div>
           );
         })}

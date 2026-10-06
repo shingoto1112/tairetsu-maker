@@ -17,7 +17,15 @@ describe("scene preview rendering", () => {
     } };
     project.frames = [frame, { ...project.frames[1], annotationLines: {} }];
     const view = render(<SceneThumbnailPreview project={project} frame={frame} visible />);
-    expect(view.container.querySelector("svg")!.getAttribute("viewBox")).toBe("0 0 18 125");
+    // Parade thumbnails show only the span people occupy (like exports), not the 125m route.
+    const [left, top, width, height] = view.container.querySelector("svg")!.getAttribute("viewBox")!.split(" ").map(Number);
+    expect([left, width]).toEqual([0, 18]);
+    expect(height).toBeLessThan(125);
+    const ys = [...view.container.querySelectorAll("circle")].map((circle) => Number(circle.getAttribute("cy")));
+    expect(ys.length).toBeGreaterThan(0);
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(top);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(top + height);
+    // A line far from everyone stays in the drawing data even when it falls outside the cropped view.
     expect(view.container.querySelector('[stroke-dasharray="8 6"]')!.getAttribute("y1")).toBe("110");
     view.rerender(<SceneThumbnailPreview project={project} frame={project.frames[1]} visible />);
     expect(view.container.querySelector('[stroke-dasharray="8 6"]')).toBeNull();

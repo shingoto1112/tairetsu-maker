@@ -114,6 +114,7 @@ import {
   resolveMovementPlan,
   sortFrames,
 } from "./utils/interpolation";
+import { copyParadeGroupState } from "./utils/paradeGroupReflection";
 import { getMemberDisplayColor } from "./utils/memberAppearance";
 import {
   getSafeParadeBackwardDistance,
@@ -495,29 +496,6 @@ type WindowWithClipboardItem = Window & {
   ClipboardItem?: ClipboardItemConstructor;
 };
 
-const sortFormationFramesByTime = (
-  frames: FormationFrame[],
-): { changed: boolean; frames: FormationFrame[] } => {
-  const ordered = frames
-    .map((frame, index) => ({ frame, index }))
-    .sort((left, right) => {
-      const leftTime = Number.isFinite(left.frame.timeSec)
-        ? left.frame.timeSec
-        : Number.POSITIVE_INFINITY;
-      const rightTime = Number.isFinite(right.frame.timeSec)
-        ? right.frame.timeSec
-        : Number.POSITIVE_INFINITY;
-      if (leftTime !== rightTime) {
-        return leftTime - rightTime;
-      }
-      return left.index - right.index;
-    })
-    .map(({ frame }) => frame);
-  return {
-    changed: ordered.some((frame, index) => frame.id !== frames[index]?.id),
-    frames: ordered,
-  };
-};
 
 const copyImageToClipboard = async (blob: Blob): Promise<boolean> => {
   const ClipboardItemCtor = (window as WindowWithClipboardItem).ClipboardItem;
@@ -1844,6 +1822,8 @@ function App() {
     );
   }, [memberColorEditor]);
 
+  const displayFrames = useMemo(() => sortFrames(project.frames), [project.frames]);
+
   const selectedFrame = useMemo(
     () =>
       project.frames.find((frame) => frame.id === selectedFrameId) ??
@@ -1871,9 +1851,9 @@ function App() {
   }, [project.frames, selectedFrame]);
 
   const selectedSceneNumber = useMemo(() => {
-    const index = project.frames.findIndex((frame) => frame.id === selectedFrame?.id);
+    const index = displayFrames.findIndex((frame) => frame.id === selectedFrame?.id);
     return index >= 0 ? index + 1 : 0;
-  }, [project.frames, selectedFrame?.id]);
+  }, [displayFrames, selectedFrame?.id]);
 
   const currentSceneFrame = useMemo(
     () => getActiveFrameAtTime(project.frames, currentTime) ?? selectedFrame,
@@ -2064,8 +2044,11 @@ function App() {
           }
         };
         const isMoveOperation = moveMeters > 0;
+        const reflectedGroupState = !isMoveOperation && groupMemberIds
+          ? copyParadeGroupState(sourceFrame, targetFrame, groupMemberIds)
+          : undefined;
         const positionEntries = new Map<string, Position>(
-          Object.entries(sourceFrame.positions),
+          Object.entries(reflectedGroupState?.positions ?? sourceFrame.positions),
         );
         if (isMoveOperation) {
           Object.entries(targetFrame.positions).forEach(([memberId, position]) => {
@@ -2158,6 +2141,7 @@ function App() {
                   memberVisibility: nextMemberVisibility,
                   objectAssignments: nextObjectAssignments,
                   memberAppearanceOverrides: nextMemberAppearanceOverrides,
+                  ...reflectedGroupState,
                 }
               : frame,
           ),
@@ -3975,53 +3959,6 @@ function App() {
       setSelectedFrameId(remaining[0]?.id ?? null);
     }
 
-  };
-
-  const reorderFrames = (draggedId: string, targetId: string) => {
-    if (draggedId === targetId) {
-      return;
-    }
-    if (sharedEditorRef.current) {
-      sharedEditorRef.current.commands.moveEntity("scenes", draggedId, targetId);
-      setSelectedFrameId(draggedId); refreshHistoryCounts(); return;
-    }
-    updateProject((previous) => {
-      const sourceIndex = previous.frames.findIndex((frame) => frame.id === draggedId);
-      const targetIndex = previous.frames.findIndex((frame) => frame.id === targetId);
-      if (sourceIndex < 0 || targetIndex < 0) {
-        return previous;
-      }
-      const frames = [...previous.frames];
-      const [movedFrame] = frames.splice(sourceIndex, 1);
-      const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-      frames.splice(adjustedTargetIndex, 0, movedFrame);
-      return { ...previous, frames };
-    });
-    setSelectedFrameId(draggedId);
-    setNotice("シーン順を変更しました。曲同期する場合は時刻も確認してください。");
-
-  };
-
-  const sortFramesByTime = () => {
-
-    let changed = false;
-    updateProject((previous) => {
-      const ordered = sortFormationFramesByTime(previous.frames);
-      changed = ordered.changed;
-      if (!changed) {
-        return previous;
-      }
-      return {
-        ...previous,
-        frames: ordered.frames,
-      };
-    }, "シーン時刻順並び替え");
-    setNotice(
-      changed
-        ? "シーンを時刻順に並び替えました。"
-        : "シーンはすでに時刻順です。",
-      "success",
-    );
   };
 
   const copyMemberToClipboard = (memberId?: string) => {
@@ -7216,7 +7153,7 @@ function App() {
           canOpenRosterManager={true}
           onOpenRosterManager={() => openRosterManager("members")}
           memberGroups={project.memberGroups ?? []}
-          frames={project.frames}
+          frames={displayFrames}
           members={project.members}
           objects={project.stageObjects}
           objectGroups={project.objectGroups ?? []}
@@ -7340,7 +7277,7 @@ function App() {
     if (activePanelTab === "timeline") {
       return (
         <Timeline
-          frames={project.frames}
+          frames={displayFrames}
           selectedFrameId={displayFrame?.id ?? null}
           currentTime={currentTime}
           useGlobalStageSize={
@@ -7353,7 +7290,6 @@ function App() {
           canEditProject={true}
           canEditScene={true}
           canAddFrame={true}
-          canSortFrames={true}
 
           onSelectFrame={(id) => {
             setSelectedFrameId(id);
@@ -7368,8 +7304,6 @@ function App() {
           onSeekToFrame={seekToFrame}
           onUpdateFrame={updateFrame}
           onDeleteFrame={deleteFrame}
-          onReorderFrame={reorderFrames}
-          onSortFramesByTime={sortFramesByTime}
           onCopyFrame={() => copyFrameToClipboard()}
           onPasteFrame={pasteFrameFromClipboard}
           onPasteFrameIntoCurrent={() =>
@@ -8108,7 +8042,7 @@ function App() {
       onExportZip={handleShareExportZip}
       getMobileExportSource={() => structuredClone({
         project, projectTitle: project.title, members: project.members, memberGroups: project.memberGroups ?? [],
-        objects: project.stageObjects, objectGroups: project.objectGroups ?? [], frames: project.frames,
+        objects: project.stageObjects, objectGroups: project.objectGroups ?? [], frames: displayFrames,
         currentFrame: selectedFrame ?? null, objectStates: selectedFrame?.objectStates ?? {},
       })}
     /></Suspense>}
@@ -8215,7 +8149,7 @@ function App() {
     <RosterManagementModal
       canUndo={historyCounts.undo > 0}
       onUndo={undoProject}
-      frames={project.frames}
+      frames={displayFrames}
       currentFrame={selectedFrame ?? null}
       objectStates={selectedFrameSnapshot.objectStates}
       previousFrame={selectedPreviousFrame}

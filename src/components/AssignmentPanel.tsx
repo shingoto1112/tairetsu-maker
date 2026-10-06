@@ -11,12 +11,12 @@ import { formatTime } from "../utils/time";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 import { RosterManagerButton } from "./RosterManagerButton";
 import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
-import { buildMemberGroupIndex } from "../utils/memberOrdering";
+import { buildMemberGroupIndex, sortMembersForPicker } from "../utils/memberOrdering";
 import { isMemberShownInScene } from "../utils/assignmentCandidates";
 import type { MemberPickerSceneVisibility } from "./MemberPicker";
 
 type AssignmentView = "objects" | "members";
-type MemberSort = "total" | "assignments" | "hidden" | "name";
+type MemberSort = "total" | "assignments" | "hidden" | "group";
 
 type AssignmentPanelProps = {
   onOpenRosterManager?: () => void;
@@ -71,8 +71,8 @@ export const AssignmentPanel = ({
   const [openPickerObjectId, setOpenPickerObjectId] = useState<string | null>(null);
   const [view, setView] = useState<AssignmentView>("objects");
   const [memberSort, setMemberSort] = useState<MemberSort>("total");
-  // "非表示の人だけ" starts on each time the panel opens and survives prop/scene switches.
-  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(true);
+  // "非表示の人だけ" starts off each time the panel opens and survives prop/scene switches.
+  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(false);
   const sceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
     isShown: (member) => isMemberShownInScene(member, memberVisibility),
     hiddenOnly: hiddenMembersOnly,
@@ -185,10 +185,12 @@ export const AssignmentPanel = ({
       };
     });
 
+    if (memberSort === "group") {
+      // Same order as the member tab: groups, then order within a group, then ungrouped members.
+      const rank = new Map(sortMembersForPicker(members, "group", memberGroupIndex).map((member, index) => [member.id, index]));
+      return [...summaries].sort((a, b) => (rank.get(a.member.id) ?? 0) - (rank.get(b.member.id) ?? 0));
+    }
     return [...summaries].sort((a, b) => {
-      if (memberSort === "name") {
-        return a.member.name.localeCompare(b.member.name, "ja");
-      }
       if (memberSort === "assignments") {
         return (
           b.assignedScenes.length - a.assignedScenes.length ||
@@ -206,7 +208,7 @@ export const AssignmentPanel = ({
         a.member.name.localeCompare(b.member.name, "ja")
       );
     });
-  }, [frames, memberSort, members, objectsById]);
+  }, [frames, memberSort, members, memberGroupIndex, objectsById]);
 
   const currentFrameMeta = currentFrame
     ? `現在: ${currentFrame.label} / ${formatTime(currentFrame.timeSec)}`
@@ -307,7 +309,7 @@ export const AssignmentPanel = ({
             <option value="total">道具＋非表示が多い順</option>
             <option value="assignments">道具担当が多い順</option>
             <option value="hidden">非表示が多い順</option>
-            <option value="name">名前順</option>
+            <option value="group">グループ順</option>
           </select>
         </label>
       </div>

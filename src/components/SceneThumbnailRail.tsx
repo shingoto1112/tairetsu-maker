@@ -45,6 +45,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
 }: SceneThumbnailRailProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const sortedFrames = useMemo(() => sortFrames(project.frames), [project.frames]);
+  const selectedIndex = sortedFrames.findIndex(frame => frame.id === selectedFrameId);
   const visibleFrames = useVisibleScenePreviews(listRef, sortedFrames, collapsed);
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [collapsed, selectedFrameId]);
+  }, [collapsed, selectedFrameId, selectedIndex]);
 
   return (
     <aside

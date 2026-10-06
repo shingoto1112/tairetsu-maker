@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import type { FormationFrame, Project } from "../types";
 import { createDefaultObjectState, getSnapshotForFrame } from "../utils/interpolation";
 import { FORMATION_BOTTOM, FORMATION_TOP, formationSize, formationVerticalRange } from "../utils/formationExportLayout";
@@ -10,46 +10,40 @@ type Props = {
   project: Project;
   frame: FormationFrame;
   highlightedObjectId?: string;
+  /** Width available beside the scene strip (px). Nothing is drawn until it is known. */
+  maxWidth?: number;
+  /** Height of the drawing including rulers (px). */
+  maxHeight?: number;
 };
+
+/** Drawing height used beside the scene strip; small enough to leave the assignment list most of the screen. */
+export const rosterPreviewHeight = (viewportHeight: number) => Math.max(140, Math.min(210, Math.round(viewportHeight * 0.2)));
 
 /**
  * Read-only drawing of one scene for the roster assignment screen. Uses the
- * export drawing (no editing events) and resolves only the selected scene.
+ * export drawing without names (no editing events) and resolves only the selected scene.
+ * Stage and parade both fit the height; parade shows only the range people and props occupy.
  */
-export const RosterAssignmentStagePreview = ({ project, frame, highlightedObjectId }: Props) => {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const box = boxRef.current;
-    if (!box) return;
-    const measure = () => setWidth(Math.floor(box.clientWidth));
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, []);
+export const RosterAssignmentStagePreview = ({ project, frame, highlightedObjectId, maxWidth = 0, maxHeight = 180 }: Props) => {
   // Inherited positions/props must match the scene thumbnails, so resolve the snapshot.
   const resolved = useMemo<FormationFrame>(() => ({ ...frame, ...getSnapshotForFrame(project, frame.id) }), [project, frame]);
   const size = formationSize(project, resolved);
   const vertical = formationVerticalRange(project, resolved);
-  // Stage: shrink to fit the height so the whole scene is visible. Parade routes are long, so keep full width and scroll.
-  const parade = project.mode === "parade";
   const side = formationRulerSide(project);
-  const maxDrawingHeight = Math.max(140, Math.min(240, Math.round((typeof window === "undefined" ? 900 : window.innerHeight) * 0.22)));
   const depthMeters = Math.max(0.5, vertical.bottom - vertical.top);
-  const fitWidth = side * 2 + size.width * Math.max(40, maxDrawingHeight - FORMATION_TOP - FORMATION_BOTTOM) / depthMeters;
-  const outputWidth = parade ? width : Math.min(width, Math.floor(fitWidth));
+  const drawingHeight = Math.max(40, maxHeight - FORMATION_TOP - FORMATION_BOTTOM);
+  const fitWidth = Math.floor(side * 2 + size.width * drawingHeight / depthMeters);
+  const outputWidth = Math.min(Math.floor(maxWidth), fitWidth);
+  const drawn = outputWidth > 80;
   const highlighted = highlightedObjectId ? project.stageObjects.find((object) => object.id === highlightedObjectId) : undefined;
   const highlightedHidden = !!highlighted &&
     ((resolved.objectStates[highlighted.id] ?? createDefaultObjectState(highlighted)).visible ?? highlighted.visible) === false;
-  return <section className={`roster-stage-preview${parade ? " is-parade" : ""}`} aria-label={`${frame.label} の隊列（見るだけ）`}>
-    <div className="roster-stage-preview__drawing" ref={boxRef}>
-      {width > 80 && <div className="roster-stage-preview__fit" style={{ width: outputWidth }}>
-        <StaticStagePreview project={project} frame={resolved} stageWidth={size.width} side={side}
-          range={{ left: 0, right: size.width, top: vertical.top, bottom: vertical.bottom }}
-          outputWidth={outputWidth} highlightedObjectId={highlightedObjectId} />
-      </div>}
+  return <section className="roster-stage-preview" aria-label={`${frame.label} の隊列（見るだけ）`}
+    style={drawn ? { width: outputWidth } : undefined}>
+    <div className="roster-stage-preview__drawing">
+      {drawn && <StaticStagePreview project={project} frame={resolved} stageWidth={size.width} side={side}
+        range={{ left: 0, right: size.width, top: vertical.top, bottom: vertical.bottom }}
+        outputWidth={outputWidth} highlightedObjectId={highlightedObjectId} hideLabels />}
     </div>
     {highlightedHidden && <p className="roster-stage-preview__note">「{highlighted!.name}」はこのシーンでは非表示です。</p>}
   </section>;

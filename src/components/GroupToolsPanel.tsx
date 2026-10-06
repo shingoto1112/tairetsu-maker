@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { AlignmentAction, FormationTemplate, Member } from "../types";
 import { NumericInput } from "./NumericInput";
-import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type GroupToolsPanelProps = {
   members: Member[];
@@ -74,10 +73,10 @@ export const GroupToolsPanel = ({
           : "panel-section formation-tools"
       }
     >
-      <PanelStickyHeader
-        title="整列・配置"
-        meta={`${selectedCount}人選択`}
-      />
+      <div className="panel-section__header">
+        <h2>整列・配置</h2>
+        <span>{selectedCount}人選択</span>
+      </div>
 
       <div className="formation-tools__selection-row">
         <button

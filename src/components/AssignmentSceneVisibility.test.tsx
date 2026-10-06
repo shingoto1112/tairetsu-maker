@@ -29,7 +29,7 @@ const candidateNames = () => within(screen.getByLabelText("メンバー候補"))
 
 const PickerHarness = () => {
   const [open, setOpen] = useState(true);
-  const [hiddenOnly, setHiddenOnly] = useState(true);
+  const [hiddenOnly, setHiddenOnly] = useState(false);
   return <MemberPicker members={members} groupIndex={groupIndex} selectedMemberId="" isOpen={open}
     onOpenChange={setOpen} onSelect={vi.fn()}
     sceneVisibility={{ isShown, hiddenOnly, onHiddenOnlyChange: setHiddenOnly }} />;
@@ -42,15 +42,18 @@ describe("scene-aware assignment candidates", () => {
     expect(isMemberShownInScene({ id: "a", visible: false }, {})).toBe(false);
   });
 
-  it("starts with hidden members only, then lists shown members below with a 表示中 mark", async () => {
+  it("starts with everyone in one list (shown members marked 表示中), and the filter narrows to hidden members", async () => {
     render(<PickerHarness />);
-    expect(candidateNames().sort()).toEqual(["あっきー", "てつ"].sort());
-    await userEvent.click(screen.getByRole("checkbox", { name: "このシーンで非表示の人だけ" }));
-    const names = candidateNames();
-    expect(names.slice(0, 2).sort()).toEqual(["あっきー", "てつ"].sort());
-    expect(names.slice(2).sort()).toEqual(["すん", "たいが"].sort());
+    const checkbox = screen.getByRole("checkbox", { name: "このシーンで非表示の人だけ" }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    // No grouping by visibility: the chosen order (here the incoming group-less order) is kept.
+    expect(candidateNames()).toEqual(["たいが", "てつ", "すん", "あっきー"]);
     expect(screen.getByRole("button", { name: /たいが .* 表示中/ })).toBeTruthy();
-    expect(screen.getByText("表示中の人（割り当てると非表示になります）")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^てつ / }).getAttribute("aria-label")).not.toContain("表示中");
+    await userEvent.click(checkbox);
+    expect(candidateNames()).toEqual(["てつ", "あっきー"]);
+    await userEvent.click(checkbox);
+    expect(candidateNames()).toEqual(["たいが", "てつ", "すん", "あっきー"]);
   });
 
   it("explains how to see shown members when nobody is hidden", () => {

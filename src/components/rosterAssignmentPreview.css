@@ -1,7 +1,21 @@
-/* Roster assignment: scene strip and read-only formation preview. Kept out of styles.css. */
+/* Roster assignment: read-only formation preview and scene strip in one row. Kept out of styles.css. */
+.roster-assignment-view.has-scene-preview {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.roster-assignment-media {
+  align-items: flex-start;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  min-width: 0;
+}
+
 .roster-scene-strip {
   display: flex;
+  flex: 1 1 auto;
   gap: 8px;
+  min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   padding: 4px 2px 8px;
@@ -47,28 +61,14 @@
   font-size: 11px;
 }
 
-.roster-assignment-view.has-scene-preview {
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-}
-
-.roster-scene-strip {
-  flex-shrink: 0;
-}
-
+/* Width is set inline to the fitted drawing width; the note wraps inside it. */
 .roster-stage-preview {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
+  box-sizing: content-box;
+  flex: 0 0 auto;
   margin: 0;
-  padding: 6px;
-}
-
-.roster-stage-preview.is-parade {
-  max-height: 34vh;
-  overflow: auto;
-}
-
-.roster-stage-preview__fit {
-  margin: 0 auto;
+  padding: 4px;
 }
 
 .roster-stage-preview__drawing {
@@ -83,11 +83,11 @@
 
 .roster-stage-preview__note {
   color: #9a3412;
-  font-size: 12px;
-  margin: 6px 2px 0;
+  font-size: 11px;
+  line-height: 1.35;
+  margin: 4px 2px 0;
 }
 
 @media (max-width: 600px) {
-  .roster-stage-preview.is-parade { max-height: 28vh; }
   .roster-scene-strip__card { flex-basis: 96px; }
 }

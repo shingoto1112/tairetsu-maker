@@ -15,20 +15,6 @@
   width: 20px;
 }
 
-.member-picker__section {
-  border-top: 1px solid #e2e8f0;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 700;
-  margin: 8px 0 0;
-  padding: 8px 4px 2px;
-}
-
-.member-picker__section:first-child {
-  border-top: 0;
-  margin-top: 0;
-}
-
 .member-picker__candidate.is-shown-in-scene {
   background: #f8fafc;
   color: #64748b;

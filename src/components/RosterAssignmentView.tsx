@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Project, StageObject } from "../types";
 import { RosterAssignmentSceneStrip } from "./RosterAssignmentSceneStrip";
-import { RosterAssignmentStagePreview } from "./RosterAssignmentStagePreview";
+import { RosterAssignmentStagePreview, rosterPreviewHeight } from "./RosterAssignmentStagePreview";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { collectGroupedItems } from "../utils/rosterColumns";
 import type { AssignMember, RemoveAssignment } from "./ObjectAssignmentEditor";
@@ -39,8 +39,8 @@ const sceneTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Mat
 export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
   const { frames, currentFrame, members, memberGroups, objects, objectGroups, objectStates,
     previousFrame, previousObjectStates, canEditAssignments, readOnlyMessage, onSelectFrame, canUndo, onUndo, memberVisibility, project } = props;
-  // "非表示の人だけ" starts on when the view opens and survives prop/scene switches.
-  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(true);
+  // "非表示の人だけ" starts off when the view opens and survives prop/scene switches.
+  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(false);
   const sceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
     isShown: (member) => isMemberShownInScene(member, memberVisibility),
     hiddenOnly: hiddenMembersOnly,
@@ -50,6 +50,7 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLElement>(null);
   const [narrow, setNarrow] = useState(false);
+  const [rootWidth, setRootWidth] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
   const listScroll = useRef(0);
   const restoreListFocus = useRef(false);
@@ -145,7 +146,7 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
   useLayoutEffect(() => {
     const element = rootRef.current;
     if (!element) return;
-    const measure = (width: number) => { if (width > 0) setNarrow(width < 760); };
+    const measure = (width: number) => { if (width > 0) { setNarrow(width < 760); setRootWidth(Math.floor(width)); } };
     measure(element.getBoundingClientRect().width);
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((entries) => measure(entries[0].contentRect.width));
@@ -253,10 +254,13 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
       </div>
       {notice && <p role="status" className="roster-assignment-help">{notice}</p>}
     </header>
-    {project && frames.length > 0 && <RosterAssignmentSceneStrip project={project} frames={frames}
-      selectedFrameId={currentFrame?.id ?? null} onSelectFrame={onSelectFrame} />}
-    {project && currentFrame && <RosterAssignmentStagePreview project={project} frame={currentFrame}
-      highlightedObjectId={selectedObject?.id} />}
+    {project && (currentFrame || frames.length > 0) && <div className="roster-assignment-media">
+      {currentFrame && <RosterAssignmentStagePreview project={project} frame={currentFrame}
+        highlightedObjectId={selectedObject?.id} maxWidth={rootWidth * (narrow ? 0.5 : 0.45)}
+        maxHeight={rosterPreviewHeight(typeof window === "undefined" ? 900 : window.innerHeight)} />}
+      {frames.length > 0 && <RosterAssignmentSceneStrip project={project} frames={frames}
+        selectedFrameId={currentFrame?.id ?? null} onSelectFrame={onSelectFrame} />}
+    </div>}
     <div className="roster-assignment-body">
       <div className="roster-assignment-list" ref={listRef} hidden={narrow && showDetail}
         onScroll={(event) => { if (!narrow || !showDetail) listScroll.current = event.currentTarget.scrollTop; }}>

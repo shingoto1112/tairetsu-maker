@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -68,6 +68,17 @@ const objectCard = (name: string) => {
 };
 
 describe("roster panel integration", () => {
+  it("starts object assignment with all candidates and keeps the zIndex callback behind its Japanese label", async () => {
+    const user = userEvent.setup(); const p = objectProps();
+    render(<ObjectPanel {...p} objectAssignments={{}} memberVisibility={{ m1: true, m2: false }} />);
+    await user.click(within(objectCard("旗")).getByRole("button", { name: "メンバーを選択" }));
+    expect((screen.getByRole("checkbox", { name: /非表示の人だけ/ }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("button", { name: /太郎 赤組/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /花子 赤組/ })).toBeTruthy();
+    const order = within(objectCard("旗")).getByLabelText("重なり順（大きいほど手前）");
+    fireEvent.change(order, { target: { value: "14" } });
+    expect(p.onUpdateObjectState).toHaveBeenCalledWith("o1", { zIndex: 14 });
+  });
   it.each(["members", "objects"] as const)("keeps icon group deletion accessible and disabled in read-only %s", async (panel) => {
     const user = userEvent.setup(); const remove = vi.fn();
     const view = panel === "members"
@@ -126,15 +137,19 @@ describe("roster panel integration", () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => cleanup());
 
-  it.each(["members", "objects"] as const)("unifies headings and keeps the tabs in the sticky header for %s", async (panel) => {
+  it.each(["members", "objects"] as const)("keeps only the tabs and add target sticky, after the visibility picker for %s", async (panel) => {
     const user = userEvent.setup();
     if (panel === "members") render(<MemberPanel {...memberProps()} />);
     else render(<ObjectPanel {...objectProps()} />);
     const tabs = screen.getByRole("tablist", { name: "表示状態" });
     const header = tabs.closest(".panel-sticky-header");
-    expect(header?.querySelector("h2")?.textContent).toBe(panel === "members" ? "メンバー" : "道具");
+    expect(header?.querySelector("h2")).toBeNull();
+    expect(document.querySelectorAll(".panel-sticky-header")).toHaveLength(1);
+    const picker = screen.getByRole("region", { name: "このシーンの表示" });
+    expect(picker.compareDocumentPosition(header!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(header?.textContent).toContain("追加先: このシーンに表示");
+    expect(document.querySelector(".panel-manager-header h2")?.textContent).toBe(panel === "members" ? "メンバー" : "道具");
     expect(within(header as HTMLElement).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "名簿", panel === "members" ? "メンバー" : "道具", "コピー", "貼り付け",
       panel === "members" ? "表示 0" : "表示 2", "非表示 0",
     ]);
     expect(screen.getByText("このシーンの表示")).toBeTruthy();
