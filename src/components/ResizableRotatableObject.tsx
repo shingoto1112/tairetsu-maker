@@ -1,3 +1,4 @@
+import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "../utils/horizontalGrid";
 import {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
@@ -61,6 +62,7 @@ type ResizableRotatableObjectProps = {
   remoteLockOwner?: string | null;
   onSelect: () => void;
   onMove: (state: Partial<ObjectState>) => void;
+  resolveMove?: (state: Partial<ObjectState>) => Partial<ObjectState>;
   onInteractionStart?: (kind: InteractionKind) => boolean | void | Promise<boolean | void>;
   onInteractionEnd?: () => void;
   onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -110,6 +112,7 @@ export const ResizableRotatableObject = ({
   remoteLockOwner = null,
   onSelect,
   onMove,
+  resolveMove,
   onInteractionStart,
   onInteractionEnd,
   onContextMenu,
@@ -178,7 +181,9 @@ export const ResizableRotatableObject = ({
     if (!element) {
       return;
     }
-    const stageRect = drag.stageElement.getBoundingClientRect();
+    // Preview variables are CSS layout pixels, not zoomed screen pixels.
+    const layoutWidth = drag.stageElement.clientWidth;
+    const layoutHeight = drag.stageElement.clientHeight;
     const nextState = {
       ...drag.startState,
       ...patch,
@@ -195,19 +200,19 @@ export const ResizableRotatableObject = ({
     const nextDisplayTopLeft = getDisplayTopLeft(nextState);
     element.style.setProperty(
       "--object-drag-x",
-      `${((nextDisplayTopLeft.x - startDisplayTopLeft.x) / stage.widthMeters) * stageRect.width}px`,
+      `${((nextDisplayTopLeft.x - startDisplayTopLeft.x) / stage.widthMeters) * layoutWidth}px`,
     );
     element.style.setProperty(
       "--object-drag-y",
-      `${((nextDisplayTopLeft.y - startDisplayTopLeft.y) / stage.depthMeters) * stageRect.height}px`,
+      `${((nextDisplayTopLeft.y - startDisplayTopLeft.y) / stage.depthMeters) * layoutHeight}px`,
     );
     element.style.setProperty(
       "--object-drag-width",
-      `${((nextState.widthMeters - drag.startState.widthMeters) / stage.widthMeters) * stageRect.width}px`,
+      `${((nextState.widthMeters - drag.startState.widthMeters) / stage.widthMeters) * layoutWidth}px`,
     );
     element.style.setProperty(
       "--object-drag-height",
-      `${((nextState.heightMeters - drag.startState.heightMeters) / stage.depthMeters) * stageRect.height}px`,
+      `${((nextState.heightMeters - drag.startState.heightMeters) / stage.depthMeters) * layoutHeight}px`,
     );
     element.style.setProperty(
       "--object-drag-rotation",
@@ -347,7 +352,10 @@ export const ResizableRotatableObject = ({
     );
     const snappedCenter = constrainObjectCenterPosition(
       {
-        x: snapToGrid(clampedCenter.x, OBJECT_DRAG_SNAP_METERS, true),
+        x: snapHorizontalPositionInBounds(clampedCenter.x, OBJECT_DRAG_SNAP_METERS,
+          horizontalGridOriginMeters(stage.widthMeters, stage.horizontalGuideMode),
+          Math.min(stage.widthMeters, drag.startState.widthMeters / 2),
+          Math.max(drag.startState.widthMeters / 2, stage.widthMeters - drag.startState.widthMeters / 2)),
         y: snapToGrid(clampedCenter.y, OBJECT_DRAG_SNAP_METERS, true),
       },
       drag.startState.widthMeters,
@@ -364,7 +372,7 @@ export const ResizableRotatableObject = ({
       drag.startState.heightMeters,
       stage,
     );
-    applyObjectPatch(drag, next, measuredAt);
+    applyObjectPatch(drag, resolveMove ? resolveMove(next) : next, measuredAt);
   };
 
   const startInteraction = (

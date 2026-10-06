@@ -32,6 +32,7 @@ try {
    await radios.nth(0).focus();await page.keyboard.press('Space');await expect(radios.nth(0)).toBeChecked();
    await snap(mode+'-meters');
    await dialog.locator('summary').click();await dialog.locator('[name="memberDiameterMeters"]').scrollIntoViewIfNeeded();await snap(mode+'-advanced');
+   await expect(dialog.locator(mode==='stage'?'[name="gridSizeMeters"]':'[name="paradeCellSizeMeters"]')).toHaveValue(mode==='stage'?'0.5':'1');
    const diameter=dialog.locator('[name="memberDiameterMeters"]');await diameter.fill('0');await dialog.locator('summary').click();
    await dialog.getByRole('button',{name:'作成する'}).click();await expect(dialog.locator('details')).toHaveAttribute('open','');await expect(diameter).toBeFocused();await expect(diameter).toHaveAttribute('aria-invalid','true');await snap(mode+'-error');
    await diameter.fill('0.5');await dialog.getByRole('button',{name:'作成する'}).click();await expect(page.locator('.toolbar')).toBeVisible();

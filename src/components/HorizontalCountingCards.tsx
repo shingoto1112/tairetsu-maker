@@ -1,3 +1,4 @@
+import { createHorizontalGridLines } from "../utils/horizontalGrid";
 import { useId } from "react";
 import { createHorizontalRulerLabels, horizontalCountingOptions, type HorizontalCountingMode } from "../utils/horizontalRuler";
 type Props = { value: HorizontalCountingMode; onChange: (value: HorizontalCountingMode) => void; compact?: boolean; disabled?: boolean };
@@ -6,10 +7,13 @@ const CountingDiagram = ({ mode }: { mode: HorizontalCountingMode }) => {
   const members = mode === "meters" ? [1, 2, 3, 4, 5] : [1.5, 2.5, 3.5, 4.5];
   return <svg className="counting-diagram" viewBox="0 0 240 98" overflow="visible" aria-hidden="true" focusable="false">
     <rect className="counting-diagram__stage" x="20" y="28" width="200" height="60" />
-    {[1, 2, 4, 5].map(x => <line className="counting-diagram__grid" key={x} x1={20 + x * 200 / 6} x2={20 + x * 200 / 6} y1="28" y2="88" />)}
+    {createHorizontalGridLines(6, mode, 0.5).map(({positionMeters: x, kind}) => <line className={`counting-diagram__grid ${kind === "counting" ? "is-counting" : ""}`} key={x} x1={20 + x * 200 / 6} x2={20 + x * 200 / 6} y1="28" y2="88" />)}
     {[48, 68].map(y => <line className="counting-diagram__grid" key={y} x1="20" x2="220" y1={y} y2={y} />)}
     <line className="counting-diagram__center" x1="120" x2="120" y1="28" y2="88" />
-    {labels.map(item => <text key={item.key} x={20 + item.positionMeters * 200 / 6} y="18">{item.label}</text>)}
+    {labels.map(item => <g key={item.key}>
+      <text x={20 + item.positionMeters * 200 / 6} y="18">{item.label}</text>
+      <line className="counting-diagram__tick" x1={20 + item.positionMeters * 200 / 6} x2={20 + item.positionMeters * 200 / 6} y1="22" y2="28" />
+    </g>)}
     {members.map(x => <circle key={x} className="counting-diagram__member" cx={20 + x * 200 / 6} cy="58" r="9" />)}
   </svg>;
 };

@@ -1,3 +1,4 @@
+import { createHorizontalGridLines } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import type { CSSProperties, Ref } from "react";
 import {
@@ -194,6 +195,7 @@ const buildPrintGridPath = (
   heightMeters: number,
   topMeters: number,
   stepMeters: number,
+  verticalTicks: number[],
 ): string => {
   if (stepMeters <= 0) {
     return "";
@@ -201,8 +203,8 @@ const buildPrintGridPath = (
 
   const commands: string[] = [];
   const epsilon = 0.000001;
-  for (let x = 0; x <= widthMeters + epsilon; x += stepMeters) {
-    const coordinate = formatPrintSvgCoordinate(Math.min(x, widthMeters));
+  for (const x of verticalTicks) {
+    const coordinate = formatPrintSvgCoordinate(x);
     commands.push(`M ${coordinate} 0 V ${formatPrintSvgCoordinate(heightMeters)}`);
   }
 
@@ -804,7 +806,8 @@ const PrintStagePreview = ({
       ? "centerSplit"
       : "meters"
     : project.stage.horizontalGuideMode ?? "meters";
-  const horizontalLabels = createHorizontalRulerLabels(commonWidthMeters, toHorizontalCountingMode(horizontalGuideMode));
+  const sceneWidthMeters = getEffectiveSize(project, frame).widthMeters;
+  const horizontalLabels = createHorizontalRulerLabels(sceneWidthMeters, toHorizontalCountingMode(horizontalGuideMode));
   const yTicks = buildTicks(verticalRange.depthMeters);
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
   const totalDepthMeters = verticalRange.depthMeters + gapMeters;
@@ -950,11 +953,14 @@ const PrintStagePreview = ({
         return lines;
       })()
     : [];
+  const horizontalGridLines = createHorizontalGridLines(sceneWidthMeters,
+    toHorizontalCountingMode(horizontalGuideMode), metrics.gridSizeMeters);
   const printGridPath = buildPrintGridPath(
     commonWidthMeters,
     totalDepthMeters,
     verticalRange.topMeters,
     metrics.gridSizeMeters,
+    horizontalGridLines.filter(line => line.kind === "fine").map(line => line.positionMeters),
   );
   const previewStyle = {
     gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
@@ -968,7 +974,7 @@ const PrintStagePreview = ({
     "--print-ruler-right-mm": `${rightRulerMm}mm`,
     "--print-ruler-top-mm": `${rulerTopMm}mm`,
     "--print-stage-right-safety-mm": `${stageRightSafetyMm}mm`,
-    "--print-stage-center-x-mm": metersToPrintMm(commonWidthMeters / 2, metrics),
+    "--print-stage-center-x-mm": metersToPrintMm(sceneWidthMeters / 2, metrics),
     "--print-stage-height-mm": `${stageHeightMm}mm`,
     "--print-stage-width-mm": `${metrics.stageWidthMm}mm`,
   } as CSSProperties;
@@ -1212,6 +1218,11 @@ const PrintStagePreview = ({
               vectorEffect="non-scaling-stroke"
             />
           )}
+          {options.includeGrid && horizontalGridLines.filter(line => line.kind === "counting").map(line => (
+            <line key={`counting-${line.positionMeters}`} className="print-counting-line"
+              x1={line.positionMeters} x2={line.positionMeters} y1="0" y2={totalDepthMeters}
+              stroke="#94a3b8" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          ))}
           {paradeGuideLines.map((line) => (
             <line
               className={
@@ -1239,8 +1250,8 @@ const PrintStagePreview = ({
             strokeLinecap="square"
             strokeWidth="1.5"
             vectorEffect="non-scaling-stroke"
-            x1={commonWidthMeters / 2}
-            x2={commonWidthMeters / 2}
+            x1={sceneWidthMeters / 2}
+            x2={sceneWidthMeters / 2}
             y1="0"
             y2={totalDepthMeters}
           />

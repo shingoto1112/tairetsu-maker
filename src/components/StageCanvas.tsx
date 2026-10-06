@@ -1,3 +1,4 @@
+import { createHorizontalGridLines, horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
 import {
   Camera,
@@ -1398,7 +1399,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!stageElement) {
         return;
       }
-      const stageRect = stageElement.getBoundingClientRect();
+      // CSS transforms use layout pixels, before the desktop root's CSS zoom.
+      const layoutWidth = stageElement.clientWidth;
+      const layoutHeight = stageElement.clientHeight;
       drag.memberIds.forEach((id) => {
         const startPosition = drag.startPositions[id];
         const nextPosition = nextPositions[id];
@@ -1418,10 +1421,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         );
         const dxPx =
           ((nextDisplayPosition.x - startDisplayPosition.x) / stage.widthMeters) *
-          stageRect.width;
+          layoutWidth;
         const dyPx =
           ((nextDisplayPosition.y - startDisplayPosition.y) / stage.depthMeters) *
-          stageRect.height;
+          layoutHeight;
         element.style.setProperty("--member-drag-x", `${dxPx}px`);
         element.style.setProperty("--member-drag-y", `${dyPx}px`);
       });
@@ -1456,10 +1459,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         drag.startPositions[drag.memberId] ?? drag.startPosition;
       const next = constrainMemberPosition(
         {
-          x: snapToGrid(
+          x: snapMemberGroupHorizontal(
             primaryStartPosition.x + pointer.x - drag.startPointer.x,
-            stage.gridSizeMeters,
-            stage.showGrid,
+            primaryStartPosition.x,
+            Object.values(drag.startPositions),
+            stage.widthMeters,
+            stage.showGrid ? stage.gridSizeMeters : NaN,
+            horizontalGridOriginMeters(stage.widthMeters, horizontalGuideMode),
           ),
           y: snapToGrid(
             primaryStartPosition.y + pointer.y - drag.startPointer.y,
@@ -1478,7 +1484,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
       const primaryNextPosition = constrainMemberPosition(guided.position, stage);
       const delta = {
-        x: primaryNextPosition.x - primaryStartPosition.x,
+        x: Math.min(
+          Math.min(...Object.values(drag.startPositions).map(p => stage.widthMeters - p.x)),
+          Math.max(Math.max(...Object.values(drag.startPositions).map(p => -p.x)), primaryNextPosition.x - primaryStartPosition.x),
+        ),
         y: primaryNextPosition.y - primaryStartPosition.y,
       };
       const nextPositions: Record<string, Position> = {};
@@ -1494,6 +1503,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             },
             stage,
         );
+        // The shared delta is already bounded; do not round each member's x again.
+        nextPositions[id].x = startPosition.x + delta.x;
       });
       drag.latestPositions = nextPositions;
       if (deferMemberDragCommit) {
@@ -1717,9 +1728,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const stageGridVerticalTicks = useMemo(
       () =>
         stage.showGrid && stage.gridSizeMeters > 0
-          ? createStageGridTicks(stage.widthMeters, stage.gridSizeMeters)
+          ? createHorizontalGridLines(stage.widthMeters, horizontalGuideMode, stage.gridSizeMeters, stage.showCenterLine)
           : [],
-      [stage.gridSizeMeters, stage.showGrid, stage.widthMeters],
+      [stage.gridSizeMeters, stage.showGrid, stage.widthMeters, stage.showCenterLine, horizontalGuideMode],
     );
     const stageGridHorizontalTicks = useMemo(
       () =>
@@ -2065,8 +2076,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               <div className="meter-ruler meter-ruler--horizontal" aria-hidden="true">
                 {horizontalLabels.map((item) => (
                   <span key={item.key}
-                    className={horizontalGuideMode === "centerSplit" ? "meter-ruler__tick meter-ruler__tick--label-only" : "meter-ruler__tick"}
-                    style={{ left: String((item.positionMeters / stage.widthMeters) * 100) + "%" }}>
+                    className="meter-ruler__tick"
+                    style={{ left: String(((viewerPerspective === "performer" ? stage.widthMeters - item.positionMeters : item.positionMeters) / stage.widthMeters) * 100) + "%" }}>
                     {item.label}
                   </span>
                 ))}
@@ -2128,9 +2139,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 <div className="stage-grid-layer" aria-hidden="true">
                   {stageGridVerticalTicks.map((tick) => (
                     <span
-                      className="stage-grid-line stage-grid-line--vertical"
-                      key={`stage-grid-x-${tick}`}
-                      style={{ left: `${(tick / stage.widthMeters) * 100}%` }}
+                      className={`stage-grid-line stage-grid-line--vertical ${tick.kind === "counting" ? "is-counting" : ""}`}
+                      key={`stage-grid-x-${tick.positionMeters}`}
+                      style={{ left: `${((viewerPerspective === "performer" ? stage.widthMeters - tick.positionMeters : tick.positionMeters) / stage.widthMeters) * 100}%` }}
                     />
                   ))}
                   {stageGridHorizontalTicks.map((tick) => (
@@ -2489,14 +2500,14 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     }
                     onTouchLongPressMove={trackTouchContextMenuMove}
                     onTouchLongPressEnd={stopTouchContextMenu}
-                    onMove={(patch) => {
+                    onMove={(patch) => onUpdateObjectState(object.id, patch)}
+                    resolveMove={(patch) => {
                       if (isReadOnly) {
                         onReadOnlyEditAttempt?.();
-                        return;
+                        return patch;
                       }
                       if (patch.x === undefined && patch.y === undefined) {
-                        onUpdateObjectState(object.id, patch);
-                        return;
+                        return patch;
                       }
                       const width = patch.widthMeters ?? objectState.widthMeters;
                       const height = patch.heightMeters ?? objectState.heightMeters;
@@ -2518,11 +2529,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                         stage,
                       );
                       setActiveSnapGuides(guided.guides);
-                      onUpdateObjectState(object.id, {
-                        ...patch,
-                        x: guidedTopLeft.x,
-                        y: guidedTopLeft.y,
-                      });
+                      return { ...patch, x: guidedTopLeft.x, y: guidedTopLeft.y };
                     }}
                     onInteractionStart={(kind) =>
                       isReadOnly

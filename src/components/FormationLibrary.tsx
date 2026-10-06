@@ -133,7 +133,7 @@ export const FormationLibrary = ({
   const [widthMeters, setWidthMeters] = useState(12);
   const [heightMeters, setHeightMeters] = useState(8);
   const [useGlobalStageSize, setUseGlobalStageSize] = useState(true);
-  const [gridSizeMeters, setGridSizeMeters] = useState(0.25);
+  const [gridSizeMeters, setGridSizeMeters] = useState(0.5);
   const [horizontalGuideMode, setHorizontalGuideMode] =
     useState<HorizontalGuideMode>("centerSplit");
   const [memberDiameterMeters, setMemberDiameterMeters] = useState(0.5);
@@ -208,7 +208,7 @@ export const FormationLibrary = ({
     setWidthMeters(12);
     setHeightMeters(8);
     setUseGlobalStageSize(true);
-    setGridSizeMeters(0.25);
+    setGridSizeMeters(0.5);
     setHorizontalGuideMode("centerSplit");
     setMemberDiameterMeters(0.5);
     setParadeTotalDistance(100);

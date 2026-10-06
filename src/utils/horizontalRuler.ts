@@ -1,3 +1,4 @@
+import { createGridTicksInRange, horizontalGridOriginMeters } from "./horizontalGrid";
 import type { HorizontalGuideMode, ParadeHorizontalMeasureMode } from "../types";
 export type HorizontalCountingMode = "meters" | "centerSplit";
 export type HorizontalRulerLabel = { key: string; positionMeters: number; label: string; side: "left" | "right" };
@@ -17,12 +18,13 @@ export const createHorizontalRulerLabels = (widthMeters: number, mode: Horizonta
   const count = Math.floor(center + (split ? 0.001 : 0));
   const step = widthMeters <= 16 ? 1 : Math.ceil(widthMeters / 12);
   const labels: HorizontalRulerLabel[] = [];
-  for (let index = step; index <= count; index += step) {
-    const distance = index - (split ? 0.5 : 0);
-    for (const side of ["left", "right"] as const) {
-      const positionMeters = center + (side === "left" ? -distance : distance);
-      if (positionMeters >= 0 && positionMeters <= widthMeters) labels.push({ key: side + "-" + index, positionMeters, label: String(index), side });
-    }
+  for (const positionMeters of createGridTicksInRange(0, widthMeters, 1, horizontalGridOriginMeters(widthMeters, mode))) {
+    const distance = Math.abs(positionMeters - center);
+    if (distance < 1e-9) continue;
+    const index = Math.round(distance + (split ? 0.5 : 0));
+    if (index < 1 || index > count || index % step !== 0) continue;
+    const side = positionMeters < center ? "left" : "right";
+    labels.push({ key: side + "-" + index, positionMeters, label: String(index), side });
   }
   return labels.sort((a, b) => a.positionMeters - b.positionMeters);
 };

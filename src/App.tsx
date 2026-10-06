@@ -1,3 +1,4 @@
+import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./utils/horizontalGrid";
 import { useSharedSession } from "./hooks/useSharedSession";
 import { useHelpPage } from "./components/HelpPageLoader";
 import { cloudAuthIdentity, subscribeCloudAuth, getValidCloudAuthSession, waitCloudAuthPersistence } from "./cloud/session";
@@ -2004,7 +2005,10 @@ function App() {
   ): Position =>
     constrainMemberPosition(
       {
-        x: snapToGrid(position.x, stage.gridSizeMeters, stage.showGrid),
+        x: snapHorizontalPositionInBounds(position.x,
+          stage.showGrid ? stage.gridSizeMeters : NaN,
+          horizontalGridOriginMeters(stage.widthMeters, project.mode === "parade" ? project.paradeSettings?.horizontalMeasureMode : stage.horizontalGuideMode),
+          0, stage.widthMeters),
         y: snapToGrid(position.y, stage.gridSizeMeters, stage.showGrid),
       },
       stage,
@@ -2698,14 +2702,14 @@ function App() {
                 ...previous.stage,
                 ...getEffectiveStageSize(previous, frame),
               };
-              const basePosition = requestedPosition
-                ? constrainMemberPosition(requestedPosition, frameStage)
-                : paradeDefaultPosition
-                  ? constrainMemberPosition(paradeDefaultPosition, frameStage)
-                  : {
-                      x: frameStage.widthMeters / 2,
-                      y: frameStage.depthMeters / 2,
-                    };
+              const basePosition = constrainMemberPosition(requestedPosition ?? paradeDefaultPosition ?? {
+                x: frameStage.widthMeters / 2, y: frameStage.depthMeters / 2,
+              }, frameStage);
+              basePosition.x = snapHorizontalPositionInBounds(basePosition.x,
+                previous.mode === "parade" ? previous.paradeSettings?.cellSizeMeters ?? frameStage.gridSizeMeters
+                  : frameStage.showGrid ? frameStage.gridSizeMeters : NaN,
+                horizontalGridOriginMeters(frameStage.widthMeters, previous.mode === "parade"
+                  ? previous.paradeSettings?.horizontalMeasureMode : frameStage.horizontalGuideMode), 0, frameStage.widthMeters);
               const isActiveFrame = frame.id === activeFrameId;
               return {
                 ...frame,
@@ -4285,6 +4289,12 @@ function App() {
       selectedFrame?.objectStates?.[clipboard.object.id] ??
       createDefaultObjectState(clipboard.object);
     const intendedPasteCenter = getPasteStagePosition();
+    intendedPasteCenter.x = snapHorizontalPositionInBounds(intendedPasteCenter.x,
+      effectiveStage.showGrid ? effectiveStage.gridSizeMeters : NaN,
+      horizontalGridOriginMeters(effectiveStage.widthMeters, project.mode === "parade"
+        ? project.paradeSettings?.horizontalMeasureMode : effectiveStage.horizontalGuideMode),
+      Math.min(effectiveStage.widthMeters, sourceActiveState.widthMeters / 2),
+      Math.max(sourceActiveState.widthMeters / 2, effectiveStage.widthMeters - sourceActiveState.widthMeters / 2));
     const activeTopLeft = constrainObjectPosition(
       objectTopLeftFromCenter(
         intendedPasteCenter,
@@ -6657,6 +6667,11 @@ function App() {
                     x: frameStage.widthMeters / 2,
                     y: frameStage.depthMeters / 2,
                   };
+              basePosition.x = snapHorizontalPositionInBounds(basePosition.x,
+                previous.mode === "parade" ? previous.paradeSettings?.cellSizeMeters ?? frameStage.gridSizeMeters
+                  : frameStage.showGrid ? frameStage.gridSizeMeters : NaN,
+                horizontalGridOriginMeters(frameStage.widthMeters, previous.mode === "parade"
+                  ? previous.paradeSettings?.horizontalMeasureMode : frameStage.horizontalGuideMode), 0, frameStage.widthMeters);
               return {
                 ...frame,
                 positions: {

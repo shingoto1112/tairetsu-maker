@@ -1,3 +1,4 @@
+import { createHorizontalGridLines, horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import {
   ArrowDownToLine,
@@ -260,10 +261,6 @@ const snapMeters = (value: number, gridSize: number) => {
   return roundMeters(Math.round(value / gridSize) * gridSize);
 };
 
-const createMeterGridTicks = (lengthMeters: number, stepMeters: number) => {
-  return createMeterGridTicksInRange(0, lengthMeters, stepMeters);
-};
-
 const createMeterGridTicksInRange = (
   minMeters: number,
   maxMeters: number,
@@ -502,8 +499,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         ? settings.cellSizeMeters
         : 1;
     const verticalGridTicks = useMemo(
-      () => createMeterGridTicks(settings.width, gridStepMeters),
-      [gridStepMeters, settings.width],
+      () => createHorizontalGridLines(settings.width, toHorizontalCountingMode(settings.horizontalMeasureMode), gridStepMeters),
+      [gridStepMeters, settings.width, settings.horizontalMeasureMode],
     );
     const horizontalGridTicks = useMemo(
       () =>
@@ -665,11 +662,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           ((clientY - rect.top) / Math.max(1, rect.height)) *
           canvasDistanceMeters;
         return {
-          x: clamp(
-            snapMeters(rawX, settings.cellSizeMeters),
-            0,
-            settings.width,
-          ),
+          x: snapHorizontalPositionInBounds(rawX, settings.cellSizeMeters,
+            horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode), 0, settings.width),
           y: clamp(
             snapMeters(rawY, settings.cellSizeMeters),
             0,
@@ -677,7 +671,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           ),
         };
       },
-      [canvasDistanceMeters, settings.cellSizeMeters, settings.totalDistance, settings.width],
+      [canvasDistanceMeters, settings.cellSizeMeters, settings.totalDistance, settings.width, settings.horizontalMeasureMode],
     );
 
     const trackStagePointerPosition = useCallback(
@@ -1231,12 +1225,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         cancelTouchContextMenu();
         const scrollLeft = scrollRef.current?.scrollLeft ?? dragState.startScrollLeft;
         const scrollTop = scrollRef.current?.scrollTop ?? dragState.startScrollTop;
-        const dx =
-          (clientX -
-            dragState.startClientX +
-            scrollLeft -
-            dragState.startScrollLeft) /
-          pxPerMeter;
+        // Pointer deltas are screen pixels; scrolling is in CSS layout pixels.
+        // Convert them separately so the horizontal origin also works under CSS zoom.
+        const screenWidth = stageRef.current?.getBoundingClientRect().width ?? canvasWidthPx;
+        const dx = (clientX - dragState.startClientX) * settings.width / Math.max(1, screenWidth)
+          + (scrollLeft - dragState.startScrollLeft) / pxPerMeter;
         const dy =
           (clientY -
             dragState.startClientY +
@@ -1311,11 +1304,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           const primaryStartPosition =
             dragState.startPositions[dragState.id] ?? dragState.startPosition;
           const primaryNextPosition = {
-            x: clamp(
-              snapMeters(primaryStartPosition.x + dx, settings.cellSizeMeters),
-              0,
-              settings.width,
-            ),
+            x: snapMemberGroupHorizontal(primaryStartPosition.x + dx, primaryStartPosition.x,
+              Object.values(dragState.startPositions), settings.width, settings.cellSizeMeters,
+              horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode)),
             y: clamp(
               snapMeters(primaryStartPosition.y + dy, settings.cellSizeMeters),
               0,
@@ -1405,10 +1396,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             0,
             settings.width - dragState.startState.widthMeters,
           );
-          const nextX = clamp(
-            snapMeters(dragState.startState.x + dx, OBJECT_DRAG_SNAP_METERS),
-            0,
-            maxObjectX,
+          const nextX = snapHorizontalPositionInBounds(
+            dragState.startState.x + dx, OBJECT_DRAG_SNAP_METERS,
+            horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode), 0, maxObjectX,
           );
           const nextY = clampParadeObjectTopY(
             snapMeters(dragState.startState.y + dy, OBJECT_DRAG_SNAP_METERS),
@@ -2343,9 +2333,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               <div className="parade-grid-layer" aria-hidden="true">
                 {verticalGridTicks.map((meter) => (
                   <span
-                    key={`grid-vertical-${meter}`}
-                    className="parade-grid-line parade-grid-line--vertical"
-                    style={{ left: meter * pxPerMeter }}
+                    key={`grid-vertical-${meter.positionMeters}`}
+                    className={`parade-grid-line parade-grid-line--vertical ${meter.kind === "counting" ? "is-counting" : ""}`}
+                    style={{ left: meter.positionMeters * pxPerMeter }}
                   />
                 ))}
                 {horizontalGridTicks.map((meter) => {
