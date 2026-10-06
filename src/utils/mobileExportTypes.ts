@@ -1,8 +1,9 @@
+import type { VerticalOrigin } from "./gridEmphasis";
 import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Project, StageObject } from "../types";
 import type { RosterExportSnapshot } from "./rosterExportSnapshot";
 
 export type ExportTarget = "formation" | "members" | "objects" | "assignments";
-export type ExportRequest = { target: ExportTarget; scope: "current" | "all"; purpose: "mobile" | "a4"; format: "png" | "pdf"; includeDetails?: boolean; memberOverflow?: "single" | "readable" };
+export type ExportRequest = { verticalOrigin?: VerticalOrigin; target: ExportTarget; scope: "current" | "all"; purpose: "mobile" | "a4"; format: "png" | "pdf"; includeDetails?: boolean; memberOverflow?: "single" | "readable" };
 export type ExportSource = {
   projectTitle: string; members: Member[]; memberGroups: MemberGroup[];
   objects: StageObject[]; objectGroups: ObjectGroup[]; frames: FormationFrame[];

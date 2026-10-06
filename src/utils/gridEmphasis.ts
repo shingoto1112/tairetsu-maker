@@ -4,6 +4,7 @@ import { createGridTicksInRange, createHorizontalGridLines } from "./horizontalG
 import { internalYToParadeDistance } from "./parade";
 import type { HorizontalCountingMode } from "./horizontalRuler";
 
+export type VerticalOrigin = "top" | "bottom";
 export type GridEmphasis = "none" | "number" | "5" | "10";
 export const GRID_LINE_TOKENS = {
   none: { color: "#e2e8f0", width: 1 },
@@ -46,17 +47,18 @@ export const horizontalEmphasizedLines = (width: number, mode: HorizontalCountin
   createHorizontalGridLines(width, mode, step, centerVisible).map(line => ({ ...line,
     emphasis: lineEmphasis(horizontalLineNumber(line.positionMeters, width, mode), horizontalEmphasisFlags(settings)),
   })).filter(line => includeGrid || line.emphasis !== "none");
-/** Full scene coordinates, before reflection/cropping. Stage distance is from its front (bottom). */
+/** Full scene coordinates before cropping. Export origin overrides the editor's front-based origin. */
 export const verticalEmphasizedLines = (depth: number, step: number, stage: StageConfig, parade?: ParadeSettings,
-  includeGrid = true, top = 0, bottom = depth): EmphasizedLine[] => {
+  includeGrid = true, top = 0, bottom = depth, verticalOrigin?: VerticalOrigin): EmphasizedLine[] => {
   const flags = verticalEmphasisFlags(stage, parade);
-  const origin = parade ? parade.totalDistance : stage.frontDirection === "top" ? 0 : depth;
+  const topOrigin = verticalOrigin ? verticalOrigin === "top" : stage.frontDirection === "top";
+  const origin = parade ? parade.totalDistance : topOrigin ? 0 : depth;
   const ticks = new Set(createGridTicksInRange(top, bottom, step, parade ? origin : 0));
   // Number positions remain lines even when step is larger or non-integral.
   for (const y of createGridTicksInRange(top, bottom, 1, origin)) ticks.add(y);
   return [...ticks].sort((a,b) => a-b).filter(y => y > 1e-7 && y < depth - 1e-7).map(y => ({
     positionMeters: y,
-    emphasis: lineEmphasis(parade ? internalYToParadeDistance(y, parade.totalDistance, parade.backwardDistanceMeters) : stage.frontDirection === "top" ? y : depth - y, flags),
+    emphasis: lineEmphasis(parade ? internalYToParadeDistance(y, parade.totalDistance, parade.backwardDistanceMeters) : topOrigin ? y : depth - y, flags),
   })).filter(line => includeGrid || line.emphasis !== "none");
 };
 

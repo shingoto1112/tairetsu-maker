@@ -22,7 +22,7 @@ for(const mode of ["stage","parade"] as const)for(const counting of ["meters","c
   const union=(dom:Document)=>[...new Map(lines(dom).map(l=>[l.axis+":"+l.position,l])).values()].sort((a,b)=>a.axis.localeCompare(b.axis)||a.position-b.position);
   const original=union(a4);expect(union(exported)).toEqual(original);
   for(const line of original){
-    const d=line.axis==="x"?Math.abs(line.position-11.75)+(counting==="centerSplit"?.5:0):(mode==="stage"?12.5:23.5)-line.position;
+    const d=line.axis==="x"?Math.abs(line.position-11.75)+(counting==="centerSplit"?.5:0):mode==="stage"?line.position:23.5-line.position;
     const isNumber=Math.abs(d-Math.round(d))<1e-7;
     const expected=isNumber&&ten&&Math.round(d)%10===0?"10":isNumber&&five&&Math.round(d)%5===0?"5":isNumber&&numbers?"number":"none";
     expect(line.emphasis).toBe(expected);expect(line.color).toBe(colors[expected]);expect(line.width).toBe(widths[expected]);

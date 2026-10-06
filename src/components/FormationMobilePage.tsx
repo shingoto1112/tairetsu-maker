@@ -1,3 +1,4 @@
+import type { VerticalOrigin } from "../utils/gridEmphasis";
 import type { CSSProperties } from "react";
 import { StaticStagePreview } from "./StaticStagePreview";
 import type { FormationSnapshot } from "../utils/mobileExportTypes";
@@ -33,7 +34,7 @@ export const FormationLocator = ({ block, project }: { block: FormationBlock; pr
   </div>;
 };
 
-export const FormationMobilePage = ({ snapshot, page }: { snapshot: FormationSnapshot; page: FormationPage }) =>
+export const FormationMobilePage = ({ snapshot, page, verticalOrigin = "top" }: { snapshot: FormationSnapshot; page: FormationPage; verticalOrigin?: VerticalOrigin }) =>
   <div data-mobile-export-page={page.pageNumber} className="formation-mobile-page"
     style={{ width: MOBILE_WIDTH, height: page.height, padding: MOBILE_PADDING }}>
     <header style={{ height: 30, display: "flex", fontSize: 16, lineHeight: "22px", color: "#64748b", gap: 12 }}>
@@ -58,7 +59,7 @@ export const FormationMobilePage = ({ snapshot, page }: { snapshot: FormationSna
         </div>
         {block.detail && <FormationLocator block={block} project={snapshot.project} />}
         <div style={{ position: "relative", width: drawingWidth, marginLeft: Math.max(0, offset) }}>
-          <StaticStagePreview project={snapshot.project} frame={block.frame} stageWidth={block.stageWidth} range={range} outputWidth={drawingWidth} side={side}
+          <StaticStagePreview verticalOrigin={verticalOrigin} project={snapshot.project} frame={block.frame} stageWidth={block.stageWidth} range={range} outputWidth={drawingWidth} side={side}
             wholeMembersWithinRange={block.detail && snapshot.project.mode !== "parade"} />
           <div style={{ position: "absolute", left: side, top: FORMATION_TOP, width: drawingWidth - side * 2, height: drawingHeight, pointerEvents: "none", overflow: "hidden", zIndex: 10000 }}>
             {bands.map((style, band) => <div key={band} data-formation-overlap style={{ position: "absolute", background: "rgba(100,116,139,.12)", border: "1px dashed rgba(100,116,139,.32)", boxSizing: "border-box", ...style }} />)}

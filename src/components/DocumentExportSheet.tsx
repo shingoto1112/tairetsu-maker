@@ -1,3 +1,4 @@
+import { VerticalOriginOptions } from "./VerticalOriginOptions";
 import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -11,7 +12,7 @@ export const EXPORT_TARGET_LABELS: Record<ExportTarget, string> = {
 type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; supportsFormation?: boolean; viewport?: boolean; getSource: () => ExportSource; onClose: () => void };
 
 export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supportsFormation = false, viewport = false, getSource, onClose }: Props) => {
-  const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat, includeDetails: false });
+  const [request, setRequest] = useState<ExportRequest>({ verticalOrigin: "top", target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat, includeDetails: false });
   const [estimate, setEstimate] = useState("");
   const [memberFit, setMemberFit] = useState<"checking" | "fits" | "small" | "error">("checking");
   const [memberEstimate, setMemberEstimate] = useState("");
@@ -43,7 +44,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
     };
   }, []);
   useEffect(() => {
-    setRequest((previous) => ({ ...previous, target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat }));
+    setRequest((previous) => ({ ...previous, verticalOrigin: "top", target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat }));
   }, [initialTarget, initialFormat]);
   useEffect(() => {
     if (request.target !== "formation") { setEstimate(""); return; }
@@ -124,6 +125,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         <button type="button" aria-pressed={request.scope === "current"} onClick={() => update({ scope: "current" })}>このシーン</button>
         <button type="button" aria-pressed={request.scope === "all"} onClick={() => update({ scope: "all" })}>全シーン</button>
       </div></fieldset>}
+      {request.target === "formation" && getSource().project?.mode !== "parade" && <VerticalOriginOptions value={request.verticalOrigin ?? "top"} disabled={locked} onChange={(verticalOrigin) => update({ verticalOrigin })} />}
       {request.target === "formation" && <fieldset disabled={locked}><legend>読みやすさ</legend>
         <label className="document-export-check"><input type="checkbox" checked={Boolean(request.includeDetails)} onChange={(event) => update({ includeDetails: event.target.checked })} /> 拡大図も付ける</label>
         <p className="muted-text">名前が読める大きさで分割します。狭い隊列表では全体図だけになります。</p>

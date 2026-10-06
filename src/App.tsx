@@ -8177,6 +8177,7 @@ function App() {
       projectTitle={project.title}
       currentSceneLabel={displayFrame?.label ?? selectedFrame?.label ?? "現在シーン"}
       hasAudio={Boolean(project.audio?.id)}
+      isParade={project.mode === "parade"}
       onClose={() => setIsShareExportOpen(false)}
       onOpenCollaboration={APP_FEATURES.collaborationV2 ? () => { setIsShareExportOpen(false); void collaborationUi.get().then(ui => ui.manageLocal(projectRef.current.id!)); } : undefined}
       onExport={handleShareExport}

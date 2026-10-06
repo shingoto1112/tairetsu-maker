@@ -47,7 +47,7 @@ export const generateFormationExport = async (snapshot: FormationSnapshot, reque
   try {
     const base = `${snapshot.title}_隊列表_${snapshot.scopeLabel}_${formatExportTimestamp(new Date(snapshot.exportedAt))}`;
     return await encodeMobilePages(pages, (page) => {
-      flushSync(() => root.render(<FormationMobilePage snapshot={snapshot} page={page} />));
+      flushSync(() => root.render(<FormationMobilePage snapshot={snapshot} page={page} verticalOrigin={request.verticalOrigin} />));
       const element = host.firstElementChild;
       if (!(element instanceof HTMLElement)) throw new Error("隊列表の画像を準備できませんでした。");
       return element;

@@ -118,6 +118,8 @@ describe("DocumentExportSheet", () => {
       getSource={() => ({ ...source, project, currentFrame: project.frames[0] })} onClose={vi.fn()} />);
     expect(screen.getByRole("button", { name: "全シーン" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByRole("checkbox", { name: "拡大図も付ける" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("radio", { name: "上を0mにする" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "下を0mにする" }));
     expect(screen.queryByRole("button", { name: "印刷向け（A4）" })).toBeNull();
     await screen.findByText("予想 2ページ");
     vi.mocked(prepareFormationPages).mockResolvedValueOnce(Array.from({ length: 8 }, () => ({})) as Awaited<ReturnType<typeof prepareFormationPages>>);
@@ -126,6 +128,6 @@ describe("DocumentExportSheet", () => {
     expect(prepareFormationPages).toHaveBeenLastCalledWith(expect.anything(), true, expect.anything());
     fireEvent.click(screen.getByRole("button", { name: "隊列表のPDFを作成" }));
     await screen.findByRole("button", { name: "共有する" });
-    expect(generateDocumentExport).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ target: "formation", scope: "all", includeDetails: true, format: "pdf" }), expect.anything());
+    expect(generateDocumentExport).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ target: "formation", scope: "all", includeDetails: true, format: "pdf", verticalOrigin: "bottom" }), expect.anything());
   });
 });

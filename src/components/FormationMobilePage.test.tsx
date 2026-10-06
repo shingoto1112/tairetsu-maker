@@ -95,7 +95,7 @@ describe("formation static mobile drawing", () => {
         const block = page.blocks[index];
         for (const ruler of section.querySelectorAll(".print-ruler-y")) {
           const labels = Array.from(ruler.querySelectorAll<HTMLSpanElement>("span"));
-          expect(labels.map((label) => label.textContent)).toEqual(Array.from({ length: 9 }, (_, meter) => `${8 - meter}m`));
+          expect(labels.map((label) => label.textContent)).toEqual(Array.from({ length: 9 }, (_, meter) => `${meter}m`));
           labels.forEach((label, meter) => {
             // The existing 4mm-high label is centered on the absolute meter line.
             const expectedMm = (meter - block.range.top) * block.scale * 25.4 / 96 - 2;
@@ -113,7 +113,7 @@ describe("formation static mobile drawing", () => {
     document.head.append(sheet);
     try {
       for (const [mode, limit, backward, expected] of [
-        ["stage", 18, 0, "0m"], ["parade", 100, 0, "100m"], ["parade", 1000, 10000, "-10000m"],
+        ["stage", 18, 0, "18m"], ["parade", 100, 0, "100m"], ["parade", 1000, 10000, "-10000m"],
       ] as const) {
         const project = formationExportFixture(); project.mode = mode; project.stage.depthMeters = limit;
         if (mode === "parade") project.paradeSettings = { totalDistance: limit, backwardDistanceMeters: backward,

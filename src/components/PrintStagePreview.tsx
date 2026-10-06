@@ -838,10 +838,10 @@ export const PrintStagePreview = ({
         }
         return labels;
       })()
-    : stageVerticalRulerPositions(getEffectiveSize(project, frame).depthMeters, project.stage.frontDirection === "top",
+    : stageVerticalRulerPositions(getEffectiveSize(project, frame).depthMeters, (options.verticalOrigin ?? "top") === "top",
         verticalRange.topMeters, verticalRange.bottomMeters).map((internalY) => {
         const tick = internalY - verticalRange.topMeters;
-        const actualTick = Number((project.stage.frontDirection === "top" ? internalY : getEffectiveSize(project, frame).depthMeters - internalY).toFixed(2));
+        const actualTick = Number(((options.verticalOrigin ?? "top") === "top" ? internalY : getEffectiveSize(project, frame).depthMeters - internalY).toFixed(2));
         return {
           className: undefined,
           key: tick,
@@ -858,7 +858,7 @@ export const PrintStagePreview = ({
     isParade ? project.paradeSettings ?? project.stage : project.stage, options.includeGrid).filter(line => inRange(line.positionMeters));
   const verticalGridLines = verticalEmphasizedLines(isParade ? totalDistance + backwardDistanceMeters : getEffectiveSize(project, frame).depthMeters,
     metrics.gridSizeMeters, project.stage, isParade ? project.paradeSettings : undefined,
-    options.includeGrid, verticalRange.topMeters, verticalRange.bottomMeters);
+    options.includeGrid, verticalRange.topMeters, verticalRange.bottomMeters, options.verticalOrigin ?? "top");
   const previewStyle = {
     gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
     gridTemplateRows: `${rulerTopMm}mm ${stageHeightMm}mm`,

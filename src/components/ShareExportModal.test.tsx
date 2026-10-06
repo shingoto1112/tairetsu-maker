@@ -8,6 +8,21 @@ vi.mock("./DocumentExportSheet", () => ({ DocumentExportSheet: ({ initialTarget,
   <div role="dialog" aria-label="スマホ書き出し">{initialTarget}:{initialFormat}<button onClick={onClose}>戻る</button></div> }));
 afterEach(cleanup);
 describe("ShareExportModal mobile and A4 coexistence", () => {
+  it("passes the chosen A4 origin, resets on reopen, and hides it for parade", async () => {
+    const onExport = vi.fn(), props = { projectTitle: "確認", currentSceneLabel: "1", onClose: vi.fn(), onExport };
+    const { rerender } = render(<ShareExportModal {...props} isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
+    expect((screen.getByRole("radio", { name: "上を0mにする" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "下を0mにする" }));
+    fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
+    expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ verticalOrigin: "bottom" }) }));
+    rerender(<ShareExportModal {...props} isOpen={false} />);
+    rerender(<ShareExportModal {...props} isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
+    expect((screen.getByRole("radio", { name: "上を0mにする" }) as HTMLInputElement).checked).toBe(true);
+    rerender(<ShareExportModal {...props} isOpen isParade />);
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
   it("focuses on open, cycles Tab, permits input/Escape and restores the opener", () => {
     const onClose = vi.fn();
     const props = { projectTitle: "練習用", currentSceneLabel: "1", onClose, onExport: vi.fn() };

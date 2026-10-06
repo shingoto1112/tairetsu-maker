@@ -1,3 +1,5 @@
+import type { VerticalOrigin } from "../utils/gridEmphasis";
+import { VerticalOriginOptions } from "./VerticalOriginOptions";
 import { Box, ClipboardList, Download, FileText, Users, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
@@ -10,6 +12,7 @@ export type ShareExportScope = "current" | "all";
 export type ShareExportFormat = "pdf" | "image";
 
 export type ShareExportOptions = {
+  verticalOrigin?: VerticalOrigin;
   includeBackground: boolean;
   includeGrid: boolean;
   includeMeterRulers: boolean;
@@ -34,6 +37,7 @@ type ShareExportModalProps = {
   projectTitle: string;
   currentSceneLabel: string;
   hasAudio?: boolean;
+  isParade?: boolean;
   onClose: () => void;
   onOpenCollaboration?: () => void;
   onExport: (request: ShareExportRequest) => void | Promise<void>;
@@ -77,12 +81,14 @@ export const ShareExportModal = ({
   projectTitle,
   currentSceneLabel,
   hasAudio = false,
+  isParade = false,
   onClose,
   onOpenCollaboration,
   onExport,
   onExportZip,
   getMobileExportSource,
 }: ShareExportModalProps) => {
+  const [verticalOrigin, setVerticalOrigin] = useState<VerticalOrigin>("top");
   const [scope, setScope] = useState<ShareExportScope | null>(null);
   const [fileName, setFileName] = useState("");
   const [includeAssignments, setIncludeAssignments] = useState(false);
@@ -112,6 +118,7 @@ export const ShareExportModal = ({
 
   useEffect(() => {
     if (!isOpen) {
+      setVerticalOrigin("top");
       setScope(null);
       setFileName("");
       setIncludeAssignments(false);
@@ -146,7 +153,7 @@ export const ShareExportModal = ({
       scope,
       format: "pdf",
       fileName: fileName.trim() || makeDefaultFileName(scope, projectTitle, currentSceneLabel),
-      options: { ...fixedExportOptions, includeAssignments },
+      options: { ...fixedExportOptions, includeAssignments, verticalOrigin },
     });
     onClose();
   };
@@ -316,6 +323,7 @@ export const ShareExportModal = ({
           </div>
         ) : (
           <div className="share-export-detail">
+            {!isParade && <VerticalOriginOptions value={verticalOrigin} onChange={setVerticalOrigin} />}
             <label className="share-export-field">
               ファイル名
               <input
