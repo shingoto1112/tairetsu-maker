@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const pdf = vi.hoisted(() => ({ addPage: vi.fn(), addImage: vi.fn(), output: vi.fn(() => new Blob(["pdf"])), setProperties: vi.fn(), ctor: vi.fn(),
   internal: { pageSize: { getWidth: () => 405, getHeight: () => 720 } } }));
 vi.mock("jspdf", () => ({ jsPDF: class { constructor(options: unknown) { pdf.ctor(options); return pdf; } } }));
-import { createMobilePdfWriter, imagePagesToPdfBlob, jpegDataUrlsToPdfBlob } from "./pdfExport";
+import { cameraImageToPdfBlob, createMobilePdfWriter, imagePagesToPdfBlob, jpegDataUrlsToPdfBlob } from "./pdfExport";
 
 describe("generalized PDF pages", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -30,6 +30,15 @@ describe("generalized PDF pages", () => {
   it("rejects empty pages and invalid dimensions", async () => {
     await expect(imagePagesToPdfBlob([])).rejects.toThrow();
     await expect(imagePagesToPdfBlob([{ dataUrl: "png", width: 0, height: 10, format: "PNG" }])).rejects.toThrow();
+  });
+  it("keeps camera bounds on one page without extra margin", async () => {
+    vi.stubGlobal("Image", class { naturalWidth = 1080; naturalHeight = 1920; onload = () => {}; set src(_: string) { this.onload(); } });
+    try {
+      await cameraImageToPdfBlob(new Blob(["png"], { type: "image/png" }), "カメラ");
+      expect(pdf.ctor).toHaveBeenCalledWith(expect.objectContaining({ format: [405, 720], orientation: "portrait" }));
+      expect(pdf.addImage).toHaveBeenCalledWith(expect.stringContaining("data:image/png"), "PNG", 0, 0, 405, 720, undefined, "SLOW");
+      expect(pdf.addPage).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
   });
   it("cancels between compression of pages without returning a partial PDF", async () => {
     const controller = new AbortController();

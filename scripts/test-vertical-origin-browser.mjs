@@ -22,19 +22,17 @@ const unchangedDrawing = () => page.locator('.print-document').evaluate(el => {
 });
 for(const depth of [12,12.5]){await page.emulateMedia({media:'print'});await show('before','top',depth);const before=await coords();const unchanged=await unchangedDrawing();assert.ok(before.length>50);const beforePdf=await page.pdf({path:out+`/a4-before-${depth}.pdf`,preferCSSPageSize:true});const pageCount=buffer=>buffer.toString('latin1').split('/Type /Page').filter(x=>x.startsWith(' ')||x.startsWith('\n')||x.startsWith('\r')).length;const beforeCount=pageCount(beforePdf);assert.ok(beforeCount>0);for(const o of ['top','bottom']){await show('a4',o,depth);assert.deepEqual(await coords(),before);assert.equal(await unchangedDrawing(),unchanged);results.push({depth,origin:o,elements:before.length,coordinates:'identical'});await page.screenshot({path:out+`/a4-${o}-${depth}.png`,fullPage:true});const pdf=await page.pdf({path:out+`/a4-${o}-${depth}.pdf`,preferCSSPageSize:true});assert.equal(pageCount(pdf),beforeCount);results[results.length-1].pdfPages=beforeCount;} }
 await page.emulateMedia({media:'screen'});
-for(const [width,height] of [[744,1133],[1032,1376],[1376,1032],[390,844]]){await page.setViewportSize({width,height});for(const kind of ['sheet','share']){await page.reload();await show(kind);if(kind==='share')await page.getByRole('button',{name:'このシーンを書き出す',exact:false}).click();await page.screenshot({path:out+`/debug-${kind}-${width}.png`});await page.getByRole('radio',{name:'上を0mにする'}).waitFor();assert.equal(await page.getByRole('radio',{name:'上を0mにする'}).isChecked(),true);await page.getByRole('radio',{name:'上を0mにする'}).focus();await page.keyboard.press('ArrowRight');assert.equal(await page.getByRole('radio',{name:'下を0mにする'}).isChecked(),true);await page.screenshot({path:out+`/${kind}-${width}x${height}.png`});}}
+for(const [width,height] of [[744,1133],[1032,1376],[1376,1032],[390,844]]){await page.setViewportSize({width,height});for(const kind of ['sheet','share']){await page.reload();await show(kind);await page.getByRole('button',{name:'このシーンを書き出す',exact:false}).click();await page.screenshot({path:out+`/debug-${kind}-${width}.png`});await page.getByRole('radio',{name:'上を0mにする'}).waitFor();assert.equal(await page.getByRole('radio',{name:'上を0mにする'}).isChecked(),true);await page.getByRole('radio',{name:'上を0mにする'}).focus();await page.keyboard.press('ArrowRight');assert.equal(await page.getByRole('radio',{name:'下を0mにする'}).isChecked(),true);await page.screenshot({path:out+`/${kind}-${width}x${height}.png`});}}
 await page.setViewportSize({width:1032,height:1376});for(const origin of ['top','bottom']){await show('static',origin);await page.locator('.static-stage-preview').screenshot({path:out+`/export-${origin}.png`});}
 await fs.writeFile(out+'/a4-coordinate-results.json',JSON.stringify(results,null,2));console.log('ORIGIN_BROWSER PASS',results,out);
 for (const origin of ['top', 'bottom']) {
   const files = await page.evaluate(async origin => {
     const { formationExportFixture } = await import('/src/utils/formationExportFixture.ts');
-    const { generateFormationExport } = await import('/src/utils/formationExport.tsx');
+    const { generateA4Document } = await import('/scripts/testing/export-a4.tsx');
     const p = formationExportFixture(); p.stage.depthMeters = 12.5; p.frames = p.frames.slice(0, 1);
     const outputs = [];
     for (const format of ['png', 'pdf']) {
-      const result = await generateFormationExport({ project: p, title: p.title, exportedAt: p.updatedAt, scopeLabel: '確認' },
-        { target: 'formation', scope: 'all', purpose: 'mobile', format, verticalOrigin: origin },
-        { signal: new AbortController().signal, onProgress: () => {} });
+      const result = await generateA4Document(p, format, { verticalOrigin: origin });
       const data = await new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve(r.result.split(',')[1]); r.readAsDataURL(result.files[0]); });
       outputs.push({ format, data, pages: result.pageCount });
     }

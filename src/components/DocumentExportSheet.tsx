@@ -1,4 +1,3 @@
-import { VerticalOriginOptions } from "./VerticalOriginOptions";
 import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -7,13 +6,12 @@ import { ExportCompletionPanel } from "./ExportCompletionPanel";
 import { useModalFocus } from "../hooks/useModalFocus";
 
 export const EXPORT_TARGET_LABELS: Record<ExportTarget, string> = {
-  formation: "隊列表", members: "メンバー名簿", objects: "道具名簿", assignments: "道具割当表",
+  members: "メンバー名簿",
 };
-type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; supportsFormation?: boolean; viewport?: boolean; getSource: () => ExportSource; onClose: () => void };
+type Props = { initialTarget: ExportTarget; initialFormat?: "png" | "pdf"; viewport?: boolean; getSource: () => ExportSource; onClose: () => void };
 
-export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supportsFormation = false, viewport = false, getSource, onClose }: Props) => {
-  const [request, setRequest] = useState<ExportRequest>({ verticalOrigin: "top", target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat, includeDetails: false });
-  const [estimate, setEstimate] = useState("");
+export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", viewport = false, getSource, onClose }: Props) => {
+  const [request, setRequest] = useState<ExportRequest>({ target: initialTarget, scope: "current", purpose: "mobile", format: initialFormat });
   const [memberFit, setMemberFit] = useState<"checking" | "fits" | "small" | "error">("checking");
   const [memberEstimate, setMemberEstimate] = useState("");
   const [result, setResult] = useState<GeneratedExport | null>(null);
@@ -44,27 +42,8 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
     };
   }, []);
   useEffect(() => {
-    setRequest((previous) => ({ ...previous, verticalOrigin: "top", target: initialTarget, scope: initialTarget === "formation" ? "all" : "current", purpose: initialTarget === "objects" ? "a4" : "mobile", format: initialTarget === "members" ? "png" : initialFormat }));
+    setRequest((previous) => ({ ...previous, target: initialTarget, scope: "current", purpose: "mobile", format: initialFormat }));
   }, [initialTarget, initialFormat]);
-  useEffect(() => {
-    if (request.target !== "formation") { setEstimate(""); return; }
-    const abort = new AbortController();
-    setEstimate("予想ページ数を確認中…");
-    void (async () => {
-      try {
-        const source = getSource();
-        const { createFormationSnapshot } = await import("../utils/formationExportLayout");
-        const { prepareFormationPages } = await import("../utils/formationExport");
-        if (abort.signal.aborted) return;
-        const snapshot = createFormationSnapshot(source, request.scope);
-        const pages = await prepareFormationPages(snapshot, Boolean(request.includeDetails), { signal: abort.signal, onProgress: () => {} });
-        if (!abort.signal.aborted) setEstimate(`予想 ${pages.length}ページ${request.includeDetails ? "（全体図 → 拡大図・左から右）" : ""}`);
-      } catch (error) {
-        if (!abort.signal.aborted) setEstimate(error instanceof Error ? error.message : "予想ページ数を確認できませんでした。");
-      }
-    })();
-    return () => abort.abort();
-  }, [request.target, request.scope, request.includeDetails, getSource]);
   useEffect(() => {
     if (request.target !== "members" || request.purpose !== "mobile") return;
     const abort = new AbortController();
@@ -117,24 +96,8 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", supp
         handleModalTab(event);
       }}>
       <header><h2 id="document-export-title">書き出し</h2><button className="share-export-close" type="button" disabled={locked} onClick={onClose} aria-label="閉じる"><X size={20} aria-hidden="true" /></button></header>
-      <fieldset disabled={locked}><legend>対象</legend><div className="document-export-options">
-        {Object.entries(EXPORT_TARGET_LABELS).filter(([target]) => target !== "formation" || supportsFormation || initialTarget === "formation").map(([target, label]) => <button type="button" key={target} aria-pressed={request.target === target}
-          onClick={() => update({ target: target as ExportTarget, purpose: target === "objects" ? "a4" : "mobile", ...(target === "members" ? { format: "png", memberOverflow: "single" } : {}), ...(target === "formation" ? { scope: "all" } : {}) })}>{label}</button>)}
-      </div></fieldset>
-      {(request.target === "assignments" || request.target === "formation") && <fieldset disabled={locked}><legend>範囲</legend><div className="document-export-options">
-        <button type="button" aria-pressed={request.scope === "current"} onClick={() => update({ scope: "current" })}>このシーン</button>
-        <button type="button" aria-pressed={request.scope === "all"} onClick={() => update({ scope: "all" })}>全シーン</button>
-      </div></fieldset>}
-      {request.target === "formation" && getSource().project?.mode !== "parade" && <VerticalOriginOptions value={request.verticalOrigin ?? "top"} disabled={locked} onChange={(verticalOrigin) => update({ verticalOrigin })} />}
-      {request.target === "formation" && <fieldset disabled={locked}><legend>読みやすさ</legend>
-        <label className="document-export-check"><input type="checkbox" checked={Boolean(request.includeDetails)} onChange={(event) => update({ includeDetails: event.target.checked })} /> 拡大図も付ける</label>
-        <p className="muted-text">名前が読める大きさで分割します。狭い隊列表では全体図だけになります。</p>
-        <p role="status">{estimate}</p>
-      </fieldset>}
       <fieldset disabled={locked}><legend>用途</legend><div className="document-export-options">
-        {(request.target === "members" ? ["mobile", "a4"] as const : ["a4", "mobile"] as const)
-          .filter(purpose => purpose === "mobile" || (request.target !== "assignments" && request.target !== "formation"))
-          .map(purpose => <button key={purpose} type="button" aria-pressed={request.purpose === purpose} onClick={() => update({ purpose })}>{purpose === "mobile" ? "スマホで見る（LINE向け）" : "印刷向け（A4）"}</button>)}
+        {(["mobile", "a4"] as const).map(purpose => <button key={purpose} type="button" aria-pressed={request.purpose === purpose} onClick={() => update({ purpose })}>{purpose === "mobile" ? "スマホで見る（LINE向け）" : "印刷向け（A4）"}</button>)}
       </div></fieldset>
       {request.target === "members" && request.purpose === "mobile" && <fieldset disabled={locked}><legend>1枚の名簿</legend>
         <p className="muted-text">全員を1枚にまとめます。名前は拡大して確認できます</p>

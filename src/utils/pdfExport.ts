@@ -1,3 +1,4 @@
+import { fitPdfImage, PDF_MARGIN_PT } from "./pdfPageLayout";
 let jsPdfPromise: Promise<typeof import("jspdf")> | null = null;
 
 const loadJsPdf = () => (jsPdfPromise ??= import("jspdf"));
@@ -13,7 +14,6 @@ export type ImagePdfPage = {
 
 export type PdfOrientation = "landscape" | "portrait";
 
-const PDF_MARGIN_PT = 20;
 
 /** Mobile pages are embedded immediately; no array of full-resolution base64 images is retained. */
 export const createMobilePdfWriter = async (title: string, signal: AbortSignal) => {
@@ -102,13 +102,7 @@ export const imagePagesToPdfBlob = async (
 
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const maxWidth = pageWidth - marginPt * 2;
-    const maxHeight = pageHeight - marginPt * 2;
-    const scale = Math.min(maxWidth / page.width, maxHeight / page.height);
-    const drawWidth = page.width * scale;
-    const drawHeight = page.height * scale;
-    const drawX = (pageWidth - drawWidth) / 2;
-    const drawY = (pageHeight - drawHeight) / 2;
+    const { x: drawX, y: drawY, width: drawWidth, height: drawHeight } = fitPdfImage(page.width, page.height, pageWidth, pageHeight, marginPt);
 
     pdf.addImage(
       page.dataUrl,
@@ -147,4 +141,14 @@ export const jpegDataUrlsToPdfBlob = async (
     throw new Error("PDFデータを作成できませんでした。");
   }
   return pdfBlob;
+};
+
+/** Keep the camera PNG's bounds and aspect ratio on one custom PDF page, with no added margin. */
+export const cameraImageToPdfBlob = async (blob: Blob, title: string): Promise<Blob> => {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader(); reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("PDF用画像を読み込めませんでした。")); reader.readAsDataURL(blob);
+  });
+  const size = await getImageSize(dataUrl);
+  return imagePagesToPdfBlob([{ dataUrl, ...size, format: "PNG", pageSize: [size.width * 0.375, size.height * 0.375] }], { title, marginPt: 0 });
 };

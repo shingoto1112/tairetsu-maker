@@ -5,22 +5,19 @@ import { DocumentExportSheet } from "./DocumentExportSheet";
 import { generateDocumentExport } from "../utils/mobileExport";
 import { shareExportFiles, saveExportFile } from "../utils/exportDelivery";
 import type { ExportSource, GeneratedExport } from "../utils/mobileExportTypes";
-import { formationExportFixture } from "../utils/formationExportFixture";
-import { prepareFormationPages } from "../utils/formationExport";
 import { prepareMemberMobilePlan } from "../utils/memberMobileExport";
 vi.mock("../utils/memberMobileExport", () => ({ prepareMemberMobilePlan: vi.fn() }));
 
 vi.mock("../utils/mobileExport", () => ({
-  exportTargets: Object.fromEntries(["formation", "members", "objects", "assignments"].map((target) => [target, { snapshot: (source: ExportSource) => ({ target, data: source }) }])),
+  exportTargets: Object.fromEntries(["members"].map((target) => [target, { snapshot: (source: ExportSource) => ({ target, data: source }) }])),
   generateDocumentExport: vi.fn(),
 }));
-vi.mock("../utils/formationExport", () => ({ prepareFormationPages: vi.fn(async () => [{}, {}]) }));
 vi.mock("../utils/exportDelivery", () => ({ canShareExportFiles: () => true, isAppleTouchDevice: () => false, shareExportFiles: vi.fn(), saveExportFile: vi.fn() }));
 vi.mock("../platform/files", () => ({ isNativeExportRuntime: () => false, isNativeExportShareAvailable: () => false }));
 const source: ExportSource = { projectTitle: "演目", members: [], memberGroups: [], objects: [], objectGroups: [], frames: [], currentFrame: null, objectStates: {} };
 const completed = (): GeneratedExport => ({
   files: [1, 2, 3].map((i) => new File(["image"], `演目_${i}.png`, { type: "image/png" })),
-  preview: new Blob(["preview"], { type: "image/png" }), targetLabel: "道具割当表", scopeLabel: "全シーン", pageCount: 3,
+  preview: new Blob(["preview"], { type: "image/png" }), targetLabel: "メンバー名簿", scopeLabel: "全シーン", pageCount: 3,
 });
 describe("DocumentExportSheet", () => {
   beforeEach(() => {
@@ -33,16 +30,15 @@ describe("DocumentExportSheet", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
   it("tracks the initial target and exposes explicit action labels and supported purposes", async () => {
     const props = { getSource: () => structuredClone(source), onClose: vi.fn() };
-    const { rerender } = render(<DocumentExportSheet {...props} initialTarget="members" initialFormat="pdf" />);
+    render(<DocumentExportSheet {...props} initialTarget="members" initialFormat="png" />);
     expect(screen.getByRole("button", { name: "メンバー名簿の画像を作成" })).toBeTruthy();
     await screen.findByText("1枚・1536×2048px・5列・名前32px");
     expect(screen.getByRole("button", { name: "画像" }).getAttribute("aria-pressed")).toBe("true");
-    rerender(<DocumentExportSheet {...props} initialTarget="assignments" />);
-    expect(screen.getByRole("button", { name: "道具割当表の画像を作成" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "印刷向け（A4）" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "PDF" }));
-    expect(screen.getByRole("button", { name: "道具割当表のPDFを作成" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "このシーン" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "メンバー名簿のPDFを作成" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "道具名簿" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "道具割当表" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "隊列表" })).toBeNull();
   });
   it("preflights member mobile output and presents the below-24px choice before creation, defaulting to one page", async () => {
     vi.mocked(prepareMemberMobilePlan).mockResolvedValue(null);
@@ -58,31 +54,31 @@ describe("DocumentExportSheet", () => {
     await screen.findByRole("button", { name: "共有する" });
     expect(generateDocumentExport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ memberOverflow: "readable", purpose: "mobile" }), expect.anything());
   });
-  it("shows a one-page estimate for members while A4 and objects retain their existing options", async () => {
+  it("shows a one-page estimate for members and retains A4 options", async () => {
     render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);
     expect(screen.getByText("1枚の名簿")).toBeTruthy();
     expect(screen.getByRole("button", { name: "スマホで見る（LINE向け）" }).getAttribute("aria-pressed")).toBe("true");
     await screen.findByText("1枚・1536×2048px・5列・名前32px");
     expect(screen.queryByRole("button", { name: "読みやすさを優先して分ける（複数枚）" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "道具名簿" }));
+    fireEvent.click(screen.getByRole("button", { name: "印刷向け（A4）" }));
     expect(screen.queryByText("1枚の名簿")).toBeNull();
   });
   it("retains completed files on cancellation, failure and successful sharing without regenerating", async () => {
     const getSource = vi.fn(() => structuredClone(source));
-    render(<DocumentExportSheet initialTarget="assignments" getSource={getSource} onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "全シーン" }));
-    fireEvent.click(screen.getByRole("button", { name: "道具割当表の画像を作成" }));
+    render(<DocumentExportSheet initialTarget="members" getSource={getSource} onClose={vi.fn()} />);
+    await screen.findByText("1枚・1536×2048px・5列・名前32px");
+    fireEvent.click(screen.getByRole("button", { name: "メンバー名簿の画像を作成" }));
     const share = await screen.findByRole("button", { name: "共有する" });
     expect(shareExportFiles).not.toHaveBeenCalled();
     expect(screen.getByText(/3枚の画像・合計/)).toBeTruthy();
-    expect(screen.getByAltText("道具割当表の先頭ページ")).toBeTruthy();
-    expect(generateDocumentExport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ target: "assignments", scope: "all", purpose: "mobile" }), expect.anything());
+    expect(screen.getByAltText("メンバー名簿の先頭ページ")).toBeTruthy();
+    expect(generateDocumentExport).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ target: "members", scope: "current", purpose: "mobile" }), expect.anything());
     vi.mocked(shareExportFiles).mockResolvedValueOnce("cancelled").mockRejectedValueOnce(new Error("share failed")).mockResolvedValue("shared");
     fireEvent.click(share); await screen.findByText(/取り消しました。作成済み/);
     fireEvent.click(share); await screen.findByText(/受け渡しに失敗/);
     fireEvent.click(share); await screen.findByText("共有先への受け渡しが完了しました。");
     expect(screen.getByRole("button", { name: "共有する" })).toBeTruthy();
-    expect(generateDocumentExport).toHaveBeenCalledTimes(1); expect(getSource).toHaveBeenCalledTimes(1);
+    expect(generateDocumentExport).toHaveBeenCalledTimes(1); expect(getSource).toHaveBeenCalledTimes(2);
     const calls = vi.mocked(shareExportFiles).mock.calls;
     expect(calls[0][0]).toBe(calls[2][0]);
     expect(saveExportFile).not.toHaveBeenCalled();
@@ -106,28 +102,11 @@ describe("DocumentExportSheet", () => {
     expect(generateDocumentExport).toHaveBeenCalledTimes(2);
   });
   it("aborts work on unmount and releases previews on close", async () => {
-    const { unmount } = render(<DocumentExportSheet initialTarget="objects" getSource={() => source} onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "道具名簿の画像を作成" }));
+    const { unmount } = render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);
+    await screen.findByText("1枚・1536×2048px・5列・名前32px");
+    fireEvent.click(screen.getByRole("button", { name: "メンバー名簿の画像を作成" }));
     await screen.findByRole("button", { name: "共有する" });
     await act(async () => unmount());
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
-  });
-  it("defaults formation to all scenes, details off, estimates pages and preserves the chosen entry format", async () => {
-    const project = formationExportFixture();
-    render(<DocumentExportSheet initialTarget="formation" initialFormat="pdf" supportsFormation
-      getSource={() => ({ ...source, project, currentFrame: project.frames[0] })} onClose={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "全シーン" }).getAttribute("aria-pressed")).toBe("true");
-    expect((screen.getByRole("checkbox", { name: "拡大図も付ける" }) as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByRole("radio", { name: "上を0mにする" }) as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: "下を0mにする" }));
-    expect(screen.queryByRole("button", { name: "印刷向け（A4）" })).toBeNull();
-    await screen.findByText("予想 2ページ");
-    vi.mocked(prepareFormationPages).mockResolvedValueOnce(Array.from({ length: 8 }, () => ({})) as Awaited<ReturnType<typeof prepareFormationPages>>);
-    fireEvent.click(screen.getByRole("checkbox", { name: "拡大図も付ける" }));
-    await screen.findByText("予想 8ページ（全体図 → 拡大図・左から右）");
-    expect(prepareFormationPages).toHaveBeenLastCalledWith(expect.anything(), true, expect.anything());
-    fireEvent.click(screen.getByRole("button", { name: "隊列表のPDFを作成" }));
-    await screen.findByRole("button", { name: "共有する" });
-    expect(generateDocumentExport).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ target: "formation", scope: "all", includeDetails: true, format: "pdf", verticalOrigin: "bottom" }), expect.anything());
   });
 });

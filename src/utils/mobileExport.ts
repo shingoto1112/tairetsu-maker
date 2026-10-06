@@ -1,16 +1,14 @@
-import { createAssignmentExportSnapshot } from "./assignmentExportSnapshot";
 import { createRosterExportSnapshot } from "./rosterExportSnapshot";
 import { waitForExportFonts } from "./exportRaster";
 import { encodeMobilePages } from "./mobileExportPipeline";
-import { createFormationSnapshot } from "./formationExportLayout";
 import { formatExportTimestamp, withFileExtension } from "./exportFileName";
 import {
-  assignmentMobileSections, MOBILE_INNER_WIDTH, MOBILE_PADDING, MOBILE_WIDTH,
+  MOBILE_INNER_WIDTH, MOBILE_PADDING, MOBILE_WIDTH,
   planMobilePages, rosterMobileSections, type MobilePage, type MobileSection, type TextMeasure,
 } from "./mobileExportLayout";
 import type { ExportRequest, ExportSnapshot, ExportSource, ExportTarget, GeneratedExport, GenerationOptions } from "./mobileExportTypes";
 
-type TextExportSnapshot = Exclude<ExportSnapshot, { target: "formation" }>;
+type TextExportSnapshot = ExportSnapshot;
 
 const FONT = '"Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
 const div = (text?: string, style: Partial<CSSStyleDeclaration> = {}) => {
@@ -28,37 +26,15 @@ type TargetDefinition = {
   plan: (snapshot: ExportSnapshot, measure: TextMeasure) => MobileSection[];
   draw: typeof drawMobilePage;
 };
-const rosterDefinition = (target: "members" | "objects", label: string): TargetDefinition => ({
-  label, supportsA4: true,
-  snapshot: (source) => ({ target, data: createRosterExportSnapshot(source.projectTitle, target,
-    target === "members" ? source.members : source.objects,
-    target === "members" ? source.memberGroups : source.objectGroups) }),
-  plan: (snapshot, measure) => {
-    if (snapshot.target === "assignments" || snapshot.target === "formation") throw new Error("名簿データが不正です。");
-    return rosterMobileSections(snapshot.data, measure);
-  }, draw: drawMobilePage,
-});
-
-/** Formation shares the bounded mobile page encoding and delivery pipeline. */
 export const exportTargets: Record<ExportTarget, TargetDefinition> = {
-  formation: {
-    label: "隊列表", supportsA4: false,
-    snapshot: (source, request) => ({ target: "formation", data: createFormationSnapshot(source, request.scope) }),
-    plan: () => { throw new Error("隊列表は図のページ計画を使用してください。"); }, draw: drawMobilePage,
-  },
-  members: rosterDefinition("members", "メンバー名簿"),
-  objects: rosterDefinition("objects", "道具名簿"),
-  assignments: {
-    label: "道具割当表", supportsA4: false,
-    snapshot: (source, request) => ({ target: "assignments", data: createAssignmentExportSnapshot(source, request.scope) }),
-    plan: (snapshot) => {
-      if (snapshot.target !== "assignments") throw new Error("割当データが不正です。");
-      return assignmentMobileSections(snapshot.data);
-    }, draw: drawMobilePage,
+  members: {
+    label: "メンバー名簿", supportsA4: true,
+    snapshot: source => ({ target: "members", data: createRosterExportSnapshot(source.projectTitle, "members", source.members, source.memberGroups) }),
+    plan: (snapshot, measure) => rosterMobileSections(snapshot.data, measure), draw: drawMobilePage,
   },
 };
 
-const metadata = (snapshot: TextExportSnapshot) => `書き出し日: ${new Date(snapshot.data.exportedAt).toLocaleDateString("ja-JP")}　総数: ${snapshot.data.totalCount}${snapshot.target === "members" ? "人" : "個"}`;
+const metadata = (snapshot: TextExportSnapshot) => `書き出し日: ${new Date(snapshot.data.exportedAt).toLocaleDateString("ja-JP")}　総数: ${snapshot.data.totalCount}人`;
 const headerSize = (snapshot: TextExportSnapshot, label: string, first: boolean, measure: TextMeasure) =>
   measure(snapshot.data.title, MOBILE_INNER_WIDTH, 30, 40, true)
   + measure(label, MOBILE_INNER_WIDTH - 120, 28, 38, true)
@@ -80,12 +56,11 @@ function drawMobilePage(snapshot: TextExportSnapshot, label: string, page: Mobil
   sheet.append(header);
   for (const block of page.blocks) {
     if (block.heading) {
-      const { kind, text, color } = block.heading;
+      const { text, color } = block.heading;
       const heading = div(undefined, { height: `${block.height}px`, display: "flex", gap: "12px", padding: "10px 8px",
-        fontSize: kind === "scene" ? "30px" : kind === "group" ? "28px" : "24px", lineHeight: "38px", fontWeight: "700",
-        background: kind === "group" ? "#f8fafc" : "#ffffff", borderLeft: kind === "group" ? `4px solid ${color ?? "#94a3b8"}` : "none",
+        fontSize: "28px", lineHeight: "38px", fontWeight: "700",
+        background: "#f8fafc", borderLeft: `4px solid ${color ?? "#94a3b8"}`,
       });
-      if (kind === "tool") heading.append(div(undefined, { width: "10px", height: "10px", flex: "0 0 10px", borderRadius: "50%", marginTop: "14px", background: color ?? "#94a3b8" }));
       heading.append(div(text, { minWidth: "0", flex: "1" })); sheet.append(heading);
     } else if (block.row) {
       const row = div(undefined, { height: `${block.height}px`, display: "flex", gap: "16px", padding: "7px 0 8px", borderBottom: "1px solid #e2e8f0", color: block.row.muted ? "#64748b" : "#0f172a" });
@@ -104,19 +79,13 @@ function drawMobilePage(snapshot: TextExportSnapshot, label: string, page: Mobil
 export const generateDocumentExport = async (
   snapshot: ExportSnapshot, request: ExportRequest, options: GenerationOptions,
 ): Promise<GeneratedExport> => {
-  if (snapshot.target === "formation") {
-    if (request.purpose !== "mobile") throw new Error("隊列表のA4出力は共有と書き出しの印刷・PDFをご利用ください。");
-    const { generateFormationExport } = await import("./formationExport");
-    return generateFormationExport(snapshot.data, request, options);
-  }
   const target = exportTargets[snapshot.target];
-  const scopeLabel = snapshot.target === "assignments" ? snapshot.data.scopeLabel : "全体";
+  const scopeLabel = "全体";
   const label = target.label;
-  const base = `${snapshot.data.title}_${label}${snapshot.target === "assignments" ? `_${scopeLabel}` : ""}_${formatExportTimestamp(new Date(snapshot.data.exportedAt))}`;
+  const base = `${snapshot.data.title}_${label}_${formatExportTimestamp(new Date(snapshot.data.exportedAt))}`;
   const check = () => checkCancelled(options.signal);
   check();
   if (request.purpose === "a4") {
-    if (snapshot.target === "assignments") throw new Error("道具割当表はスマホ向けで書き出してください。");
     options.onProgress("印刷用ページを準備中…"); await yieldToUI(); check();
     const { generateRosterExport } = await import("./rosterExport");
     const result = await generateRosterExport(snapshot.data, request.format, { ...options, paginatedImages: true });
@@ -154,7 +123,7 @@ export const generateDocumentExport = async (
       if (height <= 0) throw new Error("文字の表示サイズを測定できませんでした。");
       cache.set(key, height); return height;
     };
-    if (snapshot.target !== "assignments") {
+    {
       let count = 0;
       for (const group of snapshot.data.columns) for (const item of group.items) {
         measure(item.name, 194, 24, 34); measure(item.name, MOBILE_INNER_WIDTH - 44, 24, 34);
@@ -165,7 +134,7 @@ export const generateDocumentExport = async (
     // Warm exact section measurements in small batches so cancellation can be handled.
     for (let index = 0; index < sections.length; index++) {
       for (const heading of sections[index].headings) {
-        measure(heading.text, MOBILE_INNER_WIDTH - (heading.kind === "tool" ? 38 : 24), heading.kind === "scene" ? 30 : heading.kind === "group" ? 28 : 24, 38, true);
+        measure(heading.text, MOBILE_INNER_WIDTH - 24, 28, 38, true);
       }
       for (const row of sections[index].rows) {
         const width = (MOBILE_INNER_WIDTH - (row.cells.length - 1) * 16) / row.cells.length;

@@ -401,11 +401,11 @@ export const RosterManagementModal = ({
             <p>全体名簿</p>
             <h2 id="roster-manager-title">メンバー/道具の管理</h2>
           </div>
-          <div className="roster-manager-export">
+          {mode === "members" && <div className="roster-manager-export">
             <button ref={exportButtonRef} type="button" onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()} onClick={openExport}>
               <FileDown size={18} aria-hidden="true" />書き出し ▾
             </button>
-          </div>
+          </div>}
           {editNotice && <p className="roster-manager-edit-notice" role="status">{editNotice}</p>}
         </header>
         {exportNotice && <p className="roster-manager-export-notice" role="status">{exportNotice}</p>}
@@ -583,8 +583,8 @@ export const RosterManagementModal = ({
             </tbody>
           </table>
         </div>}
-        {exportOpen && <Suspense fallback={<p role="status">書き出しを読み込み中…</p>}>
-          <DocumentExportSheet initialTarget={mode === "members" ? "members" : objectView === "assignments" ? "assignments" : "objects"} getSource={getExportSource} onClose={() => { setExportOpen(false); exportButtonRef.current?.focus({ preventScroll: true }); }} />
+        {exportOpen && mode === "members" && <Suspense fallback={<p role="status">書き出しを読み込み中…</p>}>
+          <DocumentExportSheet initialTarget="members" getSource={getExportSource} onClose={() => { setExportOpen(false); exportButtonRef.current?.focus({ preventScroll: true }); }} />
         </Suspense>}
       </section>
     </div>

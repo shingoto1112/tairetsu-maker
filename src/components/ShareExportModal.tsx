@@ -1,8 +1,9 @@
 import type { VerticalOrigin } from "../utils/gridEmphasis";
 import { VerticalOriginOptions } from "./VerticalOriginOptions";
-import { Box, ClipboardList, Download, FileText, Users, X } from "lucide-react";
+import { Download, FileText, Users, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
+import { formatExportTimestamp } from "../utils/exportFileName";
 import type { ExportSource } from "../utils/mobileExportTypes";
 
 const DocumentExportSheet = lazy(() => import("./DocumentExportSheet").then((module) => ({ default: module.DocumentExportSheet })));
@@ -58,23 +59,8 @@ const fixedExportOptions: ShareExportOptions = {
   sceneGapRows: 5,
 };
 
-const makeDefaultFileName = (
-  scope: ShareExportScope,
-  projectTitle: string,
-  currentSceneLabel: string,
-): string => {
-  const title = projectTitle.trim() || "隊列メーカー";
-  const now = new Date();
-  const date = [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("-");
-  if (scope === "current") {
-    return `${title}_${currentSceneLabel || "現在シーン"}_${date}`;
-  }
-  return `${title}_${date}`;
-};
+const makeDefaultFileName = (projectTitle: string): string =>
+  `${projectTitle.trim() || "隊列メーカー"}_隊列表_${formatExportTimestamp()}`;
 
 export const ShareExportModal = ({
   isOpen,
@@ -90,10 +76,11 @@ export const ShareExportModal = ({
 }: ShareExportModalProps) => {
   const [verticalOrigin, setVerticalOrigin] = useState<VerticalOrigin>("top");
   const [scope, setScope] = useState<ShareExportScope | null>(null);
+  const [format, setFormat] = useState<ShareExportFormat>("pdf");
   const [fileName, setFileName] = useState("");
   const [includeAssignments, setIncludeAssignments] = useState(false);
   const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
-  const [rosterTarget, setRosterTarget] = useState<"members" | "objects" | "assignments" | null>(null);
+  const [rosterTarget, setRosterTarget] = useState<"members" | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const handleModalTab = useModalFocus(dialogRef, isOpen && !rosterTarget);
 
@@ -112,13 +99,14 @@ export const ShareExportModal = ({
 
   useEffect(() => {
     if (scope) {
-      setFileName(makeDefaultFileName(scope, projectTitle, currentSceneLabel));
+      setFileName(makeDefaultFileName(projectTitle));
     }
   }, [currentSceneLabel, projectTitle, scope]);
 
   useEffect(() => {
     if (!isOpen) {
       setVerticalOrigin("top");
+      setFormat("pdf");
       setScope(null);
       setFileName("");
       setIncludeAssignments(false);
@@ -137,7 +125,7 @@ export const ShareExportModal = ({
     return null;
   }
   if (rosterTarget && getMobileExportSource) return <Suspense fallback={<div role="dialog" aria-modal="true" aria-label="書き出しを準備中"><p role="status">書き出しを準備中…</p></div>}>
-    <DocumentExportSheet initialTarget={rosterTarget} initialFormat={rosterTarget === "members" ? "png" : "pdf"} viewport
+    <DocumentExportSheet initialTarget={rosterTarget} initialFormat="png" viewport
       getSource={getMobileExportSource} onClose={() => setRosterTarget(null)} />
   </Suspense>;
 
@@ -151,8 +139,8 @@ export const ShareExportModal = ({
     }
     await onExport({
       scope,
-      format: "pdf",
-      fileName: fileName.trim() || makeDefaultFileName(scope, projectTitle, currentSceneLabel),
+      format,
+      fileName: fileName.trim() || makeDefaultFileName(projectTitle),
       options: { ...fixedExportOptions, includeAssignments, verticalOrigin },
     });
     onClose();
@@ -217,7 +205,7 @@ export const ShareExportModal = ({
               <Users size={26} /><span><strong>みんなで編集</strong><small>クラウド保存・招待・参加メンバー</small></span>
             </button></section>}
             <section className="share-export-section">
-              <h3>印刷・PDF</h3>
+              <h3>隊列表（A4）</h3>
               <button
                 className="share-export-row"
                 onClick={() => startExport("current")}
@@ -226,7 +214,7 @@ export const ShareExportModal = ({
                 <FileText size={26} />
                 <span>
                   <strong>このシーンを書き出す</strong>
-                  <small>PDFを作成してから共有・保存できます</small>
+                  <small>PDF・画像を作成してから共有・保存できます</small>
                 </span>
               </button>
               <button
@@ -236,8 +224,8 @@ export const ShareExportModal = ({
               >
                 <Download size={26} />
                 <span>
-                  <strong>すべてのシーンを書き出す / PDF保存</strong>
-                  <small>全シーンのPDFを作成してから共有・保存できます</small>
+                  <strong>すべてのシーンを書き出す</strong>
+                  <small>全シーンのPDF・画像を作成してから共有・保存できます</small>
                 </span>
               </button>
               <label className="share-export-check">
@@ -257,26 +245,12 @@ export const ShareExportModal = ({
 
             {getMobileExportSource && (
               <section className="share-export-section">
-                <h3>名簿・割当表</h3>
+                <h3>メンバー名簿</h3>
                 <button className="share-export-row" type="button" onClick={() => setRosterTarget("members")}>
                   <Users size={26} aria-hidden="true" />
                   <span>
                     <strong>メンバー名簿</strong>
                     <small>グループごとのメンバー一覧を書き出します</small>
-                  </span>
-                </button>
-                <button className="share-export-row" type="button" onClick={() => setRosterTarget("objects")}>
-                  <Box size={26} aria-hidden="true" />
-                  <span>
-                    <strong>道具名簿</strong>
-                    <small>グループごとの道具一覧を書き出します</small>
-                  </span>
-                </button>
-                <button className="share-export-row" type="button" onClick={() => setRosterTarget("assignments")}>
-                  <ClipboardList size={26} aria-hidden="true" />
-                  <span>
-                    <strong>道具割当表</strong>
-                    <small>道具ごとの担当メンバーを書き出します</small>
                   </span>
                 </button>
               </section>
@@ -324,12 +298,17 @@ export const ShareExportModal = ({
         ) : (
           <div className="share-export-detail">
             {!isParade && <VerticalOriginOptions value={verticalOrigin} onChange={setVerticalOrigin} />}
+            <fieldset><legend>形式</legend><div className="document-export-options">
+              <button type="button" aria-pressed={format === "pdf"} onClick={() => setFormat("pdf")}>PDF</button>
+              <button type="button" aria-pressed={format === "image"} onClick={() => setFormat("image")}>画像</button>
+            </div></fieldset>
+            {format === "image" && <p className="muted-text">A4の1ページにつき1枚の画像を作成します。複数枚には連番とページ番号が付きます。</p>}
             <label className="share-export-field">
               ファイル名
               <input
                 value={fileName}
                 onChange={(event) => setFileName(event.target.value)}
-                placeholder={makeDefaultFileName(scope, projectTitle, currentSceneLabel)}
+                placeholder={makeDefaultFileName(projectTitle)}
               />
             </label>
 
@@ -356,7 +335,7 @@ export const ShareExportModal = ({
               onClick={() => void submitExport()}
               type="button"
             >
-              PDFを作成
+              {format === "pdf" ? "PDFを作成" : "画像を作成"}
             </button>
           </div>
         )}

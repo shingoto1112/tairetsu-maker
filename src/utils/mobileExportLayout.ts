@@ -1,4 +1,3 @@
-import type { AssignmentSnapshot } from "./mobileExportTypes";
 import type { RosterExportSnapshot } from "./rosterExportSnapshot";
 
 export const MOBILE_WIDTH = 540;
@@ -6,10 +5,10 @@ export const MOBILE_MAX_HEIGHT = 960;
 export const MOBILE_PADDING = 24;
 export const MOBILE_INNER_WIDTH = MOBILE_WIDTH - MOBILE_PADDING * 2;
 export type TextMeasure = (text: string, width: number, fontSize: number, lineHeight: number, bold?: boolean) => number;
-export type MobileHeading = { key: string; text: string; color?: string; kind: "scene" | "group" | "tool" };
+export type MobileHeading = { key: string; text: string; color?: string; kind: "group" };
 export type MobileRow = { cells: { text: string; no?: number }[]; muted?: boolean };
 export type MobileBlock = { heading?: MobileHeading; row?: MobileRow; height: number };
-export type MobileSection = { headings: MobileHeading[]; rows: MobileRow[]; newScene?: boolean };
+export type MobileSection = { headings: MobileHeading[]; rows: MobileRow[] };
 export type MobilePage = { blocks: MobileBlock[]; height: number; pageNumber: number; totalPages: number; headerHeight: number };
 
 export const rowHeight = (row: MobileRow, measure: TextMeasure) => {
@@ -17,7 +16,7 @@ export const rowHeight = (row: MobileRow, measure: TextMeasure) => {
   return Math.max(34, ...row.cells.map((cell) => measure(cell.text, width - (cell.no === undefined ? 0 : 44), 24, 34))) + 16;
 };
 export const headingHeight = (heading: MobileHeading, measure: TextMeasure) =>
-  measure(heading.text, MOBILE_INNER_WIDTH - (heading.kind === "tool" ? 38 : 24), heading.kind === "scene" ? 30 : heading.kind === "group" ? 28 : 24, 38, true) + 20;
+  measure(heading.text, MOBILE_INNER_WIDTH - 24, 28, 38, true) + 20;
 
 /** Uses actual wrapped heights at the two-column name width, never character counts. */
 export const rosterMobileSections = (snapshot: RosterExportSnapshot, measure: TextMeasure): MobileSection[] =>
@@ -29,25 +28,8 @@ export const rosterMobileSections = (snapshot: RosterExportSnapshot, measure: Te
       rows.push({ cells: group.items.slice(index, index + columns).map((item) => ({ text: item.name, no: item.no })) });
     }
     if (!rows.length) rows.push({ cells: [{ text: "登録なし" }], muted: true });
-    return { headings: [{ key: `group:${group.id}`, text: `${group.label}（${group.items.length}${snapshot.mode === "members" ? "人" : "個"}）`, color: group.color, kind: "group" }], rows };
+    return { headings: [{ key: `group:${group.id}`, text: `${group.label}（${group.items.length}人）`, color: group.color, kind: "group" }], rows };
   });
-
-export const assignmentMobileSections = (snapshot: AssignmentSnapshot): MobileSection[] => {
-  const sections: MobileSection[] = [];
-  snapshot.scenes.forEach((scene, sceneIndex) => {
-    let first = true;
-    const sceneHeading: MobileHeading = { key: `scene:${sceneIndex}`, text: `${scene.name}・${scene.time}`, kind: "scene" };
-    scene.groups.forEach((group, groupIndex) => group.tools.forEach((tool, toolIndex) => {
-      sections.push({ newScene: first, headings: [sceneHeading,
-        { key: `group:${sceneIndex}:${groupIndex}`, text: group.name, color: group.color, kind: "group" },
-        { key: `tool:${sceneIndex}:${groupIndex}:${toolIndex}`, text: tool.name, color: tool.color, kind: "tool" },
-      ], rows: [{ cells: [{ text: tool.assignees.length ? tool.assignees.join("、") : "担当者なし" }], muted: !tool.assignees.length }] });
-      first = false;
-    }));
-    if (first) sections.push({ newScene: true, headings: [sceneHeading], rows: [{ cells: [{ text: "表示中の道具はありません。" }], muted: true }] });
-  });
-  return sections;
-};
 
 // Split only oversize rows, including a single exceptionally long name. Keep every character.
 const splitRow = (row: MobileRow, maximum: number, measure: TextMeasure): MobileRow[] => {
@@ -89,15 +71,14 @@ export const planMobilePages = (
   };
   newPage();
   for (const section of sections) {
-    if (section.newScene && page!.blocks.length) newPage();
-    const continuationHeadings = section.headings.map((heading) => ({ ...heading, text: heading.kind === "scene" ? heading.text : `${heading.text}（続き）` }));
+    const continuationHeadings = section.headings.map((heading) => ({ ...heading, text: `${heading.text}（続き）` }));
     const allHeadingHeight = continuationHeadings.reduce((sum, heading) => sum + headingHeight(heading, measure), 0);
     const maximumRow = MOBILE_MAX_HEIGHT - MOBILE_PADDING * 2 - Math.max(headerHeight(false), headerHeight(true)) - allHeadingHeight;
     if (maximumRow < 50) throw new Error("見出しが長く、本文をページに収められません。");
     const rows = section.rows.flatMap((row) => splitRow(row, maximumRow, measure));
     for (const row of rows) {
       const needed = () => section.headings.filter((heading, index) => context[index] !== heading.key)
-        .map((heading) => seenHeadings.has(heading.key) && heading.kind !== "scene" ? { ...heading, text: `${heading.text}（続き）` } : heading);
+        .map((heading) => seenHeadings.has(heading.key) ? { ...heading, text: `${heading.text}（続き）` } : heading);
       let headings = needed();
       const height = rowHeight(row, measure);
       if (used + headings.reduce((sum, heading) => sum + headingHeight(heading, measure), 0) + height > MOBILE_MAX_HEIGHT) {

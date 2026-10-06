@@ -117,6 +117,17 @@ describe("native file sharing", () => {
     expect(fileMocks.share).not.toHaveBeenCalled(); expect(fileMocks.deleteFile).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps twelve numbered pages in order through cancellation, failure and retry", async () => {
+    const files = Array.from({ length: 12 }, (_, i) => ({ blob: new Blob([String(i)], { type: "image/png" }), fileName: `演目_隊列表_日時_${String(i + 1).padStart(3, "0")}.png` }));
+    fileMocks.writeFile.mockImplementation(async ({ path }: { path: string }) => ({ uri: `file://${path}` }));
+    fileMocks.share.mockResolvedValueOnce({ status: "cancelled" }).mockRejectedValueOnce(new Error("share failed")).mockResolvedValue({ status: "shared" });
+    await expect(shareBlobsWithNativeSheet({ files })).resolves.toBe("cancelled");
+    await expect(shareBlobsWithNativeSheet({ files })).rejects.toThrow("share failed");
+    await expect(shareBlobsWithNativeSheet({ files })).resolves.toBe("shared");
+    for (const [request] of fileMocks.share.mock.calls) expect(request.files.map((file: { fileName: string }) => file.fileName)).toEqual(files.map(file => file.fileName));
+    expect(fileMocks.deleteFile).toHaveBeenCalledTimes(36);
+  });
+
   it("stages generated files sequentially with bounded base64 and cleans all paths after sharing", async () => {
     const order: string[] = [];
     fileMocks.appendFile.mockImplementation(async () => { order.push("append"); });

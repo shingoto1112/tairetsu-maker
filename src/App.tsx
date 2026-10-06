@@ -1,3 +1,4 @@
+import { CameraExportDialog } from "./components/CameraExportDialog";
 import { copyAnnotationLines } from "./utils/annotationLines";
 import { validAnnotationLines, validProjectLineCount } from "./project/annotationLines";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./utils/horizontalGrid";
@@ -866,6 +867,7 @@ function App() {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [isStageFullscreen, setIsStageFullscreen] = useState(false);
   const [isShareExportOpen, setIsShareExportOpen] = useState(false);
+  const [isCameraExportOpen, setIsCameraExportOpen] = useState(false);
   const [completedExport, setCompletedExport] = useState<CompletedExport | null>(null);
   const [canCopyExport, setCanCopyExport] = useState(false);
   const exportGenerationPending = useRef(false);
@@ -5681,16 +5683,13 @@ function App() {
     setIsPrintPreviewMounted(false);
   };
 
-  const generatePrintImageBlob = async (
-    scope: "all" | "current",
-    options: ShareExportOptions,
-  ): Promise<Blob> => {
+  const generatePrintImages = async (scope: "all" | "current", options: ShareExportOptions, base: string) => {
     const element = await preparePrintExportElement(scope, options, "document");
     try {
-      return await elementToPngBlob(element);
-    } finally {
-      cleanupPrintExportElement();
-    }
+      const { generateA4Images } = await import("./utils/a4ImageExport");
+      return await generateA4Images(element, getPrintOrientation(project), base,
+        detail => setExportProgress({ title: "画像を作成中", detail }));
+    } finally { cleanupPrintExportElement(); }
   };
 
   const generatePrintPdfBlob = async (
@@ -5749,20 +5748,22 @@ function App() {
     }
   };
 
-  const captureStageImage = async () => {
+  const captureStageImage = async (format: "image" | "pdf") => {
+    setIsCameraExportOpen(false);
     if (exportGenerationPending.current) return;
     exportGenerationPending.current = true;
     const frameLabel = displayFrame?.label ?? selectedFrame?.label ?? "現在シーン";
     const filename = withFileExtension(
-      `${APP_NAME}_${frameLabel}_${formatExportTimestamp()}`, "png",
+      `${APP_NAME}_${frameLabel}_${formatExportTimestamp()}`, format === "image" ? "png" : "pdf",
     );
-    setExportProgress({ title: "ステージ画像を作成中", detail: frameLabel });
+    setExportProgress({ title: format === "image" ? "ステージ画像を作成中" : "ステージPDFを作成中", detail: frameLabel });
     try {
       const blob = await generateStageScreenshotBlob();
       if (!blob.size) throw new Error("画像を作成できませんでした。");
-      setCanCopyExport(true);
-      setCompletedExport({ files: [new File([blob], filename, { type: "image/png" })], preview: blob,
-        targetLabel: "ステージ画像", scopeLabel: frameLabel, pageCount: 1 });
+      const output = format === "pdf" ? await (await import("./utils/pdfExport")).cameraImageToPdfBlob(blob, frameLabel) : blob;
+      setCanCopyExport(format === "image");
+      setCompletedExport({ files: [new File([output], filename, { type: format === "image" ? "image/png" : "application/pdf" })], preview: blob,
+        targetLabel: format === "image" ? "ステージ画像" : "ステージPDF", scopeLabel: frameLabel, pageCount: 1 });
     } catch (error) {
       setNotice(error instanceof Error ? `ステージ画像の作成に失敗しました: ${error.message}` : "ステージ画像の作成に失敗しました。");
     } finally { exportGenerationPending.current = false; setExportProgress(null); }
@@ -5814,11 +5815,11 @@ function App() {
     setExportProgress({ title: image ? "画像を作成中" : "PDFを作成中", detail: fileName });
     try {
       const generated = image
-        ? await generatePrintImageBlob(request.scope, request.options).then((blob) => ({ blob, preview: blob, pageCount: 1 }))
-        : await generatePrintPdfBlob(request.scope, request.options, filenameBase);
-      if (!generated.blob.size) throw new Error("ファイルを作成できませんでした。");
+        ? await generatePrintImages(request.scope, request.options, filenameBase)
+        : await generatePrintPdfBlob(request.scope, request.options, filenameBase).then(result => ({ ...result, files: [new File([result.blob], fileName, { type: "application/pdf" })] }));
+      if (!generated.files.length || generated.files.some(file => !file.size)) throw new Error("ファイルを作成できませんでした。");
       setCanCopyExport(false);
-      setCompletedExport({ files: [new File([generated.blob], fileName, { type: image ? "image/png" : "application/pdf" })],
+      setCompletedExport({ files: generated.files,
         preview: generated.preview, pageCount: generated.pageCount, targetLabel: "隊列表（A4）",
         scopeLabel: request.scope === "current" ? selectedFrame?.label ?? "現在シーン" : "全シーン" });
     } catch (error) {
@@ -7537,6 +7538,7 @@ function App() {
           onDeleteProject={deleteStoredProject}
         />
         {helpPage}
+        {isCameraExportOpen && <CameraExportDialog onClose={() => setIsCameraExportOpen(false)} onExport={format => void captureStageImage(format)} />}
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
         {isCloudPasswordRecoveryOpen && (
           <Suspense fallback={<div role="status">画面を読み込み中…</div>}>
@@ -7716,7 +7718,7 @@ function App() {
                     }
                     void enterStageFullscreen();
                   }}
-                  onCaptureStageImage={captureStageImage}
+                  onCaptureStageImage={() => setIsCameraExportOpen(true)}
                   onContextMenuRequest={handleStageContextMenu}
 
                 />
@@ -7785,7 +7787,7 @@ function App() {
                     }
                     void enterStageFullscreen();
                   }}
-                  onCaptureStageImage={captureStageImage}
+                  onCaptureStageImage={() => setIsCameraExportOpen(true)}
                   onSeekAudio={seek}
                   onContextMenuRequest={handleStageContextMenu}
 
@@ -8142,7 +8144,8 @@ function App() {
           );
         })()}
     </div>
-    {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
+    {isCameraExportOpen && <CameraExportDialog onClose={() => setIsCameraExportOpen(false)} onExport={format => void captureStageImage(format)} />}
+        {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
     {helpPage}
     {isShareExportOpen && <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}><ShareExportModal
       isOpen={isShareExportOpen}

@@ -13,7 +13,7 @@ const snapshot = () => createRosterExportSnapshot("演目", "members",
 describe("rosterExportLayout", () => {
   it("takes an independent snapshot with matching row numbers and no add rows", () => {
     const items = [{ id: "a", name: "以前" }];
-    const data = createRosterExportSnapshot("", "objects", items, []);
+    const data = createRosterExportSnapshot("", "members", items, []);
     items[0].name = "以後";
     expect(data.title).toBe("隊列メーカー");
     expect(data.columns[0].items).toEqual([{ id: "a", name: "以前", no: 1 }]);

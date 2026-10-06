@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignmentMobileSections, planMobilePages, rosterMobileSections, type TextMeasure } from "./mobileExportLayout";
+import { planMobilePages, rosterMobileSections, type TextMeasure } from "./mobileExportLayout";
 import { createRosterExportSnapshot } from "./rosterExportSnapshot";
 
 // Deterministic measured heights for planner tests; browser font measurements are separate.
@@ -41,16 +41,5 @@ describe("mobile page planning", () => {
     for (const page of pages) expect(page.blocks[page.blocks.length - 1]?.row).toBeDefined();
     const heading = pages.flatMap((p) => p.blocks).find((b) => b.heading?.key === "next")!.heading!;
     expect(heading.text).toBe("青組");
-  });
-  it("splits assignees with tool/group continuations and starts each scene on a fresh page", () => {
-    const names = "担当者名、".repeat(200);
-    const snapshot = { title: "演目", exportedAt: new Date().toISOString(), totalCount: 2, scopeLabel: "全シーン", scenes: [0, 1].map((i) => ({ name: `場面${i}`, time: "0:00", groups: [{ name: "旗", color: "red", tools: [{ name: "大旗", color: "blue", assignees: [i ? "次の担当" : names] }] }] })) };
-    const pages = planMobilePages(assignmentMobileSections(snapshot), measure, () => 130);
-    expect(pages.length).toBeGreaterThan(2);
-    expect(pages[1].blocks.some((b) => b.heading?.text === "大旗（続き）")).toBe(true);
-    const next = pages.find((p) => p.blocks.some((b) => b.heading?.text === "場面1・0:00"))!;
-    expect(next.blocks[0].heading?.kind).toBe("scene");
-    expect(next.blocks[next.blocks.length - 1]?.row?.cells[0].text).toBe("次の担当");
-    expect(pages.slice(0, -1).flatMap((p) => p.blocks.flatMap((b) => b.row?.cells.map((c) => c.text) ?? [])).join("")).toBe(names);
   });
 });

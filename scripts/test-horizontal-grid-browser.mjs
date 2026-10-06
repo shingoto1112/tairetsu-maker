@@ -65,9 +65,9 @@ try {
    }
    results.push({id:p.id,width,height,geometry:geom});await back(page);
   }
-  // Real exported mobile PNG and PDF at each viewport, both modes/counting choices.
+  // Real exported A4 PNG and PDF at each viewport, both modes/counting choices.
   for(const mode of ['stage','parade'])for(const counting of ['meters','centerSplit']){
-   const p=fixture(mode,counting,13,.5,'export');const exports=await page.evaluate(async p=>{const {generateFormationExport}=await import('/src/utils/formationExport.tsx');const outputs=[];for(const format of ['png','pdf']){const result=await generateFormationExport({title:'数字と線',exportedAt:'2026-10-06T00:00:00Z',scopeLabel:'現在',project:p},{target:'formation',scope:'current',purpose:'mobile',format},{signal:new AbortController().signal,onProgress:()=>{}});const file=result.files[0];const data=await new Promise(resolve=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.readAsDataURL(file);});outputs.push({format,data,bytes:file.size,pageCount:result.pageCount});}return outputs;},p);
+   const p=fixture(mode,counting,13,.5,'export');const exports=await page.evaluate(async p=>{const {generateA4Document}=await import('/scripts/testing/export-a4.tsx');const outputs=[];for(const format of ['png','pdf']){const result=await generateA4Document(p, format);const file=result.files[0];const data=await new Promise(resolve=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.readAsDataURL(file);});outputs.push({format,data,bytes:file.size,pageCount:result.pageCount});}return outputs;},p);
    for(const item of exports){assert.ok(item.bytes>1000);await writeFile(path.join(out,`grid-export-${mode}-${counting}-${width}x${height}.${item.format}`),Buffer.from(item.data,'base64'));}
   }
   await context.close();

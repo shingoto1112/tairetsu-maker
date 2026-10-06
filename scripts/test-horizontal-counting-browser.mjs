@@ -49,16 +49,16 @@ try {
     const exported=await page.evaluate(async mode=>{
       const {formationExportFixture}=await import('/src/utils/formationExportFixture.ts');
       const {createHorizontalRulerLabels}=await import('/src/utils/horizontalRuler.ts');
-      const {generateFormationExport}=await import('/src/utils/formationExport.tsx');
+      const {generateA4Document}=await import('/scripts/testing/export-a4.tsx');
       const outputs=[];
       for(const counting of ['meters','centerSplit']) {
         const project=formationExportFixture();project.mode=mode;project.frames=project.frames.slice(0,1);project.stage.widthMeters=13;project.stage.horizontalGuideMode=counting;
         project.paradeSettings={totalDistance:100,width:13,cellSizeMeters:1,direction:'up',rulerPosition:'both',horizontalMeasureMode:counting==='meters'?'normalMeter':'centerSplit',emphasizeEvery5m:true,emphasizeEvery10m:true};
         const expected=createHorizontalRulerLabels(13,counting).map(item=>item.label),seen=[];
-        const observer=new MutationObserver(()=>{document.querySelectorAll('[data-mobile-export-host] .print-ruler-x').forEach(el=>seen.push([...el.children].map(child=>child.textContent)));});observer.observe(document.body,{subtree:true,childList:true});
+        const observer=new MutationObserver(()=>{document.querySelectorAll('.print-document.is-exporting .print-ruler-x').forEach(el=>seen.push([...el.children].map(child=>child.textContent)));});observer.observe(document.body,{subtree:true,childList:true});
         try {
           for(const format of ['png','pdf']) {
-            const result=await generateFormationExport({title:'検証',exportedAt:'2026-10-05T00:00:00Z',scopeLabel:'現在',project},{target:'formation',scope:'current',purpose:'mobile',format},{signal:new AbortController().signal,onProgress:()=>{}});
+            const result=await generateA4Document(project, format);
             const file=result.files[0],base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=reject;reader.readAsDataURL(file);});
             outputs.push({mode,counting,format,pageCount:result.pageCount,bytes:file.size,type:file.type,base64});
           }

@@ -204,19 +204,15 @@ describe("RosterManagementModal", () => {
     expect(probe.textContent).toContain("確定後");
   });
 
-  it.each(["members", "objects"] as const)("defaults export target to the current names screen in %s", async (mode) => {
-    render(<RosterManagementModal {...createProps()} initialMode={mode} />);
-    fireEvent.click(screen.getByRole("button", { name: "書き出し ▾" }));
-    expect((await screen.findByTestId("export-probe")).textContent).toContain(mode);
-  });
-
-  it("uses assignments as export default and hides the roster summary", async () => {
-    render(<RosterManagementModal {...createProps()} initialMode="objects" />);
+  it("offers export only for members and keeps tool management and assignment screens", async () => {
+    render(<RosterManagementModal {...createProps()} />);
+    expect(screen.getByRole("button", { name: "書き出し ▾" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "道具管理" }));
+    expect(screen.queryByRole("button", { name: "書き出し ▾" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "道具割当" }));
     await screen.findByLabelText("道具名簿の割当");
     expect(screen.queryByLabelText("名簿の人数")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "書き出し ▾" }));
-    expect((await screen.findByTestId("export-probe")).textContent).toContain("assignments");
+    expect(screen.queryByRole("button", { name: "書き出し ▾" })).toBeNull();
   });
 
   it("quick-adds members to a group or ungrouped while retaining button focus after rerender", async () => {
