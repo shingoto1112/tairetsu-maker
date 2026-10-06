@@ -40,10 +40,10 @@ try {
   });
   const page=await context.newPage(); page.on('pageerror',e=>errors.push(e.message));
   await page.goto(origin);
-  await page.getByRole('button',{name:'ログイン / 新規登録',exact:true}).click();
+  await page.locator('.library-header').getByRole('button',{name:'ログイン',exact:true}).click();
   await page.getByLabel('メールアドレス',{exact:true}).fill('session-test@example.invalid');
   await page.getByLabel('パスワード',{exact:true}).fill(password);
-  await page.getByRole('button',{name:'ログイン',exact:true}).click();
+  await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();
   await page.getByRole('button',{name:'アカウント',exact:true}).click();
   await page.getByRole('button',{name:'パスワードを変更',exact:true}).click();
   const fill=async (current,next,confirmation=next) => {
@@ -75,8 +75,8 @@ try {
   mode='lost';await fill('new-pass','lost-pass');await submit();await expect(page.getByRole('alert')).toContainText('変更結果を確認できません');
   mode='normal';await fill('lost-pass','new-pass');await submit();await expect(page.getByText('パスワードを変更しました。',{exact:true})).toBeVisible();
   await fill('new-pass','another-pass');await page.getByRole('button',{name:'取消',exact:true}).click();await page.getByRole('button',{name:'パスワードを変更',exact:true}).click();await expect(page.getByLabel('現在のパスワード',{exact:true})).toHaveValue('');
-  await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログアウト',exact:true}).click();await page.getByRole('button',{name:'ログイン / 新規登録',exact:true}).click();
-  await page.getByLabel('メールアドレス',{exact:true}).fill('session-test@example.invalid');await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');await page.getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.getByRole('alert')).toContainText('正しくありません');
-  await page.getByLabel('パスワード',{exact:true}).fill('new-pass');await page.getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.getByRole('button',{name:'アカウント',exact:true})).toBeVisible();
+  await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログアウト',exact:true}).click();await page.locator('.library-header').getByRole('button',{name:'ログイン',exact:true}).click();
+  await page.getByLabel('メールアドレス',{exact:true}).fill('session-test@example.invalid');await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.getByRole('alert')).toContainText('正しくありません');
+  await page.getByLabel('パスワード',{exact:true}).fill('new-pass');await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.getByRole('button',{name:'アカウント',exact:true})).toBeVisible();
   assert.deepEqual(errors,[]);console.log('PASS password form, validation, incorrect current, 429, offline, lost response, input clearing, cancel, old/new login; screenshots: '+shots);
 } finally { await browser.close();await server.close();await vite.close(); }

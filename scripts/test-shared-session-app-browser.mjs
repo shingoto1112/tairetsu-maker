@@ -139,7 +139,7 @@ try {
   await pages[0].goto(origin); await open(0,'終了前の編集'); await back(0);
   // App logout clears common identity before server logout, even on HTTP failure.
   await contexts[0].route(`${server.url}/auth/v1/logout`,route=>route.fulfill({status:503,contentType:'application/json',body:'{}'}));
-  await pages[0].getByRole('button',{name:'ログアウト',exact:true}).click();
+  await pages[0].locator('.library-header').getByRole('button',{name:'アカウント',exact:true}).click();await pages[0].getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログアウト',exact:true}).click();
   await until(async()=>pages[0].evaluate(()=>!sessionStorage.getItem('tairetsu.cloud.authSession')),'logout clear');
   assert.equal(await pages[0].evaluate(()=>localStorage.getItem('tairetsu.collaboration.guestSession.v1')),null);
   await pages[0].evaluate(async actor=>{
@@ -148,13 +148,13 @@ try {
   await open(0,'終了前の編集'); await until(async()=>(state(0)).then(s=>s.sync==='資格保留'),'wrong account held');
   assert.equal((await read(0)).collaboration.transportBinding.accountId,actors[0]);
   checks.push('failed remote logout clears local credentials; another account cannot use old binding');
-  await back(0); await pages[0].getByRole('button',{name:'ログアウト',exact:true}).click();
-  await pages[0].getByRole('button',{name:'ログイン / 新規登録',exact:true}).click();
+  await back(0); await pages[0].locator('.library-header').getByRole('button',{name:'アカウント',exact:true}).click();await pages[0].getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログアウト',exact:true}).click();
+  await pages[0].locator('.library-header').getByRole('button',{name:'ログイン',exact:true}).click();
   await expect(pages[0].locator('.library-cloud-login')).toBeVisible();
   await pages[0].locator('.library-cloud-login input[type="email"]').fill('session-test@example.invalid');
   await pages[0].locator('.library-cloud-login input[type="password"]').fill('mock-pass');
-  await pages[0].getByRole('button',{name:'ログイン',exact:true}).click();
-  await expect(pages[0].getByRole('button',{name:'ログアウト',exact:true})).toBeVisible();
+  await pages[0].getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();
+  await expect(pages[0].locator('.library-header').getByRole('button',{name:'アカウント',exact:true})).toBeEnabled();
   await expect(pages[0].getByText('ローカルカードのメニューからクラウドへアップロードできます。')).toHaveCount(0);
   checks.push('actual V2 login uses common Auth and never fetches legacy list');
   assert.deepEqual(legacy,[]); assert.deepEqual(denied,[]); assert.deepEqual(errors,[]);

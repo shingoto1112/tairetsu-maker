@@ -69,29 +69,12 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
   const isShared = !!active?.attached && active.localId === localId;
   const creator = ui.members.find(member => member.isCreator)?.userId === signed?.userId;
   const canManage = signed && ui.members.some(member => member.userId === signed.userId);
-  const localDocuments = new Set(service.optionsNow.summaries().filter(summary => signed && summary.sharing?.accountId === signed.userId).map(summary => summary.sharing!.documentId));
-  const missingDocuments = ui.documents.filter(document => !localDocuments.has(document.documentId));
-  const localCount = ui.documents.length - missingDocuments.length;
   const linkTools = (link: string, label: string) => <InvitationLinkTools link={link} label={label} disabled={ui.busy}
     share={service.optionsNow.platform === "ipad" ? () => share(link) : undefined} />;
   return <>
-    {view === "library" && <section className="collab-home" aria-label="アカウントとクラウドの隊列表" aria-busy={ui.busy || ui.auth.status === "restoring"}>
-      <div className="collab-heading"><h2>クラウドの隊列表</h2>
-        <div className="collab-actions">{signed ? <><span>{signed.isGuest ? "ゲスト" : "アカウント"}：{signed.displayName || (signed.isGuest ? "ゲスト" : readCloudAuthSession()?.user.email)}</span>
-          {!signed.isGuest && <button type="button" disabled={ui.busy} onClick={() => service.account()}>アカウント</button>}
-          <button type="button" disabled={ui.busy} onClick={() => run(() => service.signOut())}>ログアウト</button></> :
-          <button type="button" disabled={ui.busy || ui.auth.status === "restoring"} onClick={() => service.account()}>{ui.auth.status === "restoring" ? "ログイン情報を確認中…" : "ログイン / 新規登録"}</button>}</div></div>
-      {signed?.isGuest && <p>ブラウザのデータを消すと入り直しになります。新しい招待リンクが必要です。</p>}
-      {ui.error && !ui.screen && <p role="alert">{ui.error}</p>}{ui.notice && !ui.screen && <p role="status">{ui.notice}</p>}
-      {signed && <><div className="collab-home-summary"><p>{localCount > 0 ? `この端末にある共有隊列表 ${localCount}件` : "この端末にない隊列表を取得して開けます。"}</p><button type="button" disabled={ui.busy} onClick={() => run(() => service.refresh())}>一覧を更新</button></div>
-        {missingDocuments.length > 0 && <div className="collab-document-list">{missingDocuments.map(document => <button key={document.documentId} type="button" disabled={ui.busy || document.documentSchema !== 2}
-          onClick={() => run(() => service.openExisting(document.documentId))} aria-label={`${document.title}をクラウドから開く`}>
-          <strong>{document.title}</strong><span className="collab-badge">{document.memberCount === 1 ? "クラウド保存" : `共有中・${document.memberCount}人`}</span>
-          <small>{document.isCreator ? "自分が作成" : "参加中"} · {new Date(document.createdAt).toLocaleDateString("ja-JP")}
-            {" · この端末で取得して開く"}</small>
-        </button>)}</div>}{!ui.documents.length && <p>クラウドの隊列表はまだありません。</p>}
-        {ui.cursor && <button type="button" disabled={ui.busy} onClick={() => run(() => service.refresh(true))}>続きを表示</button>}</>}
-      <div className="collab-join-entry"><span>新規 / 読込</span><button type="button" disabled={ui.busy} onClick={() => service.invitation("")}>招待リンクで参加</button></div>
+    {/* Home: the header and grid (FormationLibrary) show the account button and cloud cards; this keeps messages and dialogs. */}
+    {view === "library" && !ui.screen && (ui.error || ui.notice) && <section className="collab-home-status" aria-label="共同編集のお知らせ">
+      {ui.error && <p role="alert">{ui.error}</p>}{ui.notice && <p role="status">{ui.notice}</p>}
     </section>}
     {view === "editor" && attached && <SharedIndicators service={service} session={session} localId={localId!} />}
     {view === "editor" && ui.error && !ui.screen && <p className="collab-error" role="alert">{ui.error}</p>}
@@ -160,14 +143,20 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
                   <label>現在のパスワード<input type="password" value={password} required autoComplete="current-password" onChange={event => setPassword(event.target.value)} /></label>
                   <label className="collab-check"><input type="checkbox" checked={confirmDelete} onChange={event => setConfirmDelete(event.target.checked)} />削除内容を確認しました</label>
                   <button className="collab-danger" disabled={ui.busy || !confirmDelete || !password} type="submit">アカウントを削除する</button>
-                </form>}</> : <form className="library-cloud-login" onSubmit={event => { event.preventDefault(); run(() => service.signIn(email, password, register ? name : undefined)); }}>
+                </form>}</> : <>
+              {signed?.isGuest && <section className="collab-guest-status" aria-label="ゲストとして参加中">
+                <p>ゲストとして参加中：{signed.displayName || "ゲスト"}</p>
+                <p>ブラウザのデータを消すと入り直しになります。新しい招待リンクが必要です。</p>
+                <button type="button" disabled={ui.busy} onClick={() => run(() => service.signOut())}>ログアウト</button>
+              </section>}
+              <form className="library-cloud-login" onSubmit={event => { event.preventDefault(); run(() => service.signIn(email, password, register ? name : undefined)); }}>
                   <p>{register ? "新規登録" : "ログイン"}</p>
                   {register && <label>表示名<input value={name} maxLength={80} required onChange={event => setName(event.target.value)} autoComplete="nickname" /></label>}
                   <label>メールアドレス<input type="email" value={email} required onChange={event => setEmail(event.target.value)} autoComplete="email" /></label>
                   <label>パスワード<input type="password" value={password} required minLength={register ? PASSWORD_MIN_LENGTH : undefined} onChange={event => setPassword(event.target.value)} autoComplete={register ? "new-password" : "current-password"} /></label>
                   <button className="collab-primary" disabled={ui.busy} type="submit">{register ? "新規登録" : "ログイン"}</button>
                   <button disabled={ui.busy} type="button" onClick={() => { setRegister(!register); setPassword(""); }}>{register ? "ログインへ" : "新しいアカウントを登録"}</button>
-                </form>}
+                </form></>}
           </>}
           {ui.busy && <p role="status">処理中…</p>}
         </div>

@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import CollaborationSurface from './CollaborationSurface';
 import { CollaborationUiService } from '../collaboration/uiService';
@@ -29,7 +29,8 @@ it.each([false, true])('home cloud-save login guidance does not open invite/mana
   Object.assign(service, { auth: { state: () => auth } });
   vi.spyOn(service, 'initialize').mockImplementation(async () => { service.authChanged(); });
   render(<CollaborationSurface bridge={{ options, get: async () => service }} view="library" />);
-  await screen.findByRole('region', { name: 'アカウントとクラウドの隊列表' });
+  // The home view no longer draws the cloud list (the home grid does); wait for initialization instead.
+  await waitFor(() => expect(service.initialize).toHaveBeenCalled());
   await waitFor(() => expect(service.getSnapshot().busy).toBe(false));
   const open = vi.fn().mockResolvedValue(true);
   await act(async () => { await service.saveLocalToCloud('target', { open, current: () => true }); });
@@ -38,6 +39,8 @@ it.each([false, true])('home cloud-save login guidance does not open invite/mana
   expect(screen.queryByRole('dialog', { name: 'みんなで編集' })).toBeNull();
   expect(screen.queryByRole('dialog', { name: '招待されています' })).toBeNull();
   expect(open).not.toHaveBeenCalled(); expect(options.transform).not.toHaveBeenCalled();
+  // Guests can sign out from the account screen now that the home has no logout button.
+  if (guest) expect(within(screen.getByRole('region', { name: 'ゲストとして参加中' })).getByRole('button', { name: 'ログアウト' })).toBeTruthy();
 });
 it('hides password change for guests and destroys credentials on account/screen changes', async () => {
   const options = { config:null,platform:'web',mock:true,repository:()=>null,active:()=>null,

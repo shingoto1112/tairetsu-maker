@@ -197,7 +197,7 @@ try {
       await r.commit({project:{...record.project,audio},localRevision:"2",expectedRepositoryRevision:record.repositoryRevision,operationId:"backup-audio"}); r.close();
     });
     await page.goto(origin); await ready(page);
-    await page.getByRole("button",{name:"保存データの管理",exact:true}).click();
+    await page.getByRole("button",{name:"ホームのその他の操作"}).click();await page.getByRole("button",{name:"保存データの管理",exact:true}).click();
     await page.getByRole("button",{name:"すべての隊列表をバックアップ",exact:true}).click();
     await page.getByRole("checkbox",{name:"音源も含める",exact:true}).check();
     const downloads = []; page.on("download", download => downloads.push(download));

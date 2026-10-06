@@ -12,8 +12,12 @@ const download = (blob: Blob, name: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 };
 const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-export const StorageTools = ({ repository, onChanged, damagedId, onDismissDamaged }: {
+export const StorageTools = ({ repository, onChanged, damagedId, onDismissDamaged, menuRequest = 0, hideMenuButton = false }: {
   repository: MaintenanceRepository; onChanged: () => Promise<void>; damagedId: string | null; onDismissDamaged: () => void;
+  /** Incremented by the home "…" menu to open 保存データの管理; the body stays mounted while it is closed. */
+  menuRequest?: number;
+  /** The home header owns the entry; restore candidates and messages stay visible here. */
+  hideMenuButton?: boolean;
 }) => {
   const [candidates, setCandidates] = useState<RecoveryCandidate[]>([]);
   const [view, setView] = useState<"recovery" | "menu" | "backup" | "cleanup" | null>(null);
@@ -48,9 +52,16 @@ export const StorageTools = ({ repository, onChanged, damagedId, onDismissDamage
   };
   const close = () => { if (!busy) { setView(null); onDismissDamaged(); } };
   const dialog = view !== null || damagedId !== null;
-  return <section className="storage-tools" aria-label="端末の保存データ">
+  const handledRequest = useRef(menuRequest);
+  useEffect(() => {
+    if (menuRequest === handledRequest.current) return;
+    handledRequest.current = menuRequest;
+    if (!busy) { setMessage(null); setView("menu"); }
+  }, [menuRequest, busy]);
+  const empty = hideMenuButton && candidates.length === 0 && !(!dialog && message) && !dialog;
+  return <section className={`storage-tools${empty ? " is-empty" : ""}`} aria-label="端末の保存データ">
     {candidates.length > 0 && <button className="mini-button" onClick={() => { setMessage(null); setView("recovery"); }}>復元できる隊列表（{candidates.length}件）</button>}
-    <button className="mini-button" onClick={() => { setMessage(null); setView("menu"); }}>保存データの管理</button>
+    {!hideMenuButton && <button className="mini-button" onClick={() => { setMessage(null); setView("menu"); }}>保存データの管理</button>}
     {!dialog && message && <p className="notice" role="status">{message}</p>}
     {dialog && <div className="new-formation-backdrop" onPointerDown={close}>
       <div className="new-formation-dialog storage-tools-dialog" role="dialog" aria-modal="true" aria-label={damagedId ? "読み込めない隊列表の復旧" : view === "recovery" ? "復元できる隊列表" : "保存データの管理"} onPointerDown={e => e.stopPropagation()}>

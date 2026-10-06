@@ -40,9 +40,9 @@ try {
  for(const tab of[page,second])await tab.evaluate(async name=>{const{IndexedDbProjectRepository}=await import('/src/repositories/indexedDbRepository.ts');const{testImporter,fixtureRow}=await import('/src/legacyImport/testing/browserSuite.ts');window.repo11b=new IndexedDbProjectRepository({dbName:name});await window.repo11b.initialize();window.import11b=()=>testImporter(window.repo11b).importOne(fixtureRow);},db);
  const outcomes=await Promise.all([page,second].map(tab=>tab.evaluate(()=>window.import11b())));assert(outcomes.every(r=>['imported','already'].includes(r.status)));assert.equal(new Set(outcomes.map(r=>r.targetId)).size,1);
  assert.equal(await page.evaluate(async()=>(await window.repo11b.list({limit:100})).items.length),1);for(const tab of[page,second])await tab.evaluate(()=>window.repo11b.close());await second.close();checks.push('two actual tabs create only one independent target');
- await page.getByRole('button',{name:'ログイン / 新規登録',exact:true}).click();
+ await page.locator('.library-header').getByRole('button',{name:'ログイン',exact:true}).click();
  await page.getByLabel('メールアドレス',{exact:true}).fill('session-test@example.invalid');await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');
- await page.getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.getByRole('button',{name:'ログアウト',exact:true})).toBeVisible();
+ await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.locator('.library-header').getByRole('button',{name:'アカウント',exact:true})).toBeEnabled();
  await page.getByRole('button',{name:'旧クラウドの隊列表を取り込む',exact:true}).last().click();const dialog=page.getByRole('dialog');
  await dialog.getByRole('button',{name:'一覧を取得',exact:true}).click();await expect(dialog.getByText('試験用旧隊列表',{exact:true})).toBeVisible();
  await dialog.locator('summary').click();await expect(dialog.getByRole('checkbox').last()).not.toBeChecked();await dialog.locator('summary').click();
@@ -63,7 +63,7 @@ try {
  const changed=dialog.getByRole('button',{name:'変更された内容を別の独立コピーとして救出',exact:true});await expect(changed).toBeVisible();
  const changedCount=()=>page.evaluate(async()=>{const{IndexedDbProjectRepository}=await import('/src/repositories/indexedDbRepository.ts');const r=new IndexedDbProjectRepository();try{return(await r.list({limit:100})).items.filter(x=>x.title==='別内容の試験用旧隊列表').length;}finally{r.close();}});
  assert.equal(await changedCount(),0);await changed.click();await expect(dialog.getByText('保存しました',{exact:true})).toBeVisible();assert.equal(await changedCount(),1);checks.push('changed successful source stays quarantined until explicit independent rescue');
- await page.getByRole('button',{name:'救出画面を閉じる',exact:true}).click();await page.getByRole('button',{name:'ログアウト',exact:true}).click();
+ await page.getByRole('button',{name:'救出画面を閉じる',exact:true}).click();await page.locator('.library-header').getByRole('button',{name:'アカウント',exact:true}).click();await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログアウト',exact:true}).click();
  await page.evaluate(async()=>{
   const{snapshotProject,validateSnapshot}=await import('/src/legacyImport/validation.ts');const{default:fixture}=await import('/supabase/tests/fixtures/legacy-export-v1.json');
   const project=snapshotProject(validateSnapshot(fixture,fixture.project.id),'synthetic-draft');project.title='試験用旧下書き';const raw=JSON.stringify({project,cloudProjectId:'old',baseUpdatedAt:null,savedAt:project.updatedAt});

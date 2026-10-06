@@ -32,6 +32,9 @@ import { selectionScrollBounds } from "./utils/selectionScrollBounds";
 import { useWorkspaceLayout } from "./hooks/useWorkspaceLayout";
 import { useNotice, type NoticeKind } from "./hooks/useNotice";
 import { useCollaborationUi } from "./hooks/useCollaborationUi";
+import { useCollaborationLibrary } from "./hooks/useCollaborationLibrary";
+import { libraryAccountButton, toCloudLibraryCards } from "./collaboration/libraryCards";
+import { ProjectCardPreview, type ProjectCardPreviewSource } from "./components/ProjectCardPreview";
 const CollaborationSurface = lazy(() => import("./components/CollaborationSurface"));
 const LegacyRescuePanel = lazy(() => import("./components/LegacyRescuePanel"));
 const CollaborationBadge = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationBadge })));
@@ -817,6 +820,14 @@ function App() {
     }
   }, [appView]);
   useEffect(() => () => { void audioEditorProtectionRef.current?.then(release => release()); audioEditorProtectionRef.current = null; }, []);
+  // Home header and cloud-only cards follow the lazy collaboration service (same dynamic boundary as CollaborationSurface).
+  const collaborationLibrary = useCollaborationLibrary(collaborationUi, APP_FEATURES.collaborationV2 && storageReady && appView === "library");
+  const [storageMenuRequest, setStorageMenuRequest] = useState(0);
+  // One stable source per repository so every home card shares the read queue and the small preview cache.
+  const projectPreviewSource = useMemo<ProjectCardPreviewSource | null>(() => {
+    const repository = storageReady ? repositoryRef.current : null;
+    return repository ? { get: (id: string) => repository.get(id), concurrency: APP_FEATURES.nativeFileShare ? 1 : 2 } : null;
+  }, [storageReady]);
   // View-only stage navigation never enters Project or cloud scene writes.
   const stageViewMemoryRef = useRef({ projectId: project.id, appView, views: new Map<string, SceneViewState>() });
   if (stageViewMemoryRef.current.projectId !== project.id || stageViewMemoryRef.current.appView !== appView) {
@@ -7413,9 +7424,22 @@ function App() {
     repository={repositoryRef.current as MaintenanceRepository | null} onRestored={() => { setStorageCorrupt(false); setStorageWarning(null); setStorageStatus("隊列表を準備しています…"); setStorageRetry(value => value + 1); }} /></Suspense>;
 
   if (!storageReady || appView === "library") {
+    const libraryService = collaborationLibrary.service;
+    const libraryUi = collaborationLibrary.ui;
+    const collaborationOnHome = APP_FEATURES.collaborationV2 && storageReady;
+    const hasStorageTools = storageReady && !!repositoryRef.current && "readMaintenance" in repositoryRef.current;
     return (
       <>
         <FormationLibrary
+          account={collaborationOnHome ? { ...libraryAccountButton(libraryUi?.auth, collaborationLibrary.failed),
+            onClick: () => { void collaborationUi.get().then(service => service.account()); } } : undefined}
+          onOpenStorageManager={hasStorageTools ? () => setStorageMenuRequest(request => request + 1) : undefined}
+          cloudProjects={libraryUi ? toCloudLibraryCards(libraryUi.documents, savedProjects, libraryUi.auth) : []}
+          onOpenCloudProject={libraryService ? documentId => { void libraryService.run(() => libraryService.openExisting(documentId)); } : undefined}
+          onRefreshCloud={libraryService && libraryUi?.auth.status === "signed-in" ? () => { void libraryService.run(() => libraryService.refresh()); } : undefined}
+          onLoadMoreCloud={libraryService && libraryUi?.cursor ? () => { void libraryService.run(() => libraryService.refresh(true)); } : undefined}
+          cloudBusy={!!libraryUi?.busy}
+          renderProjectPreview={projectPreviewSource ? summary => <ProjectCardPreview summary={summary} source={projectPreviewSource} /> : undefined}
           onOpenHelp={openHelpPage}
           projects={savedProjects}
           notice={storageStatus ?? storageWarning ?? notice}
@@ -7427,7 +7451,8 @@ function App() {
           onSaveToCloud={APP_FEATURES.collaborationV2 ? saveStoredProjectToCloud : undefined}
           cloudSaveBusy={cloudSaveBusy}
           storageTools={storageReady && repositoryRef.current && "readMaintenance" in repositoryRef.current ? <Suspense fallback={null}><StorageTools
-            repository={repositoryRef.current as MaintenanceRepository} onChanged={refreshLocalLibrary} damagedId={damagedProjectId} onDismissDamaged={() => setDamagedProjectId(null)} /></Suspense> : null}
+            repository={repositoryRef.current as MaintenanceRepository} onChanged={refreshLocalLibrary} damagedId={damagedProjectId} onDismissDamaged={() => setDamagedProjectId(null)}
+            menuRequest={storageMenuRequest} hideMenuButton /></Suspense> : null}
 
           onCreate={createNewFormationProject}
           onOpenProject={openStoredProject}

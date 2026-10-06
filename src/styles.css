@@ -693,8 +693,8 @@ h2 {
   }
 
   html:not([data-app-runtime="capacitor-ios"]) .library-shell {
-    min-height: calc(100vh / var(--desktop-app-zoom));
-    min-height: calc(100dvh / var(--desktop-app-zoom));
+    height: calc(100vh / var(--desktop-app-zoom));
+    height: calc(100dvh / var(--desktop-app-zoom));
   }
 }
 
@@ -707,22 +707,130 @@ h2 {
   display: none;
 }
 
+/* The home is its own scroller (the iPad app locks body scrolling), so the
+   pinned header stays visible however many formations there are. */
 .library-shell {
   background: #ffffff;
+  box-sizing: border-box;
   color: var(--ink);
-  min-height: 100vh;
-  overflow: auto;
-  padding: 34px clamp(18px, 4vw, 54px);
+  height: 100vh;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The pinned header carries the top spacing so nothing scrolls above it. */
+  padding: 0 clamp(18px, 4vw, 54px) 34px;
 }
 
 .library-header {
-  align-items: end;
+  align-items: center;
+  background: #ffffff;
   border-bottom: 1px solid #e5edf5;
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 10px 18px;
   justify-content: space-between;
-  margin-bottom: 28px;
-  padding-bottom: 18px;
+  margin-bottom: 14px;
+  padding: 34px 0 14px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.library-header__actions {
+  align-items: center;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.library-header-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dbe7ef;
+  border-radius: 999px;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+
+.library-header-button--icon {
+  justify-content: center;
+  padding: 0;
+  width: 44px;
+}
+
+.library-header-button:hover,
+.library-header-button:focus-visible {
+  border-color: var(--accent-strong);
+  color: var(--accent);
+  outline: none;
+}
+
+.library-header-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.library-more {
+  position: relative;
+}
+
+.library-more__panel {
+  background: #ffffff;
+  border: 1px solid #dbe7ef;
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+  display: grid;
+  min-width: 220px;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+}
+
+.library-more__panel a,
+.library-more__panel button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: #1f2937;
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 14px;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.library-more__panel a:hover,
+.library-more__panel a:focus-visible,
+.library-more__panel button:hover,
+.library-more__panel button:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.library-more__panel button:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.library-lead {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0 0 24px;
 }
 
 .library-header h1 {
@@ -747,6 +855,7 @@ h2 {
 
 @media (max-width: 480px) {
   .library-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .library-header-button:not(.library-header-button--icon) { padding: 8px 12px; }
 }
 
 .library-notice,
@@ -860,8 +969,97 @@ h2 {
 }
 
 .formation-card--saved {
-  cursor: pointer;
+  padding: 0;
   position: relative;
+}
+
+/* The open button fills the card; the "…" button is its sibling, not a child. */
+.formation-card__open {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 14px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 8px;
+  justify-items: center;
+  min-height: 178px;
+  padding: 12px;
+  text-align: center;
+  width: 100%;
+}
+
+.formation-card__open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.formation-card__preview {
+  align-items: center;
+  border-radius: 14px;
+  display: inline-flex;
+  height: 96px;
+  justify-content: center;
+  overflow: hidden;
+  width: 128px;
+}
+
+.formation-card--cloud {
+  cursor: pointer;
+  font: inherit;
+}
+
+.formation-card--cloud:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.formation-card__preview--cloud {
+  background: linear-gradient(180deg, #eef6ff, #dbeafe);
+  border-radius: 18px;
+  color: #3b82f6;
+}
+
+.formation-card__badge--cloud {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.formation-card__details {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+
+.formation-card .formation-card__note {
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.formation-card .formation-card__note.is-blocked {
+  color: #b45309;
+}
+
+.library-cloud-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.collab-home-status {
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.collab-home-status p {
+  margin: 4px 0;
+}
+
+.collab-home-status [role="alert"] {
+  color: #b91c1c;
 }
 
 .formation-card:hover,
@@ -7134,6 +7332,10 @@ html[data-app-runtime="capacitor-ios"] .library-shell {
   padding-bottom: max(28px, env(safe-area-inset-bottom));
   padding-left: max(18px, env(safe-area-inset-left));
   padding-right: max(18px, env(safe-area-inset-right));
+  padding-top: 0;
+}
+
+html[data-app-runtime="capacitor-ios"] .library-header {
   padding-top: max(28px, env(safe-area-inset-top));
 }
 
@@ -7547,6 +7749,8 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 }
 
 .storage-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.storage-tools.is-empty { margin: 0; }
+.collab-guest-status { border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; padding: 10px 12px; }
 .storage-tools-dialog { max-height: 85dvh; overflow-y: auto; }
 .storage-tools-dialog > .mini-button { margin: 8px 8px 8px 0; }
 .storage-recovery-item { border-top: 1px solid #dbe3e5; padding: 12px 0; }

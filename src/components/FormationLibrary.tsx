@@ -1,7 +1,9 @@
 import type { AudioSelection } from "../platform/audioStorage";
-import { ChangeEvent, FormEvent, KeyboardEvent, MouseEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
+import { ChangeEvent, FormEvent, MouseEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Cloud, CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
+import type { CloudLibraryCard } from "../collaboration/libraryCards";
+import { LibraryHeader, type LibraryHeaderAccount } from "./LibraryHeader";
 
 import type {
   FormationMode,
@@ -41,6 +43,18 @@ type FormationLibraryProps = {
   onJoinInvitation?: () => void;
   onSaveToCloud?: (projectId: string) => void | Promise<void>;
   cloudSaveBusy?: boolean;
+  /** Header account button (lazy collaboration state). */
+  account?: LibraryHeaderAccount;
+  /** "…" → 保存データの管理 (StorageTools stays mounted in storageTools). */
+  onOpenStorageManager?: () => void;
+  /** Card picture for a stored formation; the folder icon is used without it. */
+  renderProjectPreview?: (summary: ProjectSummary) => ReactNode;
+  /** Formations only in the cloud, shown after the local ones in the same grid. */
+  cloudProjects?: CloudLibraryCard[];
+  onOpenCloudProject?: (documentId: string) => void;
+  onRefreshCloud?: () => void;
+  onLoadMoreCloud?: () => void;
+  cloudBusy?: boolean;
   onImportProjectFiles?: (files: File[]) => void | Promise<void>;
 
   onCreate: (input: NewFormationInput) => void | Promise<void>;
@@ -86,9 +100,6 @@ const formatProjectDate = (project: ProjectSummary): string => {
   }).format(date);
 };
 
-const isActivationKey = (event: KeyboardEvent<HTMLElement>): boolean =>
-  event.key === "Enter" || event.key === " ";
-
 type CreationNumberFieldProps = {
   name: string; label: string; min: number; step: string; value: number;
   onChange: (value: number) => void; error?: string;
@@ -120,6 +131,14 @@ export const FormationLibrary = ({
   onJoinInvitation,
   onSaveToCloud,
   cloudSaveBusy = false,
+  account,
+  onOpenStorageManager,
+  renderProjectPreview,
+  cloudProjects = [],
+  onOpenCloudProject,
+  onRefreshCloud,
+  onLoadMoreCloud,
+  cloudBusy = false,
   onImportProjectFiles,
   onCreate,
   onOpenProject,
@@ -374,13 +393,9 @@ export const FormationLibrary = ({
 
   return (
     <main className="library-shell">
-      <header className="library-header">
-        <div>
-          <p className="library-kicker">隊列表作成アプリ</p>
-          <h1>隊列メーカー</h1>
-        </div>
-        <p>作成済みの隊列表を開くか、新しい隊列表を作成します。</p>
-      </header>
+      <LibraryHeader onOpenHelp={onOpenHelp} account={account} onOpenStorageManager={onOpenStorageManager}
+        onRefreshCloud={onRefreshCloud} cloudBusy={cloudBusy} />
+      <p className="library-lead">作成済みの隊列表を開くか、新しい隊列表を作成します。</p>
 
       {notice && <p className="library-notice" role="status">{notice}</p>}
       {storageTools}
@@ -400,21 +415,29 @@ export const FormationLibrary = ({
         </button>
 
         {sortedProjects.map((project, index) => (
-          <article
+          // Open and "…" are sibling buttons so key presses on the menu never reach the open action.
+          <div
             className="formation-card formation-card--saved"
             key={project.id ?? `${project.title}-${index}`}
-            onClick={() => void onOpenProject(project.id)}
             onContextMenu={(event) => openMenu(project, event)}
-            onKeyDown={(event) => {
-              if (isActivationKey(event)) {
-                event.preventDefault();
-                void onOpenProject(project.id);
-              }
-            }}
-            role="button"
-            tabIndex={0}
-            aria-label={`${project.title || "名称未設定"}を開く`}
           >
+            <button
+              className="formation-card__open"
+              type="button"
+              onClick={() => void onOpenProject(project.id)}
+              aria-label={`${project.title || "名称未設定"}を開く`}
+            >
+              <span className="formation-card__preview" aria-hidden="true">
+                {renderProjectPreview?.(project) ?? (
+                  <span className={`formation-folder formation-folder--${(index % 6) + 1}`}>
+                    <Folder size={56} />
+                  </span>
+                )}
+              </span>
+              <span className="formation-card__badge">{renderProjectBadge?.(project) ?? "ローカル"}</span>
+              <strong>{project.title || "名称未設定"}</strong>
+              <small>最終使用: {formatProjectDate(project)}</small>
+            </button>
             <button
               className="formation-card__menu"
               type="button"
@@ -423,26 +446,46 @@ export const FormationLibrary = ({
             >
               <MoreHorizontal size={18} />
             </button>
-            <span
-              className={`formation-folder formation-folder--${(index % 6) + 1}`}
-              aria-hidden="true"
-            >
-              <Folder size={56} />
+          </div>
+        ))}
+
+        {cloudProjects.map((card) => (
+          <button
+            className="formation-card formation-card--cloud"
+            key={`cloud-${card.documentId}`}
+            type="button"
+            disabled={!card.openable || cloudBusy || !onOpenCloudProject}
+            onClick={() => onOpenCloudProject?.(card.documentId)}
+            aria-label={`${card.title}をクラウドから開く`}
+            aria-describedby={`cloud-card-${card.documentId}`}
+          >
+            <span className="formation-card__preview formation-card__preview--cloud" aria-hidden="true">
+              <Cloud size={44} />
             </span>
-            <span className="formation-card__badge">{renderProjectBadge?.(project) ?? "ローカル"}</span>
-            <strong>{project.title || "名称未設定"}</strong>
-            <small>最終使用: {formatProjectDate(project)}</small>
-          </article>
+            <span className="formation-card__badge formation-card__badge--cloud">{card.badge}</span>
+            <strong>{card.title}</strong>
+            <span className="formation-card__details" id={`cloud-card-${card.documentId}`}>
+              <span className="sr-only">{card.badge}・</span>
+              <small>{card.detail}</small>
+              <small className={card.openable ? "formation-card__note" : "formation-card__note is-blocked"}>{card.note}</small>
+            </span>
+          </button>
         ))}
       </section>
 
-      {sortedProjects.length === 0 && (
+      {onLoadMoreCloud && (
+        <div className="library-cloud-more">
+          <button type="button" className="mini-button" disabled={cloudBusy} onClick={onLoadMoreCloud}>クラウドの続きを表示</button>
+        </div>
+      )}
+
+      {sortedProjects.length === 0 && cloudProjects.length === 0 && (
         <p className="library-empty">
-          まだ保存済みの隊列表はありません。左上の新規作成から始めてください。
+          まだ保存済みの隊列表はありません。「追加」の新規 / 読込から始めてください。
         </p>
       )}
 
-      <LegalLinks className="library-legal-links" onOpenHelp={onOpenHelp} />
+      <LegalLinks className="library-legal-links" />
 
       {libraryMenu && menuProject && (
         <div

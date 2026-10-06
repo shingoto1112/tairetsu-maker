@@ -23,11 +23,11 @@ const close = page => page.getByRole('button',{name:'共同編集画面を閉じ
 const home = async page => { await page.getByRole('button',{name:'隊列一覧へ戻る',exact:true}).click(); await expect(page.locator('.library-shell')).toBeVisible(); };
 const manage = async page => { await page.getByRole('button',{name:'共有と書き出し',exact:true}).click(); await page.getByRole('button',{name:/みんなで編集/}).click(); await expect(dialog(page)).toBeVisible(); };
 const login = async page => {
-  await page.getByRole('button',{name:'ログイン / 新規登録',exact:true}).click();
+  await page.locator('.library-header').getByRole('button',{name:'ログイン',exact:true}).click();
   await page.getByLabel('メールアドレス',{exact:true}).fill('session-test@example.invalid'); await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');
-  await page.getByLabel('パスワード',{exact:true}).fill('invalid-test-password');await page.getByRole('button',{name:'ログイン',exact:true}).click();
+  await page.getByLabel('パスワード',{exact:true}).fill('invalid-test-password');await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('メールアドレスまたはパスワードが正しくありません');
-  await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');await page.getByRole('button',{name:'ログイン',exact:true}).click(); await expect(page.getByRole('button',{name:'ログアウト',exact:true})).toBeVisible();
+  await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click(); await expect(page.locator('.library-header').getByRole('button',{name:'アカウント',exact:true})).toBeEnabled();
 };
 const invite = async page => {
   const input=page.getByRole('textbox',{name:'作成した招待リンク',exact:true});
@@ -67,7 +67,7 @@ async function capture(page,label,toolbar=false) {
       assert.equal(await page.locator('.collab-status-pill').getAttribute('data-tone'),label.includes('removed')||label.includes('ended')?'warning':'success');
       bounds.push({label,width,height,controls:rects,toolbar:bar,status});void controls;
     }
-    const name=`${label}-${width}x${height}.png`;await checkRound12Layout(page,label,toolbar ? '.toolbar' : '.collab-home, .collab-dialog'); await page.screenshot({path:path.join(shotDir,name)});shots.push(name);
+    const name=`${label}-${width}x${height}.png`;await checkRound12Layout(page,label,toolbar ? '.toolbar' : '.library-header, .collab-dialog'); await page.screenshot({path:path.join(shotDir,name)});shots.push(name);
   }
 }
 try {
@@ -136,7 +136,7 @@ try {
   checks.push('UI login/start/invite, explicit single guest join, simultaneous edits, member/guest list, stable existing-account open without invite');
   // Run iPad layout in the Capacitor runtime without claiming native execution.
   await home(a);await a.goto(`${origin}/?runtime=capacitor-ios`);
-  await expect(a.getByText('この端末にある共有隊列表 1件',{exact:true})).toBeVisible();await expect(a.getByRole('button',{name:'一覧を更新',exact:true})).toBeEnabled();
+  await a.getByRole('button',{name:'ホームのその他の操作'}).click();await expect(a.getByRole('button',{name:'クラウドの一覧を更新',exact:true})).toBeEnabled();await a.keyboard.press('Escape');
   assert.equal(await a.getByRole('button',{name:'同時編集の隊列表をクラウドから開く',exact:true}).count(),0,'home cloud list hides documents already on this device');
   await expect(a.getByText('共同編集を準備中…',{exact:true})).toHaveCount(0);await capture(a,'home-v2');await a.getByRole('button',{name:'同時編集の隊列表を開く',exact:true}).click();await expect(a.locator('.collab-status-pill')).toHaveText('同期済み');await capture(a,'status-v2',true);await manage(a);await capture(a,'manage-v2',true);await close(a);
   await b.evaluate(()=>window.__sharedSession.active.provider.setOnline(false));await expect(b.locator('.collab-status-pill')).toHaveText('オフライン');await expect(b.locator('.collab-status-pill')).toHaveAttribute('data-tone','neutral');await title(b).fill('未送信の救出編集');await b.locator('.toolbar-save-button').click();
