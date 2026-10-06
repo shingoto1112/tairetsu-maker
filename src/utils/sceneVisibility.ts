@@ -14,8 +14,8 @@ export type VisibilityItem = {
 
 export type VisibilityGroup = { id: string; name: string; color?: string; ids: readonly string[] };
 export type VisibilityBlock = VisibilityGroup & { items: VisibilityItem[]; total: number };
-export type VisibilityMemory = { query: string; scrollLeft: number; beforeSearch: number };
-export const createVisibilityMemory = (): VisibilityMemory => ({ query: "", scrollLeft: 0, beforeSearch: 0 });
+export type VisibilityMemory = { query: string; scrollLeft: number; scrollTop: number; beforeSearch: number };
+export const createVisibilityMemory = (): VisibilityMemory => ({ query: "", scrollLeft: 0, scrollTop: 0, beforeSearch: 0 });
 
 /** Normalize only the search index, never the saved/displayed name. */
 export const normalizeVisibilitySearch = (name: string): string => name.normalize("NFKC").toLocaleLowerCase()
@@ -45,10 +45,15 @@ export const buildVisibilityBlocks = (
 
 export const visibilityRows = (available: number): number => Math.max(1, Math.min(6, Math.floor((available + 6) / 50)));
 
-/** Scroll only the horizontal owner; do not move the panel or steal focus. */
-export const revealVisibilityChip = (owner: HTMLElement, chip: HTMLElement) => {
+/** Scroll only the picker on its active axis; do not move the panel or steal focus. */
+export const revealVisibilityChip = (owner: HTMLElement, chip: HTMLElement, portrait = true) => {
   const bounds = owner.getBoundingClientRect();
   const target = chip.getBoundingClientRect();
+  if (!portrait) {
+    if (target.top < bounds.top) owner.scrollTop -= bounds.top - target.top;
+    else if (target.bottom > bounds.bottom) owner.scrollTop += target.bottom - bounds.bottom;
+    return;
+  }
   if (target.left < bounds.left) owner.scrollLeft -= bounds.left - target.left;
   else if (target.right > bounds.right) owner.scrollLeft += target.right - bounds.right;
 };

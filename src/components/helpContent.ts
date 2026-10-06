@@ -1,6 +1,16 @@
 // 原稿 第2版（2026-10-04）を同梱。外部ファイル・ネットワークを参照しない。
 export const helpSections: Array<{ title: string; location: string; items: string[]; collaboration: boolean }> = [
     {
+        "title":  "効率よく作るには",
+        "collaboration":  false,
+        "location":  "三本線メニュー →「メンバー/道具の管理」",
+        "items":  [
+                      "最初に **名簿** へ、参加するメンバーと使う道具を登録しておくのがおすすめです。",
+                      "登録したあとは、シーンごとに「このシーンの表示」で出す人・道具を選び、配置を整えていきます。",
+                      "登録した名簿は、道具の担当決め（割当）や、名簿・割当表の書き出しにもそのまま使えます。"
+                  ]
+    },
+    {
         "title":  "名簿をまとめて作る・直す",
         "collaboration":  false,
         "location":  "三本線メニュー →「メンバー/道具の管理」（メンバータブの「名簿」からも開けます）",

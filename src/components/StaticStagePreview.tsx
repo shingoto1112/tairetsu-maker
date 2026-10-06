@@ -8,13 +8,13 @@ export type StageDrawingRange = { left: number; right: number; top: number; bott
 const MM_PER_PX = 25.4 / 96;
 
 /** The shared print drawing at an explicit CSS scale, with no A4 layout calculation. */
-export const StaticStagePreview = ({ project, frame, stageWidth, range, outputWidth, side = formationRulerSide(project), wholeMembersWithinRange = false, verticalOrigin = "top" }: {
+export const StaticStagePreview = ({ project, frame, stageWidth, range, outputWidth, side = formationRulerSide(project), wholeMembersWithinRange = false, verticalOrigin = "top", highlightedObjectId }: {
   project: Project; frame: FormationFrame; stageWidth: number; range: StageDrawingRange; outputWidth: number; side?: number;
-  wholeMembersWithinRange?: boolean; verticalOrigin?: VerticalOrigin;
+  wholeMembersWithinRange?: boolean; verticalOrigin?: VerticalOrigin; highlightedObjectId?: string;
 }) => {
   const pxPerMeter = (outputWidth - side * 2) / (range.right - range.left);
   return <div className="static-stage-preview">
-  <PrintStagePreview project={project} frame={frame} commonWidthMeters={stageWidth} gapAfter={false}
+  <PrintStagePreview project={project} frame={frame} commonWidthMeters={stageWidth} gapAfter={false} highlightedObjectId={highlightedObjectId}
     options={{ ...defaultPrintOptions, verticalOrigin }}
     verticalRange={{ topMeters: range.top, bottomMeters: range.bottom, depthMeters: range.bottom - range.top }}
     viewport={{ leftMeters: range.left, rightMeters: range.right, sideMm: side * MM_PER_PX,

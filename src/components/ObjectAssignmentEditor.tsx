@@ -2,7 +2,8 @@ import { UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Member } from "../types";
 import type { MemberGroupIndex } from "../utils/memberOrdering";
-import { MemberPicker } from "./MemberPicker";
+import { MemberPicker, type MemberPickerSceneVisibility } from "./MemberPicker";
+import { shownMemberAssignmentNotice } from "../utils/assignmentCandidates";
 
 export type AssignMember = (objectId: string, memberId: string) => boolean | Promise<boolean>;
 export type RemoveAssignment = (objectId: string, memberId: string, restoreMember?: boolean) => void | boolean | Promise<boolean>;
@@ -18,14 +19,19 @@ type ObjectAssignmentEditorProps = {
   onRemoveAssignment: RemoveAssignment;
   disabled?: boolean;
   readOnlyMessage?: string;
+  /** Scene-aware candidate list (hidden members first, "非表示の人だけ"). */
+  sceneVisibility?: MemberPickerSceneVisibility;
+  /** Clears an unconfirmed choice when the scene changes under the editor. */
+  sceneId?: string;
 };
 
 export const ObjectAssignmentEditor = ({
   objectId, members, assignedMemberIds, groupIndex, isPickerOpen,
   onPickerOpenChange, onAssignMember, onRemoveAssignment,
-  disabled = false, readOnlyMessage,
+  disabled = false, readOnlyMessage, sceneVisibility, sceneId,
 }: ObjectAssignmentEditorProps) => {
   const [draftMemberId, setDraftMemberId] = useState("");
+  useEffect(() => { setDraftMemberId(""); }, [sceneId]);
   const [isAssigning, setIsAssigning] = useState(false);
   const pending = useRef(false);
   const mounted = useRef(true);
@@ -42,7 +48,9 @@ export const ObjectAssignmentEditor = ({
       candidates: members.filter((member) => !assigned.has(member.id) || member.id === draftMemberId),
     };
   }, [members, assignedMemberIds, draftMemberId]);
-  const validDraft = candidates.some((member) => member.id === draftMemberId);
+  const draftMember = candidates.find((member) => member.id === draftMemberId);
+  const validDraft = !!draftMember;
+  const draftShown = !!draftMember && !!sceneVisibility?.isShown(draftMember);
   const unavailable = disabled || isAssigning;
 
   return (
@@ -69,7 +77,7 @@ export const ObjectAssignmentEditor = ({
           selectedMemberId={validDraft ? draftMemberId : ""}
           isOpen={isPickerOpen} onOpenChange={onPickerOpenChange}
           onSelect={setDraftMemberId} disabled={unavailable || candidates.length === 0}
-          title={disabled ? readOnlyMessage : undefined} />
+          title={disabled ? readOnlyMessage : undefined} sceneVisibility={sceneVisibility} />
         <button className="mini-button" type="button" disabled={unavailable || !validDraft}
           title={disabled ? readOnlyMessage : undefined}
           onClick={async (event) => {
@@ -90,6 +98,7 @@ export const ObjectAssignmentEditor = ({
           <UserPlus size={15} />割当
         </button>
       </div>
+      {draftShown && draftMember && <p className="assignment-shown-notice" role="status">{shownMemberAssignmentNotice(draftMember.name)}</p>}
     </div>
   );
 };

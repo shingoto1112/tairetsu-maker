@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import type { Member, StageObject } from "../types";
 import type { MemberGroupIndex } from "../utils/memberOrdering";
 import { MemberToggleList } from "./MemberToggleList";
+import type { MemberPickerSceneVisibility } from "./MemberPicker";
 
 type Props = {
   object: StageObject;
@@ -16,9 +17,11 @@ type Props = {
   onToggle: (memberId: string) => void;
   memberQuery: string;
   onMemberQuery: (query: string) => void;
+  sceneVisibility?: MemberPickerSceneVisibility;
+  sceneId?: string;
 };
 export const RosterAssignmentDetail = ({ object, groupName, members, assigned, assignedIds,
-  groupIndex, otherObjectsByMember, visible, disabled, onToggle, memberQuery, onMemberQuery }: Props) => <>
+  groupIndex, otherObjectsByMember, visible, disabled, onToggle, memberQuery, onMemberQuery, sceneVisibility, sceneId }: Props) => <>
   <header className="roster-assignment-detail__header">
     <span className="color-dot" style={{ backgroundColor: object.color }} aria-hidden="true" />
     <div><h3>{object.name}</h3><small>{groupName}</small></div>
@@ -37,6 +40,7 @@ export const RosterAssignmentDetail = ({ object, groupName, members, assigned, a
   </div>
   {visible ? <MemberToggleList members={members} groupIndex={groupIndex} assignedIds={assignedIds}
     otherObjectsByMember={otherObjectsByMember} disabled={disabled} onToggle={onToggle}
-    searchQuery={memberQuery} onSearchQueryChange={onMemberQuery} /> :
+    searchQuery={memberQuery} onSearchQueryChange={onMemberQuery}
+    sceneVisibility={sceneVisibility} resetKey={`${sceneId ?? ""}:${object.id}`} /> :
     <p className="roster-assignment-help">このシーンでは閲覧のみです。隊列表の道具タブで表示にすると割当できます。</p>}
 </>;

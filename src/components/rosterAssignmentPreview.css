@@ -1,0 +1,93 @@
+/* Roster assignment: scene strip and read-only formation preview. Kept out of styles.css. */
+.roster-scene-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 4px 2px 8px;
+  scroll-snap-type: x proximity;
+}
+
+.roster-scene-strip__card {
+  align-items: stretch;
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  display: flex;
+  flex: 0 0 120px;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 44px;
+  padding: 6px;
+  scroll-snap-align: start;
+  text-align: left;
+}
+
+.roster-scene-strip__card[aria-pressed="true"] {
+  border-color: var(--accent, #0d8b78);
+  box-shadow: 0 0 0 2px rgba(13, 139, 120, 0.18);
+}
+
+.roster-scene-strip__card .scene-thumbnail-preview {
+  aspect-ratio: 3 / 2;
+  height: auto;
+  width: 100%;
+}
+
+.roster-scene-strip__label {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-scene-strip__card small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.roster-assignment-view.has-scene-preview {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.roster-scene-strip {
+  flex-shrink: 0;
+}
+
+.roster-stage-preview {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin: 0;
+  padding: 6px;
+}
+
+.roster-stage-preview.is-parade {
+  max-height: 34vh;
+  overflow: auto;
+}
+
+.roster-stage-preview__fit {
+  margin: 0 auto;
+}
+
+.roster-stage-preview__drawing {
+  width: 100%;
+}
+
+.roster-stage-preview .print-object.is-highlighted {
+  outline: 3px solid #f97316;
+  outline-offset: 2px;
+  z-index: 5;
+}
+
+.roster-stage-preview__note {
+  color: #9a3412;
+  font-size: 12px;
+  margin: 6px 2px 0;
+}
+
+@media (max-width: 600px) {
+  .roster-stage-preview.is-parade { max-height: 28vh; }
+  .roster-scene-strip__card { flex-basis: 96px; }
+}

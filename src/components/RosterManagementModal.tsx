@@ -87,6 +87,8 @@ export const RosterManagementModal = ({
   onSelectFrame,
   canUndo,
   onUndo,
+  memberVisibility,
+  project,
 }: RosterManagementModalProps) => {
   const [mode, setMode] = useState<RosterMode>("members");
   const [objectView, setObjectView] = useState<"names" | "assignments">("names");
@@ -469,7 +471,7 @@ export const RosterManagementModal = ({
               canEditAssignments={canEditAssignments} readOnlyMessage={readOnlyMessage}
               onAssignMember={onAssignMember} onRemoveAssignment={onRemoveAssignment}
               onApplyPreviousAssignments={onApplyPreviousAssignments} onSelectFrame={onSelectFrame}
-              canUndo={canUndo} onUndo={onUndo} />
+              canUndo={canUndo} onUndo={onUndo} memberVisibility={memberVisibility} project={project} />
           </Suspense>
         ) : <div className="roster-table-wrap">
           <table className="roster-table">

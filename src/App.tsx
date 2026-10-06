@@ -6,6 +6,7 @@ import { useAppShellScrollGuard } from "./hooks/useAppShellScrollGuard";
 import { scrollWithinContainer } from "./utils/scrollWithinContainer";
 import type { AudioSelection } from "./platform/audioStorage";
 import { normalizeProject } from "./project/normalizeProject";
+import { createEmptyFormationProject } from "./project/createEmptyFormationProject";
 import {
   createProjectId,
   positiveNumber,
@@ -646,109 +647,6 @@ const getParadeVisibleCenterPosition = (
     y: roundMeters(
       clampNumber(stageYInPx / pxPerMeter, 0, canvasDistanceMeters),
     ),
-  };
-};
-
-const createEmptyFormationProject = (
-  title: string,
-  settings: Pick<
-    NewFormationInput,
-    | "widthMeters"
-    | "heightMeters"
-    | "useGlobalStageSize"
-    | "gridSizeMeters"
-    | "horizontalGuideMode"
-    | "memberDiameterMeters"
-    | "formationMode"
-    | "paradeSettings"
-  >,
-  audio: AudioMeta | null,
-): Project => {
-  const now = new Date().toISOString();
-  const formationMode = settings.formationMode ?? "stage";
-  const paradeSettings =
-    formationMode === "parade"
-      ? createDefaultParadeSettings(
-          settings.paradeSettings ?? {
-            width: settings.widthMeters,
-            totalDistance: settings.heightMeters,
-            cellSizeMeters: settings.gridSizeMeters,
-          },
-        )
-      : undefined;
-  const widthMeters =
-    formationMode === "parade"
-      ? paradeSettings?.width ?? 20
-      : Math.max(1, settings.widthMeters);
-  const depthMeters =
-    formationMode === "parade"
-      ? paradeSettings?.totalDistance ?? 100
-      : Math.max(1, settings.heightMeters);
-  const gridSizeMeters =
-    formationMode === "parade"
-      ? paradeSettings?.cellSizeMeters ?? 1
-      : Math.max(0.05, settings.gridSizeMeters);
-  const memberDiameterMeters = Math.min(
-    1,
-    Math.max(0.1, settings.memberDiameterMeters),
-  );
-  return {
-    id: createProjectId(),
-    version: 1,
-    title,
-    mode: formationMode,
-    paradeSettings,
-    createdAt: now,
-    updatedAt: now,
-    lastOpenedAt: now,
-    audio,
-    stage: {
-      widthMeters,
-      depthMeters,
-      gridSizeMeters,
-      showGrid: true,
-      showCenterLine: true,
-      audienceSide: "bottom",
-      showStageLabels: true,
-      frontDirection: "bottom",
-      originMode: "center",
-      showCenterMarker: true,
-      memberDiameterMeters,
-      horizontalGuideMode: settings.horizontalGuideMode,
-      fixedForAllScenes: settings.useGlobalStageSize,
-      gridIntervalM: gridSizeMeters,
-      horizontalDisplayMode: settings.horizontalGuideMode,
-      memberCircleDiameterM: memberDiameterMeters,
-    },
-    useGlobalStageSize: settings.useGlobalStageSize,
-    useGlobalStageWidth: settings.useGlobalStageSize,
-    members: [],
-    memberGroups: [],
-    stageObjects: [],
-    objectGroups: [],
-    movementPaths: [],
-    movementPlans: [],
-    animationSettings: {
-      membersEnabled: false,
-      objectsEnabled: false,
-      curtainsEnabled: false,
-    },
-    guideSettings: {
-      snapGuideEnabled: true,
-      snapToGuideEnabled: false,
-    },
-    focusMemberId: undefined,
-    viewerPerspective: "audience",
-    frames: [
-      {
-        id: createId("f"),
-        label: "Scene 1",
-        timeSec: 0,
-        sceneViewState: undefined,
-        positions: {},
-        objectStates: {},
-      },
-    ],
   };
 };
 
@@ -7248,6 +7146,7 @@ function App() {
           portrait={workspaceLayout.isPortrait}
           visibilityMemory={visibilityMemories.objects}
           currentFrameId={selectedFrame?.id}
+          memberVisibility={selectedFrameSnapshot.memberVisibility}
           canOpenRosterManager={true}
           onOpenRosterManager={() => openRosterManager("objects")}
           memberGroups={project.memberGroups ?? []}
@@ -7303,6 +7202,7 @@ function App() {
           previousFrame={selectedPreviousFrame}
           objectStates={selectedFrameSnapshot.objectStates}
           previousObjectStates={selectedPreviousFrameSnapshot?.objectStates ?? {}}
+          memberVisibility={selectedFrameSnapshot.memberVisibility}
           canEditScene={true}
 
           onAssignMember={assignMemberToObject}
@@ -8296,6 +8196,8 @@ function App() {
       objectStates={selectedFrameSnapshot.objectStates}
       previousFrame={selectedPreviousFrame}
       previousObjectStates={selectedPreviousFrameSnapshot?.objectStates ?? {}}
+      memberVisibility={selectedFrameSnapshot.memberVisibility}
+      project={project}
       canEditAssignments={(true)}
       readOnlyMessage={"このシーンは閲覧のみです。"}
       onAssignMember={(objectId, memberId) => {
@@ -8362,6 +8264,8 @@ function App() {
         options={printOptions ?? undefined}
         rootRef={printExportRef}
         variant={printVariant}
+        // "stage-only" is the stage camera button; give it about 10% blank margin (user decision 2026-10-06).
+        stageOnlyMarginRatio={printVariant === "stage-only" ? 0.1 : undefined}
       />
     )}
     </>

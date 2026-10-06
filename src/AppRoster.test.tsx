@@ -376,8 +376,15 @@ describe("App roster confirmation integration", () => {
       const confirm = within(view).getByRole("dialog", { name: "前シーンの割当を反映" });
       expect(confirm.textContent).toContain("1個の道具の担当が変わります");
       await user.click(within(confirm).getByRole("button", { name: "反映する" }));
+    } else if (action === "add") {
+      // Anna is shown in this scene: the list starts with hidden members only, and assigning a shown member asks inline first.
+      expect(within(view).queryByRole("button", { name: /^Anna 未所属/ })).toBeNull();
+      await user.click(within(view).getByRole("checkbox", { name: "このシーンで非表示の人だけ" }));
+      await user.click(within(view).getByRole("button", { name: "Anna 未所属 表示中" }));
+      expect(within(view).getByRole("status").textContent).toContain("Annaさんは表示中です。");
+      await user.click(within(view).getByRole("button", { name: "割り当てる" }));
     } else {
-      await user.click(within(view).getByRole("button", { name: action === "add" ? "Anna 未所属" : "Ben 未所属" }));
+      await user.click(within(view).getByRole("button", { name: "Ben 未所属" }));
     }
     await waitFor(() => expect(canvas.project!.frames[frameIndex].objectAssignments).not.toEqual(before.objectAssignments));
     expect(canvas.project!.frames[frameIndex].memberVisibility?.[action === "add" ? "m_anna" : "m_ben"]).toBe(false);

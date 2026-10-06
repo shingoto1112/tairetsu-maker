@@ -31,12 +31,16 @@ import { PanelStickyHeader } from "./PanelStickyHeader";
 import { RosterManagerButton } from "./RosterManagerButton";
 import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
+import { isMemberShownInScene } from "../utils/assignmentCandidates";
+import type { MemberPickerSceneVisibility } from "./MemberPicker";
 import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type ObjectPanelProps = {
   portrait?: boolean;
   visibilityMemory?: VisibilityMemory;
   currentFrameId?: string;
+  /** Resolved visibility of the selected scene (snapshot), used to order assignment candidates. */
+  memberVisibility?: Readonly<Record<string, boolean>>;
   onOpenRosterManager?: () => void;
   canOpenRosterManager?: boolean;
   memberGroups: MemberGroup[];
@@ -131,6 +135,7 @@ export const ObjectPanel = ({
   portrait = false,
   visibilityMemory,
   currentFrameId,
+  memberVisibility,
   onOpenRosterManager,
   canOpenRosterManager = true,
   memberGroups,
@@ -185,6 +190,13 @@ export const ObjectPanel = ({
   const isVisibleTab = visibilityTab === "visible";
   const projectDisabled = !canEditProject;
   useEffect(() => { setOpenPickerObjectId(null); }, [currentFrameId, visibilityTab]);
+  // "非表示の人だけ" starts on when the panel opens and survives prop/scene switches.
+  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(true);
+  const assignmentSceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
+    isShown: (member) => isMemberShownInScene(member, memberVisibility),
+    hiddenOnly: hiddenMembersOnly,
+    onHiddenOnlyChange: setHiddenMembersOnly,
+  }), [memberVisibility, hiddenMembersOnly]);
   const sceneDisabled = !canEditScene;
   const isObjectVisible = (object: StageObject): boolean =>
     objectStates[object.id]?.visible ?? object.visible ?? true;
@@ -560,13 +572,14 @@ export const ObjectPanel = ({
                         道具
                       </button>
                       <button
-                        className="mini-button danger"
+                        className="mini-button danger group-delete-button"
                         onClick={() => onDeleteObjectGroup(group.id)}
                         disabled={projectDisabled}
-                        title={projectDisabled ? projectReadOnlyMessage : undefined}
+                        aria-label={`グループ「${group.name}」を削除`}
+                        title={`グループ「${group.name}」を削除`}
                         type="button"
                       >
-                        グループ削除
+                        <Trash2 size={18} aria-hidden="true" />
                       </button>
                     </div>
                     {isExpanded && (
@@ -865,6 +878,8 @@ export const ObjectPanel = ({
                   readOnlyMessage={sceneReadOnlyMessage}
                   onAssignMember={onAssignMember}
                   onRemoveAssignment={onRemoveAssignment}
+                  sceneVisibility={assignmentSceneVisibility}
+                  sceneId={currentFrameId}
                 />
             </div>
             <div className="card-actions wrap">

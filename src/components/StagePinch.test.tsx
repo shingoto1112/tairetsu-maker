@@ -98,13 +98,16 @@ describe("stage view-only pinch", () => {
     expect(preview.style.transform).toBe(""); expect(p.viewStates!.get("one")?.zoom).toBe(1);
     expect(p.viewStates!.get("two")).toBeUndefined();
   });
-  it("keeps all selected names visible during one-finger panning in dense scenes", () => {
+  it("keeps every name visible during one-finger panning in dense scenes", () => {
+    // User decision 2026-10-06: names are never hidden while panning or dragging, even with 120+ members.
     const p = props(); p.compact = false; p.selectedMemberIds = ["m0","m1","m2"];
     const view = render(<StageCanvas {...p} />); flush();
     const viewport = view.container.querySelector(".stage-fit-area")!;
+    const tokens = view.container.querySelectorAll(".member-token").length;
     fireEvent.pointerDown(viewport,touch(1,300)); fireEvent.pointerMove(viewport,touch(1,350));
     const named = [...view.container.querySelectorAll(".member-token")].filter(e => e.querySelector(".member-token__label"));
-    expect(named.map(e => e.getAttribute("aria-label"))).toEqual(["匿名0","匿名1","匿名2"]);
+    expect(tokens).toBeGreaterThanOrEqual(120);
+    expect(named).toHaveLength(tokens);
   });
   it("restores horizontal position with a changed viewport width", () => {
     const p = props(); p.viewStates = new Map<string, SceneViewState>([["one", { zoom: 2, scrollLeft: 300, scrollTop: 400, viewportWidth: 900 }]]);

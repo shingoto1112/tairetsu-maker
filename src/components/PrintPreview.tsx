@@ -32,6 +32,8 @@ type PrintPreviewProps = {
   options?: ShareExportOptions;
   rootRef?: Ref<HTMLDivElement>;
   variant?: "document" | "stage-only";
+  /** Only the stage camera button passes this (about 10% blank margin for handwritten notes). */
+  stageOnlyMarginRatio?: number;
 };
 
 type EffectiveStageSize = {
@@ -738,6 +740,7 @@ const PrintStagePreview = ({
   project,
   verticalRange,
   options,
+  outerMarginRatio,
 }: {
   commonWidthMeters: number;
   frame: FormationFrame;
@@ -746,6 +749,8 @@ const PrintStagePreview = ({
   project: Project;
   verticalRange: SceneVerticalRange;
   options: ShareExportOptions;
+  /** Stage camera image only: at least this share of the stage width between the stage outline and every image edge (rulers count toward it). A4 never passes it. */
+  outerMarginRatio?: number;
 }) => {
   const isParade = project.mode === "parade";
   const horizontalGuideMode = isParade
@@ -1187,6 +1192,27 @@ const PrintStagePreview = ({
     );
   }
 
+  if (outerMarginRatio && outerMarginRatio > 0) {
+    const targetMm = metrics.stageWidthMm * outerMarginRatio;
+    const extra = (existingMm: number) => `${Math.max(0, targetMm - existingMm)}mm`;
+    return (
+      <div
+        className="print-stage-outer-margin"
+        style={{
+          background: "#ffffff",
+          boxSizing: "content-box",
+          display: "inline-block",
+          paddingBottom: extra(rulerBottomMm),
+          paddingLeft: extra(leftRulerMm),
+          paddingRight: extra(rightRulerMm + stageRightSafetyMm),
+          paddingTop: extra(rulerTopMm),
+        }}
+      >
+        {stagePreview}
+      </div>
+    );
+  }
+
   return stagePreview;
 };
 
@@ -1197,6 +1223,7 @@ export const PrintPreview = ({
   options = defaultPrintOptions,
   rootRef,
   variant = "document",
+  stageOnlyMarginRatio,
 }: PrintPreviewProps) => {
   const sortedFrames = sortFrames(project.frames);
   const frames =
@@ -1239,6 +1266,7 @@ export const PrintPreview = ({
           project={project}
           verticalRange={verticalRange}
           options={resolvedOptions}
+          outerMarginRatio={stageOnlyMarginRatio}
         />
       </div>
     );

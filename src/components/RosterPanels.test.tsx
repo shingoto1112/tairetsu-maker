@@ -68,6 +68,20 @@ const objectCard = (name: string) => {
 };
 
 describe("roster panel integration", () => {
+  it.each(["members", "objects"] as const)("keeps icon group deletion accessible and disabled in read-only %s", async (panel) => {
+    const user = userEvent.setup(); const remove = vi.fn();
+    const view = panel === "members"
+      ? render(<MemberPanel {...memberProps()} members={members} groups={memberGroups} onDeleteGroup={remove} />)
+      : render(<ObjectPanel {...objectProps()} objectGroups={[{ id: "g", name: "赤組", objectIds: ["o1"] }]} onDeleteObjectGroup={remove} />);
+    const button = screen.getByRole("button", { name: "グループ「赤組」を削除" });
+    expect(button.textContent).toBe(""); expect(button.title).toBe("グループ「赤組」を削除");
+    expect(button.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    await user.click(button); expect(remove).toHaveBeenCalledExactlyOnceWith("g"); remove.mockClear();
+    if (panel === "members") view.rerender(<MemberPanel {...memberProps()} members={members} groups={memberGroups} canEditProject={false} onDeleteGroup={remove} />);
+    else view.rerender(<ObjectPanel {...objectProps()} objectGroups={[{ id: "g", name: "赤組", objectIds: ["o1"] }]} canEditProject={false} onDeleteObjectGroup={remove} />);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    await user.click(button); expect(remove).not.toHaveBeenCalled();
+  });
   it.each(["members", "objects"] as const)("places portrait management target beside group heading for %s", async (panel) => {
     const user = userEvent.setup();
     const props = panel === "members" ? memberProps() : objectProps();

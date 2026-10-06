@@ -14,15 +14,34 @@ const props = () => ({ title: "メンバー", portrait: true, items, groups: [{ 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("scene visibility picker", () => {
-  it.each([false, true])("compacts status only in portrait=%s, keeping complete descriptions", (portrait) => {
+  it("keeps orientation scroll memory independent and suspends portrait search in landscape", () => {
+    const memory = createVisibilityMemory(); memory.scrollLeft = 120; memory.scrollTop = 75; memory.query = "えび";
+    const callbacks = props();
+    const view = render(<SceneVisibilityPicker {...callbacks} memory={memory} />);
+    const owner = document.querySelector<HTMLElement>(".scene-visibility-picker__scroll")!;
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(owner.scrollLeft).toBe(120);
+    view.rerender(<SceneVisibilityPicker {...callbacks} memory={memory} portrait={false} />);
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    expect(owner.scrollTop).toBe(75);
+    owner.scrollTop = 140; fireEvent.scroll(owner);
+    expect(memory.scrollTop).toBe(140); expect(memory.scrollLeft).toBe(120);
+    fireEvent.click(screen.getByRole("button", { name: "すべて非表示" }));
+    expect(callbacks.onAll).toHaveBeenCalledWith(false);
+    view.rerender(<SceneVisibilityPicker {...callbacks} memory={memory} />);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(owner.scrollLeft).toBe(120);
+  });
+  it.each([false, true])("compacts status in portrait=%s, keeping complete descriptions", (portrait) => {
     render(<SceneVisibilityPicker {...props()} portrait={portrait} />);
     const chips = Array.from(document.querySelectorAll<HTMLElement>(".scene-visibility-chip"));
-    expect(chips[0].querySelector(".scene-visibility-chip__text small")?.textContent ?? null).toBe(portrait ? null : items[0].status);
-    expect(chips[0].querySelector(".scene-visibility-chip__badge")?.textContent ?? null).toBe(portrait ? "＋4" : null);
+    expect(chips[0].querySelector(".scene-visibility-chip__text small")).toBeNull();
+    expect(chips[0].querySelector(".scene-visibility-chip__badge")?.textContent).toBe("＋4");
     expect(chips[1].querySelector(".scene-visibility-chip__badge")).toBeNull();
     const name = within(chips[0]).getByRole("button", { name: items[0].name });
     expect(document.getElementById(name.getAttribute("aria-describedby")!)?.textContent).toBe(items[0].fullStatus);
-    if (portrait) expect(document.querySelector(".scene-visibility-picker__info")?.textContent).toContain(items[0].fullStatus);
+    expect(document.querySelector(".scene-visibility-picker__info")?.textContent).toContain(items[0].fullStatus);
   });
   it("keeps the unselected information to one short instruction and management controls outside the header", () => {
     render(<SceneVisibilityPicker {...props()} items={items.map(item => ({ ...item, selected: false }))} />);

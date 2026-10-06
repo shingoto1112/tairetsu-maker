@@ -1,10 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, StageObject } from "../types";
+import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Project, StageObject } from "../types";
+import { RosterAssignmentSceneStrip } from "./RosterAssignmentSceneStrip";
+import { RosterAssignmentStagePreview } from "./RosterAssignmentStagePreview";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { collectGroupedItems } from "../utils/rosterColumns";
 import type { AssignMember, RemoveAssignment } from "./ObjectAssignmentEditor";
 import { RosterAssignmentList } from "./RosterAssignmentList";
 import { RosterAssignmentDetail } from "./RosterAssignmentDetail";
+import { isMemberShownInScene } from "../utils/assignmentCandidates";
+import type { MemberPickerSceneVisibility } from "./MemberPicker";
 
 export type RosterAssignmentViewProps = {
   frames: FormationFrame[];
@@ -24,13 +28,24 @@ export type RosterAssignmentViewProps = {
   onSelectFrame: (frameId: string) => void;
   canUndo?: boolean;
   onUndo?: () => void;
+  /** Resolved visibility of the selected scene (snapshot), used to order assignment candidates. */
+  memberVisibility?: Readonly<Record<string, boolean>>;
+  /** Enables the scene strip and the read-only formation preview. */
+  project?: Project;
 };
 
 const sceneTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
 export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
   const { frames, currentFrame, members, memberGroups, objects, objectGroups, objectStates,
-    previousFrame, previousObjectStates, canEditAssignments, readOnlyMessage, onSelectFrame, canUndo, onUndo } = props;
+    previousFrame, previousObjectStates, canEditAssignments, readOnlyMessage, onSelectFrame, canUndo, onUndo, memberVisibility, project } = props;
+  // "非表示の人だけ" starts on when the view opens and survives prop/scene switches.
+  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(true);
+  const sceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
+    isShown: (member) => isMemberShownInScene(member, memberVisibility),
+    hiddenOnly: hiddenMembersOnly,
+    onHiddenOnlyChange: setHiddenMembersOnly,
+  }), [memberVisibility, hiddenMembersOnly]);
   const rootRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLElement>(null);
@@ -204,7 +219,7 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
     }
   });
 
-  return <section className={`roster-assignment-view${narrow ? " is-narrow" : ""}`} ref={rootRef}
+  return <section className={`roster-assignment-view${narrow ? " is-narrow" : ""}${project ? " has-scene-preview" : ""}`} ref={rootRef}
     aria-label="道具名簿の割当" aria-busy={busy}
     onKeyDownCapture={(event) => {
       if (confirmCount === null) return;
@@ -238,6 +253,10 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
       </div>
       {notice && <p role="status" className="roster-assignment-help">{notice}</p>}
     </header>
+    {project && frames.length > 0 && <RosterAssignmentSceneStrip project={project} frames={frames}
+      selectedFrameId={currentFrame?.id ?? null} onSelectFrame={onSelectFrame} />}
+    {project && currentFrame && <RosterAssignmentStagePreview project={project} frame={currentFrame}
+      highlightedObjectId={selectedObject?.id} />}
     <div className="roster-assignment-body">
       <div className="roster-assignment-list" ref={listRef} hidden={narrow && showDetail}
         onScroll={(event) => { if (!narrow || !showDetail) listScroll.current = event.currentTarget.scrollTop; }}>
@@ -258,7 +277,8 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
         {selectedObject ? <RosterAssignmentDetail object={selectedObject} groupName={model.objectGroupById.get(selectedObject.id)?.label ?? "未所属"}
           members={members} assigned={assigned} assignedIds={assignedIds} groupIndex={groupIndex}
           otherObjectsByMember={otherObjects} visible={selectedVisible} disabled={disabled} onToggle={toggleMember}
-          memberQuery={memberQuery} onMemberQuery={setMemberQuery} /> :
+          memberQuery={memberQuery} onMemberQuery={setMemberQuery}
+          sceneVisibility={sceneVisibility} sceneId={currentFrame?.id} /> :
           <p className="empty-state">道具を選択すると、担当メンバーを編集できます。</p>}
         <p className="roster-assignment-help roster-assignment-footnote">割り当てると、このシーンでは隊列外になります。解除しても隊列には戻りません。</p>
       </section>

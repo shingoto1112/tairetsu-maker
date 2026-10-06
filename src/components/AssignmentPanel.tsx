@@ -12,6 +12,8 @@ import { PanelStickyHeader } from "./PanelStickyHeader";
 import { RosterManagerButton } from "./RosterManagerButton";
 import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
+import { isMemberShownInScene } from "../utils/assignmentCandidates";
+import type { MemberPickerSceneVisibility } from "./MemberPicker";
 
 type AssignmentView = "objects" | "members";
 type MemberSort = "total" | "assignments" | "hidden" | "name";
@@ -28,6 +30,8 @@ type AssignmentPanelProps = {
   previousFrame: FormationFrame | null;
   objectStates: Record<string, ObjectState>;
   previousObjectStates: Record<string, ObjectState>;
+  /** Resolved visibility of the selected scene (snapshot), used to order assignment candidates. */
+  memberVisibility?: Readonly<Record<string, boolean>>;
   canEditScene?: boolean;
   sceneReadOnlyMessage?: string;
   onAssignMember: AssignMember;
@@ -52,6 +56,7 @@ export const AssignmentPanel = ({
   previousFrame,
   objectStates,
   previousObjectStates,
+  memberVisibility,
   canEditScene = true,
   sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
   onAssignMember,
@@ -66,6 +71,13 @@ export const AssignmentPanel = ({
   const [openPickerObjectId, setOpenPickerObjectId] = useState<string | null>(null);
   const [view, setView] = useState<AssignmentView>("objects");
   const [memberSort, setMemberSort] = useState<MemberSort>("total");
+  // "非表示の人だけ" starts on each time the panel opens and survives prop/scene switches.
+  const [hiddenMembersOnly, setHiddenMembersOnly] = useState(true);
+  const sceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
+    isShown: (member) => isMemberShownInScene(member, memberVisibility),
+    hiddenOnly: hiddenMembersOnly,
+    onHiddenOnlyChange: setHiddenMembersOnly,
+  }), [memberVisibility, hiddenMembersOnly]);
   useEffect(() => { setOpenPickerObjectId(null); }, [currentFrame?.id, view]);
   const sceneDisabled = !canEditScene;
 
@@ -271,6 +283,8 @@ export const AssignmentPanel = ({
                   readOnlyMessage={sceneReadOnlyMessage}
                   onAssignMember={onAssignMember}
                   onRemoveAssignment={onRemoveAssignment}
+                  sceneVisibility={sceneVisibility}
+                  sceneId={currentFrame.id}
                 />
               </article>
             );

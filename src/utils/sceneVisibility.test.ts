@@ -31,4 +31,12 @@ describe("scene visibility grouping and search", () => {
     revealVisibilityChip(owner as HTMLElement, target(120, 312) as HTMLElement); expect(owner.scrollLeft).toBe(242);
     expect(owner.scrollTop).toBe(80);
   });
+  it("reveals landscape selections vertically without moving horizontal scroll", () => {
+    const owner = { scrollLeft: 0, scrollTop: 100, getBoundingClientRect: () => ({ top: 50, bottom: 330 }) };
+    const target = (top: number, bottom: number) => ({ getBoundingClientRect: () => ({ top, bottom }) });
+    revealVisibilityChip(owner as HTMLElement, target(350, 398) as HTMLElement, false);
+    expect(owner.scrollTop).toBe(168);
+    revealVisibilityChip(owner as HTMLElement, target(20, 68) as HTMLElement, false);
+    expect(owner.scrollTop).toBe(138); expect(owner.scrollLeft).toBe(0);
+  });
 });

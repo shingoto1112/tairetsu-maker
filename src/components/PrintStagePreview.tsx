@@ -730,6 +730,7 @@ export const PrintStagePreview = ({
   verticalRange,
   options,
   viewport,
+  highlightedObjectId,
 }: {
   commonWidthMeters: number;
   frame: FormationFrame;
@@ -740,6 +741,8 @@ export const PrintStagePreview = ({
   options: ShareExportOptions;
   /** Static exports supply dimensions directly; absent values preserve A4 exactly. */
   viewport?: { leftMeters: number; rightMeters: number; sideMm: number; topMm: number; bottomMm: number; wholeMembersWithinRange?: boolean };
+  /** Read-only previews (roster assignment) outline one prop; exports never pass it. */
+  highlightedObjectId?: string;
 }) => {
   const isParade = project.mode === "parade";
   const horizontalGuideMode = isParade
@@ -1146,7 +1149,7 @@ export const PrintStagePreview = ({
           const objectTopMeters = state.y - verticalRange.topMeters;
           return (
             <div
-              className={`print-object shape-${object.shape}`}
+              className={`print-object shape-${object.shape}${object.id === highlightedObjectId ? " is-highlighted" : ""}`}
               key={object.id}
               style={{
                 backgroundColor: `${object.color}24`,

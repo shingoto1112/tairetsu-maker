@@ -3,7 +3,7 @@ import { horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
 import {
   Camera,
-  FlipHorizontal2,
+  ArrowUpDown,
   Lock,
   Maximize2,
   Minimize2,
@@ -17,6 +17,8 @@ import {
 import {
   CSSProperties,
   forwardRef,
+  memo,
+  useCallback,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
   useEffect,
@@ -219,6 +221,39 @@ type MemberTokenStyle = CSSProperties & {
   "--member-overlap-y": string;
 };
 
+// The label subtree is unchanged while positions move. Reuse its DOM and text.
+const StageMemberLabel = memo(({ name }: { name: string }) => <span className="member-token__label" aria-hidden="true">
+  {splitMemberLabel(name).map((line, index) => <span className="member-token__label-line" key={index}>{line}</span>)}
+</span>);
+
+type StageMemberTokenProps = {
+  memberId: string; name: string; showLabel: boolean;
+  className: string; style: MemberTokenStyle; title: string;
+  handlers: {
+    ref: (id: string, node: HTMLDivElement | null) => void;
+    down: (event: PointerEvent<HTMLDivElement>, id: string) => void;
+    move: (event: PointerEvent<HTMLDivElement>) => void;
+    stop: (event: PointerEvent<HTMLDivElement>) => void;
+    menu: (event: ReactMouseEvent<HTMLDivElement>, id: string) => void;
+  };
+};
+// Unchanged members skip DOM reconciliation during drag/pan. Stable handlers
+// dispatch to the latest committed state; compare every visual value.
+const StageMemberToken = memo((props: StageMemberTokenProps) => {
+  const { memberId, name, showLabel, handlers, className, style, title } = props;
+  const setRef = useCallback((node: HTMLDivElement | null) => handlers.ref(memberId, node), [handlers, memberId]);
+  return <div ref={setRef} className={className} style={style} title={title}
+    role="button" tabIndex={0} aria-label={name}
+    onPointerDown={event => handlers.down(event, memberId)} onPointerMove={handlers.move}
+    onPointerUp={handlers.stop} onPointerCancel={handlers.stop}
+    onContextMenu={event => handlers.menu(event, memberId)}>
+    {showLabel && <StageMemberLabel name={name} />}
+  </div>;
+}, (a, b) => a.memberId === b.memberId && a.name === b.name && a.showLabel === b.showLabel &&
+  a.className === b.className && a.title === b.title && a.handlers === b.handlers &&
+  Object.keys(a.style).length === Object.keys(b.style).length &&
+  (Object.keys(a.style) as (keyof MemberTokenStyle)[]).every(key => a.style[key] === b.style[key]));
+
 const RULER_LABEL_WIDTH_PX = 30;
 const RULER_LABEL_HEIGHT_PX = 20;
 const RULER_BOTTOM_PADDING_PX = 18;
@@ -417,9 +452,16 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
     const memberEditing = !isPlaying;
     const objectEditing = mode === "objects" && !isPlaying;
-    const isDenseProject = project.members.length >= 120;
-    const simplifyMemberLabels =
-      isDenseProject && (isMemberDragging || isStagePanning);
+    // Names stay visible while dragging/panning regardless of member count (user decision 2026-10-06).
+    const memberLabels = useMemo(() => new Map(project.members.map(member => {
+      const lines = splitMemberLabel(member.name);
+      return [member.id, { lines, className: getMemberLabelClassName("member-token", lines) }] as const;
+    })), [project.members]);
+    const memberColors = useMemo(() => new Map(project.members.map(member => {
+      const color = snapshot.memberAppearanceOverrides?.[member.id]?.color
+        ?? getMemberDisplayColor(member, { groups: memberGroups });
+      return [member.id, { color, labelColor: getReadableMemberLabelColor(color) }] as const;
+    })), [project.members, memberGroups, snapshot.memberAppearanceOverrides]);
     const horizontalGuideMode = stage.horizontalGuideMode ?? "meters";
     const horizontalLabels = useMemo(
       () => createHorizontalRulerLabels(stage.widthMeters, horizontalGuideMode),
@@ -1829,6 +1871,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       return Math.hypot(end.x - start.x, end.y - start.y);
     }, [focusMemberId, fromSnapshot, toSnapshot]);
 
+    const currentMemberHandlers = { setMemberElementRef, handleMemberPointerDown, handleMemberPointerMove, stopMemberDrag, openContextMenu };
+    const memberHandlersRef = useRef(currentMemberHandlers);
+    useLayoutEffect(() => { memberHandlersRef.current = currentMemberHandlers; });
+    const memberTokenHandlers = useMemo(() => ({
+      ref: (id: string, node: HTMLDivElement | null) => memberHandlersRef.current.setMemberElementRef(id, node),
+      down: (event: PointerEvent<HTMLDivElement>, id: string) => memberHandlersRef.current.handleMemberPointerDown(event, id),
+      move: (event: PointerEvent<HTMLDivElement>) => memberHandlersRef.current.handleMemberPointerMove(event),
+      stop: (event: PointerEvent<HTMLDivElement>) => memberHandlersRef.current.stopMemberDrag(event),
+      menu: (event: ReactMouseEvent<HTMLDivElement>, id: string) => memberHandlersRef.current.openContextMenu(event, { type: "member", id }),
+    }), []);
+
     return (
       <main className="stage-area">
         <div className={isReadOnly ? "stage-frame is-read-only" : "stage-frame"}>
@@ -1961,9 +2014,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 className="mini-button"
                 onClick={onTogglePerspective}
                 type="button"
-                title="観客側視点 / 踊る人側視点"
+                title={`観客側／踊る人側の視点を切り替え（現在：${viewerPerspective === "performer" ? "踊る人側" : "観客側"}）`}
+                aria-label={`視点を切り替え（現在：${viewerPerspective === "performer" ? "踊る人側" : "観客側"}）`}
               >
-                <FlipHorizontal2 size={15} />
+                {/* Front/back swap, not a left-right mirror (user decision 2026-10-06). */}
+                <ArrowUpDown size={15} aria-hidden="true" />
                 視点
               </button>
               <button
@@ -2537,22 +2592,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   const isFocus = focusMemberId === member.id;
                   const isDimmed = focusMode && Boolean(focusMemberId) && !isFocus;
                   const remoteMemberLockOwner = remoteMemberLocks[member.id] ?? null;
-                  const labelLines = splitMemberLabel(member.name);
-                  const memberLabelClassName = getMemberLabelClassName(
-                    "member-token",
-                    labelLines,
-                  );
-                  const memberColor = getMemberDisplayColor(member, {
-                    groups: memberGroups,
-                    snapshot,
-                  });
-                  const labelColor = getReadableMemberLabelColor(memberColor);
+                  const { lines: labelLines, className: memberLabelClassName } = memberLabels.get(member.id)!;
+                  const { color: memberColor, labelColor } = memberColors.get(member.id)!;
                   const overlapOffset =
                     memberDisplayOffsets.get(member.id) ?? { x: 0, y: 0 };
                   return (
-                    <div
+                    <StageMemberToken
                       key={member.id}
-                      ref={(element) => setMemberElementRef(member.id, element)}
+                      memberId={member.id}
+                      name={member.name}
+                      showLabel
+                      handlers={memberTokenHandlers}
                       className={[
                         "member-token",
                         isSelected || selectedMemberIds.includes(member.id)
@@ -2562,9 +2612,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                         isDimmed ? "is-dimmed" : "",
                         remoteMemberLockOwner ? "is-remote-locked" : "",
                         memberLabelClassName,
-                        simplifyMemberLabels && !isSelected && !selectedMemberIds.includes(member.id) && !isFocus
-                          ? "is-label-simplified"
-                          : "",
                       ].join(" ")}
                       style={{
                         "--member-overlap-x": `${overlapOffset.x}px`,
@@ -2584,37 +2631,13 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                             : "0 1px 1px rgba(255, 255, 255, 0.56)",
                         zIndex: member.zIndex ?? 20,
                       } as MemberTokenStyle}
-                      onPointerDown={(event) =>
-                        handleMemberPointerDown(event, member.id)
-                      }
-                      onPointerMove={handleMemberPointerMove}
-                      onPointerUp={stopMemberDrag}
-                      onPointerCancel={stopMemberDrag}
-                      onContextMenu={(event) =>
-                        openContextMenu(event, { type: "member", id: member.id })
-                      }
-                      role="button"
-                      tabIndex={0}
                       title={
                         remoteMemberLockOwner
                           ? `${remoteMemberLockOwner}が操作中です`
                           : member.name
                       }
-                      aria-label={member.name}
                     >
-                      {!(simplifyMemberLabels && !isSelected && !selectedMemberIds.includes(member.id) && !isFocus) && (
-                        <span className="member-token__label" aria-hidden="true">
-                          {labelLines.map((line, index) => (
-                            <span
-                              className="member-token__label-line"
-                              key={`${member.id}-label-${index}`}
-                            >
-                              {line}
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </div>
+                    </StageMemberToken>
                   );
                 })}
               </div>

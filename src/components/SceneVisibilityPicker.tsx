@@ -51,7 +51,7 @@ export const SceneVisibilityPicker = (props: Props) => {
   };
 
   useLayoutEffect(() => {
-    if (props.portrait) restoreScroll.current = memory.scrollLeft;
+    restoreScroll.current = props.portrait ? memory.scrollLeft : memory.scrollTop;
   }, [props.portrait, memory]);
 
   useLayoutEffect(() => {
@@ -107,21 +107,26 @@ export const SceneVisibilityPicker = (props: Props) => {
 
   useLayoutEffect(() => {
     const owner = scrollRef.current;
-    if (owner && props.portrait && restoreScroll.current !== null) {
-      owner.scrollLeft = restoreScroll.current;
-      memory.scrollLeft = owner.scrollLeft;
+    if (owner && restoreScroll.current !== null) {
+      if (props.portrait) {
+        owner.scrollLeft = restoreScroll.current;
+        memory.scrollLeft = owner.scrollLeft;
+      } else {
+        owner.scrollTop = restoreScroll.current;
+        memory.scrollTop = owner.scrollTop;
+      }
       restoreScroll.current = null;
     }
   }, [query, props.portrait, memory]);
 
   useLayoutEffect(() => {
     const owner = scrollRef.current;
-    if (!props.portrait || !owner || !props.scrollTarget) return;
+    if (!owner || !props.scrollTarget) return;
     const chip = Array.from(owner.querySelectorAll<HTMLElement>("[data-visibility-id]")).find((node) => node.dataset.visibilityId === props.scrollTarget?.id);
-    if (chip) revealVisibilityChip(owner, chip);
+    if (chip) revealVisibilityChip(owner, chip, props.portrait);
   }, [props.scrollTarget, props.portrait]);
 
-  const renderChip = (item: VisibilityItem) => <SceneVisibilityChip key={item.id} item={item} compact={props.portrait} onSelect={select} onVisibility={visibility} />;
+  const renderChip = (item: VisibilityItem) => <SceneVisibilityChip key={item.id} item={item} onSelect={select} onVisibility={visibility} />;
   return <section ref={rootRef} className={`scene-visibility-picker ${props.portrait ? "is-portrait" : ""}`} aria-label="このシーンの表示">
     {props.portrait ? <PortraitPanelHeader headerRef={headerRef} title={props.title}
       visibleCount={props.items.filter((item) => item.visible).length} hiddenCount={props.items.filter((item) => !item.visible).length}
@@ -139,19 +144,19 @@ export const SceneVisibilityPicker = (props: Props) => {
     <div className="scene-visibility-picker__edge">
       <div ref={scrollRef} className="scene-visibility-picker__scroll object-visibility-list__items"
         style={{ "--rows": rows } as CSSProperties} data-rows={rows}
-        onScroll={() => { if (props.portrait && scrollRef.current) memory.scrollLeft = scrollRef.current.scrollLeft; }}
-        onFocusCapture={(event) => { if (props.portrait) { const chip = (event.target as HTMLElement).closest<HTMLElement>("[data-visibility-id]"); if (chip) revealVisibilityChip(event.currentTarget, chip); } }}>
-        {props.portrait ? blocks.map((block) => <div className="scene-visibility-picker__group" key={block.id} style={{ borderColor: block.color }}>
-          <div className="scene-visibility-picker__group-heading"><span aria-hidden="true" style={{ color: block.color ?? "#94a3b8" }}>■</span> {block.name} {query ? `${block.items.length}／${block.total}` : block.total}{props.title === "メンバー" ? "人" : "個"}</div>
+        onScroll={() => { if (scrollRef.current) { if (props.portrait) memory.scrollLeft = scrollRef.current.scrollLeft; else memory.scrollTop = scrollRef.current.scrollTop; } }}
+        onFocusCapture={(event) => { const chip = (event.target as HTMLElement).closest<HTMLElement>("[data-visibility-id]"); if (chip) revealVisibilityChip(event.currentTarget, chip, props.portrait); }}>
+        {blocks.map((block) => <div className="scene-visibility-picker__group" key={block.id} style={{ borderColor: block.color }}>
+          <div className="scene-visibility-picker__group-heading"><span aria-hidden="true" style={{ color: block.color ?? "#94a3b8" }}>■</span> {block.name} {props.portrait && query ? `${block.items.length}／${block.total}` : block.total}{props.title === "メンバー" ? "人" : "個"}</div>
           <div className="scene-visibility-picker__grid">{block.items.map(renderChip)}</div>
-        </div>) : blocks.flatMap((block) => block.items).map(renderChip)}
-        {blocks.length === 0 && <p className="empty-state compact">{query ? "一致する名前がありません" : `${props.title}はまだありません。`}
-          {query && <button type="button" className="mini-button" onClick={() => { setInput(""); changeQuery(""); }}>クリア</button>}</p>}
+        </div>)}
+        {blocks.length === 0 && <p className="empty-state compact">{props.portrait && query ? "一致する名前がありません" : `${props.title}はまだありません。`}
+          {props.portrait && query && <button type="button" className="mini-button" onClick={() => { setInput(""); changeQuery(""); }}>クリア</button>}</p>}
       </div>
     </div>
-    {props.portrait && <div ref={infoRef} className="scene-visibility-picker__info" aria-live="polite">
+    <div ref={infoRef} className="scene-visibility-picker__info" aria-live="polite">
       {selectedItems.length ? selectedItems.map((item) => `${item.name}: ${item.fullStatus}`).join(" ／ ") : "☑で表示切替・名前タップで選択"}
-      {query && <button type="button" className="mini-button" onClick={() => { setInput(""); changeQuery(""); }}>{selectedHidden ? "選択対象を表示（検索解除）" : "検索解除"}</button>}
-    </div>}
+      {props.portrait && query && <button type="button" className="mini-button" onClick={() => { setInput(""); changeQuery(""); }}>{selectedHidden ? "選択対象を表示（検索解除）" : "検索解除"}</button>}
+    </div>
   </section>;
 };

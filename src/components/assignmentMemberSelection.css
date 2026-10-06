@@ -1,0 +1,71 @@
+/* Scene-aware member selection for prop assignment (MemberPicker, MemberToggleList, ObjectAssignmentEditor).
+   Kept out of styles.css so it can evolve independently. */
+.member-picker__hidden-only {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.member-picker__hidden-only input {
+  height: 20px;
+  margin: 0;
+  width: 20px;
+}
+
+.member-picker__section {
+  border-top: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 8px 0 0;
+  padding: 8px 4px 2px;
+}
+
+.member-picker__section:first-child {
+  border-top: 0;
+  margin-top: 0;
+}
+
+.member-picker__candidate.is-shown-in-scene {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.member-picker__shown-badge,
+.member-toggle-list__shown-badge {
+  background: #e2e8f0;
+  border-radius: 999px;
+  color: #475569;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-style: normal;
+  padding: 1px 8px;
+}
+
+.assignment-shown-notice {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #9a3412;
+  font-size: 12px;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+}
+
+.assignment-shown-notice__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.assignment-shown-notice__actions button {
+  min-height: 36px;
+}
+
+.member-toggle-list__row.is-shown-in-scene {
+  background: #f8fafc;
+  color: #64748b;
+}

@@ -7440,6 +7440,8 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 }
 /* Shared visibility DOM: the check label and selection button have separate hit areas. */
 .scene-visibility-picker { min-width: 0; }
+.tab-panel__content:has(> .member-manager, > .object-manager) { grid-template-columns: minmax(0, 1fr); }
+.tab-panel__content :is(.member-manager, .object-manager) { min-width: 0; grid-template-columns: minmax(0, 1fr); }
 .scene-visibility-chip.object-visibility-item {
   box-sizing: border-box; display: flex; gap: 0; min-height: 48px; padding: 0; opacity: 1; border: 2px solid transparent; background: #fff;
 }
@@ -7451,9 +7453,29 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .scene-visibility-chip__name .color-dot { flex: 0 0 8px; height: 8px; width: 8px; }
 .scene-visibility-chip__text { display: grid; min-width: 0; }
 .scene-visibility-chip__text > span { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scene-visibility-chip__text > small { color: #475569; font-size: 10px; line-height: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .scene-visibility-chip :is(button, input):focus-visible { outline: 2px solid #0f766e; outline-offset: -2px; }
 .scene-visibility-picker__scroll { display: grid; gap: 6px; }
+.group-card__actions .group-delete-button {
+  flex: 0 0 44px; width: 44px; min-width: 44px; min-height: 44px; height: 44px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+:is(.member-manager, .object-manager) .group-card.is-collapsible { gap: 6px; }
+.scene-visibility-chip.is-hidden .scene-visibility-chip__name { color: #64748b; }
+/* Stronger than the native sidebar's generic overflow: visible override. */
+.app-shell .tab-panel__content .scene-visibility-picker:not(.is-portrait) .scene-visibility-picker__scroll.object-visibility-list__items {
+  max-height: 280px; height: auto; overflow-x: hidden; overflow-y: auto; min-width: 0;
+  overscroll-behavior-y: contain; touch-action: pan-y; padding: 0 2px 0 0;
+}
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-picker__group { min-width: 0; padding-left: 4px; }
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-picker__group-heading { position: static; max-width: 100%; width: auto; }
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-picker__grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none;
+  grid-auto-flow: row; grid-auto-columns: auto; gap: 6px;
+}
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-chip { min-width: 0; width: auto; }
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-chip__text { flex: 1 1 0; }
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-chip__name { min-width: 44px; }
+.scene-visibility-picker:not(.is-portrait) .scene-visibility-picker__info { white-space: normal; min-width: 0; max-width: 100%; }
 @media screen {
   .app-shell[data-workspace-layout="portrait"] .scene-visibility-picker.is-portrait { display: contents; }
   .app-shell[data-workspace-layout="portrait"] :is(.member-manager, .object-manager) { display: grid; gap: 6px; }

@@ -753,14 +753,14 @@ export const MemberPanel = ({
                     選択
                   </button>
                   <button
-                    className="mini-button danger"
+                    className="mini-button danger group-delete-button"
                     onClick={() => onDeleteGroup(group.id)}
                     disabled={projectDisabled}
-                    title={projectDisabled ? projectReadOnlyMessage : undefined}
+                    aria-label={`グループ「${group.name}」を削除`}
+                    title={`グループ「${group.name}」を削除`}
                     type="button"
                   >
-                    <Trash2 size={15} />
-                    グループ削除
+                    <Trash2 size={18} aria-hidden="true" />
                   </button>
                 </div>
                 {isExpanded && (
