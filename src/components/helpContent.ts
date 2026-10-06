@@ -1,5 +1,10 @@
 // 原稿 第2版（2026-10-04）を同梱。外部ファイル・ネットワークを参照しない。
 export const helpSections: Array<{ title: string; location: string; items: string[]; collaboration: boolean }> = [
+    { title: "線を引く", location: "ステージの操作欄／パレード左側の操作パネル →「線を引く」", collaboration: false, items: [
+      "キャンバスをドラッグすると両端がグリッドに吸着した線を引けます。斜めの線も引けます。",
+      "黒・赤・青・緑と実線・破線を選べます。線を選ぶと移動、端点の調整、色と線種の変更、削除ができます。「完了」またはEscで終了します。",
+      "線はシーンごとに保存されます。新しいシーンにはコピー元の配置と一緒に引き継がれ、あとから独立して変更・削除できます。1シーン100本までです。"
+    ] },
     {
         "title":  "効率よく作るには",
         "collaboration":  false,

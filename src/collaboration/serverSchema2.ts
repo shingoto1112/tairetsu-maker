@@ -1,3 +1,5 @@
+// @ts-ignore Deno source import.
+import { validAnnotationLine, validLineId, MAX_SCENE_LINES, MAX_PROJECT_LINES } from "../project/annotationLines.ts";
 import * as Y from "yjs";
 // @ts-ignore Deno uses explicit TS extensions; no runtime browser dependencies.
 import { atoms, fieldNames, sceneMaps, settingAtoms } from "./projectSchema.ts";
@@ -96,7 +98,16 @@ function content(doc: Y.Doc, parent: Y.AbstractType<unknown>, key: string | null
       if (parts.length === 3 && (parts[0] === "assignments" || parts[0] === "memberGroups" && parts[2] === "memberIds" || parts[0] === "objectGroups" && parts[2] === "objectIds")) return;
       fail();
     }
-    if (root === "tombstones") { const parts = tuple(key!, 3); if (!roots.includes(parts[0]) || typeof value !== "boolean") fail(); return; }
+    if (root === "tombstones") {
+      let parsed: unknown; try { parsed = JSON.parse(key); } catch { return fail(); }
+      if (Array.isArray(parsed) && parsed[0] === "annotationLines") {
+        // The composite identity is JSON, not a single 255-byte entity ID.
+        if (parsed.length !== 3 || typeof parsed[1] !== "string" || !id(parsed[2]) || JSON.stringify(parsed) !== key) fail();
+        const identity = tuple(parsed[1], 2);
+        if (!validLineId(identity[1])) fail();
+      } else if (!roots.includes(tuple(key, 3)[0])) fail();
+      if (typeof value !== "boolean") fail(); return;
+    }
     return fail();
   }
   if (root === "orders") {
@@ -118,7 +129,8 @@ function content(doc: Y.Doc, parent: Y.AbstractType<unknown>, key: string | null
   }
   if (path.length !== 3) fail();
   if (root === "scenes") {
-    if (field === "positions") { if (!id(key)) fail(); position(value); }
+    if (field === "annotationLines") { if (!validLineId(key) || !validAnnotationLine(value)) fail(); }
+    else if (field === "positions") { if (!id(key)) fail(); position(value); }
     else if (["memberVisibility", "groupVisibility"].includes(field)) { if (!id(key) || typeof value !== "boolean") fail(); }
     else if (field === "memberAppearanceOverrides") { if (!id(key) || !obj(value) || Object.keys(value).some(k => k !== "color") || value.color !== undefined && typeof value.color !== "string") fail(); }
     else if (field === "objectAssignments") { tuple(key, 2); if (typeof value !== "boolean") fail(); }
@@ -161,9 +173,15 @@ export function assertFullState(doc: Y.Doc): void {
     if (indexes.size !== slots.length) fail();
     for (const [elementId, slotId] of record.get("active") as Y.Map<string>) if (indexes.get(slotId) !== elementId) fail();
   }
-  let positions = 0;
-  for (const record of doc.getMap("scenes").values()) {
-    if (!(record instanceof Y.Map) || !(record.get("notes") instanceof Y.Text) || sceneMaps.some(key => !(record.get(key) instanceof Y.Map))) fail();
+  let positions = 0, lines = 0;
+  const deletions = [...doc.getMap("tombstones")].filter(([, enabled]) => enabled).map(([key]) => JSON.parse(key) as string[]);
+  const deletedLines = new Set(deletions.filter(p => p[0] === "annotationLines").map(p => p[1]));
+  const deletedScenes = new Set(deletions.filter(p => p[0] === "scenes").map(p => p[1]));
+  for (const [sceneId, record] of doc.getMap("scenes")) {
+    if (!(record instanceof Y.Map) || !(record.get("notes") instanceof Y.Text) || sceneMaps.some(key => !(record.get(key) instanceof Y.Map) && !(key === "annotationLines" && !record.has(key)))) fail();
+    const count = deletedScenes.has(sceneId) ? 0 : [...(record.get("annotationLines") as Y.Map<unknown> | undefined)?.keys() ?? []].filter(id => !deletedLines.has(JSON.stringify([sceneId, id]))).length;
+    lines += count;
+    if (count > MAX_SCENE_LINES || lines > MAX_PROJECT_LINES) throw new Error("QUOTA_EXCEEDED");
     positions += (record.get("positions") as Y.Map<unknown>).size;
     if (positions > 100000 || (record.get("notes") as Y.Text).length > 65536) throw new Error("QUOTA_EXCEEDED");
   }

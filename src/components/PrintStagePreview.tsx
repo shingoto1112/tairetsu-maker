@@ -1,3 +1,5 @@
+import { useId } from "react";
+import { AnnotationLines } from "./AnnotationLines";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, stageVerticalRulerPositions } from "../utils/gridEmphasis";
 import { EmphasizedGrid } from "./EmphasizedGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
@@ -744,6 +746,7 @@ export const PrintStagePreview = ({
   /** Read-only previews (roster assignment) outline one prop; exports never pass it. */
   highlightedObjectId?: string;
 }) => {
+  const annotationClipId = useId();
   const isParade = project.mode === "parade";
   const horizontalGuideMode = isParade
     ? normalizeParadeHorizontalMeasureMode(
@@ -1132,6 +1135,8 @@ export const PrintStagePreview = ({
             y1="0"
             y2={totalDepthMeters}
           />
+          {Object.keys(frame.annotationLines ?? {}).length > 0 && <><defs><clipPath id={annotationClipId}><rect x={leftMeters} y="0" width={rightMeters - leftMeters} height={totalDepthMeters} /></clipPath></defs>
+          <g clipPath={"url(#" + annotationClipId + ")"}><AnnotationLines lines={frame.annotationLines} top={verticalRange.topMeters} /></g></>}
         </svg>
         {gapAfter && (
           <span

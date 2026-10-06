@@ -1,5 +1,9 @@
 import * as Y from "yjs";
 // @ts-ignore Deno source import.
+import { annotationMapUpgrade } from "./annotationMap.ts";
+// @ts-ignore Deno source import.
+import { validAnnotationLines, validProjectLineCount } from "../project/annotationLines.ts";
+// @ts-ignore Deno source import.
 import { emphasisSettingPaths } from "./projectSchema.ts";
 // @ts-ignore Deno source import.
 import { isSharedLocalAlias } from "./identity.ts";
@@ -26,6 +30,7 @@ export function textSplice(before: string, after: string): { index: number; remo
 /** Runs at the synchronous edit entry, never in a React effect. Only changed
  * branches are visited; scalar/geometry commands never replace entity maps. */
 export function planRecipe(doc: Y.Doc, before: Project, after: Project, sharedDocumentId?: string | null): PlannedWrite[] {
+  if (!validProjectLineCount(after.frames) || after.frames.some(f => !validAnnotationLines(f.annotationLines))) throw new Error("Invalid annotation lines");
   if (before.id !== after.id || (after.id !== getModel(doc).metadata.get("projectId") && !isSharedLocalAlias(after.id, sharedDocumentId))) throw new Error("Shared project identity cannot change");
   const model = getModel(doc), result: PlannedWrite[] = [];
   const removed = Object.fromEntries(ENTITY_ROOTS.map(root => {
@@ -130,16 +135,33 @@ export function planRecipe(doc: Y.Doc, before: Project, after: Project, sharedDo
           else if (item.notes === undefined) record.delete("has.notes");
         } });
       }
-      for (const key of ["positions", "memberVisibility", "groupVisibility", "memberAppearanceOverrides", "objectStates", "objectAssignments"] as const) {
+      for (const key of ["positions", "memberVisibility", "groupVisibility", "memberAppearanceOverrides", "objectStates", "objectAssignments", "annotationLines"] as const) {
         if (previous[key] === item[key]) continue;
-        const aMap = previous[key] as Data ?? {}, bMap = item[key] as Data ?? {}, map = record.get(key) as Y.Map<unknown>;
+        const aMap = previous[key] as Data ?? {}, bMap = item[key] as Data ?? {};
+        let map = record.get(key) as Y.Map<unknown>;
+        if (!map && key === "annotationLines") {
+          const upgrade = annotationMapUpgrade(doc, item.id);
+          result.push({ target: { ...target, field: key }, read: () => Boolean(record.get(key)), write: () => Y.applyUpdate(doc, upgrade) });
+        }
         if ((previous[key] === undefined) !== (item[key] === undefined)) set(record, `has.${key}`, record.get(`has.${key}`), item[key] === undefined ? undefined : true, { ...target, field: `has.${key}` });
         for (const id of new Set([...Object.keys(aMap), ...Object.keys(bMap)])) {
           if (aMap[id] === bMap[id]) continue;
           const deleting = key === "objectStates" || key === "objectAssignments" ? removed.stageObjects : key === "groupVisibility" ? removed.memberGroups : removed.members;
-          if (deleting.has(id)) continue;
+          if (key !== "annotationLines" && deleting.has(id)) continue;
           const itemTarget = { ...target, field: `${key}.${id}` };
-          if (key === "objectStates") {
+          if (key === "annotationLines") {
+            const identity = orderKey(item.id, id);
+            const isDead = () => [...model.tombstones].some(([k, enabled]) => { const p = tuple(k); return enabled && p[0] === "annotationLines" && p[1] === identity; });
+            if (isDead()) continue;
+            if (aMap[id] !== undefined && bMap[id] === undefined) {
+              const deletionKey = orderKey("annotationLines", identity, crypto.randomUUID());
+              result.push({ target: itemTarget, read: () => !isDead(), write: () => model.tombstones.set(deletionKey, true) });
+            } else if (!map) {
+              checkJson(bMap[id]); const value = clone(bMap[id]);
+              result.push({ target: itemTarget, read: () => clone((record.get(key) as Y.Map<unknown> | undefined)?.get(id)),
+                write: () => (record.get(key) as Y.Map<unknown>).set(id, value) });
+            } else set(map, id, aMap[id], bMap[id], itemTarget);
+          } else if (key === "objectStates") {
             const aState = entityFields("objectState", aMap[id] as Data ?? {}), bState = entityFields("objectState", bMap[id] as Data ?? {});
             for (const f of new Set([...Object.keys(aState), ...Object.keys(bState)])) set(map, orderKey(id, f), aState[f], bState[f], { ...itemTarget, field: `${itemTarget.field}.${f}` });
           } else if (key === "objectAssignments") {

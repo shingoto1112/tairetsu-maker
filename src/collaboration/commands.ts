@@ -39,6 +39,10 @@ export class CollaborationCommands {
       ignoreRemoteMapChanges: false,
       deleteFilter: item => {
         const parent = item.parent;
+        // The shared container is immutable infrastructure. Undo may remove
+        // only this device's line, never the other device's entries in it.
+        if (parent instanceof Y.Map && item.parentSub === "annotationLines" &&
+          parent._item?.parent === model.scenes) return false;
         // Order slots are immutable history. Undo only changes the active pointer.
         if (parent instanceof Y.Array && parent._item?.parentSub === "slots" &&
           parent._item.parent instanceof Y.Map && parent._item.parent._item?.parent === model.orders) return false;

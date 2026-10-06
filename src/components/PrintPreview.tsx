@@ -1,3 +1,5 @@
+import { useId } from "react";
+import { AnnotationLines } from "./AnnotationLines";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, stageVerticalRulerPositions } from "../utils/gridEmphasis";
 import { EmphasizedGrid } from "./EmphasizedGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
@@ -752,6 +754,7 @@ const PrintStagePreview = ({
   /** Stage camera image only: at least this share of the stage width between the stage outline and every image edge (rulers count toward it). A4 never passes it. */
   outerMarginRatio?: number;
 }) => {
+  const annotationClipId = useId();
   const isParade = project.mode === "parade";
   const horizontalGuideMode = isParade
     ? normalizeParadeHorizontalMeasureMode(
@@ -1125,6 +1128,8 @@ const PrintStagePreview = ({
             y1="0"
             y2={totalDepthMeters}
           />
+          {Object.keys(frame.annotationLines ?? {}).length > 0 && <><defs><clipPath id={annotationClipId}><rect x={0} y="0" width={commonWidthMeters} height={totalDepthMeters} /></clipPath></defs>
+          <g clipPath={"url(#" + annotationClipId + ")"}><AnnotationLines lines={frame.annotationLines} top={verticalRange.topMeters} /></g></>}
         </svg>
         {gapAfter && (
           <span

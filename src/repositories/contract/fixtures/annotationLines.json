@@ -1,0 +1,4 @@
+{
+  "annotation-line-a": { "x1": 1.25, "y1": 2.5, "x2": 10.75, "y2": 5, "color": "red", "dash": "dashed" },
+  "annotation-line-b": { "x1": -4, "y1": 0, "x2": 3, "y2": 800, "color": "green", "dash": "solid" }
+}

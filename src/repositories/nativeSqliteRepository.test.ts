@@ -5,6 +5,7 @@ import type { MigrationEntry } from "./migrationTypes";
 import { NativeSqliteProjectRepository, type NativeRepositoryPlugin } from "./nativeSqliteRepository";
 import { REPOSITORY_ERROR_MESSAGES, RepositoryError, type CommitRequest, type RenameRequest, type RemoveRequest } from "./types";
 import projects from "./contract/fixtures/commitProjects.json";
+import annotationFixture from "./contract/fixtures/annotationLines.json";
 import type { Project } from "../types";
 import { runMigrationContract } from "../storage/testing/migrationContract";
 import { initialCollaboration, runCollaborationContract } from "./contract/runCollaborationContract";
@@ -39,6 +40,13 @@ const fakePlugin = (): NativeRepositoryPlugin => {
   };
 };
 describe("native SQLite adapter mapping", () => {
+  it("passes annotation contract JSON unchanged through the native bridge", async () => {
+    const repository = new NativeSqliteProjectRepository(fakePlugin());
+    const project = structuredClone(projects.stage) as Project;
+    project.frames[0].annotationLines = annotationFixture as Project["frames"][number]["annotationLines"];
+    await repository.commit({ project, localRevision: "1", expectedRepositoryRevision: null, operationId: "lines-native-contract" });
+    expect((await repository.get(project.id!))?.project.frames[0].annotationLines).toEqual(annotationFixture);
+  });
   it("rejects shared attachments before the schema-1 bridge can silently drop them", async () => {
     const plugin = fakePlugin(), call = vi.spyOn(plugin, "commitProject");
     plugin.initialize = async () => ({ json: '{"status":"ready","schemaVersion":1,"errors":[]}' });

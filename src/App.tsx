@@ -1,3 +1,5 @@
+import { copyAnnotationLines } from "./utils/annotationLines";
+import { validAnnotationLines, validProjectLineCount } from "./project/annotationLines";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./utils/horizontalGrid";
 import { useSharedSession } from "./hooks/useSharedSession";
 import { useHelpPage } from "./components/HelpPageLoader";
@@ -305,6 +307,7 @@ const cloneProject = (project: Project): Project => {
 
 const cloneFrame = (frame: FormationFrame): FormationFrame => ({
   ...frame,
+  annotationLines: copyAnnotationLines(frame.annotationLines),
   memberVisibility: frame.memberVisibility
     ? { ...frame.memberVisibility }
     : undefined,
@@ -345,6 +348,7 @@ const mergeFrameContents = (
     groupVisibility: clonedSource.groupVisibility,
     objectAssignments: clonedSource.objectAssignments,
     memberAppearanceOverrides: clonedSource.memberAppearanceOverrides,
+    annotationLines: clonedSource.annotationLines,
     positions: clonedSource.positions,
     objectStates: clonedSource.objectStates,
   };
@@ -1242,11 +1246,16 @@ function App() {
       options: { coalesceHistory?: boolean } = {},
     ) => {
       if (sharedEditorRef.current) {
-        sharedEditorRef.current.edit(recipe);
+        sharedEditorRef.current.edit(previous => {
+          const next = recipe(previous);
+          if (!validProjectLineCount(next.frames) || next.frames.some(f => !validAnnotationLines(f.annotationLines))) { setNotice("線は1シーン100本、隊列表全体5,000本までです。"); return previous; }
+          return next;
+        });
         refreshHistoryCounts(); return;
       }
       const previous = projectRef.current;
       const nextProject = recipe(previous);
+      if (!validProjectLineCount(nextProject.frames) || nextProject.frames.some(f => !validAnnotationLines(f.annotationLines))) { setNotice("線は1シーン100本、隊列表全体5,000本までです。"); return; }
       if (nextProject === previous) {
         return;
       }
@@ -3850,6 +3859,16 @@ function App() {
     return saved;
   };
 
+  const updateAnnotationLine = (id: string, line: import("./types").AnnotationLine | null) => {
+    const frameId = displayFrame?.id; if (!frameId || isPlaying) return;
+    updateProject(previous => ({ ...previous, frames: previous.frames.map(f => {
+      if (f.id !== frameId) return f;
+      const annotationLines = { ...f.annotationLines };
+      if (line) annotationLines[id] = line; else delete annotationLines[id];
+      return { ...f, annotationLines };
+    }) }), "線の編集", { coalesceHistory: false });
+  };
+
   const createFrameDraft = (sourceProject: Project, timeSec?: number): FormationFrame => {
     const sortedFrames = sortFrames(sourceProject.frames);
     const lastFrame = sortedFrames[sortedFrames.length - 1];
@@ -3886,6 +3905,7 @@ function App() {
       memberAppearanceOverrides: selectedFrame?.memberAppearanceOverrides
         ? { ...selectedFrame.memberAppearanceOverrides }
         : undefined,
+      annotationLines: copyAnnotationLines(displayFrame?.annotationLines),
       positions: Object.fromEntries(
         Object.entries(snapshot.positions).map(([memberId, position]) => [
           memberId,
@@ -3904,6 +3924,7 @@ function App() {
   const addFrame = (timeSec?: number) => {
 
     const frame = createFrameDraft(projectRef.current, timeSec);
+    if (!validProjectLineCount([...projectRef.current.frames, frame])) { setNotice("隊列表全体の線は5,000本までです。線を減らしてからシーンを追加してください。"); return; }
     updateProject((previous) => ({
       ...previous,
       frames: [...previous.frames, frame],
@@ -4356,6 +4377,7 @@ function App() {
       label: `${clipboard.frame.label} コピー`,
       timeSec: Number((clipboard.frame.timeSec + 4).toFixed(2)),
     };
+    if (!validProjectLineCount([...projectRef.current.frames, frame])) { setNotice("隊列表全体の線は5,000本までです。線を減らしてからシーンを複製してください。"); return; }
     updateProject((previous) => {
       const selectedIndex = previous.frames.findIndex(
         (item) => item.id === selectedFrameId,
@@ -7623,6 +7645,7 @@ function App() {
 
                   onSelect={selectStageElement}
                   onStagePointerPositionChange={handleStagePointerPositionChange}
+                  onAnnotationLineChange={updateAnnotationLine}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
                   canUndo={
@@ -7687,6 +7710,7 @@ function App() {
 
                   onSelect={selectStageElement}
                   onStagePointerPositionChange={handleStagePointerPositionChange}
+                  onAnnotationLineChange={updateAnnotationLine}
                   onMoveMember={moveMember}
                   onUpdateObjectState={moveObject}
                   canUndo={

@@ -1,5 +1,7 @@
 import * as Y from "yjs";
 // @ts-ignore Deno source import.
+import { validAnnotationLines, validProjectLineCount } from "../project/annotationLines.ts";
+// @ts-ignore Deno source import.
 import type { Project } from "../types.ts";
 // @ts-ignore Deno source import.
 import { ENTITY_ROOTS, getModel, SCHEMA_VERSION, type EntityRoot, type EntityRecord } from "./model.ts";
@@ -158,6 +160,7 @@ export function initializeProject(doc: Y.Doc, project: Project): void {
   }, Symbol("collaboration initialization"));
 }
 export function assertProjectInput(project: Project): void {
+  if (!validProjectLineCount(project.frames) || project.frames.some(f => !validAnnotationLines(f.annotationLines))) throw new Error("Invalid annotation lines");
   for (const root of ENTITY_ROOTS) {
     const ids = ((project[listField(root)] ?? []) as { id?: string }[]).map(item => item.id).filter(id => id !== undefined);
     if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error("Collaboration requires unique nonempty entity IDs");
@@ -193,7 +196,7 @@ export function validateModel(doc: Y.Doc): void {
     if (!(record instanceof Y.Map)) throw new Error("Invalid collaboration entity");
     if (root === "scenes") {
       const scene = record as unknown as EntityRecord;
-      if (!(scene.get("notes") instanceof Y.Text) || sceneMaps.some(key => !(scene.get(key) instanceof Y.Map))) throw new Error("Invalid collaboration scene");
+      if (!(scene.get("notes") instanceof Y.Text) || sceneMaps.some(key => !(scene.get(key) instanceof Y.Map) && !(key === "annotationLines" && !scene.has(key)))) throw new Error("Invalid collaboration scene");
     }
   }
 }

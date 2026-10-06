@@ -1,3 +1,4 @@
+import { validAnnotationLines, validProjectLineCount } from "./annotationLines";
 import type { Project } from "../types";
 import { assertStorageId, isValidStorageId } from "../repositories/ids";
 import {
@@ -33,7 +34,7 @@ export const validateProjectStructure = (value: unknown): RepositoryResult<Proje
       (object(p.audio) && !isValidStorageId(p.audio.id))) {
     return { ok: false, error: new RepositoryError("INVALID_ID") };
   }
-  const valid = ["title", "stage", "members", "stageObjects", "frames"].some(k => k in p) &&
+  const valid = validProjectLineCount(p.frames) && ["title", "stage", "members", "stageObjects", "frames"].some(k => k in p) &&
     fields(p, ["title", "createdAt", "updatedAt", "lastOpenedAt"], v => typeof v === "string") &&
     fields(p, ["version"], finite) &&
     fields(p, ["mode"], oneOf("stage", "parade")) &&
@@ -66,7 +67,7 @@ export const validateProjectStructure = (value: unknown): RepositoryResult<Proje
       fields(o, ["widthMeters", "heightMeters", "defaultX", "defaultY", "defaultRotation", "zIndex"], finite)) &&
     array(p.frames, f => typeof f.id === "string" && typeof f.label === "string" && finite(f.timeSec) &&
       fields(f, ["section", "notes"], string) &&
-      map(f.positions, position) &&
+      validAnnotationLines(f.annotationLines) && map(f.positions, position) &&
       map(f.objectStates, s => object(s) && typeof s.objectId === "string" &&
         ["x", "y", "widthMeters", "heightMeters", "rotation", "zIndex"].every(k => finite(s[k])) && typeof s.visible === "boolean") &&
       map(f.memberVisibility, v => typeof v === "boolean") && map(f.groupVisibility, v => typeof v === "boolean") &&

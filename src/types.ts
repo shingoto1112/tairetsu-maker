@@ -206,7 +206,14 @@ export type MemberAppearanceOverride = {
   color?: string;
 };
 
+export type AnnotationLine = {
+  x1: number; y1: number; x2: number; y2: number;
+  color: "black" | "red" | "blue" | "green";
+  dash: "solid" | "dashed";
+};
+
 export type FormationFrame = {
+  annotationLines?: Record<string, AnnotationLine>;
   id: string;
   label: string;
   timeSec: number;

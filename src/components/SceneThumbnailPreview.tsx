@@ -1,12 +1,23 @@
+import { AnnotationLines } from "./AnnotationLines";
 import { memo } from "react";
 import type { FormationFrame, Project, StageObject } from "../types";
 import { createDefaultObjectState, getSnapshotForFrame } from "../utils/interpolation";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
+import { getSafeParadeCanvasDistance } from "../utils/parade";
 
 const getFrameStageSize = (
   project: Project,
   frame: FormationFrame,
 ): { widthMeters: number; depthMeters: number } => {
+  if (project.mode === "parade") {
+    return {
+      widthMeters: project.paradeSettings?.width ?? 20,
+      depthMeters: getSafeParadeCanvasDistance(
+        project.paradeSettings?.totalDistance ?? 100,
+        project.paradeSettings?.backwardDistanceMeters ?? 0,
+      ),
+    };
+  }
   const useGlobal = project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true;
   return {
     widthMeters: useGlobal
@@ -58,6 +69,7 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
         strokeOpacity="0.35"
         strokeWidth="0.035"
       />
+      <AnnotationLines lines={frame.annotationLines} />
       {project.stageObjects.map((object) => {
         const state =
           snapshot.objectStates[object.id] ??
@@ -119,5 +131,6 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
   return previous.visible === next.visible && previous.frame === next.frame &&
     a.frames === b.frames && a.members === b.members && a.stageObjects === b.stageObjects &&
     a.memberGroups === b.memberGroups && a.stage === b.stage &&
+    a.mode === b.mode && a.paradeSettings === b.paradeSettings &&
     a.useGlobalStageSize === b.useGlobalStageSize && a.useGlobalStageWidth === b.useGlobalStageWidth;
 });

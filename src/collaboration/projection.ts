@@ -81,8 +81,11 @@ export function projectSharedDocument(doc: Y.Doc, base: Project, sharedDocumentI
         const localView = localScenes.get(id)?.sceneViewState;
         if (localView !== undefined) item.sceneViewState = clone(localView);
         for (const key of sceneMaps) {
-          const map = record.get(key) as Y.Map<unknown>, values: Data = {};
-          if (key === "objectStates") {
+          const map = record.get(key) as Y.Map<unknown> | undefined, values: Data = {};
+          if (!map) { if (key === "annotationLines" && localScenes.get(id)?.annotationLines !== undefined) item[key] = {}; continue; }
+          if (key === "annotationLines") {
+            for (const [lineId, value] of map) if (!dead.has(orderKey("annotationLines", orderKey(id, lineId)))) values[lineId] = clone(value);
+          } else if (key === "objectStates") {
             for (const [entry, value] of map) {
               const [objectId, field] = JSON.parse(entry) as string[];
               if (live.stageObjects.has(objectId)) ((values[objectId] ??= { objectId }) as Data)[field] = clone(value);
@@ -98,7 +101,8 @@ export function projectSharedDocument(doc: Y.Doc, base: Project, sharedDocumentI
             const targets = key === "groupVisibility" ? live.memberGroups : live.members;
             for (const [target, value] of map) if (targets.has(target)) values[target] = clone(value);
           }
-          if (record.get(`has.${key}`) || key === "positions" || key === "objectStates" || Object.keys(values).length) item[key] = values;
+          if (record.get(`has.${key}`) || key === "positions" || key === "objectStates" ||
+            key === "annotationLines" && localScenes.get(id)?.annotationLines !== undefined || Object.keys(values).length) item[key] = values;
         }
       }
       if (root === "memberGroups" || root === "objectGroups") {

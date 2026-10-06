@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import { Maximize2, Minimize2, Pause, Play, Redo2, Save, Undo2 } from "lucide-react";
 import { StageTimeBar } from "./StageTimeBar";
 import { StageMoreMenu } from "./StageMoreMenu";
 
 type Props = {
+  annotationControls?: ReactNode;
   currentTime: number; duration: number; audioName: string | null; sceneLabel: string;
   isPlaying: boolean; isFullscreen: boolean; isReadOnly: boolean;
   canUndo: boolean; canRedo: boolean; zoom: number; pinchLocked: boolean;
@@ -24,6 +26,7 @@ export const CompactStageControls = (props: Props) => {
       <StageTimeBar compact currentTime={props.currentTime} duration={props.duration} audioName={props.audioName} onSeek={props.onSeek} />
     </div>
     <div className="stage-export-header__actions">
+      {props.annotationControls}
       <span className="stage-current-scene" title={props.sceneLabel}><span className="stage-current-scene__label">{props.sceneLabel}</span></span>
       {props.isReadOnly && <span className="stage-readonly-pill">閲覧中</span>}
       <button className="mini-button icon-only" type="button" aria-label="現在のシーンを保存" title="シーン保存"

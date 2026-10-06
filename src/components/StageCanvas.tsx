@@ -1,3 +1,5 @@
+import { useAnnotationEditor } from "./useAnnotationEditor";
+import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle, stageVerticalRulerPositions } from "../utils/gridEmphasis";
 import { horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
@@ -86,6 +88,7 @@ type StageCanvasProps = {
   remoteLayer?: ReactNode;
   viewStates?: Map<string, SceneViewState>;
   compact?: boolean;
+  onAnnotationLineChange?: (id: string, line: AnnotationLine | null) => void;
   project: Project;
   snapshot: StageSnapshot;
   selected: Selection;
@@ -348,6 +351,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     {
       compact = false,
       viewStates,
+      onAnnotationLineChange,
       project,
       snapshot,
       selected,
@@ -1882,10 +1886,15 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       menu: (event: ReactMouseEvent<HTMLDivElement>, id: string) => memberHandlersRef.current.openContextMenu(event, { type: "member", id }),
     }), []);
 
+    const annotation = useAnnotationEditor({ lines: project.frames.find(f => f.id === selectedFrameId)?.annotationLines,
+      width: stage.widthMeters, depth: stage.depthMeters, step: stage.gridSizeMeters, counting: horizontalGuideMode,
+      reflected: viewerPerspective === "performer", context: project.id + ":" + selectedFrameId, disabled: isPlaying || isReadOnly,
+      onChange: onAnnotationLineChange });
     return (
       <main className="stage-area">
         <div className={isReadOnly ? "stage-frame is-read-only" : "stage-frame"}>
           {compact ? <CompactStageControls
+            annotationControls={annotation.toolbar}
             currentTime={currentTime} duration={audioDuration} audioName={audioName}
             sceneLabel={selectedFrameLabel} isPlaying={isPlaying} isFullscreen={isFullscreen}
             isReadOnly={isReadOnly} canUndo={canUndo} canRedo={canRedo}
@@ -1933,6 +1942,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               />
             </div>
             <div className="stage-export-header__actions">
+              {annotation.toolbar}
               <span
                 className="stage-current-scene"
                 title={`${selectedFrameLabel} / ${formatTime(
@@ -2130,6 +2140,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 data-stage-surface="true"
                 className={[
                   "stage-surface",
+                  annotation.active ? "is-annotation-editing" : "",
                   stage.showGrid ? "has-grid" : "",
                   isPlaying ? "is-previewing" : "",
                   mode === "animation" ? "is-animation-editing" : "",
@@ -2154,6 +2165,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onPointerCancel={stopTouchContextMenu}
                 onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
               >
+              {annotation.layer}
               {remoteLayer}
               {(stageGridVerticalTicks.length > 0 || stageGridHorizontalTicks.length > 0) && (
                 <div className="stage-grid-layer" aria-hidden="true">

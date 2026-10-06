@@ -7590,3 +7590,24 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .vertical-origin-options > div { display: flex; flex-wrap: wrap; gap: 12px 20px; }
 .vertical-origin-options label { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; width: auto; min-height: 44px; font-size: 14px; color: #334155; }
 .vertical-origin-options input[type="radio"] { width: 18px; height: 18px; min-width: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; }
+
+/* Annotation SVG changes no stage/export geometry. */
+.annotation-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 3; }
+.annotation-layer.is-editing { pointer-events: auto; touch-action: none; z-index: 40; cursor: crosshair; }
+.is-annotation-editing > :not(.annotation-layer),
+.is-annotation-editing > :not(.annotation-layer) * { pointer-events: none !important; }
+.annotation-toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 4px; }
+.annotation-toolbar button, .annotation-toolbar select { min-height: 44px; }
+.annotation-toolbar select { width: auto; max-width: 100px; }
+.stage-export-header__actions > .annotation-toolbar { flex: 0 0 auto; }
+.parade-control-panel > .annotation-toolbar { position: sticky; top: -8px; background: white; z-index: 2; }
+@media screen and (max-width: 840px) {
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact:has(.annotation-toolbar select) {
+    flex-basis: auto; height: auto;
+  }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact:has(.annotation-toolbar select) .stage-export-header__actions {
+    flex: 0 0 auto; flex-wrap: wrap; min-height: 44px;
+  }
+  .stage-export-header--compact .annotation-toolbar:has(select) { flex: 0 0 100%; max-width: 100%; }
+}
+@media print { .annotation-toolbar, .annotation-layer [data-ephemeral] { display: none !important; } }

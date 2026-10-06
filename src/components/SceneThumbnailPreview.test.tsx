@@ -6,6 +6,22 @@ import { SceneThumbnailPreview } from "./SceneThumbnailPreview";
 
 afterEach(cleanup);
 describe("scene preview rendering", () => {
+  it("shows distant parade lines without inheriting deleted lines", () => {
+    const project = createSampleProject();
+    project.mode = "parade";
+    project.paradeSettings = { width: 18, totalDistance: 120, backwardDistanceMeters: 5,
+      cellSizeMeters: 1, direction: "up", rulerPosition: "both", horizontalMeasureMode: "centerSplit",
+      emphasizeEvery5m: true, emphasizeEvery10m: true };
+    const frame = { ...project.frames[0], annotationLines: {
+      distant: { x1: 2, y1: 110, x2: 16, y2: 115, color: "red" as const, dash: "dashed" as const },
+    } };
+    project.frames = [frame, { ...project.frames[1], annotationLines: {} }];
+    const view = render(<SceneThumbnailPreview project={project} frame={frame} visible />);
+    expect(view.container.querySelector("svg")!.getAttribute("viewBox")).toBe("0 0 18 125");
+    expect(view.container.querySelector('[stroke-dasharray="8 6"]')!.getAttribute("y1")).toBe("110");
+    view.rerender(<SceneThumbnailPreview project={project} frame={project.frames[1]} visible />);
+    expect(view.container.querySelector('[stroke-dasharray="8 6"]')).toBeNull();
+  });
   it("keeps inherited positions fresh after an earlier scene is edited", () => {
     const project = createSampleProject();
     const id = project.members[0].id;

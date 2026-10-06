@@ -1,3 +1,4 @@
+import { validAnnotationLines, validProjectLineCount } from "../project/annotationLines";
 import type JSZipType from "jszip";
 import {
   MAX_AUDIO_FILE_BYTES,
@@ -196,8 +197,9 @@ const readProjectFromJsonBuffer = (buffer: ArrayBuffer): Project => {
     text,
     "JSONファイルとして読み込めませんでした。",
   );
+  const checkLines = (project: Project) => { if (!validProjectLineCount(project.frames) || project.frames.some(f => !validAnnotationLines(f.annotationLines))) throw new Error("線のデータが不正か、本数の上限を超えています。"); return project; };
   if (isProjectLike(parsed)) {
-    return parsed;
+    return checkLines(parsed);
   }
   if (
     parsed &&
@@ -205,7 +207,7 @@ const readProjectFromJsonBuffer = (buffer: ArrayBuffer): Project => {
     "project" in parsed &&
     isProjectLike((parsed as { project?: unknown }).project)
   ) {
-    return (parsed as { project: Project }).project;
+    return checkLines((parsed as { project: Project }).project);
   }
   throw new Error("隊列表のJSONデータが見つかりませんでした。");
 };
@@ -246,7 +248,7 @@ const readPayloadFromZip = async (
     ),
     "隊列表データが壊れている可能性があります。",
   );
-  if (!isProjectLike(project)) {
+  if (!isProjectLike(project) || !validProjectLineCount(project.frames) || project.frames.some(f => !validAnnotationLines(f.annotationLines))) {
     throw new Error("隊列表データが壊れている可能性があります。");
   }
 

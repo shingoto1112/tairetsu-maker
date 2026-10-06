@@ -14,7 +14,7 @@ export const atoms: Partial<Record<string, Record<string, string[]>>> = {
   movementPlans: { path: ["pathType", "controlPoint", "waypoints"] },
   movementPaths: { path: ["pathType", "type", "controlPoint"] },
 };
-export const sceneMaps = ["positions", "objectStates", "memberVisibility", "groupVisibility", "memberAppearanceOverrides", "objectAssignments"] as const;
+export const sceneMaps = ["positions", "objectStates", "memberVisibility", "groupVisibility", "memberAppearanceOverrides", "objectAssignments", "annotationLines"] as const;
 
 export const settingAtoms: Record<string, string[]> = {
   title: ["title"], mode: ["mode"],

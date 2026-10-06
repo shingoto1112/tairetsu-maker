@@ -255,6 +255,7 @@ export const normalizeProjectWithContext = (project: Project, context: Normaliza
       : undefined,
     positions: frame.positions ?? {},
     objectStates: frame.objectStates ?? {},
+    annotationLines: frame.annotationLines ?? {},
     sceneViewState:
       mode === "parade" && frame.sceneViewState
         ? {

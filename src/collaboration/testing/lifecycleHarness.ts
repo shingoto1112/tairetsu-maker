@@ -1,6 +1,7 @@
 // DEV-only, imported by an inert Playwright route. Never imported by App.
 import projects from "../../repositories/contract/fixtures/commitProjects.json";
 import type { Project } from "../../types";
+import type { AnnotationLine } from "../../types";
 import { IndexedDbProjectRepository } from "../../repositories/indexedDbRepository";
 import { SaveCoordinator } from "../../storage/saveCoordinator";
 import { readCloudAuthSession, saveCloudAuthSession } from "../../cloud/session";
@@ -68,6 +69,16 @@ export async function createLifecycleHarness(options: { url: string; actor?: str
       editor!.edit(p => ({ ...p, frames: p.frames.map((f, i) => i ? f : { ...f, positions: { ...f.positions, [memberId]: { x, y: 2 } } }) }));
       if (!await coordinator!.flush()) throw new Error("Test local flush failed"); provider!.wake();
     },
+    async line(id: string, line: AnnotationLine | null) {
+      editor!.edit(p => ({ ...p, frames: p.frames.map((f, i) => {
+        if (i) return f;
+        const annotationLines = { ...f.annotationLines };
+        if (line) annotationLines[id] = line; else delete annotationLines[id];
+        return { ...f, annotationLines };
+      }) }));
+      if (!await coordinator!.flush()) throw new Error("Test local flush failed"); provider!.wake();
+    },
+    async undoLine() { editor!.undo(); if (!await coordinator!.flush()) throw new Error("Test undo flush failed"); provider!.wake(); },
     online: (value: boolean) => provider!.setOnline(value), state: () => provider?.snapshot,
     lifecycleState: (id = localId!) => lifecycle.state(id), read: (id = localId!) => repository.get(id),
     async rescue(id = localId!) { const request = await lifecycle.prepareIndependentCopy(id, id === localId ? coordinator?.projectProjection ?? undefined : undefined); await repository.commit(request); return request; },

@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 // @ts-ignore Deno source import.
-import type { Position, Project } from "../types.ts";
+import type { AnnotationLine, Position, Project } from "../types.ts";
 // @ts-ignore Deno source import.
 import { assertDocument as assertLegacy } from "./legacyModel.ts";
 // @ts-ignore Deno source import.
@@ -55,4 +55,10 @@ export function joinSharedDocument(initialState: Uint8Array): Y.Doc {
 export function readPosition(doc: Y.Doc, sceneId: string, memberId: string): Position | undefined {
   const value = getModel(doc).scenes.get(sceneId)?.get("positions")?.get(memberId);
   return value ? { x: value.x, y: value.y } : undefined;
+}
+/** Raw atomic value; projection also applies scene/line tombstones. */
+export function readAnnotationLine(doc: Y.Doc, sceneId: string, lineId: string): AnnotationLine | undefined {
+  const scene = getModel(doc).scenes.get(sceneId) as unknown as EntityRecord | undefined;
+  const line = (scene?.get("annotationLines") as Y.Map<AnnotationLine> | undefined)?.get(lineId);
+  return line ? { ...line } : undefined;
 }

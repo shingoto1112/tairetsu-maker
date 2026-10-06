@@ -1,3 +1,5 @@
+import { useAnnotationEditor } from "./useAnnotationEditor";
+import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle } from "../utils/gridEmphasis";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
@@ -74,6 +76,7 @@ type ParadeCanvasProps = {
   ephemeral?: EphemeralSession | null;
   remoteLayer?: ReactNode;
   isPlaying?: boolean;
+  onAnnotationLineChange?: (id: string, line: AnnotationLine | null) => void;
   project: Project;
   snapshot: StageSnapshot;
   selected: Selection;
@@ -335,6 +338,7 @@ const getObjectFill = (object: Project["stageObjects"][number]) => {
 export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
   (
     {
+      onAnnotationLineChange,
       project,
       snapshot,
       selected,
@@ -432,6 +436,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       settings.totalDistance,
       backwardDistanceMeters,
     );
+    const annotation = useAnnotationEditor({ lines: currentFrame?.annotationLines,
+      width: settings.width, depth: canvasDistanceMeters, step: settings.cellSizeMeters, counting: settings.horizontalMeasureMode,
+      context: project.id + ":" + selectedFrameId, disabled: Boolean(isPlaying) || isReadOnly, onChange: onAnnotationLineChange });
     const pxPerMeter = BASE_PX_PER_METER * zoom;
     const canvasWidthPx = settings.width * pxPerMeter;
     const canvasHeightPx = canvasDistanceMeters * pxPerMeter;
@@ -2078,6 +2085,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               閲覧中
             </p>
           )}
+          {annotation.toolbar}
           <section className="parade-control-section">
             <h3>前シーン反映</h3>
             <button
@@ -2291,7 +2299,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               </div>
             )}
             <div
-              className="parade-stage"
+              className={`parade-stage ${annotation.active ? "is-annotation-editing" : ""}`}
               ref={stageRef}
               style={{
                 gridColumn: 2,
@@ -2314,6 +2322,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               onPointerCancel={stopTouchContextMenu}
               onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
             >
+              {annotation.layer}
               {remoteLayer}
               <div className="parade-grid-layer" aria-hidden="true">
                 {verticalGridTicks.map((meter) => (
