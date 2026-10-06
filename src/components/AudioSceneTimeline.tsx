@@ -134,7 +134,8 @@ export const AudioSceneTimeline = (props: Props) => {
           onClick={() => { cancel(); setSeconds(value); }}>{value}秒</button>)}
       </div>
     </div>
-    <div className="audio-timeline__viewport" ref={viewport} onPointerDown={begin} onPointerMove={move}
+    {/* Focus (e.g. a ▼ button) must never scroll this window: positions come only from the transform. */}
+    <div className="audio-timeline__viewport" ref={viewport} onScroll={event => { if (event.currentTarget.scrollLeft || event.currentTarget.scrollTop) { event.currentTarget.scrollLeft = 0; event.currentTarget.scrollTop = 0; } }} onPointerDown={begin} onPointerMove={move}
       onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={cancel}
       onClick={event => {
         if ((event.target as HTMLElement).closest("button")) return;

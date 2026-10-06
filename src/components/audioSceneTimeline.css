@@ -5,7 +5,7 @@
 .audio-timeline__zoom { display: flex; gap: 4px; }
 .audio-timeline__zoom button { background: white; border: 1px solid #dbe7ef; border-radius: 999px; color: #475569; font-size: 13px; min-height: 36px; padding: 4px 12px; }
 .audio-timeline__zoom button[aria-pressed="true"] { background: #f0fdfa; border-color: var(--accent, #0d8b78); color: var(--accent, #0d8b78); font-weight: 700; }
-.audio-timeline__viewport { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 26px; height: 154px; overflow: hidden; position: relative; cursor: ew-resize; touch-action: pan-y; user-select: none; }
+.audio-timeline__viewport { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 26px; height: 154px; overflow: hidden; overflow: clip; position: relative; cursor: ew-resize; touch-action: pan-y; user-select: none; }
 .audio-timeline__track { height: 100%; position: absolute; top: 0; left: 0; will-change: transform; pointer-events: none; }
 .audio-timeline__wave { height: 72px; width: 100%; left: 0; position: absolute; top: 38px; pointer-events: none; }
 .audio-timeline__waveform { --waveform-height: 72px; will-change: transform; }
