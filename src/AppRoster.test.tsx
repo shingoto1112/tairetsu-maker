@@ -78,7 +78,7 @@ describe("App roster confirmation integration", () => {
       expect(canvas.project!.frames.find(frame => frame.id === canvas.selectedFrameId)!.objectStates.o_chair.widthMeters).toBe(.01);
     }
     for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
-      fireEvent.click(screen.getByRole("tab", { name: "メモ" }));
+      fireEvent.click(screen.getByRole("tab", { name: "音源" }));
       fireEvent.keyDown(window, { key: "1", ...modifier });
       await waitFor(() => expect(document.activeElement).toBe(within(screen.getByRole("region", { name: "選択対象の位置" })).getByRole("spinbutton", { name: /^横（/ })));
       fireEvent.blur(document.activeElement!);

@@ -58,7 +58,7 @@ try {
   await x.fill('-1.13'); await x.press('Tab');
   await page.keyboard.press('Control+z');
   await expect(x).toHaveValue('-2');
-  await page.getByRole('tab', { name: 'メモ', exact: true }).click();
+  await page.getByRole('tab', { name: '音源', exact: true }).click();
   await page.keyboard.press('Control+1'); await expect(x).toBeFocused();
   await page.getByRole('tab', { name: '道具', exact: true }).click();
   await picker.getByRole('button', { name: /^練習用の椅子/ }).click();

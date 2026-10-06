@@ -7,6 +7,10 @@ import { SceneTimeInput } from "./SceneTimeInput";
 import { sortFrames } from "../utils/interpolation";
 import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import type { FormationFrame } from "../types";
+import { createSampleProject } from "../sampleProject";
+import { createSharedDocument } from "../collaboration/model";
+import { CollaborationCommands } from "../collaboration/commands";
+import { SharedNotesAdapter } from "../collaboration/notesAdapter";
 vi.mock("../utils/scrollWithinContainer", () => ({ scrollWithinContainer: vi.fn() }));
 const frames: FormationFrame[] = [
   { id: "late", label: "後", timeSec: 30, section: "サビ", positions: {}, objectStates: {} },
@@ -75,4 +79,32 @@ it("holds a local draft across remote updates and commits last-writer wins once"
   view.rerender(<SceneTimeInput value={25.5} onCommit={commit} />);
   input.focus(); fireEvent.change(input, { target: { value: "" } }); fireEvent.blur(input);
   expect(input.value).toBe("25.5"); expect(commit).toHaveBeenCalledTimes(1);
+});
+
+it("edits the memo through the shared notes while co-editing (no whole-value overwrite)", () => {
+  const project = createSampleProject(); project.id = "timeline-notes"; project.frames[0].notes = "abc";
+  const doc = createSharedDocument(project), commands = new CollaborationCommands(doc);
+  const adapter = new SharedNotesAdapter(doc, commands, project.frames[0].id);
+  try {
+    const p = { ...props(), frames: sortFrames(project.frames), selectedFrameId: project.frames[0].id,
+      getSharedNotes: (id: string) => id === project.frames[0].id ? adapter : undefined };
+    render(<Timeline {...p} />);
+    const memo = screen.getByRole("textbox", { name: "シーンメモ" }) as HTMLTextAreaElement;
+    expect(memo.value).toBe("abc");
+    fireEvent.change(memo, { target: { value: "abcd" } });
+    expect(adapter.value).toBe("abcd");
+    expect(p.onUpdateFrame).not.toHaveBeenCalled();
+  } finally { commands.destroy(); doc.destroy(); }
+});
+
+it("does not auto-scroll the list while typing in the scene details", () => {
+  const p = props();
+  const view = render(<Timeline {...p} />);
+  act(() => { raf.splice(0).forEach((callback) => callback(0)); });
+  vi.mocked(scrollWithinContainer).mockClear();
+  (screen.getByRole("textbox", { name: "シーンメモ" }) as HTMLTextAreaElement).focus();
+  // A remote time change re-sorts the list while the memo has focus.
+  view.rerender(<Timeline {...p} frames={sortFrames(frames.map((frame) => frame.id === "late" ? { ...frame, timeSec: 5 } : frame))} />);
+  act(() => { raf.splice(0).forEach((callback) => callback(0)); });
+  expect(scrollWithinContainer).not.toHaveBeenCalled();
 });

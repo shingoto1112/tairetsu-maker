@@ -14,6 +14,8 @@ import { useEffect, useRef, useState } from "react";
 import { FormationFrame } from "../types";
 import { formatTime } from "../utils/time";
 import { SceneTimeInput } from "./SceneTimeInput";
+import { SceneNotesField } from "./SceneNotesField";
+import type { SharedNotesAdapter } from "../collaboration/notesAdapter";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
@@ -52,6 +54,8 @@ type TimelineProps = {
     includeVisible: boolean,
     selectedOnly?: boolean,
   ) => void;
+  /** Shared notes of a scene while co-editing; the memo then edits text, not the whole value. */
+  getSharedNotes?: (frameId: string) => SharedNotesAdapter | undefined;
 };
 
 export const Timeline = ({
@@ -83,6 +87,7 @@ export const Timeline = ({
   canPasteFrame,
   sceneOrderSaveStatus,
   onApplyPreviousSceneState,
+  getSharedNotes,
 }: TimelineProps) => {
   const [includePreviousObjectVisibility, setIncludePreviousObjectVisibility] =
     useState(false);
@@ -98,6 +103,8 @@ export const Timeline = ({
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
+      // Do not move the list while someone is typing in the scene details (memo, label, time).
+      if (inlineDetailsRef.current?.contains(document.activeElement)) return;
       scrollWithinContainer(inlineDetailsRef.current, {
         behavior: "smooth",
         block: "nearest",
@@ -198,15 +205,14 @@ export const Timeline = ({
 
       <label className="scene-detail-notes">
         メモ
-        <textarea
+        <SceneNotesField
+          frame={frame}
+          sharedNotes={getSharedNotes?.(frame.id)}
           className="scene-notes-textarea compact"
-          value={frame.notes ?? ""}
           disabled={sceneDisabled}
           title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-          onChange={(event) =>
-            onUpdateFrame(frame.id, { notes: event.target.value })
-          }
-          placeholder="このシーンの注意点、道具の操作メモ、隊列の確認メモを書けます。"
+          onUpdateFrame={onUpdateFrame}
+          placeholder="このシーンの注意点、移動のきっかけ、道具の操作メモを書けます。"
         />
       </label>
 

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { SceneNotesPanel } from "./SceneNotesPanel";
+import { SceneNotesField } from "./SceneNotesField";
 import { createSampleProject } from "../sampleProject";
 import { createSharedDocument, joinSharedDocument, getModel, REMOTE_ORIGIN } from "../collaboration/model";
 import { CollaborationCommands } from "../collaboration/commands";
@@ -15,7 +15,7 @@ it("shared textarea keeps the composing DOM draft across remote updates, applies
   const doc = createSharedDocument(p), other = joinSharedDocument(Y.encodeStateAsUpdate(doc)), commands = new CollaborationCommands(doc);
   const notes = new SharedNotesAdapter(doc, commands, p.frames[0].id), updateFrame = vi.fn();
   try {
-    const ui = render(<SceneNotesPanel frame={p.frames[0]} sceneNumber={1} sharedNotes={notes} onUpdateFrame={updateFrame} />);
+    const ui = render(<SceneNotesField frame={p.frames[0]} sharedNotes={notes} onUpdateFrame={updateFrame} />);
     const textarea = ui.getByRole("textbox", { name: "シーンメモ" }) as HTMLTextAreaElement;
     fireEvent.compositionStart(textarea);
     fireEvent.change(textarea, { target: { value: "a日本語c" } });
@@ -38,10 +38,27 @@ it("remote insertion preserves the textarea caret using relative selection ancho
   const p = createSampleProject(); p.id = "notes-caret"; p.frames[0].notes = "abc";
   const doc = createSharedDocument(p), commands = new CollaborationCommands(doc), notes = new SharedNotesAdapter(doc, commands, p.frames[0].id);
   try {
-    const ui = render(<SceneNotesPanel frame={p.frames[0]} sceneNumber={1} sharedNotes={notes} onUpdateFrame={vi.fn()} />);
+    const ui = render(<SceneNotesField frame={p.frames[0]} sharedNotes={notes} onUpdateFrame={vi.fn()} />);
     const textarea = ui.getByRole("textbox", { name: "シーンメモ" }) as HTMLTextAreaElement;
     textarea.focus(); textarea.setSelectionRange(2, 2); fireEvent.select(textarea);
     act(() => doc.transact(() => (getModel(doc).scenes.get(p.frames[0].id)!.get("notes") as unknown as Y.Text).insert(0, "R"), REMOTE_ORIGIN));
     expect(textarea.value).toBe("Rabc"); expect(textarea.selectionStart).toBe(3); expect(textarea.selectionEnd).toBe(3);
+  } finally { commands.destroy(); doc.destroy(); }
+});
+it("commits the text typed so far to the old scene when the scene changes mid-composition", () => {
+  const p = createSampleProject(); p.id = "notes-switch"; p.frames[0].notes = "abc"; p.frames[1].notes = "xyz";
+  const doc = createSharedDocument(p), commands = new CollaborationCommands(doc);
+  const first = new SharedNotesAdapter(doc, commands, p.frames[0].id), second = new SharedNotesAdapter(doc, commands, p.frames[1].id);
+  try {
+    const ui = render(<SceneNotesField frame={p.frames[0]} sharedNotes={first} onUpdateFrame={vi.fn()} />);
+    const textarea = ui.getByRole("textbox", { name: "シーンメモ" }) as HTMLTextAreaElement;
+    fireEvent.compositionStart(textarea);
+    fireEvent.change(textarea, { target: { value: "abcにほんご" } });
+    expect(first.value).toBe("abc");
+    // Playback moves to the next scene before compositionend fires.
+    ui.rerender(<SceneNotesField frame={p.frames[1]} sharedNotes={second} onUpdateFrame={vi.fn()} />);
+    expect(first.value).toBe("abcにほんご");
+    expect(second.value).toBe("xyz");
+    expect((ui.getByRole("textbox", { name: "シーンメモ" }) as HTMLTextAreaElement).value).toBe("xyz");
   } finally { commands.destroy(); doc.destroy(); }
 });

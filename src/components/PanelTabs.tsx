@@ -6,7 +6,6 @@ import {
   ListTodo,
   Music,
   Ruler,
-  StickyNote,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -21,7 +20,6 @@ export type PanelTabId =
   | "assignments"
   | "audio"
   | "timeline"
-  | "notes"
   | "stage";
 
 type PanelTab = {
@@ -46,7 +44,6 @@ const tabs: PanelTab[] = [
   { id: "objects", label: "道具", icon: Box },
   { id: "assignments", label: "割当", icon: ClipboardList },
   { id: "audio", label: "音源", icon: Music },
-  { id: "notes", label: "メモ", icon: StickyNote },
   { id: "stage", label: "ステージ", icon: Ruler },
 ];
 

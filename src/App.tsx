@@ -63,7 +63,6 @@ import { confirmAssignmentUpdate } from "./utils/assignmentUpdate";
 import { isModalOpen } from "./utils/modal";
 import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName";
 const ExportCompletionDialog = lazy(() => import("./components/ExportCompletionPanel").then((module) => ({ default: module.ExportCompletionDialog })));
-const SceneNotesPanel = lazy(() => import("./components/SceneNotesPanel").then(module => ({ default: module.SceneNotesPanel })));
 import { SceneThumbnailRail } from "./components/SceneThumbnailRail";
 import type {
   ShareExportOptions,
@@ -7026,8 +7025,7 @@ function App() {
     if (
       tab === "assignments" ||
       tab === "audio" ||
-      tab === "timeline" ||
-      tab === "notes"
+      tab === "timeline"
     ) {
       setMode("preview");
     }
@@ -7315,6 +7313,7 @@ function App() {
           onNextFrame={() => goToScene(1)}
           onSeekToFrame={seekToFrame}
           onUpdateFrame={updateFrame}
+          getSharedNotes={(frameId) => sharedEditorRef.current?.notes(frameId)}
           onDeleteFrame={deleteFrame}
           onCopyFrame={() => copyFrameToClipboard()}
           onPasteFrame={pasteFrameFromClipboard}
@@ -7324,20 +7323,6 @@ function App() {
           canPasteFrame={clipboard?.type === "frame"}
 
           onApplyPreviousSceneState={applyPreviousSceneStateToCurrentFrame}
-        />
-      );
-    }
-
-    if (activePanelTab === "notes") {
-      return (
-        <SceneNotesPanel
-          frame={selectedFrame}
-          sceneNumber={selectedSceneNumber}
-          canEditScene={true}
-
-          sharedNotes={selectedFrame && sharedEditorRef.current ? sharedEditorRef.current.notes(selectedFrame.id) : undefined}
-
-          onUpdateFrame={updateFrame}
         />
       );
     }

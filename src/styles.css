@@ -5267,30 +5267,6 @@ h2 {
   padding: 3px 7px;
 }
 
-.notes-panel {
-  display: grid;
-  gap: 10px;
-}
-
-.notes-scene-summary {
-  background: #f8fafc;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: grid;
-  gap: 5px;
-  padding: 10px;
-}
-
-.notes-scene-summary strong {
-  color: var(--accent);
-  font-size: 13px;
-}
-
-.notes-scene-summary span {
-  color: #475569;
-  font-size: 12px;
-}
-
 .scene-notes-textarea {
   min-height: 220px;
   line-height: 1.55;

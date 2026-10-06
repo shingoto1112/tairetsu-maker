@@ -61,8 +61,9 @@ it("App keeps its saved order while timeline, navigation, numbering and roster u
   expect(labels()).toEqual(["後", "前", "同時刻"]);
   expect(observed.canvas!.selectedFrameId).toBe("late"); expect(savedIds()).toEqual(["late", "early", "tie"]);
   fireEvent.click(screen.getByRole("button", { name: "次へ" })); expect(observed.canvas!.selectedFrameId).toBe("early");
-  fireEvent.click(screen.getByRole("tab", { name: "メモ" }));
-  await screen.findByText(/Scene 2 \/ 前/);
+  // The scene details (which now hold the memo) use the same numbering.
+  await screen.findByText(/^Scene 2 \/ /);
+  expect((screen.getByLabelText("ラベル") as HTMLInputElement).value).toBe("前");
   fireEvent.click(screen.getByRole("tab", { name: "メンバー" }));
   fireEvent.click(await screen.findByRole("button", { name: "全体名簿を開く" }));
   await screen.findByTestId("roster"); expect(observed.rosterFrames.map(f => f.id)).toEqual(["late", "early", "tie"]);
