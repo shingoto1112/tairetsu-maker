@@ -161,8 +161,9 @@ export const FormationLibrary = ({
     useState<HorizontalGuideMode>("centerSplit");
   const [memberDiameterMeters, setMemberDiameterMeters] = useState(0.5);
   const [paradeTotalDistance, setParadeTotalDistance] = useState(100);
-  const [paradeWidthMeters, setParadeWidthMeters] = useState(20);
-  const [paradeCellSizeMeters, setParadeCellSizeMeters] = useState(1);
+  // New parade defaults (user decision 2026-10-06): 10m wide, 0.5m cells.
+  const [paradeWidthMeters, setParadeWidthMeters] = useState(10);
+  const [paradeCellSizeMeters, setParadeCellSizeMeters] = useState(0.5);
   const [paradeRulerPosition, setParadeRulerPosition] =
     useState<ParadeRulerPosition>("both");
   const [paradeHorizontalMeasureMode, setParadeHorizontalMeasureMode] =
@@ -235,8 +236,8 @@ export const FormationLibrary = ({
     setHorizontalGuideMode("centerSplit");
     setMemberDiameterMeters(0.5);
     setParadeTotalDistance(100);
-    setParadeWidthMeters(20);
-    setParadeCellSizeMeters(1);
+    setParadeWidthMeters(10);
+    setParadeCellSizeMeters(0.5);
     setParadeRulerPosition("both");
     setParadeHorizontalMeasureMode("centerSplit");
     setParadeEmphasizeEvery5m(true);

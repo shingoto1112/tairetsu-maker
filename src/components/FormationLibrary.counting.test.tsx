@@ -30,6 +30,8 @@ for(const mode of ['stage','parade']) {
 for(const mode of ['stage','parade']) it(mode+' creates with the new split default',async()=>{
  const create=setup();await open(mode);await userEvent.type(screen.getByRole('textbox',{name:'隊列表名'}),'既定値');await userEvent.click(screen.getByRole('button',{name:'作成する'}));
  expect(create).toHaveBeenCalledOnce();const input=create.mock.calls[0][0];expect(mode==='stage'?input.horizontalGuideMode:input.paradeSettings.horizontalMeasureMode).toBe('centerSplit');
+ // New parades start 10m wide with 0.5m cells (2026-10-06).
+ if(mode==='parade'){expect(input.paradeSettings.width).toBe(10);expect(input.paradeSettings.cellSizeMeters).toBe(.5);expect(input.widthMeters).toBe(10);}
 });
 it('validates all fields and reveals hidden errors while focusing the first visible error',async()=>{
  const create=setup();await open('stage');await userEvent.type(screen.getByRole('textbox',{name:'隊列表名'}),'検証');
