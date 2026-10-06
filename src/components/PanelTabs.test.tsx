@@ -34,7 +34,8 @@ describe("vertical editor tabs", () => {
     const content = container.querySelector<HTMLElement>(".tab-panel__content")!;
     content.scrollTop = 170;
     fireEvent.click(screen.getByRole("button", { name: "編集パネルを閉じる" }));
-    expect(screen.getAllByRole("tab")).toHaveLength(8);
+    expect(screen.getAllByRole("tab")).toHaveLength(7);
+    expect(screen.queryByRole("tab", { name: "詳細" })).toBeNull();
     const toggle = screen.getByRole("button", { name: "編集パネルを開く" });
     expect(screen.getByRole("tablist").contains(toggle)).toBe(false);
     expect(screen.getByRole("tab", { name: "メンバー" }).getAttribute("aria-selected")).toBe("true");

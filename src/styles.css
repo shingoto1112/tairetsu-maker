@@ -7635,3 +7635,14 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   .stage-export-header--compact .annotation-toolbar:has(select) { flex: 0 0 100%; max-width: 100%; }
 }
 @media print { .annotation-toolbar, .annotation-layer [data-ephemeral] { display: none !important; } }
+
+/* Coordinates scroll with the normal panel content near its heading. */
+.selected-position-card {
+  padding: 10px 12px;
+  margin: 8px 0;
+  border: 1px solid #b9d9ce;
+  border-radius: 10px;
+  background: #f4faf7;
+}
+.selected-position-card .detail-edit-grid { margin-top: 8px; }
+.selected-position-card:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }

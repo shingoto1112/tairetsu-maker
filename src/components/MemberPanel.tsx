@@ -27,6 +27,7 @@ import type { ReactNode } from "react";
 
 type MemberPanelProps = {
   portrait?: boolean;
+  selectedPositionSlot?: ReactNode;
   visibilityMemory?: VisibilityMemory;
   onRestoreMember: (id: string) => void;
   children?: ReactNode;
@@ -90,6 +91,7 @@ const groupDraftColors = [
 
 export const MemberPanel = ({
   portrait = false,
+  selectedPositionSlot,
   visibilityMemory,
   onRestoreMember,
   children,
@@ -505,7 +507,7 @@ export const MemberPanel = ({
           </>
   );
   const visibilityPicker = <SceneVisibilityPicker title="メンバー" portrait={portrait} items={pickerItems} groups={pickerGroups}
-    memory={visibilityMemory} actions={headerActions} visibilityTab={visibilityTab} onVisibilityTab={onVisibilityTabChange}
+    memory={visibilityMemory} selectedPositionSlot={portrait ? selectedPositionSlot : undefined} actions={headerActions} visibilityTab={visibilityTab} onVisibilityTab={onVisibilityTabChange}
     onSelect={onSelect} onVisibility={(id, visible) => { const member = membersById.get(id); if (member) { if (visible) showMemberOnStage(member); else hideMemberFromStage(member); } }}
     onAll={onSetAllMembersFrameVisibility} disabled={sceneDisabled} scrollTarget={scrollTarget} />;
 
@@ -530,6 +532,7 @@ export const MemberPanel = ({
       )}
       {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
+      {!portrait && selectedPositionSlot}
       {!portrait && visibilityPicker}
 
       {!portrait && <PanelStickyHeader>

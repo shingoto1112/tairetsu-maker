@@ -168,7 +168,7 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
       returnConfirmFocus.current = false;
       const button = rootRef.current?.querySelector<HTMLButtonElement>("[data-apply-previous]");
       if (button && !button.disabled) button.focus({ preventScroll: true });
-      else rootRef.current?.querySelector<HTMLSelectElement>("select")?.focus({ preventScroll: true });
+      else rootRef.current?.querySelector<HTMLButtonElement>(".roster-assignment-nav button:not(:disabled)")?.focus({ preventScroll: true });
     }
   }, [confirmCount, busy]);
   const finishConfirm = (value: boolean) => {
@@ -234,18 +234,17 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
     }}>
     <header className="roster-assignment-toolbar">
       {!canEditAssignments && <p className="roster-assignment-readonly">{readOnlyMessage}</p>}
-      <div className="roster-assignment-scenes">
-        <button type="button" disabled={sceneIndex <= 0} onClick={() => onSelectFrame(frames[sceneIndex - 1].id)}>◀ 前のシーン</button>
-        <select aria-label="割当するシーン" value={currentFrame?.id ?? ""} disabled={!frames.length}
-          onChange={(event) => onSelectFrame(event.target.value)}>
-          {!currentFrame && <option value="">シーンを選択</option>}
-          {frames.map((frame) => <option key={frame.id} value={frame.id}>{frame.label}・{sceneTime(frame.timeSec)}</option>)}
-        </select>
-        <span className="roster-assignment-scene-count">{sceneIndex + 1}/{frames.length}</span>
-        <button type="button" disabled={sceneIndex < 0 || sceneIndex >= frames.length - 1}
-          onClick={() => onSelectFrame(frames[sceneIndex + 1].id)}>次のシーン ▶</button>
-      </div>
       <div className="roster-assignment-secondary">
+        {/* The scene strip below picks any scene; this row only steps and names the current one. */}
+        <div className="roster-assignment-nav" role="group" aria-label="シーンの切り替え">
+          <button type="button" aria-label="前のシーン" title="前のシーン" disabled={sceneIndex <= 0}
+            onClick={() => onSelectFrame(frames[sceneIndex - 1].id)}>◀</button>
+          <span className="roster-assignment-nav__current" aria-live="polite">
+            {currentFrame ? <><b>{sceneIndex + 1}/{frames.length}</b> {currentFrame.label}・{sceneTime(currentFrame.timeSec)}</> : "シーンがありません"}
+          </span>
+          <button type="button" aria-label="次のシーン" title="次のシーン" disabled={sceneIndex < 0 || sceneIndex >= frames.length - 1}
+            onClick={() => onSelectFrame(frames[sceneIndex + 1].id)}>▶</button>
+        </div>
         <span className="roster-assignment-summary" aria-label="割当の集計">表示中 {model.visibleIds.size}個・担当者なし {model.unassignedCount}個・担当者 {model.assignedCount}人</span>
         <div>
           <button type="button" data-apply-previous disabled={disabled || !model.differences.length} onClick={applyPrevious}>前シーンの割当を反映</button>

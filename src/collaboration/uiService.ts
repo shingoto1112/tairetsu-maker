@@ -27,7 +27,8 @@ const messages: Record<string, string> = {
   MEMBER_LIMIT: "参加できるのは8人までです。", NOT_MEMBER: "この隊列表の参加資格を確認できません。",
   MEMBERSHIP_CHANGED: "参加資格が変わりました。新しい参加資格で開き直してください。",
   INVITE_ATTEMPT_LIMIT: "試行回数が多いため、10分後に再試行してください。",
-  PERSONAL_SYNC_CONFLICT: "旧クラウドの隊列表は、独立したコピーを作成してから共有してください。",
+  PERSONAL_SYNC_CONFLICT: "旧クラウドと同期中の隊列表です。ホームで複製し、そのコピーをクラウドに保存してください。元の隊列表は端末に残っています。",
+  ALREADY_SHARED: "この隊列表はすでにクラウドに保存されています。",
 };
 export const collaborationUiError = (error: unknown) => {
   if (error instanceof CloudAuthError) {
@@ -90,7 +91,7 @@ export class CollaborationUiService {
     catch (error) { this.patch({ error: collaborationUiError(error) }); }
     finally { this.patch({ busy: false }); }
   }
-  close() { if (!this.state.busy) { this.linkRevision++; this.patch({ screen: null, error: null }); } }
+  close() { if (!this.state.busy) { this.linkRevision++; this.patch({ screen: null, error: null, ...(this.state.screen === "account" ? { notice: null } : {}) }); } }
   account() { this.linkRevision++; this.patch({ screen: "account", error: null }); }
   invitation(link?: string) {
     if (this.state.busy) return;
@@ -145,7 +146,7 @@ export class CollaborationUiService {
     if (epoch !== cloudAuthEpoch()) throw new Error(messages.ACCOUNT_CHANGED);
     if (!session) throw new Error("登録を完了できませんでした。管理者にお問い合わせください。");
     saveCloudAuthSession(session); await waitCloudAuthPersistence(); this.authChanged();
-    this.patch({ screen: readInvitation() ? "invite" : this.afterLogin }); this.afterLogin = null; await this.refresh();
+    this.patch({ screen: readInvitation() ? "invite" : this.afterLogin, notice: null }); this.afterLogin = null; await this.refresh();
   }
   async signOut() { await this.auth?.signOut(new AbortController().signal); this.authChanged(); this.patch({ screen: null }); }
   async deleteAccount(password: string) {
@@ -165,6 +166,31 @@ export class CollaborationUiService {
     if (auth?.status !== "signed-in" || auth.isGuest) { this.afterLogin = "manage"; this.account(); return; }
     await this.options().transform(localId => this.lifecycle().startSharing(localId, name));
     this.patch({ screen: null });
+  }
+  /** Holds busy across authentication, local open and sharing. The caller fixes
+   * the editor generation in the click, before the lazy service is loaded. */
+  async saveLocalToCloud(localId: string, operation: { open: () => Promise<boolean>; current: () => boolean }) {
+    await this.run(async () => {
+      const auth = this.auth?.state();
+      if (auth?.status !== "signed-in" || auth.isGuest) {
+        this.afterLogin = null;
+        this.account();
+        this.patch({ notice: "クラウドに保存するにはログインしてください。ログイン後、もう一度「クラウドに保存」を押してください。" });
+        return;
+      }
+      const epoch = cloudAuthEpoch();
+      // Capture options before opening: no dependency on React re-rendering the bridge.
+      const transform = this.options().transform;
+      const current = () => operation.current() && epoch === cloudAuthEpoch();
+      if (!current()) throw new Error("開く対象が変わりました。ホームからもう一度操作してください。");
+      if (!await operation.open()) throw new Error("隊列表を開けませんでした。端末の内容を確認して再試行してください。");
+      if (!current()) throw new Error("開いている隊列表が変わりました。ホームからもう一度操作してください。");
+      await transform(id => {
+        if (id !== localId || !current()) throw new Error("開いている隊列表が変わりました。");
+        return this.lifecycle().startSharing(localId, auth.displayName || "作成者");
+      }, { localId, current });
+      this.patch({ screen: null, notice: "クラウドに保存しました。別の端末でも開けます。" });
+    });
   }
   private async saveAndOpen(request: CommitRequest) {
     const record = await this.lifecycle().saveJoinedProject(request);

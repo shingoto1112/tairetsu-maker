@@ -6,6 +6,7 @@ import { PortraitPanelHeader } from "./PortraitPanelHeader";
 
 type Props = {
   title: string; portrait: boolean; items: VisibilityItem[]; groups: VisibilityGroup[];
+  selectedPositionSlot?: ReactNode;
   memory?: VisibilityMemory; actions?: ReactNode; visibilityTab: "visible" | "hidden";
   onVisibilityTab: (tab: "visible" | "hidden") => void;
   onSelect: (id: string) => void; onVisibility: (id: string, visible: boolean) => void;
@@ -23,6 +24,7 @@ export const SceneVisibilityPicker = (props: Props) => {
   const composing = useRef(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement>(null);
+  const positionRef = useRef<HTMLDivElement>(null);
   const infoRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<{ id: string; offset: number } | null>(null);
@@ -72,7 +74,7 @@ export const SceneVisibilityPicker = (props: Props) => {
       const scrollPadding = scrollRef.current ? parseFloat(getComputedStyle(scrollRef.current).paddingBottom) || 0 : 0;
       // Only independent layout measurements, never the resulting chip grid height.
       const available = panel.clientHeight - header.offsetHeight - (infoRef.current?.offsetHeight ?? 0) - padding
-        - managerPadding - margins - gaps - scrollPadding - 28 - 16;
+        - (positionRef.current?.offsetHeight ?? 0) - managerPadding - margins - gaps - scrollPadding - 28 - 16;
       const next = visibilityRows(available);
       const owner = scrollRef.current;
       if (owner) {
@@ -93,6 +95,7 @@ export const SceneVisibilityPicker = (props: Props) => {
     observer?.observe(panel);
     observer?.observe(header);
     observer?.observe(infoRef.current!);
+    if (positionRef.current) observer?.observe(positionRef.current);
     return () => { observer?.disconnect(); panel.style.removeProperty("--panel-sticky-height"); };
   }, [props.portrait, selectedId]);
 
@@ -141,6 +144,7 @@ export const SceneVisibilityPicker = (props: Props) => {
         <button type="button" className="mini-button" disabled={props.disabled} onClick={() => props.onAll(false)}>すべて非表示</button>
       </div>
     </>}
+    {props.portrait && <div ref={positionRef}>{props.selectedPositionSlot}</div>}
     <div className="scene-visibility-picker__edge">
       <div ref={scrollRef} className="scene-visibility-picker__scroll object-visibility-list__items"
         style={{ "--rows": rows } as CSSProperties} data-rows={rows}

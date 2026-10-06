@@ -37,6 +37,10 @@ describe("HelpPage", () => {
     expect(within(dialog).getByRole("button", { name: sections[1].title }).getAttribute("aria-expanded")).toBe("true");
     expect(within(dialog).getByRole("link", { name: "「サポート」" }).getAttribute("href")).toBe(PUBLIC_LINKS.support);
     expect(dialog.textContent).not.toContain("V字");
+    expect(dialog.textContent).not.toContain("「詳細」タブ");
+    expect(helpSections.find(section => section.title === "位置を数字で合わせる")?.location).toContain("座標カード");
+    expect(helpSections.find(section => section.title === "座標の見方")?.items.join("")).toContain("後方はマイナス");
+    expect(helpSections.find(section => section.title === "ショートカット")?.items.join("")).toContain("Ctrl/Cmd＋1");
   });
   it("focuses close, traps Tab, closes with Escape/button, and restores background and focus", async () => {
     const user = userEvent.setup();

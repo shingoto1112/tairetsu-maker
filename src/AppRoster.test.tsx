@@ -52,6 +52,46 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  it.each(["member", "object"] as const)("edits %s coordinates through the upper card, keeps Undo and focuses with Ctrl/Cmd+1", async type => {
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    if (type === "object") fireEvent.click(await screen.findByRole("tab", { name: "道具" }));
+    const picker = await screen.findByRole("region", { name: "このシーンの表示" });
+    fireEvent.click(within(picker).getByRole("button", { name: type === "member" ? /^Anna/ : /^椅子/ }));
+    const card = screen.getByRole("region", { name: "選択対象の位置" });
+    expect(card.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "詳細" })).toBeNull();
+    const before = structuredClone(canvas.project!.frames);
+    const field = within(card).getByRole("spinbutton", { name: /^横（/ });
+    fireEvent.change(field, { target: { value: "-1.13" } });
+    expect(canvas.project!.frames).not.toEqual(before);
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(canvas.project!.frames).toEqual(before);
+    if (type === "object") {
+      expect(screen.queryByLabelText("幅 m")).toBeNull(); expect(screen.queryByLabelText("高さ m")).toBeNull();
+      fireEvent.change(within(card).getByRole("spinbutton", { name: /横幅/ }), { target: { value: ".01" } });
+      expect(canvas.project!.frames[0].objectStates.o_chair.widthMeters).toBe(.01);
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(async () => expect((await testRepository.get(testProject.id!))?.project.frames[0].objectStates.o_chair.widthMeters).toBe(.01));
+      fireEvent.keyDown(window, { key: "PageDown", ctrlKey: true });
+      fireEvent.click(screen.getByRole("tab", { name: "シーン" }));
+      fireEvent.click(await screen.findByRole("button", { name: "前シーンのメンバー・道具を反映" }));
+      expect(canvas.project!.frames.find(frame => frame.id === canvas.selectedFrameId)!.objectStates.o_chair.widthMeters).toBe(.01);
+    }
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+      fireEvent.click(screen.getByRole("tab", { name: "メモ" }));
+      fireEvent.keyDown(window, { key: "1", ...modifier });
+      await waitFor(() => expect(document.activeElement).toBe(within(screen.getByRole("region", { name: "選択対象の位置" })).getByRole("spinbutton", { name: /^横（/ })));
+      fireEvent.blur(document.activeElement!);
+    }
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("Ctrl+1 without selection opens the member tab and focuses the selection hint", async () => {
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "道具" }));
+    fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+    expect(screen.getByRole("tab", { name: "メンバー" }).getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "選択対象の位置" })));
+  }, INTEGRATION_TIMEOUT_MS);
   const selectMultiple = async () => {
     fireEvent.click(await screen.findByRole("button", { name: "選択モード" }));
     const picker = screen.getByRole("region", { name: "このシーンの表示" });
@@ -221,13 +261,19 @@ describe("App roster confirmation integration", () => {
     await user.click(screen.getByRole("tab", { name: "音源" }));
     const audio = view.container.querySelector("audio")!; audio.src = "blob:local-test";
     const oldMoveCallback = canvasActions.move!;
-    fireEvent.click(await screen.findByRole("button", { name: "再生" }));
+    // The audio tab loads lazily; allow for a busy machine during the full suite.
+    fireEvent.click(await screen.findByRole("button", { name: "再生" }, { timeout: 5000 }));
     await waitFor(() => expect(canvasActions.playing).toBe(true));
+    fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+    const positionCard = screen.getByRole("region", { name: "選択対象の位置" });
+    for (const input of within(positionCard).getAllByRole("spinbutton")) expect((input as HTMLInputElement).disabled).toBe(true);
     const before = structuredClone(canvas.project!.frames);
+    fireEvent.change(within(positionCard).getByRole("spinbutton", { name: /^横位置/ }), { target: { value: "1.13" } });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     act(() => canvasActions.move!("m_anna", { x: 1, y: 2 }));
     act(() => oldMoveCallback("m_anna", { x: 1, y: 2 }));
     expect(canvas.project!.frames).toEqual(before);
+    fireEvent.click(screen.getByRole("tab", { name: "音源" }));
     fireEvent.click(screen.getByRole("button", { name: "停止" }));
     await waitFor(() => expect(canvasActions.playing).toBe(false));
     act(() => canvasActions.move!("m_anna", { x: 1, y: 2 }));
@@ -367,7 +413,7 @@ describe("App roster confirmation integration", () => {
     await user.click(within(roster).getByRole("button", { name: "道具管理" }));
     await user.click(within(roster).getByRole("button", { name: "道具割当" }));
     const view = await within(roster).findByLabelText("道具名簿の割当");
-    if (action === "previous") await user.selectOptions(within(view).getByRole("combobox"), "f_count8");
+    if (action === "previous") await user.click(view.querySelector<HTMLButtonElement>('[data-thumbnail-frame-id="f_count8"]')!);
     const frameIndex = action === "previous" ? 1 : 0;
     const before = JSON.parse(JSON.stringify(canvas.project!.frames[frameIndex])) as Project["frames"][number];
     await user.click(within(view).getByRole("button", { name: /^椅子・/ }));

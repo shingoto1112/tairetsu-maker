@@ -11,7 +11,7 @@ import {
   Trash2,
   Unlock,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Member,
   MemberGroup,
@@ -37,6 +37,7 @@ import { ColorPaletteInput } from "./ColorPaletteInput";
 
 type ObjectPanelProps = {
   portrait?: boolean;
+  selectedPositionSlot?: ReactNode;
   visibilityMemory?: VisibilityMemory;
   currentFrameId?: string;
   /** Resolved visibility of the selected scene (snapshot), used to order assignment candidates. */
@@ -133,6 +134,7 @@ const typeLabel: Record<StageObjectType, string> = {
 
 export const ObjectPanel = ({
   portrait = false,
+  selectedPositionSlot,
   visibilityMemory,
   currentFrameId,
   memberVisibility,
@@ -347,7 +349,7 @@ export const ObjectPanel = ({
           </>
   );
   const visibilityPicker = <SceneVisibilityPicker title="道具" portrait={portrait} items={pickerItems} groups={pickerGroups}
-    memory={visibilityMemory} actions={headerActions} visibilityTab={visibilityTab} onVisibilityTab={onVisibilityTabChange}
+    memory={visibilityMemory} selectedPositionSlot={portrait ? selectedPositionSlot : undefined} actions={headerActions} visibilityTab={visibilityTab} onVisibilityTab={onVisibilityTabChange}
     onSelect={onSelect} onVisibility={(id, visible) => onUpdateObjectState(id, { visible })}
     onAll={onSetAllObjectsFrameVisibility} disabled={sceneDisabled} scrollTarget={scrollTarget} />;
 
@@ -375,6 +377,7 @@ export const ObjectPanel = ({
       )}
       {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
 
+      {!portrait && selectedPositionSlot}
       {!portrait && visibilityPicker}
 
       {!portrait && <PanelStickyHeader>
@@ -797,50 +800,6 @@ export const ObjectPanel = ({
                   onValueChange={(zIndex) =>
                     onUpdateObjectState(object.id, {
                       zIndex: Math.round(zIndex),
-                    })
-                  }
-                />
-              </label>
-              <label>
-                幅 m
-                <NumericInput
-                  min={0.1}
-                  step="0.1"
-                  value={state?.widthMeters ?? object.widthMeters}
-                  disabled={sceneDisabled}
-                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                  onValueChange={(widthMeters) =>
-                    onUpdateObjectState(object.id, {
-                      widthMeters,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                高さ m
-                <NumericInput
-                  min={0.1}
-                  step="0.1"
-                  value={state?.heightMeters ?? object.heightMeters}
-                  disabled={sceneDisabled}
-                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                  onValueChange={(heightMeters) =>
-                    onUpdateObjectState(object.id, {
-                      heightMeters,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                回転
-                <NumericInput
-                  step="1"
-                  value={state?.rotation ?? object.defaultRotation}
-                  disabled={sceneDisabled}
-                  title={sceneDisabled ? sceneReadOnlyMessage : undefined}
-                  onValueChange={(rotation) =>
-                    onUpdateObjectState(object.id, {
-                      rotation,
                     })
                   }
                 />

@@ -10,7 +10,7 @@ export type CollaborationUiOptions = {
   active: () => SharedSessionController | null;
   store: SharedSessionStore;
   open: (record: ProjectRecord, rescued?: { localId: string; projection: Project }) => Promise<boolean>;
-  transform: (action: (localId: string) => Promise<ProjectRecord>) => Promise<void>;
+  transform: (action: (localId: string) => Promise<ProjectRecord>, expected?: { localId: string; current: () => boolean }) => Promise<void>;
   localRemoved: () => Promise<void>;
   summaries: () => ProjectSummary[];
 };

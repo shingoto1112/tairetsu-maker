@@ -1,6 +1,6 @@
 import type { AudioSelection } from "../platform/audioStorage";
 import { ChangeEvent, FormEvent, KeyboardEvent, MouseEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
+import { CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
 
 import type {
@@ -39,10 +39,12 @@ type FormationLibraryProps = {
   collaborationSlot?: ReactNode;
   renderProjectBadge?: (summary: ProjectSummary) => ReactNode;
   onJoinInvitation?: () => void;
+  onSaveToCloud?: (projectId: string) => void | Promise<void>;
+  cloudSaveBusy?: boolean;
   onImportProjectFiles?: (files: File[]) => void | Promise<void>;
 
   onCreate: (input: NewFormationInput) => void | Promise<void>;
-  onOpenProject: (projectId: string) => void | Promise<void>;
+  onOpenProject: (projectId: string) => void | Promise<void | boolean>;
   onRenameProject: (projectId: string, title: string) => void | Promise<void>;
   onDuplicateProject: (projectId: string) => void | Promise<void>;
   onExportProject: (projectId: string, includeAudio: boolean) => void | Promise<void>;
@@ -116,6 +118,8 @@ export const FormationLibrary = ({
   collaborationSlot,
   renderProjectBadge,
   onJoinInvitation,
+  onSaveToCloud,
+  cloudSaveBusy = false,
   onImportProjectFiles,
   onCreate,
   onOpenProject,
@@ -323,7 +327,7 @@ export const FormationLibrary = ({
     });
   };
 
-  const runMenuAction = async (action: () => void | Promise<void>) => {
+  const runMenuAction = async (action: () => void | Promise<void | boolean>) => {
     await action();
     setLibraryMenu(null);
   };
@@ -458,6 +462,10 @@ export const FormationLibrary = ({
             <Edit3 size={15} />
             名前を変更
           </button>
+          {onSaveToCloud && !menuProject.sharing && <button type="button" disabled={cloudSaveBusy}
+            onClick={() => runMenuAction(() => onSaveToCloud(menuProject.id))}>
+            <CloudUpload size={15} />クラウドに保存
+          </button>}
           <button
             type="button"
             onClick={() => runMenuAction(() => onDuplicateProject(menuProject.id))}

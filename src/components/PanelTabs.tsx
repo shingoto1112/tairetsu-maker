@@ -6,7 +6,6 @@ import {
   ListTodo,
   Music,
   Ruler,
-  SlidersHorizontal,
   StickyNote,
   Users,
   type LucideIcon,
@@ -23,8 +22,7 @@ export type PanelTabId =
   | "audio"
   | "timeline"
   | "notes"
-  | "stage"
-  | "animation";
+  | "stage";
 
 type PanelTab = {
   id: PanelTabId;
@@ -50,7 +48,6 @@ const tabs: PanelTab[] = [
   { id: "audio", label: "音源", icon: Music },
   { id: "notes", label: "メモ", icon: StickyNote },
   { id: "stage", label: "ステージ", icon: Ruler },
-  { id: "animation", label: "詳細", icon: SlidersHorizontal },
 ];
 
 export const PanelTabs = ({

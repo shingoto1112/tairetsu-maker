@@ -46,7 +46,7 @@ const AudioPanel = lazy(() => import("./components/AudioPanel").then(module => (
 
 const CloudPasswordModal = lazy(() => import("./components/CloudPasswordModal").then(module => ({ default: module.CloudPasswordModal })));
 
-const DetailsPanel = lazy(() => import("./components/DetailsPanel").then((module) => ({ default: module.DetailsPanel })));
+import { SelectedPositionCard } from "./components/SelectedPositionCard";
 import { ExportImportPanel } from "./components/ExportImportPanel";
 import { FormationLibrary, type NewFormationInput } from "./components/FormationLibrary";
 import { GroupToolsPanel } from "./components/GroupToolsPanel";
@@ -651,8 +651,8 @@ const updateObjectStateInFrame = (
   const next = {
     ...current,
     ...patch,
-    widthMeters: Math.max(0.1, patch.widthMeters ?? current.widthMeters),
-    heightMeters: Math.max(0.1, patch.heightMeters ?? current.heightMeters),
+    widthMeters: Math.max(0.01, patch.widthMeters ?? current.widthMeters),
+    heightMeters: Math.max(0.01, patch.heightMeters ?? current.heightMeters),
   };
 
   return {
@@ -803,6 +803,9 @@ function App() {
   const audioEditorProtectionRef = useRef<Promise<() => void> | null>(null);
   const saveCoordinatorRef = useRef<SaveCoordinator | null>(null);
   const editorLoadGenerationRef = useRef(0);
+  const cloudSavePendingRef = useRef(false);
+  const [cloudSaveBusy, setCloudSaveBusy] = useState(false);
+  const [positionFocusRequest, setPositionFocusRequest] = useState(0);
   const libraryLoadGenerationRef = useRef(0);
   const [appView, setAppView] = useState<"library" | "editor">(
     initial.shared ? "editor" : "library",
@@ -2222,17 +2225,10 @@ function App() {
     selection: Selection,
     options: StageSelectOptions = {},
   ) => {
+    setPositionFocusRequest(0);
     if (!selection) {
       setSelected(selection);
       setSelectedMemberIds([]);
-      return;
-    }
-
-    if (activePanelTab === "animation") {
-      setSelected(selection);
-      setIsPanelOpen(true);
-      setSelectedMemberIds([]);
-      setMode("preview");
       return;
     }
 
@@ -3492,8 +3488,8 @@ function App() {
               ...current,
               x: source.x,
               y: source.y,
-              widthMeters: Math.max(0.1, source.widthMeters),
-              heightMeters: Math.max(0.1, source.heightMeters),
+              widthMeters: Math.max(0.01, source.widthMeters),
+              heightMeters: Math.max(0.01, source.heightMeters),
               rotation: source.rotation,
               zIndex: source.zIndex,
               visible: includeVisible ? source.visible : current.visible,
@@ -4741,10 +4737,10 @@ function App() {
     }
   };
 
-  const openDetailsTab = () => {
-    setIsPanelOpen(true);
-    setActivePanelTab("animation");
-    setMode("preview");
+  const openSelectedPosition = () => {
+    const tab = selected?.type === "object" ? "objects" : "members";
+    setIsPanelOpen(true); setActivePanelTab(tab); setMode(tab);
+    setPositionFocusRequest(value => value + 1);
   };
 
   const executeProjectSearch = (query: string) => {
@@ -4913,7 +4909,7 @@ function App() {
 
       if (isCommand && key === "1") {
         event.preventDefault();
-        openDetailsTab();
+        openSelectedPosition();
       }
     };
 
@@ -5053,6 +5049,7 @@ function App() {
     setMode("members");
     setActivePanelTab("members");
     setViewerPerspective(nextProject.viewerPerspective ?? "audience");
+    setPositionFocusRequest(0);
     setCurrentTime(0);
     setIsPlaying(false);
     setIsSharedProject(false);
@@ -5158,12 +5155,14 @@ function App() {
     }
   };
 
-  const openStoredProject = async (id: string) => {
+  const openStoredProject = async (id: string, loadGeneration = ++editorLoadGenerationRef.current): Promise<boolean> => {
+    const generation = loadGeneration;
+    if (generation !== editorLoadGenerationRef.current) return false;
     await (audioEditorProtectionRef.current ??= protectAudioEditor());
-    const generation = ++editorLoadGenerationRef.current;
-    if (!await flushPendingAutoSave()) return;
-    if (!await closeSharedSession()) return;
+    if (!await flushPendingAutoSave() || generation !== editorLoadGenerationRef.current) return false;
+    if (!await closeSharedSession() || generation !== editorLoadGenerationRef.current) return false;
     await sharedSession.settle(id);
+    let opened = false;
     await localAction(async repository => {
       let record: ProjectRecord;
       try { record = await readOpenedProject(repository, id); }
@@ -5173,8 +5172,32 @@ function App() {
         throw error;
       }
       if (generation !== editorLoadGenerationRef.current) return;
-      await openProjectInEditor(record.project, undefined, { record, loadGeneration: generation });
+      opened = await openProjectInEditor(record.project, undefined, { record, loadGeneration: generation });
     });
+    return opened && generation === editorLoadGenerationRef.current && projectRef.current.id === id;
+  };
+
+  const saveStoredProjectToCloud = async (id: string) => {
+    if (cloudSavePendingRef.current) return;
+    cloudSavePendingRef.current = true;
+    setCloudSaveBusy(true);
+    const generation = ++editorLoadGenerationRef.current;
+    try {
+      const ui = await collaborationUi.get();
+      if (ui.getSnapshot().busy) {
+        setNotice("クラウドの操作中です。完了後にもう一度「クラウドに保存」を押してください。");
+        return;
+      }
+      await ui.saveLocalToCloud(id, {
+        open: () => openStoredProject(id, generation),
+        current: () => generation === editorLoadGenerationRef.current,
+      });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "クラウド保存を準備できませんでした。もう一度操作してください。");
+    } finally {
+      cloudSavePendingRef.current = false;
+      setCloudSaveBusy(false);
+    }
   };
 
   const renameStoredProject = async (id: string, title: string) => localAction(async repository => {
@@ -6984,11 +7007,11 @@ function App() {
   }
 
   const handlePanelTabChange = (tab: PanelTabId) => {
+    setPositionFocusRequest(0);
     setActivePanelTab(tab);
     if (tab === "members") setMode("members");
     if (tab === "objects") setMode("objects");
     if (tab === "stage") setMode("stage");
-    if (tab === "animation") setMode("preview");
     if (
       tab === "assignments" ||
       tab === "audio" ||
@@ -7031,10 +7054,21 @@ function App() {
     if (bounds) stageExportRef.current?.scrollTargetIntoView?.(bounds);
   };
 
+  const selectedPositionCard = <SelectedPositionCard
+    selected={selected} selectedMemberIds={selectedMemberIds}
+    members={project.members} memberGroups={project.memberGroups ?? []} objects={project.stageObjects}
+    currentFrame={selectedFrame ?? null} snapshot={selectedFrameSnapshot} stage={effectiveStage}
+    projectMode={project.mode ?? "stage"} paradeSettings={project.paradeSettings}
+    canEditScene={!isPlaying && animationPreviewTimeSec === null}
+    sceneReadOnlyMessage="再生中は位置を編集できません。"
+    focusRequest={positionFocusRequest} onMoveMember={moveMember} onUpdateObjectState={updateObjectState}
+  />;
+
   const panelContent = (() => {
     if (activePanelTab === "members") {
       return (
           <MemberPanel
+            selectedPositionSlot={selected?.type !== "object" ? selectedPositionCard : undefined}
             key={project.id}
             portrait={workspaceLayout.isPortrait}
             visibilityMemory={visibilityMemories.members}
@@ -7101,6 +7135,7 @@ function App() {
     if (activePanelTab === "objects") {
       return (
         <ObjectPanel
+          selectedPositionSlot={selected?.type !== "member" && !selectedMemberIds.length ? selectedPositionCard : undefined}
           key={project.id}
           portrait={workspaceLayout.isPortrait}
           visibilityMemory={visibilityMemories.objects}
@@ -7208,40 +7243,6 @@ function App() {
             })
           }
         />
-      );
-    }
-
-    if (activePanelTab === "animation") {
-      return (
-        <Suspense fallback={<p role="status">詳細を読み込み中…</p>}>
-        <DetailsPanel
-          selected={selected}
-          selectedMemberIds={selectedMemberIds}
-          members={project.members}
-          memberGroups={project.memberGroups ?? []}
-          objects={project.stageObjects}
-          objectGroups={project.objectGroups ?? []}
-          currentFrame={selectedFrame ?? null}
-          snapshot={selectedFrameSnapshot}
-          stage={effectiveStage}
-          projectMode={project.mode ?? "stage"}
-          paradeSettings={project.paradeSettings}
-          canEditProject={
-            selected?.type === "member"
-              ? true
-              : selected?.type === "object"
-                ? true
-                : true
-          }
-          canEditScene={true}
-
-          onUpdateMember={updateMember}
-          onUpdateMemberGroup={updateMemberGroup}
-          onMoveMember={moveMember}
-          onUpdateObject={updateObject}
-          onUpdateObjectState={updateObjectState}
-        />
-        </Suspense>
       );
     }
 
@@ -7376,16 +7377,29 @@ function App() {
       if (!latest) return false;
       return openProjectInEditor(latest.project, "隊列表を開きました。", { record: latest });
     },
-    transform: async action => {
+    transform: async (action, expected) => {
       const id = projectRef.current.id;
-      if (!id || appView !== "editor") throw new Error("隊列表を開いてから操作してください。");
-      if (!await flushPendingAutoSave() || !await closeSharedSession(false)) throw new Error("この端末に保存できませんでした。編集内容は画面に残っています。");
+      const current = () => projectRef.current.id === id && (!expected || expected.localId === id && expected.current());
+      // An explicitly opened target has already established the editor view.
+      // The library render's closure may still be in use here.
+      if (!id || (expected ? !current() : appView !== "editor")) throw new Error("隊列表を開いてから操作してください。");
+      if (!await flushPendingAutoSave()) throw new Error("この端末に保存できませんでした。編集内容は画面に残っています。");
+      if (!current()) throw new Error("開いている隊列表が変わりました。");
+      if (!await closeSharedSession(false)) throw new Error("この端末に保存できませんでした。編集内容は画面に残っています。");
+      if (!current()) throw new Error("開いている隊列表が変わりました。");
       try {
         const record = await action(id);
-        if (await repositoryRef.current!.get(record.project.id!)) await openProjectInEditor(record.project, undefined, { record });
+        const saved = await repositoryRef.current!.get(record.project.id!);
+        if (current() && saved) {
+          if (!await openProjectInEditor(saved.project, undefined, { record: saved })) {
+            throw new Error("クラウド保存は完了しましたが、編集画面を開き直せませんでした。ホームから隊列表を開いてください。");
+          }
+        }
+        await refreshLocalLibrary();
       } catch (error) {
         const source = await repositoryRef.current!.get(id);
-        if (source) await openProjectInEditor(source.project, undefined, { record: source });
+        if (current() && source) await openProjectInEditor(source.project, undefined, { record: source });
+        await refreshLocalLibrary();
         throw error;
       }
     },
@@ -7410,6 +7424,8 @@ function App() {
             {repositoryRef.current && <LegacyRescuePanel repository={repositoryRef.current as import("./legacyImport/importer").ImportRepository} config={cloudConfig} onChanged={refreshLocalLibrary} />}</Suspense> : undefined}
           renderProjectBadge={APP_FEATURES.collaborationV2 ? summary => summary.sharing ? <Suspense fallback="共有中"><CollaborationBadge bridge={collaborationUi} summary={summary} /></Suspense> : "ローカル" : undefined}
           onJoinInvitation={APP_FEATURES.collaborationV2 ? () => { void collaborationUi.get().then(ui => ui.invitation("")); } : undefined}
+          onSaveToCloud={APP_FEATURES.collaborationV2 ? saveStoredProjectToCloud : undefined}
+          cloudSaveBusy={cloudSaveBusy}
           storageTools={storageReady && repositoryRef.current && "readMaintenance" in repositoryRef.current ? <Suspense fallback={null}><StorageTools
             repository={repositoryRef.current as MaintenanceRepository} onChanged={refreshLocalLibrary} damagedId={damagedProjectId} onDismissDamaged={() => setDamagedProjectId(null)} /></Suspense> : null}
 

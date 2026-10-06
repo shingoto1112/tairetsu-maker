@@ -83,13 +83,13 @@ describe("RosterAssignmentView", () => {
   });
   it("navigates in existing scene order, with time and disabled end buttons", () => {
     const p = createProps(); const { rerender } = render(<RosterAssignmentView {...p} />);
-    expect((screen.getByRole("button", { name: "◀ 前のシーン" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByRole("option", { name: "Scene 2・0:30" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "次のシーン ▶" })); expect(p.onSelectFrame).toHaveBeenLastCalledWith(next.id);
+    expect((screen.getByRole("button", { name: "前のシーン" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("group", { name: "シーンの切り替え" }).textContent).toContain("1/2");
+    fireEvent.click(screen.getByRole("button", { name: "次のシーン" })); expect(p.onSelectFrame).toHaveBeenLastCalledWith(next.id);
     rerender(<RosterAssignmentView {...p} currentFrame={next} />);
-    expect((screen.getByRole("button", { name: "次のシーン ▶" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "◀ 前のシーン" })); expect(p.onSelectFrame).toHaveBeenLastCalledWith(frame.id);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: frame.id } }); expect(p.onSelectFrame).toHaveBeenLastCalledWith(frame.id);
+    expect((screen.getByRole("button", { name: "次のシーン" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "前のシーン" })); expect(p.onSelectFrame).toHaveBeenLastCalledWith(frame.id);
+    expect(screen.getByRole("group", { name: "シーンの切り替え" }).textContent).toContain("2/2 Scene 2・0:30");
   });
   it("retains both searches across scenes and reselects an invalid selection", () => {
     const p = createProps(); const { rerender } = render(<RosterAssignmentView {...p} />); selectObject("旗");
@@ -129,7 +129,8 @@ describe("RosterAssignmentView", () => {
       expect((button as HTMLButtonElement).disabled).toBe(true); fireEvent.click(button);
     }
     expect(p.onAssignMember).not.toHaveBeenCalled(); expect(p.onRemoveAssignment).not.toHaveBeenCalled(); expect(p.onApplyPreviousAssignments).not.toHaveBeenCalled(); expect(p.onUndo).not.toHaveBeenCalled();
-    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(false);
+    // Scene browsing stays available while editing is read-only.
+    expect((screen.getByRole("button", { name: "次のシーン" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.change(screen.getByRole("searchbox", { name: "道具名を検索" }), { target: { value: "旗" } });
     expect(screen.getByRole("button", { name: "旗・1人" })).toBeTruthy();
   });

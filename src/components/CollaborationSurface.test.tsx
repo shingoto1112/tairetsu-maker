@@ -20,6 +20,25 @@ function setup(platform: 'web' | 'ipad' = 'web') {
 }
 beforeEach(() => { forgetInvitation(); history.replaceState({}, '', '/'); });
 afterEach(() => { cleanup(); forgetInvitation(); vi.restoreAllMocks(); });
+it.each([false, true])('home cloud-save login guidance does not open invite/management; guest=%s', async guest => {
+  const options: CollaborationUiOptions = { config: null, platform: 'web', mock: true, repository: () => null,
+    active: () => null, store: new SharedSessionStore(), summaries: () => [], open: vi.fn(), transform: vi.fn(), localRemoved: vi.fn() };
+  const service = new CollaborationUiService(() => options);
+  const auth = guest ? { status: 'signed-in', userId: 'guest', isGuest: true, sessionPersistence: 'browser-data' } as const
+    : { status: 'signed-out', guestRecovery: 'new-invite-required' } as const;
+  Object.assign(service, { auth: { state: () => auth } });
+  vi.spyOn(service, 'initialize').mockImplementation(async () => { service.authChanged(); });
+  render(<CollaborationSurface bridge={{ options, get: async () => service }} view="library" />);
+  await screen.findByRole('region', { name: 'アカウントとクラウドの隊列表' });
+  await waitFor(() => expect(service.getSnapshot().busy).toBe(false));
+  const open = vi.fn().mockResolvedValue(true);
+  await act(async () => { await service.saveLocalToCloud('target', { open, current: () => true }); });
+  await screen.findByRole('dialog', { name: 'アカウント' });
+  expect(screen.getByText(/クラウドに保存するにはログインしてください/)).toBeTruthy();
+  expect(screen.queryByRole('dialog', { name: 'みんなで編集' })).toBeNull();
+  expect(screen.queryByRole('dialog', { name: '招待されています' })).toBeNull();
+  expect(open).not.toHaveBeenCalled(); expect(options.transform).not.toHaveBeenCalled();
+});
 it('hides password change for guests and destroys credentials on account/screen changes', async () => {
   const options = { config:null,platform:'web',mock:true,repository:()=>null,active:()=>null,
     store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() } as CollaborationUiOptions;

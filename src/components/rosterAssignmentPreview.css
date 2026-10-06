@@ -91,3 +91,33 @@
 @media (max-width: 600px) {
   .roster-scene-strip__card { flex-basis: 96px; }
 }
+
+/* Compact scene stepper: the strip picks scenes, so only ◀ ▶ and the current name stay in the toolbar. */
+.roster-assignment-nav {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.roster-assignment-nav button {
+  min-width: 44px;
+  padding: 8px 10px;
+}
+
+.roster-assignment-nav__current {
+  color: #334155;
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-assignment-nav__current b {
+  color: #64748b;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-right: 4px;
+}

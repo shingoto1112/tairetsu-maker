@@ -3,7 +3,6 @@ import {
   Member,
   MemberGroup,
   ObjectState,
-  ObjectGroup,
   ParadeSettings,
   Position,
   StageConfig,
@@ -11,7 +10,6 @@ import {
   StageSnapshot,
   Selection,
 } from "../types";
-import { PanelStickyHeader } from "./PanelStickyHeader";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import {
   getCenterSplitSideLabel,
@@ -22,56 +20,18 @@ import {
   paradeDistanceToInternalY,
 } from "../utils/parade";
 import { NumericInput } from "./NumericInput";
-import { ColorPaletteInput } from "./ColorPaletteInput";
+import { useEffect, useRef } from "react";
+import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 
-type DetailsPanelProps = {
-  selected: Selection;
-  selectedMemberIds: string[];
-  members: Member[];
-  memberGroups: MemberGroup[];
-  objects: StageObject[];
-  objectGroups: ObjectGroup[];
-  currentFrame: FormationFrame | null;
-  snapshot: StageSnapshot;
-  stage: StageConfig;
-  projectMode?: "stage" | "parade";
-  paradeSettings?: ParadeSettings;
-  canEditProject?: boolean;
-  canEditScene?: boolean;
-  projectReadOnlyMessage?: string;
-  sceneReadOnlyMessage?: string;
-  onUpdateMember: (id: string, patch: Partial<Member>) => void;
-  onUpdateMemberGroup: (memberId: string, groupId: string | null) => void;
+type SelectedPositionCardProps = {
+  selected: Selection; selectedMemberIds: string[];
+  members: Member[]; memberGroups: MemberGroup[]; objects: StageObject[];
+  currentFrame: FormationFrame | null; snapshot: StageSnapshot; stage: StageConfig;
+  projectMode?: "stage" | "parade"; paradeSettings?: ParadeSettings;
+  canEditScene?: boolean; sceneReadOnlyMessage?: string; focusRequest?: number;
   onMoveMember: (id: string, position: Position) => void;
-  onUpdateObject: (id: string, patch: Partial<StageObject>) => void;
   onUpdateObjectState: (id: string, patch: Partial<ObjectState>) => void;
 };
-
-const objectTypeLabel = (type: StageObject["type"]): string => {
-  switch (type) {
-    case "curtain":
-      return "幕";
-    case "chair":
-      return "椅子";
-    case "table":
-      return "机";
-    case "panel":
-      return "パネル";
-    case "mark":
-      return "マーク";
-    case "area":
-      return "範囲";
-    case "setPiece":
-      return "大道具";
-    case "custom":
-      return "カスタム";
-    default:
-      return "道具";
-  }
-};
-
-const formatMeter = (value?: number): string =>
-  value === undefined ? "-" : `${Number(value.toFixed(2))}m`;
 
 const parseNumberInput = (value: string): number | null => {
   const parsed = Number(value);
@@ -156,59 +116,29 @@ const getObjectDisplayYBounds = (
   };
 };
 
-const getAssignedObjectNames = (
-  memberId: string,
-  frame: FormationFrame | null,
-  objects: StageObject[],
-): string[] =>
-  Object.entries(frame?.objectAssignments ?? {}).flatMap(
-    ([objectId, memberIds]) => {
-      if (!memberIds.includes(memberId)) {
-        return [];
-      }
-      return objects.find((object) => object.id === objectId)?.name ?? [];
-    },
-  );
-
-export const DetailsPanel = ({
-  selected,
-  selectedMemberIds,
-  members,
-  memberGroups,
-  objects,
-  objectGroups,
-  currentFrame,
-  snapshot,
-  stage,
-  projectMode = "stage",
-  paradeSettings,
-  canEditProject = true,
-  canEditScene = true,
-  projectReadOnlyMessage = "初期クラウド編集では、メンバー名簿や道具マスターは編集できません。",
-  sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
-  onUpdateMember,
-  onUpdateMemberGroup,
-  onMoveMember,
-  onUpdateObject,
-  onUpdateObjectState,
-}: DetailsPanelProps) => {
-  const projectDisabled = !canEditProject;
+export const SelectedPositionCard = ({
+  selected, selectedMemberIds, members, memberGroups, objects, currentFrame,
+  snapshot, stage, projectMode = "stage", paradeSettings, canEditScene = true,
+  sceneReadOnlyMessage = "このシーンは閲覧のみです。", focusRequest = 0,
+  onMoveMember, onUpdateObjectState,
+}: SelectedPositionCardProps) => {
+  const cardRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const card = cardRef.current;
+    if (!card) return;
+    const field = card.querySelector<HTMLInputElement>("input:not(:disabled)");
+    (field ?? card).focus({ preventScroll: true });
+    scrollWithinContainer(card, { behavior: "instant", block: "nearest" });
+  }, [focusRequest]);
   const sceneDisabled = !canEditScene;
-  const selectedMember =
-    selected?.type === "member"
-      ? members.find((member) => member.id === selected.id) ?? null
-      : null;
+  const selectedMemberId = selected?.type === "member" ? selected.id
+    : !selected && selectedMemberIds.length === 1 ? selectedMemberIds[0] : null;
+  const selectedMember = members.find(member => member.id === selectedMemberId) ?? null;
   const selectedObject =
     selected?.type === "object"
       ? objects.find((object) => object.id === selected.id) ?? null
       : null;
-
-  const selectedMemberGroup = selectedMember
-    ? memberGroups.find((group) => group.memberIds.includes(selectedMember.id))
-    : null;
-  const selectedObjectGroup = selectedObject
-    ? objectGroups.find((group) => group.objectIds.includes(selectedObject.id))
-    : null;
 
   const memberPosition = selectedMember
     ? snapshot.positions[selectedMember.id]
@@ -228,9 +158,6 @@ export const DetailsPanel = ({
             zIndex: selectedObject.zIndex,
           }
         : undefined;
-  const assignedObjectNames = selectedMember
-    ? getAssignedObjectNames(selectedMember.id, currentFrame, objects)
-    : [];
   const stageWidthMeters = Math.max(
     0.1,
     projectMode === "parade" ? paradeSettings?.width ?? stage.widthMeters : stage.widthMeters,
@@ -259,9 +186,9 @@ export const DetailsPanel = ({
     projectMode === "parade"
       ? useParadeCenterSplitX
         ? "横位置（センター割り）"
-        : "x（中心基準）"
-      : "x（中心基準）";
-  const yLabel = projectMode === "parade" ? "m位置" : "y（上端基準）";
+        : "横（センターから）"
+      : "横（センターから）";
+  const yLabel = projectMode === "parade" ? "m位置" : "縦（上端から）";
   const displayYValue = (internalY: number | undefined) =>
     projectMode === "parade"
       ? internalYToParadeDistance(
@@ -415,111 +342,22 @@ export const DetailsPanel = ({
     });
   };
 
-  return (
-    <div className="details-panel">
-      <PanelStickyHeader
-        title="詳細"
-        meta={
-          currentFrame
-            ? `現在: ${currentFrame.label || "無題"}`
-            : "シーンがありません"
-        }
-      />
-      {projectDisabled && (
-        <p className="notice warning">{projectReadOnlyMessage}</p>
-      )}
-      {sceneDisabled && <p className="notice warning">{sceneReadOnlyMessage}</p>}
-
-      <section className="panel-section">
-        <div className="panel-section__header">
-          <h3>選択中</h3>
-          <span>
-            {selectedMember
-              ? "メンバー"
-              : selectedObject
-                ? "道具"
-                : selectedMemberIds.length > 1
-                  ? `${selectedMemberIds.length}人選択`
-                  : "なし"}
-          </span>
-        </div>
-
-        {!selectedMember && !selectedObject && selectedMemberIds.length <= 1 && (
-          <p className="muted-text">
-            ステージ上のメンバーや道具を選択すると、ここで名前・サイズ・座標などを編集できます。
-          </p>
-        )}
-
-        {selectedMemberIds.length > 1 && (
-          <div className="detail-summary-card">
-            <strong>{selectedMemberIds.length}人のメンバーを選択中</strong>
-            <span>整列・矢印キー移動・コピーなどをまとめて操作できます。</span>
-          </div>
-        )}
-
-        {selectedMember && (
-          <div className="detail-summary-card">
-            <div className="detail-summary-card__title">
-              <span
-                className="detail-color-dot"
-                style={{
-                  backgroundColor: getMemberDisplayColor(selectedMember, {
-                    frame: currentFrame,
-                    groups: memberGroups,
-                    snapshot,
-                  }),
-                }}
-              />
-              <strong>{selectedMember.name}</strong>
-            </div>
-            <div className="detail-edit-grid">
-              <label className="detail-edit-field detail-edit-field--wide">
-                <span>メンバー名</span>
-                <input
-                  value={selectedMember.name}
-                  disabled={projectDisabled}
-                  title={projectDisabled ? projectReadOnlyMessage : undefined}
-                  onChange={(event) =>
-                    onUpdateMember(selectedMember.id, {
-                      name: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label className="detail-edit-field">
-                <span>所属グループ</span>
-                <select
-                  value={selectedMemberGroup?.id ?? ""}
-                  disabled={projectDisabled}
-                  title={projectDisabled ? projectReadOnlyMessage : undefined}
-                  onChange={(event) =>
-                    onUpdateMemberGroup(
-                      selectedMember.id,
-                      event.target.value || null,
-                    )
-                  }
-                >
-                  <option value="">未所属</option>
-                  {memberGroups.map((group) => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="detail-edit-field">
-                <span>表示色</span>
-                <ColorPaletteInput
-                  value={selectedMember.color}
-                  disabled={projectDisabled}
-                  onChange={(color) =>
-                    onUpdateMember(selectedMember.id, {
-                      color,
-                    })
-                  }
-                  label={`${selectedMember.name} の表示色`}
-                />
-              </div>
+  if (!selectedMember && !selectedObject && selectedMemberIds.length <= 1) {
+    return focusRequest ? <section className="selected-position-card" ref={cardRef} tabIndex={-1} aria-label="選択対象の位置">
+      メンバーや道具を選ぶと、位置を数字で合わせられます。
+    </section> : null;
+  }
+  return <section className="selected-position-card" ref={cardRef} tabIndex={-1} aria-label="選択対象の位置">
+    {selectedMemberIds.length > 1 ? <strong>{selectedMemberIds.length}人選択中</strong> : <>
+      <div className="detail-summary-card__title">
+        <span className="detail-color-dot" style={{ backgroundColor: selectedMember
+          ? getMemberDisplayColor(selectedMember, { frame: currentFrame, groups: memberGroups, snapshot })
+          : selectedObject?.color }} />
+        <strong>{selectedMember?.name ?? selectedObject?.name}</strong>
+      </div>
+      {!canEditScene && <p className="muted-text">{sceneReadOnlyMessage}</p>}
+      <div className="detail-edit-grid">
+        {selectedMember && <>
               <label className="detail-edit-field">
                 <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
@@ -563,76 +401,8 @@ export const DetailsPanel = ({
                   <b>m</b>
                 </span>
               </label>
-              <div className="detail-readout-chip detail-readout-chip--wide">
-                <span>表示</span>
-                <strong>
-                  {(selectedMember.visible ?? true) &&
-                  (snapshot.memberVisibility[selectedMember.id] ?? true)
-                    ? "表示中"
-                    : "隊列外"}
-                </strong>
-              </div>
-            </div>
-            {assignedObjectNames.length > 0 && (
-              <p className="assignment-inline-note">
-                割当: {assignedObjectNames.join("、")}
-              </p>
-            )}
-          </div>
-        )}
-
-        {selectedObject && (
-          <div className="detail-summary-card">
-            <div className="detail-summary-card__title">
-              <span
-                className="detail-color-dot"
-                style={{ backgroundColor: selectedObject.color }}
-              />
-              <strong>{selectedObject.name}</strong>
-            </div>
-            <div className="detail-edit-grid">
-              <label className="detail-edit-field detail-edit-field--wide">
-                <span>道具名</span>
-                <input
-                  value={selectedObject.name}
-                  disabled={projectDisabled}
-                  title={projectDisabled ? projectReadOnlyMessage : undefined}
-                  onChange={(event) =>
-                    onUpdateObject(selectedObject.id, {
-                      name: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <div className="detail-readout-chip">
-                <span>種類</span>
-                <strong>{objectTypeLabel(selectedObject.type)}</strong>
-              </div>
-              <div className="detail-readout-chip">
-                <span>所属</span>
-                <strong>{selectedObjectGroup?.name ?? "未所属"}</strong>
-              </div>
-              <div className="detail-readout-chip">
-                <span>表示</span>
-                <strong>
-                  {(objectState?.visible ?? selectedObject.visible) !== false
-                    ? "表示中"
-                    : "非表示"}
-                </strong>
-              </div>
-              <div className="detail-edit-field">
-                <span>色</span>
-                <ColorPaletteInput
-                  value={selectedObject.color}
-                  disabled={projectDisabled}
-                  onChange={(color) =>
-                    onUpdateObject(selectedObject.id, {
-                      color,
-                    })
-                  }
-                  label={`${selectedObject.name} の色`}
-                />
-              </div>
+        </>}
+        {selectedObject && <>
               <label className="detail-edit-field">
                 <span>{xLabel}</span>
                 <span className="detail-input-with-unit">
@@ -723,36 +493,8 @@ export const DetailsPanel = ({
                   <b>°</b>
                 </span>
               </label>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="panel-section">
-        <div className="panel-section__header">
-          <h3>座標の見方</h3>
-          <span>詳細タブ</span>
-        </div>
-        <p className="muted-text">
-          {projectMode === "parade"
-            ? useParadeCenterSplitX
-              ? "横位置はセンターから左右それぞれの距離で表示します。m位置はスタート地点からの距離です。"
-              : "xはセンターラインを0mとして、右がプラス、左がマイナスです。m位置はスタート地点からの距離です。"
-            : "xはステージ上端のセンターラインを0mとして、右がプラス、左がマイナスです。yはステージ上端を0mとして、下方向がプラスです。"}
-        </p>
-      </section>
-
-      <section className="panel-section">
-        <div className="panel-section__header">
-          <h3>ショートカット</h3>
-        </div>
-        <ul className="details-shortcut-list">
-          <li>矢印キー: 0.25m移動</li>
-          <li>Shift+矢印: グリッド単位</li>
-          <li>Ctrl+矢印: 0.01m移動</li>
-          <li>Esc: 選択解除 / メニューを閉じる</li>
-        </ul>
-      </section>
-    </div>
-  );
+        </>}
+      </div>
+    </>}
+  </section>;
 };
