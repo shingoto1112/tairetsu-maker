@@ -25,7 +25,17 @@ it.each(["meters", "centerSplit"] as const)("preserves signed stage coordinates 
   expect((input(/^横（/) as HTMLInputElement).value).toBe("-3");
   expect(screen.queryByRole("textbox")).toBeNull();
   change(/^横（/, "-1.13"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 3.87, y: 2 });
-  change(/^縦（/, "99"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 8 });
+  // 縦 is measured from 最前 (0m ruler line): internal y 2 on an 8m stage is 6m from the front.
+  expect((input(/^縦（最前から）/) as HTMLInputElement).value).toBe("6");
+  change(/^縦（/, "1.5"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 6.5 });
+  change(/^縦（/, "99"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 0 });
+});
+it("uses the internal y directly when the front is at the top", () => {
+  const p = props(); p.stage.frontDirection = "top";
+  p.snapshot.positions.m_anna.y = 2;
+  render(<SelectedPositionCard {...p} />);
+  expect((input(/^縦（/) as HTMLInputElement).value).toBe("2");
+  change(/^縦（/, "3"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 3 });
 });
 it.each(["normalMeter", "centerSplit"] as const)("converts parade distance, backward range and horizontal side; %s", mode => {
   const p = props(); p.projectMode = "parade";
@@ -47,7 +57,10 @@ it("uses one tool geometry editor with minimum .01, rotation and size-dependent 
   change(/横幅/, "5"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { widthMeters: 5, x: 5, y: 6 });
   change(/回転角度/, "-35.5"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { rotation: -35.5 });
   change(/^横（/, "99"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: 9 });
-  change(/^縦（/, "99"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { y: 7 });
+  // A prop's 縦 is the distance from 最前 to its front edge: y 6 + height 1 on an 8m stage is 1m.
+  expect((input(/^縦（/) as HTMLInputElement).value).toBe("1");
+  change(/^縦（/, "2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { y: 5 });
+  change(/^縦（/, "99"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { y: 0 });
 });
 it("constrains a parade tool by its height at the backward edge", () => {
   const p = props(); p.selected = { type: "object", id: "o_chair" }; p.projectMode = "parade";

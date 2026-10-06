@@ -94,7 +94,8 @@ export const createEmptyFormationProject = (
       snapToGuideEnabled: false,
     },
     focusMemberId: undefined,
-    viewerPerspective: "audience",
+    // New stages open in the dancers' view (最前 0m at the top; user decision 2026-10-07). Parade always uses the audience view.
+    viewerPerspective: formationMode === "parade" ? "audience" : "performer",
     frames: [
       {
         id: createId("f"),

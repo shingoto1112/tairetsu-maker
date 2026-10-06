@@ -188,7 +188,10 @@ export const SelectedPositionCard = ({
         ? "横位置（センター割り）"
         : "横（センターから）"
       : "横（センターから）";
-  const yLabel = projectMode === "parade" ? "m位置" : "縦（上端から）";
+  const yLabel = projectMode === "parade" ? "m位置" : "縦（最前から）";
+  // Stage 縦 uses the same numbers as the rulers: 最前 is 0m, larger toward 奥.
+  const frontAtTop = (stage.frontDirection ?? stage.audienceSide ?? "bottom") === "top";
+  const fromFront = (internalY: number) => roundDetailMeters(frontAtTop ? internalY : stageDepthMeters - internalY);
   const displayYValue = (internalY: number | undefined) =>
     projectMode === "parade"
       ? internalYToParadeDistance(
@@ -196,7 +199,7 @@ export const SelectedPositionCard = ({
           stageDepthMeters,
           paradeBackwardDistanceMeters,
         )
-      : internalY;
+      : internalY === undefined ? undefined : fromFront(internalY);
   const internalYValue = (displayY: number) =>
     projectMode === "parade"
       ? paradeDistanceToInternalY(
@@ -204,7 +207,16 @@ export const SelectedPositionCard = ({
           stageDepthMeters,
           paradeBackwardDistanceMeters,
         )
-      : displayY;
+      : frontAtTop ? displayY : stageDepthMeters - displayY;
+  // Props are stored by their corner; on stage show the distance from 最前 to the prop's front edge.
+  const objectDisplayYValue = (internalY: number | undefined, heightMeters: number) =>
+    projectMode === "parade" || internalY === undefined || frontAtTop
+      ? displayYValue(internalY)
+      : fromFront(internalY + heightMeters);
+  const objectInternalYValue = (displayY: number, heightMeters: number) =>
+    projectMode === "parade" || frontAtTop
+      ? internalYValue(displayY)
+      : stageDepthMeters - displayY - heightMeters;
   const displayXValue = (internalX: number | undefined) =>
     useParadeCenterSplitX
       ? internalX === undefined
@@ -281,8 +293,9 @@ export const SelectedPositionCard = ({
             )
           : roundDetailMeters(
               clamp(
-                internalYValue(
+                objectInternalYValue(
                   clamp(value, objectDisplayYBounds.min, objectDisplayYBounds.max),
+                  objectState.heightMeters,
                 ),
                 0,
                 maxObjectY,
@@ -432,7 +445,7 @@ export const SelectedPositionCard = ({
                     step="0.01"
                     min={objectDisplayYBounds.min}
                     max={objectDisplayYBounds.max}
-                    value={displayYValue(objectState?.y)}
+                    value={objectDisplayYValue(objectState?.y, objectState?.heightMeters ?? 0)}
                     disabled={sceneDisabled}
                     title={sceneDisabled ? sceneReadOnlyMessage : undefined}
                     onValueChange={(value) =>

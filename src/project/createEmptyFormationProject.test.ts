@@ -17,6 +17,14 @@ describe("createEmptyFormationProject", () => {
     expect(project.stage.gridSizeMeters).toBe(0.5);
   });
 
+  it("opens new stages in the dancers' view (最前 0m at the top); parades keep the audience view", () => {
+    expect(createEmptyFormationProject("新規", stageSettings, null).viewerPerspective).toBe("performer");
+    expect(createEmptyFormationProject("パレード", { ...stageSettings, formationMode: "parade" }, null).viewerPerspective).toBe("audience");
+    const existing = createEmptyFormationProject("既存", stageSettings, null);
+    existing.viewerPerspective = "audience";
+    expect(normalizeProject(existing).viewerPerspective).toBe("audience");
+  });
+
   it("does not turn labels off for existing formations that had them on", () => {
     const existing = createEmptyFormationProject("既存", stageSettings, null);
     existing.stage.showStageLabels = true;
