@@ -1,0 +1,7 @@
+.waveform-canvas {
+  display: block;
+  width: 100%;
+  height: var(--waveform-height, 48px);
+  min-width: 0;
+  pointer-events: none;
+}

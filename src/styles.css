@@ -5274,6 +5274,85 @@ h2 {
 
 .audio-panel {
   align-self: start;
+  display: grid;
+  gap: 12px;
+}
+
+.audio-now {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  justify-content: space-between;
+}
+
+.audio-now__time {
+  color: var(--ink);
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.audio-now__time small {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.audio-now__scene {
+  color: #0f766e;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Fits the narrow landscape panel: the play button takes the remaining width. */
+.audio-transport {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: auto auto minmax(72px, 1fr) auto auto;
+  min-width: 0;
+}
+
+.audio-transport .mini-button {
+  gap: 2px;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.audio-marking {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.audio-marking__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audio-marking__actions .mini-button {
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.audio-marking__help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.audio-settings .settings-grid {
+  margin-top: 8px;
 }
 
 .file-picker {

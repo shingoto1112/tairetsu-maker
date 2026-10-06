@@ -35,6 +35,8 @@ import { useCollaborationUi } from "./hooks/useCollaborationUi";
 import { useCollaborationLibrary } from "./hooks/useCollaborationLibrary";
 import { libraryAccountButton, toCloudLibraryCards } from "./collaboration/libraryCards";
 import { ProjectCardPreview, type ProjectCardPreviewSource } from "./components/ProjectCardPreview";
+import { useAudioWaveform } from "./hooks/useAudioWaveform";
+import { WaveformCanvas } from "./components/WaveformCanvas";
 const CollaborationSurface = lazy(() => import("./components/CollaborationSurface"));
 const LegacyRescuePanel = lazy(() => import("./components/LegacyRescuePanel"));
 const CollaborationBadge = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationBadge })));
@@ -3923,6 +3925,50 @@ function App() {
     setNotice("シーンを追加しました。", "success");
   };
 
+  // 音源タブ waveform: read the loaded song's own URL (a blob: URL on the web, a converted
+  // file URL in the iPad app, so no base64), only while the tab is open. The hook caps size/length.
+  const waveformUrl = appView === "editor" && activePanelTab === "audio" ? audioUrl : null;
+  const loadWaveformInput = useCallback(async () => {
+    if (!waveformUrl) throw new Error("音源がありません。");
+    // Native file URLs need Range to avoid status-0 media responses; blob: URLs are read whole.
+    const response = await fetch(waveformUrl, waveformUrl.startsWith("blob:") ? undefined : { headers: { Range: "bytes=0-" } });
+    if (!response.ok && response.status !== 0) throw new Error("音源を読み込めません。");
+    return response.arrayBuffer();
+  }, [waveformUrl]);
+  const waveform = useAudioWaveform({
+    key: waveformUrl, load: loadWaveformInput, enabled: !!waveformUrl,
+    sizeHint: project.audio?.size, durationHint: duration > 0 ? duration : undefined,
+  });
+  const waveformNote = {
+    idle: undefined, ready: undefined,
+    loading: "波形を作成しています…",
+    "too-large": "曲が長い（ファイルが大きい）ため、波形は表示していません。区切りはそのまま使えます。",
+    unsupported: "この環境では波形を表示できません。区切りはそのまま使えます。",
+    error: "波形を表示できませんでした。区切りはそのまま使えます。",
+  }[waveform.status];
+
+  // 音源タブ: read the playhead at the moment of the press, not the last rendered frame.
+  const playheadTime = () => {
+    const time = audioRef.current?.currentTime;
+    return typeof time === "number" && Number.isFinite(time) ? time : currentTime;
+  };
+  // One drag (or one "今の位置に") is one undo step; the stored order is never re-sorted.
+  const retimeScene = (id: string, timeSec: number) => {
+    const next = Math.max(0, Math.round(timeSec * 10) / 10);
+    const frame = projectRef.current.frames.find((item) => item.id === id);
+    if (!frame || Math.abs(frame.timeSec - next) < 0.05) return;
+    updateProject((previous) => ({
+      ...previous,
+      frames: previous.frames.map((item) => item.id === id ? { ...item, timeSec: next } : item),
+    }), "シーンの時刻", { coalesceHistory: false });
+  };
+  const selectSceneAndSeek = (id: string) => {
+    const frame = projectRef.current.frames.find((item) => item.id === id);
+    if (!frame) return;
+    setSelectedFrameId(id);
+    seek(frame.timeSec);
+  };
+
   const updateFrame = (id: string, patch: Partial<FormationFrame>) => {
     const applyChange = () => {
       updateProject((previous) => ({
@@ -7280,6 +7326,14 @@ function App() {
           onSeek={seek}
           onPlaybackRateChange={setPlaybackRate}
           onLoopChange={changeLoop}
+          frames={displayFrames}
+          selectedFrameId={selectedFrame?.id ?? null}
+          waveform={waveform.data ? <WaveformCanvas data={waveform.data} className="audio-timeline__waveform" /> : undefined}
+          waveformNote={audioUrl ? waveformNote : undefined}
+          onSelectScene={selectSceneAndSeek}
+          onRetimeScene={retimeScene}
+          onAddSceneAtPlayhead={() => addFrame(playheadTime())}
+          onAlignSceneToPlayhead={(id) => retimeScene(id, playheadTime())}
         />
       );
     }
@@ -7308,7 +7362,7 @@ function App() {
             }
           }}
           onAddFrame={() => addFrame()}
-          onAddFrameAtCurrentTime={() => addFrame(currentTime)}
+          onAddFrameAtCurrentTime={() => addFrame(playheadTime())}
           onPreviousFrame={() => goToScene(-1)}
           onNextFrame={() => goToScene(1)}
           onSeekToFrame={seekToFrame}

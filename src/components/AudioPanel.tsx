@@ -1,9 +1,12 @@
 import type { AudioSelection } from "../platform/audioStorage";
-import type { AudioMeta } from "../types";
-import { Music, Pause, Play } from "lucide-react";
-import { formatTime } from "../utils/time";
+import type { ReactNode } from "react";
+import type { AudioMeta, FormationFrame } from "../types";
+import { Crosshair, Music, Pause, Play, Plus, Rewind, FastForward, SkipBack, SkipForward } from "lucide-react";
+import { formatTime, formatTimeTenths } from "../utils/time";
+import { getActiveFrameAtTime } from "../utils/interpolation";
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
-import { NumericInput } from "./NumericInput";
+import { AudioSceneTimeline } from "./AudioSceneTimeline";
+import { AudioTimeInput } from "./AudioTimeInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type AudioPanelProps = {
@@ -34,6 +37,18 @@ type AudioPanelProps = {
     loopStart?: number;
     loopEnd?: number;
   }) => void;
+  /** Scenes in time order; enables the song bar and scene tools. */
+  frames?: FormationFrame[];
+  selectedFrameId?: string | null;
+  canEditScenes?: boolean;
+  waveform?: ReactNode;
+  waveformNote?: string;
+  /** Select a scene and move the playhead to it. */
+  onSelectScene?: (frameId: string) => void;
+  onRetimeScene?: (frameId: string, timeSec: number) => void;
+  /** Adds a scene at the playhead (read at the moment of the press). */
+  onAddSceneAtPlayhead?: () => void;
+  onAlignSceneToPlayhead?: (frameId: string) => void;
 };
 
 export const AudioPanel = ({
@@ -60,12 +75,30 @@ export const AudioPanel = ({
   onSeek,
   onPlaybackRateChange,
   onLoopChange,
+  frames = [],
+  selectedFrameId = null,
+  canEditScenes = true,
+  waveform,
+  waveformNote,
+  onSelectScene,
+  onRetimeScene,
+  onAddSceneAtPlayhead,
+  onAlignSceneToPlayhead,
 }: AudioPanelProps) => {
+  const sceneTools = frames.length > 0 && !!onSelectScene;
+  const activeFrame = sceneTools ? getActiveFrameAtTime(frames, currentTime) : undefined;
+  const activeIndex = activeFrame ? frames.findIndex((frame) => frame.id === activeFrame.id) : -1;
+  const selectedFrame = frames.find((frame) => frame.id === selectedFrameId) ?? null;
+  const clampTime = (time: number) => Math.min(Math.max(0, time), duration > 0 ? duration : Infinity);
+  const playButton = <button className="mini-button primary audio-transport__play" disabled={!audioReady} onClick={onTogglePlayback} type="button">
+    {isPlaying ? <Pause size={17} /> : <Play size={17} />}
+    {isPlaying ? "停止" : "再生"}
+  </button>;
   return (
     <section className="panel-section audio-panel">
       <PanelStickyHeader
         title="音源"
-        meta={`${audioName ?? "未読み込み"} / ${formatTime(currentTime)} / ${formatTime(duration)}`}
+        meta={audioName ?? "曲が読み込まれていません"}
         actions={
           <>
             {!onChangeSharedSong && <AudioFilePickerButton
@@ -75,12 +108,9 @@ export const AudioPanel = ({
               onFileSelected={onLoadAudio}
             >
               <Music size={15} />
-              読み込み
+              {audioName ? "曲を変更" : "読み込み"}
             </AudioFilePickerButton>}
-            <button className="mini-button primary" disabled={!audioReady} onClick={onTogglePlayback} type="button">
-              {isPlaying ? <Pause size={15} /> : <Play size={15} />}
-              {isPlaying ? "停止" : "再生"}
-            </button>
+            {!sceneTools && playButton}
           </>
         }
       />
@@ -114,18 +144,49 @@ export const AudioPanel = ({
         </p>
       )}
       {!canEditAudio && <p className="notice warning">{audioReadOnlyMessage}</p>}
-      <input
+      {sceneTools ? <>
+        <div className="audio-now" aria-live="off">
+          <strong className="audio-now__time">{formatTimeTenths(currentTime)}<small> / {duration > 0 ? formatTime(duration) : "—"}</small></strong>
+          <span className="audio-now__scene">いまのシーン：{activeFrame ? `${activeFrame.label || "無題"}（${activeIndex + 1}/${frames.length}）` : "—"}</span>
+        </div>
+        <AudioSceneTimeline frames={frames} duration={duration} currentTime={currentTime} selectedFrameId={selectedFrameId}
+          canEdit={canEditScenes && !!onRetimeScene} waveform={waveform} waveformNote={waveformNote}
+          onSeek={onSeek} onSelectScene={onSelectScene!} onRetimeScene={(id, time) => onRetimeScene?.(id, time)} />
+        <div className="audio-transport" role="group" aria-label="再生の操作">
+          <button type="button" className="mini-button" disabled={activeIndex <= 0}
+            onClick={() => onSelectScene!(frames[activeIndex - 1].id)} aria-label="前のシーンへ"><SkipBack size={16} /></button>
+          <button type="button" className="mini-button" onClick={() => onSeek(clampTime(currentTime - 5))} aria-label="5秒戻る"><Rewind size={16} />5秒</button>
+          {playButton}
+          <button type="button" className="mini-button" onClick={() => onSeek(clampTime(currentTime + 5))} aria-label="5秒進む">5秒<FastForward size={16} /></button>
+          <button type="button" className="mini-button" disabled={activeIndex < 0 || activeIndex >= frames.length - 1}
+            onClick={() => onSelectScene!(frames[activeIndex + 1].id)} aria-label="次のシーンへ"><SkipForward size={16} /></button>
+        </div>
+        <section className="audio-marking" aria-label="シーンの区切り">
+          <div className="audio-marking__actions">
+            <button type="button" className="mini-button primary" disabled={!canEditScenes || !onAddSceneAtPlayhead || !audioReady}
+              onClick={() => onAddSceneAtPlayhead?.()}><Plus size={16} />ここにシーンを追加</button>
+            <button type="button" className="mini-button" disabled={!canEditScenes || !selectedFrame || !onAlignSceneToPlayhead || !audioReady}
+              onClick={() => selectedFrame && onAlignSceneToPlayhead?.(selectedFrame.id)}>
+              <Crosshair size={16} />{selectedFrame ? `「${selectedFrame.label || "無題"}」を今の位置に` : "選んだシーンを今の位置に"}
+            </button>
+          </div>
+          <p className="audio-marking__help">曲を流しながら、動きが変わるところで「ここにシーンを追加」を押すと、その時刻にシーンができます。</p>
+        </section>
+      </> : <input
         className="seek"
         type="range"
+        aria-label="再生位置"
         min="0"
         max={Math.max(duration, 0.1)}
         step="0.01"
         value={Math.min(currentTime, Math.max(duration, 0))}
         onChange={(event) => onSeek(Number(event.target.value))}
-      />
+      />}
+      <details className="settings-disclosure audio-settings">
+        <summary>詳しい設定（再生の速さ・くり返し）</summary>
       <div className="settings-grid">
         <label>
-          再生速度
+          再生の速さ
           <select
             value={playbackRate}
             onChange={(event) => onPlaybackRateChange(Number(event.target.value))}
@@ -137,7 +198,7 @@ export const AudioPanel = ({
           </select>
         </label>
         <label>
-          ループ
+          くり返し
           <select
             value={String(loopEnabled)}
             onChange={(event) =>
@@ -149,24 +210,17 @@ export const AudioPanel = ({
           </select>
         </label>
         <label>
-          開始秒
-          <NumericInput
-            min={0}
-            step="0.1"
-            value={loopStart}
-            onValueChange={(loopStart) => onLoopChange({ loopStart })}
-          />
+          くり返しの開始
+          <AudioTimeInput ariaLabel="くり返しの開始（分:秒）" value={loopStart} max={duration > 0 ? duration : undefined}
+            onCommit={(loopStart) => onLoopChange({ loopStart })} />
         </label>
         <label>
-          終了秒
-          <NumericInput
-            min={0}
-            step="0.1"
-            value={loopEnd}
-            onValueChange={(loopEnd) => onLoopChange({ loopEnd })}
-          />
+          くり返しの終了
+          <AudioTimeInput ariaLabel="くり返しの終了（分:秒）" value={loopEnd} max={duration > 0 ? duration : undefined}
+            onCommit={(loopEnd) => onLoopChange({ loopEnd })} />
         </label>
       </div>
+      </details>
     </section>
   );
 };
