@@ -1,0 +1,17 @@
+.audio-dial { width: min(320px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid #dbe7ef; border-radius: 20px; padding: 20px; color: #334155; background: white; box-shadow: 0 16px 60px #0f172a33; }
+.audio-dial::backdrop { background: #0f172a66; }
+.audio-dial h2 { font-size: 18px; margin: 0; }
+.audio-dial__value { color: #0d8b78; font-size: 20px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.audio-dial__wheels { display: flex; gap: 16px; position: relative; }
+.audio-dial__column { min-width: 0; flex: 1; text-align: center; }
+.audio-dial__column-name { display: block; font-size: 13px; margin-bottom: 8px; }
+.audio-dial__wheel { height: 220px; overflow-y: auto; scroll-snap-type: y mandatory; padding: 88px 0; box-sizing: border-box; scrollbar-width: none; overscroll-behavior: contain; border-radius: 10px; background: linear-gradient(to bottom, #f8fafc 40%, #e5f5ef 40%, #e5f5ef 60%, #f8fafc 60%); }
+.audio-dial__wheel::-webkit-scrollbar { display: none; }
+.audio-dial__wheel:focus-visible { outline: 2px solid #0d8b78; }
+.audio-dial__row { height: 44px; line-height: 44px; flex-shrink: 0; scroll-snap-align: center; color: #64748b; font-size: 22px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.audio-dial__row.is-selected { color: #0d8b78; font-weight: 800; }
+.audio-dial__adjust { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+.audio-dial__adjust button { min-width: 44px; min-height: 44px; border: 1px solid #dbe7ef; background: white; border-radius: 8px; }
+.audio-dial__end { margin-top: 16px; width: 100%; }
+.audio-dial__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.audio-dial__actions button { min-height: 44px; min-width: 76px; }

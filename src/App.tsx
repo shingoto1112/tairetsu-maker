@@ -36,7 +36,6 @@ import { useCollaborationLibrary } from "./hooks/useCollaborationLibrary";
 import { libraryAccountButton, toCloudLibraryCards } from "./collaboration/libraryCards";
 import { ProjectCardPreview, type ProjectCardPreviewSource } from "./components/ProjectCardPreview";
 import { useAudioWaveform } from "./hooks/useAudioWaveform";
-import { WaveformCanvas } from "./components/WaveformCanvas";
 const CollaborationSurface = lazy(() => import("./components/CollaborationSurface"));
 const LegacyRescuePanel = lazy(() => import("./components/LegacyRescuePanel"));
 const CollaborationBadge = lazy(() => import("./components/CollaborationSurface").then(module => ({ default: module.CollaborationBadge })));
@@ -924,6 +923,10 @@ function App() {
   const [duration, setDuration] = useState(0);
   const [audioName, setAudioName] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const audioScrubContext = useRef({ audioUrl, activePanelTab, generation: 0 });
+  if (audioScrubContext.current.audioUrl !== audioUrl || audioScrubContext.current.activePanelTab !== activePanelTab) {
+    audioScrubContext.current = { audioUrl, activePanelTab, generation: audioScrubContext.current.generation + 1 };
+  }
   const [playbackRate, setPlaybackRate] = useState(1);
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
@@ -5619,6 +5622,33 @@ function App() {
     }
   };
 
+  // Local transport only: never update project/history/collaboration when scrubbing.
+  const pauseForAudioScrub = () => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl || audio.src !== audioUrl) return false;
+    audioScrubContext.current.generation += 1;
+    const resume = !audio.paused;
+    audio.pause();
+    setIsPlaying(false);
+    return resume;
+  };
+  const resumeAfterAudioScrub = async () => {
+    const audio = audioRef.current;
+    const generation = audioScrubContext.current.generation;
+    if (!audio || !audioUrl || audio.src !== audioUrl || audioScrubContext.current.activePanelTab !== "audio") return;
+    if (sharedSession.active?.attached && !sharedSession.active.audioMatches(projectRef.current.audio)) return;
+    try {
+      await audio.play();
+      if (audioScrubContext.current.generation !== generation || audioRef.current !== audio) {
+        if (audio.src === audioUrl && (audioScrubContext.current.audioUrl !== audioUrl || audioScrubContext.current.activePanelTab !== "audio")) audio.pause();
+        return;
+      }
+      setIsPlaying(true);
+    } catch {
+      if (audioScrubContext.current.generation === generation) setNotice("再生を再開できませんでした。再生ボタンを押してください。");
+    }
+  };
+
   const waitForPaint = () =>
     new Promise<void>((resolve) => {
       window.requestAnimationFrame(() => {
@@ -7304,6 +7334,8 @@ function App() {
     if (activePanelTab === "audio") {
       return (
         <AudioPanel
+          key={`${project.id}:${audioUrl}`}
+          audioKey={audioUrl}
           audioName={audioName}
           isPlaying={isPlaying}
           currentTime={currentTime}
@@ -7328,9 +7360,11 @@ function App() {
           onLoopChange={changeLoop}
           frames={displayFrames}
           selectedFrameId={selectedFrame?.id ?? null}
-          waveform={waveform.data ? <WaveformCanvas data={waveform.data} className="audio-timeline__waveform" /> : undefined}
+          waveform={waveform.data}
           waveformNote={audioUrl ? waveformNote : undefined}
           onSelectScene={selectSceneAndSeek}
+          onPausePlayback={pauseForAudioScrub}
+          onResumePlayback={() => { void resumeAfterAudioScrub(); }}
           onRetimeScene={retimeScene}
           onAddSceneAtPlayhead={() => addFrame(playheadTime())}
           onAlignSceneToPlayhead={(id) => retimeScene(id, playheadTime())}

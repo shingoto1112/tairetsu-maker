@@ -1,12 +1,13 @@
 import type { AudioSelection } from "../platform/audioStorage";
-import type { ReactNode } from "react";
+import { useState } from "react";
+import type { WaveformData } from "../utils/audioWaveform";
 import type { AudioMeta, FormationFrame } from "../types";
 import { Crosshair, Music, Pause, Play, Plus, Rewind, FastForward, SkipBack, SkipForward } from "lucide-react";
-import { formatTime, formatTimeTenths } from "../utils/time";
+import { formatTime } from "../utils/time";
 import { getActiveFrameAtTime } from "../utils/interpolation";
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
 import { AudioSceneTimeline } from "./AudioSceneTimeline";
-import { AudioTimeInput } from "./AudioTimeInput";
+import { AudioTimeDial } from "./AudioTimeDial";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type AudioPanelProps = {
@@ -41,8 +42,11 @@ type AudioPanelProps = {
   frames?: FormationFrame[];
   selectedFrameId?: string | null;
   canEditScenes?: boolean;
-  waveform?: ReactNode;
+  audioKey?: string | null;
+  waveform?: WaveformData | null;
   waveformNote?: string;
+  onPausePlayback?: () => boolean;
+  onResumePlayback?: () => void;
   /** Select a scene and move the playhead to it. */
   onSelectScene?: (frameId: string) => void;
   onRetimeScene?: (frameId: string, timeSec: number) => void;
@@ -80,11 +84,16 @@ export const AudioPanel = ({
   canEditScenes = true,
   waveform,
   waveformNote,
+  audioKey,
+  onPausePlayback,
+  onResumePlayback,
   onSelectScene,
   onRetimeScene,
   onAddSceneAtPlayhead,
   onAlignSceneToPlayhead,
 }: AudioPanelProps) => {
+  const [dial, setDial] = useState<"start" | "end" | null>(null);
+  const knownDuration = Number.isFinite(duration) && duration > 0;
   const sceneTools = frames.length > 0 && !!onSelectScene;
   const activeFrame = sceneTools ? getActiveFrameAtTime(frames, currentTime) : undefined;
   const activeIndex = activeFrame ? frames.findIndex((frame) => frame.id === activeFrame.id) : -1;
@@ -146,11 +155,12 @@ export const AudioPanel = ({
       {!canEditAudio && <p className="notice warning">{audioReadOnlyMessage}</p>}
       {sceneTools ? <>
         <div className="audio-now" aria-live="off">
-          <strong className="audio-now__time">{formatTimeTenths(currentTime)}<small> / {duration > 0 ? formatTime(duration) : "—"}</small></strong>
+          <strong className="audio-now__time">{formatTime(currentTime)}<small aria-label="残り時間"> {knownDuration ? `-${formatTime(Math.max(0, duration - currentTime))}` : "—"}</small></strong>
           <span className="audio-now__scene">いまのシーン：{activeFrame ? `${activeFrame.label || "無題"}（${activeIndex + 1}/${frames.length}）` : "—"}</span>
         </div>
         <AudioSceneTimeline frames={frames} duration={duration} currentTime={currentTime} selectedFrameId={selectedFrameId}
           canEdit={canEditScenes && !!onRetimeScene} waveform={waveform} waveformNote={waveformNote}
+          audioKey={audioKey} onPausePlayback={onPausePlayback} onResumePlayback={onResumePlayback}
           onSeek={onSeek} onSelectScene={onSelectScene!} onRetimeScene={(id, time) => onRetimeScene?.(id, time)} />
         <div className="audio-transport" role="group" aria-label="再生の操作">
           <button type="button" className="mini-button" disabled={activeIndex <= 0}
@@ -209,18 +219,14 @@ export const AudioPanel = ({
             <option value="true">ON</option>
           </select>
         </label>
-        <label>
-          くり返しの開始
-          <AudioTimeInput ariaLabel="くり返しの開始（分:秒）" value={loopStart} max={duration > 0 ? duration : undefined}
-            onCommit={(loopStart) => onLoopChange({ loopStart })} />
-        </label>
-        <label>
-          くり返しの終了
-          <AudioTimeInput ariaLabel="くり返しの終了（分:秒）" value={loopEnd} max={duration > 0 ? duration : undefined}
-            onCommit={(loopEnd) => onLoopChange({ loopEnd })} />
-        </label>
+        <button type="button" className="mini-button" disabled={!knownDuration} onClick={() => setDial("start")}>開始 {formatTime(loopStart)}</button>
+        <button type="button" className="mini-button" disabled={!knownDuration} onClick={() => setDial("end")}>終了 {formatTime(loopEnd)}</button>
       </div>
+      <p className="audio-timeline__hint">くり返し：{formatTime(loopStart)} ～ {formatTime(loopEnd)}</p>
       </details>
+      {dial && knownDuration && <AudioTimeDial key={`${audioKey}:${dial}:${duration}`} label={dial === "start" ? "くり返しの開始" : "くり返しの終了"}
+        edge={dial} value={dial === "start" ? loopStart : loopEnd} otherTime={dial === "start" ? loopEnd : loopStart} duration={duration}
+        onCancel={() => setDial(null)} onCommit={time => { onLoopChange(dial === "start" ? { loopStart: time } : { loopEnd: time }); setDial(null); }} />}
     </section>
   );
 };

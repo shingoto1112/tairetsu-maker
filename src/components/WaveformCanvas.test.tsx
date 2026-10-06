@@ -62,7 +62,7 @@ describe("WaveformCanvas", () => {
     size.width = 1;
     const view = render(<WaveformCanvas data={data} />);
     expect(context.fillRect).toHaveBeenCalledExactlyOnceWith(0, 1, 1, 46);
-    expect(context.fillStyle).toBe("#94a3b8"); expect(context.globalAlpha).toBe(0.45);
+    expect(context.fillStyle).toBe("#64748b"); expect(context.globalAlpha).toBe(0.7);
     view.rerender(<WaveformCanvas data={null} />); expect(context.clearRect).toHaveBeenCalledTimes(2);
     view.rerender(<WaveformCanvas data={{ ...data, peaks: new Float32Array(4) }} />);
     expect(context.fillRect).toHaveBeenCalledOnce();
@@ -75,5 +75,24 @@ describe("WaveformCanvas", () => {
     view.unmount(); vi.stubGlobal("ResizeObserver", undefined);
     vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(null);
     expect(() => render(<WaveformCanvas data={data} />)).not.toThrow();
+  });
+
+  it("uses a bounded canvas, moves by transform without measuring/drawing every frame, and rebases by window", () => {
+    size.width = 900;
+    const long = { durationSec: 900, peaks: new Float32Array(1600).fill(0.5) };
+    const measure = vi.mocked(HTMLCanvasElement.prototype.getBoundingClientRect);
+    const view = render(<WaveformCanvas data={long} currentTime={30} visibleSeconds={30} songDuration={900} />);
+    const canvas = view.container.querySelector("canvas")!;
+    expect(canvas.style.width).toBe("300%"); expect(canvas.width).toBe(1800);
+    expect(context.clearRect).toHaveBeenCalledOnce(); expect(measure).toHaveBeenCalledOnce();
+    expect(canvas.style.transform).toBe("translate3d(-150px,0,0)");
+    for (const time of [30.1, 31, 45, 59.9]) view.rerender(<WaveformCanvas data={long} currentTime={time} visibleSeconds={30} songDuration={900} />);
+    expect(context.clearRect).toHaveBeenCalledOnce(); expect(measure).toHaveBeenCalledOnce();
+    view.rerender(<WaveformCanvas data={long} currentTime={60} visibleSeconds={30} songDuration={900} />);
+    expect(context.clearRect).toHaveBeenCalledTimes(2);
+    expect(context.fillRect.mock.calls.every(call => call[2] <= 2)).toBe(true);
+    // Half a viewport of blank space at the start/end, with no phantom waveform outside the song.
+    view.rerender(<WaveformCanvas data={long} currentTime={0} visibleSeconds={30} songDuration={900} />);
+    expect(canvas.style.transform).toBe("translate3d(-150px,0,0)");
   });
 });

@@ -84,3 +84,34 @@ it("App reflects only the selected group at zero movement and preserves other me
   expect(observed.canvas!.project.frames.find(f => f.id === "late")!.positions).toEqual({ m_anna: { x: 3, y: 2 }, m_ben: { x: 9, y: 10 } });
   expect(observed.canvas!.project.frames.map(f => f.id)).toEqual(["late", "early", "tie"]);
 }, 20_000);
+
+it("audio boundary drag commits once and one Undo restores it; waveform seek does not create history", async () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 300, height: 154, right: 300, bottom: 154, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));
+  await screen.findByTestId("canvas");
+  fireEvent.click(screen.getByRole("tab", { name: "音源" }));
+  const handle = await screen.findByRole("button", { name: /^1\. 前の区切り/ });
+  const times = () => observed.canvas!.project.frames.map(f => f.timeSec);
+  fireEvent.pointerDown(handle, { button: 0, isPrimary: true, clientX: 150, pointerId: 1 });
+  fireEvent.pointerMove(handle, { clientX: 170, pointerId: 1 });
+  fireEvent.pointerMove(handle, { clientX: 200, pointerId: 1 });
+  expect(times()).toEqual([30, 10, 10]);
+  fireEvent.pointerUp(handle, { pointerId: 1 }); fireEvent.click(handle);
+  expect(times()).toEqual([30, 15, 10]);
+  const wave = document.querySelector(".audio-timeline__viewport")!;
+  fireEvent.pointerDown(wave, { button: 0, isPrimary: true, clientX: 150, pointerId: 2 });
+  fireEvent.pointerMove(wave, { clientX: 100, pointerId: 2 }); fireEvent.pointerUp(wave, { pointerId: 2 });
+  expect(times()).toEqual([30, 15, 10]);
+  expect(observed.canvas!.canUndo).toBe(true);
+  act(() => observed.canvas!.onUndo!());
+  expect(times()).toEqual([30, 10, 10]);
+  act(() => observed.canvas!.onRedo!());
+  expect(times()).toEqual([30, 15, 10]);
+  // Switching tabs discards an in-progress retime without another history entry.
+  const again = screen.getByRole("button", { name: /^2\. 前の区切り/ });
+  fireEvent.pointerDown(again, { button: 0, isPrimary: true, clientX: 150, pointerId: 3 });
+  fireEvent.pointerMove(again, { clientX: 220, pointerId: 3 });
+  fireEvent.click(screen.getByRole("tab", { name: "シーン" }));
+  fireEvent.pointerUp(again, { pointerId: 3 });
+  expect(times()).toEqual([30, 15, 10]);
+}, 20_000);
