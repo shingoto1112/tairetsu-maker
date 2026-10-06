@@ -12,6 +12,7 @@ const CLOUD_AUTH_SESSION_KEY = "tairetsu.cloud.authSession";
 const EXPIRY_LEEWAY_MS = 60_000;
 const GUEST_SESSION_KEY = "tairetsu.collaboration.guestSession.v1";
 let epoch = 0;
+let sessionRevision = 0;
 let restoring = getAppRuntime() === "capacitor-ios";
 let persistence: Promise<void> = Promise.resolve();
 let hydration: Promise<CloudAuthSession | null> | null = null;
@@ -29,6 +30,7 @@ export const waitCloudAuthPersistence = () => persistence;
 export const cloudAuthEpoch = () => epoch;
 
 export const saveCloudAuthSession = (session: CloudAuthSession): void => {
+  sessionRevision++;
   if (readCloudAuthSession()?.user.id !== session.user.id) epoch++;
   const serialized = JSON.stringify(session);
   if ((session as CloudAuthSession & { collaborationGuest?: boolean }).collaborationGuest && getAppRuntime() === "web") window.localStorage.setItem(GUEST_SESSION_KEY, serialized);
@@ -88,10 +90,10 @@ export const clearCloudAuthSession = (): void => {
 const refreshes = new Map<() => CloudAuthSession | null, { token: string; epoch: number; work: Promise<CloudAuthSession> }>();
 export async function refreshOwnedCloudAuthSession(previous: CloudAuthSession, refresh: (token: string) => Promise<CloudAuthSession>,
   read = readCloudAuthSession, save: (session: CloudAuthSession) => void = saveCloudAuthSession): Promise<CloudAuthSession> {
-  const expected = epoch, current = refreshes.get(read);
+  const expected = epoch, revision = sessionRevision, current = refreshes.get(read);
   if (current?.token === previous.refreshToken && current.epoch === expected) return current.work;
   const work = refresh(previous.refreshToken).then(next => {
-    if (epoch !== expected || read()?.refreshToken !== previous.refreshToken || next.user.id !== previous.user.id) throw new Error("ログイン資格が変更されました。");
+    if (epoch !== expected || revision !== sessionRevision || read()?.refreshToken !== previous.refreshToken || next.user.id !== previous.user.id) throw new Error("ログイン資格が変更されました。");
     const guest = (previous as CloudAuthSession & { collaborationGuest?: boolean }).collaborationGuest;
     const updated = { ...next, authFlow: previous.authFlow, user: { ...next.user, displayName: next.user.displayName ?? previous.user.displayName }, ...(guest ? { collaborationGuest: true } : {}) };
     save(updated); return updated;

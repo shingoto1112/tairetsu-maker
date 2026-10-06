@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { CollaborationUiBridge } from "../collaboration/uiTypes";
 import type { CollaborationUiService } from "../collaboration/uiService";
-import { subscribeCloudAuth, readCloudAuthSession } from "../cloud/session";
+import { subscribeCloudAuth, readCloudAuthSession, cloudAuthEpoch } from "../cloud/session";
+import { PASSWORD_MIN_LENGTH } from "../cloud/password";
+import CollaborationPasswordForm from "./CollaborationPasswordForm";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { sessionTone } from "../storage/sharedSessionState";
 import "./collaboration.css";
@@ -36,11 +38,14 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
   const [password, setPassword] = useState("");
   const [register, setRegister] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pasteNotice, setPasteNotice] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const focus = useModalFocus(dialogRef, !!ui.screen);
   const signed = ui.auth.status === "signed-in" ? ui.auth : null;
+  const authEpoch = cloudAuthEpoch();
+  useEffect(() => { setPassword(""); setChangingPassword(false); setDeleting(false); setConfirmDelete(false); }, [ui.screen, authEpoch]);
   const run = (fn: () => Promise<void>) => void service.run(fn);
   const paste = () => {
     setPasteNotice(null);
@@ -147,7 +152,9 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
           {ui.screen === "account" && <>
             {signed && !signed.isGuest ? <><p>{signed.displayName || "アカウント"} · {readCloudAuthSession()?.user.email}</p>
               <button type="button" disabled={ui.busy} onClick={() => run(() => service.signOut())}>ログアウト</button>
-              {!deleting ? <button type="button" disabled={ui.busy} onClick={() => setDeleting(true)}>アカウント削除</button> :
+              {!deleting && (!changingPassword ? <button type="button" disabled={ui.busy} onClick={() => setChangingPassword(true)}>パスワードを変更</button> :
+                <CollaborationPasswordForm key={authEpoch} service={service} busy={ui.busy} cancel={() => setChangingPassword(false)} />)}
+              {!deleting ? <button type="button" disabled={ui.busy || changingPassword} onClick={() => setDeleting(true)}>アカウント削除</button> :
                 <form onSubmit={event => { event.preventDefault(); if (confirmDelete) run(() => service.deleteAccount(password)); }}>
                   <p>自分が作った共有隊列表はクラウドから削除されます。他の人の端末のコピーは残ります。</p>
                   <label>現在のパスワード<input type="password" value={password} required autoComplete="current-password" onChange={event => setPassword(event.target.value)} /></label>
@@ -157,7 +164,7 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
                   <p>{register ? "新規登録" : "ログイン"}</p>
                   {register && <label>表示名<input value={name} maxLength={80} required onChange={event => setName(event.target.value)} autoComplete="nickname" /></label>}
                   <label>メールアドレス<input type="email" value={email} required onChange={event => setEmail(event.target.value)} autoComplete="email" /></label>
-                  <label>パスワード<input type="password" value={password} required minLength={register ? 6 : undefined} onChange={event => setPassword(event.target.value)} autoComplete={register ? "new-password" : "current-password"} /></label>
+                  <label>パスワード<input type="password" value={password} required minLength={register ? PASSWORD_MIN_LENGTH : undefined} onChange={event => setPassword(event.target.value)} autoComplete={register ? "new-password" : "current-password"} /></label>
                   <button className="collab-primary" disabled={ui.busy} type="submit">{register ? "新規登録" : "ログイン"}</button>
                   <button disabled={ui.busy} type="button" onClick={() => { setRegister(!register); setPassword(""); }}>{register ? "ログインへ" : "新しいアカウントを登録"}</button>
                 </form>}

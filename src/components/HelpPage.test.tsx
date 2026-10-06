@@ -23,7 +23,8 @@ describe("HelpPage", () => {
       const region = within(dialog).getByRole("region", { name: section.title });
       expect(within(region).getAllByRole("listitem")).toHaveLength(section.items.length);
       if (section.collaboration) {
-        expect(section.items).toHaveLength(11);
+        expect(section.items).toHaveLength(12);
+        expect(region.textContent).toContain("現在のパスワードを忘れた場合はサポート");
         expect(region.textContent).toContain("共有先への送信と確認が済んでいます");
         expect(region.textContent).toContain("日時の行を押すと操作が出ます");
         expect(region.textContent).not.toContain("準備中");

@@ -153,6 +153,13 @@ export class CollaborationUiService {
     await createCollaborationAccountApi(config).deleteAccountWithPassword(password, "DELETE_MY_ACCOUNT");
     await waitCloudAuthPersistence(); this.authChanged(); this.patch({ screen: null, notice: "アカウントを削除しました。この端末のコピーは残っています。" });
   }
+  async changePassword(current: string, next: string, confirmation: string) {
+    const config = this.options().config; if (!config) throw new Error("共同編集は現在利用できません。");
+    const result = await createCollaborationAccountApi(config).changePassword(current, next, confirmation);
+    this.patch({ notice: result.persistenceFailed
+      ? "パスワードを変更しました。この端末のログイン情報を保存できませんでした。次回は新しいパスワードでログインしてください。"
+      : "パスワードを変更しました。" });
+  }
   async start(name: string) {
     const auth = this.auth?.state();
     if (auth?.status !== "signed-in" || auth.isGuest) { this.afterLogin = "manage"; this.account(); return; }

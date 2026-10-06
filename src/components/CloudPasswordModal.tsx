@@ -16,7 +16,7 @@ type CloudPasswordModalProps = {
   ) => Promise<CloudPasswordChangeResponse>;
 };
 
-const PASSWORD_MIN_LENGTH = 6;
+import { PASSWORD_MIN_LENGTH } from "../cloud/password";
 
 export const CloudPasswordModal = ({
   isBusy,

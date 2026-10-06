@@ -7,6 +7,7 @@ import type { CollaborationUiOptions } from '../collaboration/uiTypes';
 import { SharedSessionStore } from '../storage/sharedSessionState';
 import { forgetInvitation } from '../storage/invitationMemory';
 import { installInvitationRouting } from '../collaboration/invitationRouting';
+import { clearCloudAuthSession, saveCloudAuthSession } from '../cloud/session';
 
 const link = `${location.origin}/#invite=${'a'.repeat(64)}`;
 function setup(platform: 'web' | 'ipad' = 'web') {
@@ -19,6 +20,27 @@ function setup(platform: 'web' | 'ipad' = 'web') {
 }
 beforeEach(() => { forgetInvitation(); history.replaceState({}, '', '/'); });
 afterEach(() => { cleanup(); forgetInvitation(); vi.restoreAllMocks(); });
+it('hides password change for guests and destroys credentials on account/screen changes', async () => {
+  const options = { config:null,platform:'web',mock:true,repository:()=>null,active:()=>null,
+    store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() } as CollaborationUiOptions;
+  const service = new CollaborationUiService(()=>options);
+  vi.spyOn(service,'initialize').mockResolvedValue();
+  let snapshot: ReturnType<typeof service.getSnapshot> = { ...service.getSnapshot(), screen:'account',
+    auth:{status:'signed-in',userId:'owner',isGuest:true,displayName:'ゲスト',sessionPersistence:'browser-data'} };
+  vi.spyOn(service,'getSnapshot').mockImplementation(()=>snapshot);
+  render(<CollaborationSurface bridge={{options,get:async()=>service}} view="editor" />);
+  await screen.findByRole('dialog'); expect(screen.queryByRole('button',{name:'パスワードを変更'})).toBeNull();
+  act(()=>{ snapshot={...snapshot,auth:{status:'signed-in',userId:'owner',isGuest:false,displayName:'本人',sessionPersistence:'existing-account'}}; service.account(); });
+  fireEvent.click(await screen.findByRole('button',{name:'パスワードを変更'}));
+  fireEvent.change(screen.getByLabelText('現在のパスワード'),{target:{value:'private-value'}});
+  act(()=>{ clearCloudAuthSession(); saveCloudAuthSession({accessToken:'mock',refreshToken:'mock',expiresAt:Date.now()+3600000,tokenType:'bearer',user:{id:'other'}}); snapshot={...snapshot,auth:{...snapshot.auth,status:'signed-in',userId:'other',isGuest:false,sessionPersistence:'existing-account'}}; service.account(); });
+  fireEvent.click(await screen.findByRole('button',{name:'パスワードを変更'})); expect((screen.getByLabelText('現在のパスワード') as HTMLInputElement).value).toBe('');
+  fireEvent.change(screen.getByLabelText('現在のパスワード'),{target:{value:'private-value'}});
+  act(()=>{ snapshot={...snapshot,screen:null};service.close(); });
+  act(()=>{ snapshot={...snapshot,screen:'account'};service.account(); });
+  fireEvent.click(await screen.findByRole('button',{name:'パスワードを変更'})); expect((screen.getByLabelText('現在のパスワード') as HTMLInputElement).value).toBe('');
+  clearCloudAuthSession();
+});
 it('shows multi-use statuses/counts and preserves old single-use labels', async () => {
   const options: CollaborationUiOptions = { config:null,platform:'web',mock:true,repository:()=>null,
     active:()=>({attached:true,localId:'local'}) as ReturnType<CollaborationUiOptions['active']>,
