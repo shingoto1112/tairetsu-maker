@@ -1,4 +1,5 @@
-import { createHorizontalGridLines, horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
+import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle, stageVerticalRulerPositions } from "../utils/gridEmphasis";
+import { horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
 import {
   Camera,
@@ -226,19 +227,6 @@ const STAGE_ZOOM_MIN = 1;
 const STAGE_ZOOM_MAX = 4;
 const STAGE_ZOOM_DEFAULT = 1.75;
 
-const createMajorTicks = (lengthMeters: number): number[] => {
-  const safeLength = Math.max(0, lengthMeters);
-  const step = safeLength <= 16 ? 1 : Math.ceil(safeLength / 12);
-  const ticks: number[] = [];
-  for (let value = 0; value < safeLength; value += step) {
-    ticks.push(value);
-  }
-  if (!ticks.includes(safeLength)) {
-    ticks.push(safeLength);
-  }
-  return ticks;
-};
-
 const oppositeDirection: Record<FrontDirection, FrontDirection> = {
   bottom: "top",
   top: "bottom",
@@ -260,20 +248,6 @@ const formatMeter = (value: number): string => {
 const formatDepthMeter = (value: number): string => {
   const rounded = Math.abs(value) < 0.001 ? 0 : value;
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}m`;
-};
-
-const createStageGridTicks = (lengthMeters: number, stepMeters: number) => {
-  const safeLength = Math.max(0, lengthMeters);
-  const safeStep = Number.isFinite(stepMeters) && stepMeters > 0 ? stepMeters : 1;
-  const ticks: number[] = [];
-  for (let value = 0; value <= safeLength + 0.001; value += safeStep) {
-    ticks.push(roundMeters(value));
-  }
-  const roundedEnd = roundMeters(safeLength);
-  if (!ticks.some((tick) => Math.abs(tick - roundedEnd) < 0.001)) {
-    ticks.push(roundedEnd);
-  }
-  return Array.from(new Set(ticks)).sort((a, b) => a - b);
 };
 
 const createMovementPathD = (
@@ -452,8 +426,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       [stage.widthMeters, horizontalGuideMode],
     );
     const verticalTicks = useMemo(
-      () => createMajorTicks(stage.depthMeters),
-      [stage.depthMeters],
+      () => stageVerticalRulerPositions(stage.depthMeters, frontDirection === "top")
+        .map(y => viewerPerspective === "performer" ? stage.depthMeters - y : y).sort((a,b) => a-b),
+      [stage.depthMeters, frontDirection, viewerPerspective],
     );
 
     useImperativeHandle(exportRef, () => {
@@ -1725,20 +1700,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
     };
 
-    const stageGridVerticalTicks = useMemo(
-      () =>
-        stage.showGrid && stage.gridSizeMeters > 0
-          ? createHorizontalGridLines(stage.widthMeters, horizontalGuideMode, stage.gridSizeMeters, stage.showCenterLine)
-          : [],
-      [stage.gridSizeMeters, stage.showGrid, stage.widthMeters, stage.showCenterLine, horizontalGuideMode],
-    );
-    const stageGridHorizontalTicks = useMemo(
-      () =>
-        stage.showGrid && stage.gridSizeMeters > 0
-          ? createStageGridTicks(stage.depthMeters, stage.gridSizeMeters)
-          : [],
-      [stage.depthMeters, stage.gridSizeMeters, stage.showGrid],
-    );
+    const stageGridVerticalTicks = useMemo(() => horizontalEmphasizedLines(stage.widthMeters,
+      horizontalGuideMode, stage.gridSizeMeters, stage, stage.showGrid, stage.showCenterLine), [stage, horizontalGuideMode]);
+    const stageGridHorizontalTicks = useMemo(() => verticalEmphasizedLines(stage.depthMeters,
+      stage.gridSizeMeters, stage, undefined, stage.showGrid), [stage]);
 
     const visibleObjects = project.stageObjects
       .filter((object) => snapshot.objectStates[object.id]?.visible ?? object.visible)
@@ -2135,20 +2100,24 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
               >
               {remoteLayer}
-              {stage.showGrid && (
+              {(stageGridVerticalTicks.length > 0 || stageGridHorizontalTicks.length > 0) && (
                 <div className="stage-grid-layer" aria-hidden="true">
                   {stageGridVerticalTicks.map((tick) => (
                     <span
                       className={`stage-grid-line stage-grid-line--vertical ${tick.kind === "counting" ? "is-counting" : ""}`}
                       key={`stage-grid-x-${tick.positionMeters}`}
-                      style={{ left: `${((viewerPerspective === "performer" ? stage.widthMeters - tick.positionMeters : tick.positionMeters) / stage.widthMeters) * 100}%` }}
+                      data-emphasis={tick.emphasis}
+                      data-position={tick.positionMeters}
+                      style={{ ...gridLineStyle(tick.emphasis, true), left: `${((viewerPerspective === "performer" ? stage.widthMeters - tick.positionMeters : tick.positionMeters) / stage.widthMeters) * 100}%` }}
                     />
                   ))}
                   {stageGridHorizontalTicks.map((tick) => (
                     <span
                       className="stage-grid-line stage-grid-line--horizontal"
-                      key={`stage-grid-y-${tick}`}
-                      style={{ top: `${(tick / stage.depthMeters) * 100}%` }}
+                      key={`stage-grid-y-${tick.positionMeters}`}
+                      data-emphasis={tick.emphasis}
+                      data-position={tick.positionMeters}
+                      style={{ ...gridLineStyle(tick.emphasis, false), top: `${((viewerPerspective === "performer" ? stage.depthMeters - tick.positionMeters : tick.positionMeters) / stage.depthMeters) * 100}%` }}
                     />
                   ))}
                 </div>

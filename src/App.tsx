@@ -591,6 +591,7 @@ const getParadeVisibleCenterPosition = (
   }
 
   const settings = createDefaultParadeSettings({
+    ...project.paradeSettings,
     width: project.paradeSettings?.width ?? project.stage.widthMeters,
     totalDistance:
       project.paradeSettings?.totalDistance ?? project.stage.depthMeters,

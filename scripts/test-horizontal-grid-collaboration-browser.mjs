@@ -118,6 +118,27 @@ try {
     const committed=await object.boundingBox();assert.ok(Math.abs(preview.x-committed.x)<1.1,JSON.stringify({mode,preview,committed}));
     checks.push(mode+' object existing snap method/step + new origin + preview/commit'+(mode==='stage'?' + guide priority':''));
   }
+  // Independent emphasis atoms through the real App, mock Edge, IndexedDB and peers.
+  for (const mode of ['stage','parade']) {
+    await pages[0].evaluate(mode=>window.__sharedSession.active.editor.edit(p=>({...p,mode})),mode);
+    await until(async()=>(await sharedProject(1)).mode===mode,'emphasis mode received');
+    await pages[0].getByRole('tab',{name:'ステージ',exact:true}).click();
+    await pages[0].getByText('詳しい設定',{exact:true}).click();
+    const checkbox=pages[0].getByRole('checkbox',{name:'目盛りの数字の線を濃くする',exact:true});
+    const before=structuredClone((await sharedProject(0)).frames.map(f=>f.positions));
+    await checkbox.check();
+    const key=mode==='stage'?'stage':'paradeSettings';
+    await until(async()=>(await sharedProject(1))[key].emphasizeHorizontalNumbers===true,'emphasis ON received');
+    await pages[0].locator('.toolbar-save-button').click();
+    assert.equal((await read(0)).project[key].emphasizeHorizontalNumbers,true);
+    await pages[0].locator('body').click({position:{x:2,y:2}});await pages[0].keyboard.press('ControlOrMeta+Z');
+    await until(async()=>(await sharedProject(1))[key].emphasizeHorizontalNumbers!==true,'emphasis Undo received');
+    await pages[0].keyboard.press('ControlOrMeta+Shift+Z');
+    await until(async()=>(await sharedProject(1))[key].emphasizeHorizontalNumbers===true,'emphasis Redo received');
+    assert.deepEqual((await sharedProject(1)).frames.map(f=>f.positions),before);
+    await checkbox.uncheck();await until(async()=>(await sharedProject(1))[key].emphasizeHorizontalNumbers===false,'emphasis OFF received');
+    checks.push(mode+' emphasis UI + mock server + independent atom + local persistence + receive + Undo/Redo; coordinates unchanged');
+  }
   assert.deepEqual(legacy,[]);assert.deepEqual(denied,[]);assert.deepEqual(errors,[]);
   console.log('GRID_COLLABORATION_BROWSER PASS '+JSON.stringify({checks,productionNetwork:false}));
 } finally {

@@ -14,8 +14,8 @@ const normalize = (p: unknown) => normalizeProjectWithContext(p as Project, cont
 
 describe("Project codec and legacy normalization", () => {
   it("keeps platform contract commit inputs identical to anonymous normalization", () => {
-    expect(normalize(fixtures.stage)).toEqual(commitFixtures.stage);
-    expect(normalize(fixtures.parade)).toEqual(commitFixtures.parade);
+    expect(normalize(fixtures.stage)).toEqual(normalize(commitFixtures.stage));
+    expect(normalize(fixtures.parade)).toEqual(normalize(commitFixtures.parade));
   });
   it.each(Object.entries(fixtures))("round trips anonymous %s without mutating input", (_, raw) => {
     const before = JSON.stringify(raw);

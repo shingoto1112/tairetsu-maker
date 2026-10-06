@@ -22,7 +22,7 @@ const enums: Record<string, string[]> = {
   horizontalGuideMode: ["meters", "centerSplit"], horizontalDisplayMode: ["meters", "centerSplit"],
   horizontalMeasureMode: ["centerSplit", "normalMeter"], direction: ["up"], rulerPosition: ["both", "left", "right", "none"],
 };
-const bools = new Set(["visible", "locked", "enabled", "showGrid", "showCenterLine", "showStageLabels", "showCenterMarker", "fixedForAllScenes", "useGlobalStageSize", "useGlobalStageWidth", "emphasizeEvery5m", "emphasizeEvery10m", "membersEnabled", "objectsEnabled", "curtainsEnabled", "snapGuideEnabled", "snapToGuideEnabled"]);
+const bools = new Set(["emphasizeHorizontalNumbers", "emphasizeHorizontalEvery5", "emphasizeHorizontalEvery10", "emphasizeVerticalNumbers", "emphasizeVerticalEvery5m", "emphasizeVerticalEvery10m", "visible", "locked", "enabled", "showGrid", "showCenterLine", "showStageLabels", "showCenterMarker", "fixedForAllScenes", "useGlobalStageSize", "useGlobalStageWidth", "emphasizeEvery5m", "emphasizeEvery10m", "membersEnabled", "objectsEnabled", "curtainsEnabled", "snapGuideEnabled", "snapToGuideEnabled"]);
 const strings = new Set(["name", "title", "color", "label", "section", "note", "createdAt"]);
 function scalar(key: string, value: unknown): void {
   key = key.split(".").pop()!;

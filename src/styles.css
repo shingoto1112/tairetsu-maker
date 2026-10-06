@@ -5808,8 +5808,6 @@ h2 {
 .print-grid-lines {
   fill: none;
   shape-rendering: geometricPrecision;
-  stroke: rgba(100, 116, 139, 0.18);
-  stroke-width: 1px;
   vector-effect: non-scaling-stroke;
 }
 
@@ -7550,11 +7548,18 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .stage-settings-panel .panel-sticky-header { background: #ffffff; }
 
 /* Counting lines share the exact horizontal ruler positions. */
-.stage-grid-line--vertical.is-counting, .parade-grid-line--vertical.is-counting { background: #94a3b8; }
+
 .counting-diagram__grid.is-counting { stroke: #94a3b8; }
-.print-counting-line { stroke: #94a3b8; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.print-counting-line { vector-effect: non-scaling-stroke; }
 
 .counting-diagram__tick { stroke: var(--stage-ruler-color); stroke-width: 1px; }
 /* End ruler ticks at the stage boundary, without overlapping the vertical grid. */
 .meter-ruler--horizontal .meter-ruler__tick::after { height: max(0px, calc(var(--ruler-member-bleed-px, 24px) - 4px)); background: #94a3b8; }
 .stage-grid-line--vertical, .parade-grid-line--vertical { transform: translateX(-50%); }
+
+.grid-emphasis-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 12px 0; }
+.grid-emphasis-settings fieldset { min-width: 0; margin: 0; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
+.grid-emphasis-settings legend { font-weight: 600; font-size: 13px; }
+.grid-emphasis-settings .toggle-list { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+.grid-emphasis-settings .toggle-list label { display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+.grid-emphasis-settings input { flex: 0 0 auto; margin-top: 4px; }

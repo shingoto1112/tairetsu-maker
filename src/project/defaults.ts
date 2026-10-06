@@ -42,6 +42,10 @@ export const createDefaultParadeSettings = (
     0,
     0,
   ),
+  emphasizeHorizontalNumbers: settings.emphasizeHorizontalNumbers ?? false,
+  emphasizeHorizontalEvery5: settings.emphasizeHorizontalEvery5 ?? false,
+  emphasizeHorizontalEvery10: settings.emphasizeHorizontalEvery10 ?? false,
+  emphasizeVerticalNumbers: settings.emphasizeVerticalNumbers ?? false,
   emphasizeEvery5m: settings.emphasizeEvery5m ?? true,
   emphasizeEvery10m: settings.emphasizeEvery10m ?? true,
 });

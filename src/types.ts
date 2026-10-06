@@ -81,6 +81,11 @@ export type ParadeRulerPosition = "both" | "left" | "right" | "none";
 export type ParadeHorizontalMeasureMode = "centerSplit" | "normalMeter";
 
 export type ParadeSettings = {
+  emphasizeHorizontalNumbers?: boolean;
+  emphasizeHorizontalEvery5?: boolean;
+  emphasizeHorizontalEvery10?: boolean;
+  emphasizeVerticalNumbers?: boolean;
+
   totalDistance: number;
   backwardDistanceMeters?: number;
   width: number;
@@ -101,6 +106,13 @@ export type SceneViewState = {
 };
 
 export type StageConfig = {
+  emphasizeHorizontalNumbers?: boolean;
+  emphasizeHorizontalEvery5?: boolean;
+  emphasizeHorizontalEvery10?: boolean;
+  emphasizeVerticalNumbers?: boolean;
+  emphasizeVerticalEvery5m?: boolean;
+  emphasizeVerticalEvery10m?: boolean;
+
   widthMeters: number;
   depthMeters: number;
   gridSizeMeters: number;

@@ -1,4 +1,5 @@
-import { createHorizontalGridLines } from "../utils/horizontalGrid";
+import { horizontalEmphasizedLines, verticalEmphasizedLines, stageVerticalRulerPositions } from "../utils/gridEmphasis";
+import { EmphasizedGrid } from "./EmphasizedGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import type { CSSProperties } from "react";
 import {
@@ -23,7 +24,6 @@ import {
   paradeDistanceToInternalY,
 } from "../utils/parade";
 import type { ShareExportOptions } from "./ShareExportModal";
-import { stageViewportMeterTicks } from "../utils/formationRulers";
 
 type EffectiveStageSize = {
   widthMeters: number;
@@ -153,23 +153,6 @@ const formatMeter = (value: number): string => {
   return normalized > 0 ? `+${normalized}m` : `${normalized}m`;
 };
 
-const getTickStep = (meters: number): number => {
-  const safeMeters = Math.max(0, meters);
-  return safeMeters <= 16 ? 1 : Math.ceil(safeMeters / 12);
-};
-
-const buildTicks = (meters: number): number[] => {
-  const step = getTickStep(meters);
-  const ticks: number[] = [];
-  for (let value = 0; value <= meters + 0.001; value += step) {
-    ticks.push(Number(value.toFixed(2)));
-  }
-  if (ticks[ticks.length - 1] !== meters) {
-    ticks.push(meters);
-  }
-  return ticks;
-};
-
 const metersToPrintMm = (meters: number, metrics: PrintMetrics): string =>
   `${meters * metrics.mmPerMeter}mm`;
 
@@ -178,43 +161,6 @@ const metersToPrintCenteredMm = (
   metrics: PrintMetrics,
   sizeMm: number,
 ): string => `${meters * metrics.mmPerMeter - sizeMm / 2}mm`;
-
-const formatPrintSvgCoordinate = (value: number): string =>
-  Number(value.toFixed(6)).toString();
-
-const buildPrintGridPath = (
-  widthMeters: number,
-  heightMeters: number,
-  topMeters: number,
-  stepMeters: number,
-  verticalTicks: number[],
-  leftMeters = 0,
-  rightMeters = widthMeters,
-): string => {
-  if (stepMeters <= 0) {
-    return "";
-  }
-
-  const commands: string[] = [];
-  const epsilon = 0.000001;
-  for (const x of verticalTicks) {
-    const coordinate = formatPrintSvgCoordinate(x);
-    commands.push(`M ${coordinate} 0 V ${formatPrintSvgCoordinate(heightMeters)}`);
-  }
-
-  const bottomMeters = topMeters + heightMeters;
-  const firstGridY = Math.ceil((topMeters - epsilon) / stepMeters) * stepMeters;
-  for (
-    let absoluteY = firstGridY;
-    absoluteY <= bottomMeters + epsilon;
-    absoluteY += stepMeters
-  ) {
-    const localY = formatPrintSvgCoordinate(absoluteY - topMeters);
-    commands.push(`M ${formatPrintSvgCoordinate(Math.max(0, leftMeters))} ${localY} H ${formatPrintSvgCoordinate(Math.min(widthMeters, rightMeters))}`);
-  }
-
-  return commands.join(" ");
-};
 
 const getObjectState = (
   frame: FormationFrame,
@@ -809,10 +755,6 @@ export const PrintStagePreview = ({
   const inRange = (x: number) => !viewport || (x >= leftMeters && x <= rightMeters);
   const sceneWidthMeters = getEffectiveSize(project, frame).widthMeters;
   const horizontalLabels = createHorizontalRulerLabels(sceneWidthMeters, toHorizontalCountingMode(horizontalGuideMode)).filter((item) => inRange(item.positionMeters));
-  const yTicks = viewport
-    ? stageViewportMeterTicks(verticalRange.topMeters, verticalRange.bottomMeters, getEffectiveSize(project, frame).depthMeters)
-      .map((meter) => meter - verticalRange.topMeters)
-    : buildTicks(verticalRange.depthMeters);
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
   const totalDepthMeters = verticalRange.depthMeters + gapMeters;
   const stageHeightMm = totalDepthMeters * metrics.mmPerMeter;
@@ -896,8 +838,10 @@ export const PrintStagePreview = ({
         }
         return labels;
       })()
-    : yTicks.map((tick) => {
-        const actualTick = Number((verticalRange.topMeters + tick).toFixed(2));
+    : stageVerticalRulerPositions(getEffectiveSize(project, frame).depthMeters, project.stage.frontDirection === "top",
+        verticalRange.topMeters, verticalRange.bottomMeters).map((internalY) => {
+        const tick = internalY - verticalRange.topMeters;
+        const actualTick = Number((project.stage.frontDirection === "top" ? internalY : getEffectiveSize(project, frame).depthMeters - internalY).toFixed(2));
         return {
           className: undefined,
           key: tick,
@@ -909,65 +853,12 @@ export const PrintStagePreview = ({
           ),
         };
       });
-  const paradeGuideLines = isParade
-    ? (() => {
-        const show5m = project.paradeSettings?.emphasizeEvery5m ?? true;
-        const show10m = project.paradeSettings?.emphasizeEvery10m ?? true;
-        if (!show5m && !show10m) {
-          return [];
-        }
-
-        const minDistance =
-          internalYToParadeDistance(
-            verticalRange.bottomMeters,
-            totalDistance,
-            backwardDistanceMeters,
-          ) ?? 0;
-        const maxDistance =
-          internalYToParadeDistance(
-            verticalRange.topMeters,
-            totalDistance,
-            backwardDistanceMeters,
-          ) ??
-          totalDistance;
-        const start = Math.ceil(minDistance / 5) * 5;
-        const end = Math.floor(maxDistance / 5) * 5;
-        const lines: Array<{ isMajor: boolean; key: number; yMeters: number }> = [];
-
-        for (let meter = start; meter <= end + 0.001; meter += 5) {
-          if (meter < -backwardDistanceMeters || meter > totalDistance) {
-            continue;
-          }
-          const isMajor = Math.abs(meter % 10) < 0.001;
-          if ((isMajor && !show10m) || (!isMajor && !show5m)) {
-            continue;
-          }
-          const internalY = paradeDistanceToInternalY(
-            meter,
-            totalDistance,
-            backwardDistanceMeters,
-          );
-          lines.push({
-            isMajor,
-            key: meter,
-            yMeters: internalY - verticalRange.topMeters,
-          });
-        }
-
-        return lines;
-      })()
-    : [];
-  const horizontalGridLines = createHorizontalGridLines(sceneWidthMeters,
-    toHorizontalCountingMode(horizontalGuideMode), metrics.gridSizeMeters).filter(line => inRange(line.positionMeters));
-  const printGridPath = buildPrintGridPath(
-    commonWidthMeters,
-    totalDepthMeters,
-    verticalRange.topMeters,
-    metrics.gridSizeMeters,
-    horizontalGridLines.filter(line => line.kind === "fine").map(line => line.positionMeters),
-    leftMeters,
-    rightMeters,
-  );
+  const horizontalGridLines = horizontalEmphasizedLines(sceneWidthMeters,
+    toHorizontalCountingMode(horizontalGuideMode), metrics.gridSizeMeters,
+    isParade ? project.paradeSettings ?? project.stage : project.stage, options.includeGrid).filter(line => inRange(line.positionMeters));
+  const verticalGridLines = verticalEmphasizedLines(isParade ? totalDistance + backwardDistanceMeters : getEffectiveSize(project, frame).depthMeters,
+    metrics.gridSizeMeters, project.stage, isParade ? project.paradeSettings : undefined,
+    options.includeGrid, verticalRange.topMeters, verticalRange.bottomMeters);
   const previewStyle = {
     gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
     gridTemplateRows: `${rulerTopMm}mm ${stageHeightMm}mm`,
@@ -1225,43 +1116,8 @@ export const PrintStagePreview = ({
           {viewport && <rect x="0" y={-verticalRange.topMeters} width={commonWidthMeters}
             height={getEffectiveSize(project, frame).depthMeters} fill="none" stroke="#94a3b8"
             strokeWidth="1" vectorEffect="non-scaling-stroke" />}
-          {options.includeGrid && printGridPath && (
-            <path
-              className="print-grid-lines"
-              d={printGridPath}
-              fill="none"
-              shapeRendering="geometricPrecision"
-              stroke="rgba(100, 116, 139, 0.18)"
-              strokeWidth="1"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-          {options.includeGrid && horizontalGridLines.filter(line => line.kind === "counting").map(line => (
-            <line key={`counting-${line.positionMeters}`} className="print-counting-line"
-              x1={line.positionMeters} x2={line.positionMeters} y1="0" y2={totalDepthMeters}
-              stroke="#94a3b8" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-          ))}
-          {paradeGuideLines.map((line) => (
-            <line
-              className={
-                line.isMajor
-                  ? "print-parade-distance-line print-parade-distance-line--major"
-                  : "print-parade-distance-line"
-              }
-              key={`parade-distance-${line.key}`}
-              stroke={
-                line.isMajor
-                  ? "rgba(13, 139, 120, 0.76)"
-                  : "rgba(13, 139, 120, 0.42)"
-              }
-              strokeWidth={line.isMajor ? "2.5" : "1.5"}
-              vectorEffect="non-scaling-stroke"
-              x1="0"
-              x2={commonWidthMeters}
-              y1={line.yMeters}
-              y2={line.yMeters}
-            />
-          ))}
+          <EmphasizedGrid horizontal={horizontalGridLines} vertical={verticalGridLines}
+            width={commonWidthMeters} height={totalDepthMeters} top={verticalRange.topMeters} />
           <line
             className="print-center-line"
             stroke="rgba(13, 139, 120, 0.45)"

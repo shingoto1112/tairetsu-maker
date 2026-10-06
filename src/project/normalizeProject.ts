@@ -83,6 +83,12 @@ export const normalizeProjectWithContext = (project: Project, context: Normaliza
   let stage: StageConfig = {
     ...sample.stage,
     ...rawStage,
+    emphasizeHorizontalNumbers: rawStage.emphasizeHorizontalNumbers ?? false,
+    emphasizeHorizontalEvery5: rawStage.emphasizeHorizontalEvery5 ?? false,
+    emphasizeHorizontalEvery10: rawStage.emphasizeHorizontalEvery10 ?? false,
+    emphasizeVerticalNumbers: rawStage.emphasizeVerticalNumbers ?? false,
+    emphasizeVerticalEvery5m: rawStage.emphasizeVerticalEvery5m ?? false,
+    emphasizeVerticalEvery10m: rawStage.emphasizeVerticalEvery10m ?? false,
     widthMeters: positiveNumber(
       rawStage.widthMeters ??
         legacyStage.stageWidthM ??

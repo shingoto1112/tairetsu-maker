@@ -1,9 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`unchanged default A4 structure > parade document 1`] = `"3923b4594ae98477e0cd3fbcbce585a542dfeb9f16af3961741a37ef0e29eac6"`;
+exports[`unchanged default A4 structure > parade document 1`] = `"69b250c0baf0be7814181c693ec24b913f36ed0bd8e48078b79c42fabef5702e"`;
 
-exports[`unchanged default A4 structure > parade stage-only 1`] = `"beb1273fa9d271dd1bcab130afd20ab95d5037bcbf0747395847dd2b087927cc"`;
+exports[`unchanged default A4 structure > parade stage-only 1`] = `"3724000303adf8c90790adbb46af5e8e4e7a6f9561e6e7f22cc50a4027e81d07"`;
 
-exports[`unchanged default A4 structure > stage document 1`] = `"f208173f8dec9c405056281ba1ac78f048a9120c4cadb403b78ce1dfa955b47d"`;
+exports[`unchanged default A4 structure > stage document 1`] = `"8bdf8d6fd75c6d94ea204dddeed3d8d010a200e034f78283e3d1990da09d47cb"`;
 
-exports[`unchanged default A4 structure > stage stage-only 1`] = `"904307a152e1abfe24657d9226ae30b8aa01399be1b0667584543c6b766080e3"`;
+exports[`unchanged default A4 structure > stage stage-only 1`] = `"9d85c661398057b734f05ca42f88d3a63b21b321aaffc690729b316a1090a884"`;

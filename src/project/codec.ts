@@ -44,14 +44,14 @@ export const validateProjectStructure = (value: unknown): RepositoryResult<Proje
     (p.stage == null || (object(p.stage) &&
       fields(p.stage, ["widthMeters", "depthMeters", "gridSizeMeters", "memberDiameterMeters",
         "stageWidthM", "stageHeightM", "widthM", "heightM", "depthM", "gridIntervalM", "memberCircleDiameterM"], finite) &&
-      fields(p.stage, ["showGrid", "showCenterLine", "showStageLabels", "showCenterMarker", "fixedForAllScenes", "centerSplitBandEnabled", "coneGuideEnabled"], boolean) &&
+      fields(p.stage, ["emphasizeHorizontalNumbers", "emphasizeHorizontalEvery5", "emphasizeHorizontalEvery10", "emphasizeVerticalNumbers", "emphasizeVerticalEvery5m", "emphasizeVerticalEvery10m", "showGrid", "showCenterLine", "showStageLabels", "showCenterMarker", "fixedForAllScenes", "centerSplitBandEnabled", "coneGuideEnabled"], boolean) &&
       fields(p.stage, ["audienceSide"], oneOf("bottom", "top")) &&
       fields(p.stage, ["frontDirection"], oneOf("bottom", "top", "left", "right")) &&
       fields(p.stage, ["originMode"], oneOf("topLeft", "center", "audienceCenter")) &&
       fields(p.stage, ["horizontalGuideMode", "horizontalDisplayMode"], oneOf("meters", "centerSplit")))) &&
     (p.paradeSettings == null || (object(p.paradeSettings) &&
       fields(p.paradeSettings, ["totalDistance", "width", "cellSizeMeters", "backwardDistanceMeters"], finite) &&
-      fields(p.paradeSettings, ["emphasizeEvery5m", "emphasizeEvery10m"], boolean) &&
+      fields(p.paradeSettings, ["emphasizeHorizontalNumbers", "emphasizeHorizontalEvery5", "emphasizeHorizontalEvery10", "emphasizeVerticalNumbers", "emphasizeEvery5m", "emphasizeEvery10m"], boolean) &&
       fields(p.paradeSettings, ["direction"], oneOf("up")) &&
       fields(p.paradeSettings, ["rulerPosition"], oneOf("both", "left", "right", "none")) &&
       fields(p.paradeSettings, ["horizontalMeasureMode"], string))) &&

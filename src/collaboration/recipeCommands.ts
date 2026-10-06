@@ -1,5 +1,7 @@
 import * as Y from "yjs";
 // @ts-ignore Deno source import.
+import { emphasisSettingPaths } from "./projectSchema.ts";
+// @ts-ignore Deno source import.
 import { isSharedLocalAlias } from "./identity.ts";
 // @ts-ignore Deno source import.
 import type { Project } from "../types.ts";
@@ -40,7 +42,8 @@ export function planRecipe(doc: Y.Doc, before: Project, after: Project, sharedDo
   // A small closed setting vocabulary; positions/frames are never compared here.
   const aSettings = settingsFields(before), bSettings = settingsFields(after);
   for (const key of new Set([...Object.keys(aSettings), ...Object.keys(bSettings)]))
-    set(model.settings, key, aSettings[key], bSettings[key], { entityType: "settings", entityId: "project", field: key });
+    if (!(emphasisSettingPaths.has(key) && !((aSettings[key] as Data | undefined)?.[key] ?? false) && !((bSettings[key] as Data | undefined)?.[key] ?? false)))
+      set(model.settings, key, aSettings[key], bSettings[key], { entityType: "settings", entityId: "project", field: key });
 
   const reorder = (key: string, a: string[], b: string[], target: EditTarget) => {
     if (same(a, b)) return;

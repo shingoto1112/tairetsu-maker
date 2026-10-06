@@ -25,11 +25,14 @@ export const settingAtoms: Record<string, string[]> = {
   diameter: ["stage.memberDiameterMeters", "stage.memberCircleDiameterM"],
   globalSize: ["useGlobalStageSize", "useGlobalStageWidth", "stage.fixedForAllScenes"],
 };
-for (const field of ["showGrid", "showCenterLine", "audienceSide", "showStageLabels", "frontDirection", "originMode", "showCenterMarker"])
+for (const field of ["emphasizeHorizontalNumbers", "emphasizeHorizontalEvery5", "emphasizeHorizontalEvery10", "emphasizeVerticalNumbers", "emphasizeVerticalEvery5m", "emphasizeVerticalEvery10m", "showGrid", "showCenterLine", "audienceSide", "showStageLabels", "frontDirection", "originMode", "showCenterMarker"])
   settingAtoms[`stage.${field}`] = [`stage.${field}`];
-for (const field of ["direction", "rulerPosition", "emphasizeEvery5m", "emphasizeEvery10m"])
+for (const field of ["emphasizeHorizontalNumbers", "emphasizeHorizontalEvery5", "emphasizeHorizontalEvery10", "emphasizeVerticalNumbers", "direction", "rulerPosition", "emphasizeEvery5m", "emphasizeEvery10m"])
   settingAtoms[`paradeSettings.${field}`] = [`paradeSettings.${field}`];
 for (const field of ["membersEnabled", "objectsEnabled", "curtainsEnabled"])
   settingAtoms[`animationSettings.${field}`] = [`animationSettings.${field}`];
 for (const field of ["snapGuideEnabled", "snapToGuideEnabled"])
   settingAtoms[`guideSettings.${field}`] = [`guideSettings.${field}`];
+
+/** New optional OFF flags do not create atoms merely through normalization. */
+export const emphasisSettingPaths = new Set(["stage.emphasizeHorizontalNumbers","stage.emphasizeHorizontalEvery5","stage.emphasizeHorizontalEvery10","stage.emphasizeVerticalNumbers","stage.emphasizeVerticalEvery5m","stage.emphasizeVerticalEvery10m","paradeSettings.emphasizeHorizontalNumbers","paradeSettings.emphasizeHorizontalEvery5","paradeSettings.emphasizeHorizontalEvery10","paradeSettings.emphasizeVerticalNumbers"]);

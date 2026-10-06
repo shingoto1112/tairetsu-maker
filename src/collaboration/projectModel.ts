@@ -9,7 +9,7 @@ import { assertFullState } from "./serverSchema2.ts";
 // @ts-ignore Deno source import.
 export { fieldNames, atoms, sceneMaps, settingAtoms } from "./projectSchema.ts";
 // @ts-ignore Deno source import.
-import { fieldNames, atoms, sceneMaps, settingAtoms } from "./projectSchema.ts";
+import { fieldNames, atoms, sceneMaps, settingAtoms, emphasisSettingPaths } from "./projectSchema.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type Data = Record<string, unknown>;
@@ -138,7 +138,10 @@ export function initializeProject(doc: Y.Doc, project: Project): void {
     model.metadata.set("schemaVersion", SCHEMA_VERSION); model.metadata.set("projectId", project.id!);
     model.metadata.set("version", project.version);
     if (project.createdAt !== undefined) model.metadata.set("createdAt", project.createdAt);
-    for (const [key, value] of Object.entries(settingsFields(project))) model.settings.set(key, clone(value));
+    for (const [key, value] of Object.entries(settingsFields(project))) {
+      if (emphasisSettingPaths.has(key) && (value as Data)[key] === false) continue;
+      model.settings.set(key, clone(value));
+    }
     for (const root of ENTITY_ROOTS) {
       order(doc, orderKey(root), true);
       for (const raw of (project[listField(root)] ?? []) as (Data & { id?: string })[]) {

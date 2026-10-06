@@ -1,5 +1,7 @@
 import * as Y from "yjs";
 // @ts-ignore Deno source import.
+import { emphasisSettingPaths } from "./projectSchema.ts";
+// @ts-ignore Deno source import.
 import type { Project } from "../types.ts";
 // @ts-ignore Deno source import.
 import { getSupportedModel, ENTITY_ROOTS, type EntityRoot, type EntityRecord } from "./model.ts";
@@ -46,6 +48,15 @@ export function projectSharedDocument(doc: Y.Doc, base: Project, sharedDocumentI
       if (second) ((result[first] ??= {}) as Data)[second] = clone(v);
       else result[first] = clone(v);
     }
+  }
+  // A normalized local record has explicit OFF defaults. A legacy document may
+  // omit those atoms; materialize OFF locally without writes or trusting base true.
+  // Raw contract fixtures retain missing fields until their normalizer is used.
+  for (const path of emphasisSettingPaths) {
+    const [parent, field] = path.split(".");
+    const local = (base as unknown as Data)[parent] as Data | undefined;
+    const projected = result[parent] as Data | undefined;
+    if (projected && projected[field] === undefined && local?.[field] !== undefined) projected[field] = false;
   }
   // Local audio identity stays local. Shared song descriptors are read separately.
   for (const key of ["audio", "focusMemberId", "viewerPerspective", "lastOpenedAt"] as const)

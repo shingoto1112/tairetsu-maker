@@ -1,3 +1,4 @@
+import { GridEmphasisSettings } from "./GridEmphasisSettings";
 import { HorizontalCountingCards } from "./HorizontalCountingCards";
 import { toHorizontalCountingMode, toParadeHorizontalMeasureMode } from "../utils/horizontalRuler";
 import {
@@ -50,6 +51,7 @@ export const StageSettingsPanel = ({
   onToggleSnapToGuides,
 }: StageSettingsPanelProps) => {
   const effectiveParadeSettings: ParadeSettings = {
+    ...paradeSettings,
     totalDistance: paradeSettings?.totalDistance ?? stage.depthMeters,
     backwardDistanceMeters: getSafeParadeBackwardDistance(
       paradeSettings?.backwardDistanceMeters,
@@ -232,38 +234,14 @@ export const StageSettingsPanel = ({
             </select>
           </label>
         </div>
-        <div className="toggle-list">
-          <label>
-            <input
-              type="checkbox"
-              checked={effectiveParadeSettings.emphasizeEvery5m}
-              disabled={disabled}
-              onChange={(event) =>
-                onParadeSettingsChange?.({
-                  emphasizeEvery5m: event.target.checked,
-                })
-              }
-            />
-            5mごとのライン強調
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={effectiveParadeSettings.emphasizeEvery10m}
-              disabled={disabled}
-              onChange={(event) =>
-                onParadeSettingsChange?.({
-                  emphasizeEvery10m: event.target.checked,
-                })
-              }
-            />
-            10mごとのライン強調
-          </label>
-        </div>
+        <details className="settings-disclosure"><summary>詳しい設定</summary>
+          <GridEmphasisSettings stage={stage} parade={effectiveParadeSettings} disabled={disabled}
+            onStageChange={onChange} onParadeChange={onParadeSettingsChange} />
+        </details>
         {displaySettings}
         {disabled && <p className="notice warning">{readOnlyNotice}</p>}
         <p className="notice muted">
-          後方表示距離を増やすと、0mラインより後ろに -1m、-2m... の範囲を追加できます。横の数え方は目盛りだけを切り替えます。
+          後方表示距離を増やすと、0mラインより後ろに -1m、-2m... の範囲を追加できます。横の数え方を切り替えても、配置済みの位置は動きません。
         </p>
       </section>
     );
@@ -344,7 +322,7 @@ export const StageSettingsPanel = ({
     </p>
 
     <details className="settings-disclosure">
-      <summary>ステージ詳細設定</summary>
+      <summary>詳しい設定</summary>
       <div className="settings-grid">
         <label>
           正面方向
@@ -383,6 +361,7 @@ export const StageSettingsPanel = ({
           </select>
         </label>
       </div>
+      <GridEmphasisSettings stage={stage} disabled={disabled} onStageChange={onChange} />
     </details>
     {displaySettings}
     {disabled && <p className="notice warning">{readOnlyNotice}</p>}

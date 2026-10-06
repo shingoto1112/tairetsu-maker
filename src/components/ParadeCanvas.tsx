@@ -1,4 +1,5 @@
-import { createHorizontalGridLines, horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
+import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle } from "../utils/gridEmphasis";
+import { horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import {
   ArrowDownToLine,
@@ -301,13 +302,6 @@ const getParadeMeterRulerClassName = (meter: number) => {
   return "minor";
 };
 
-const isMeterMultiple = (value: number, intervalMeters: number) => {
-  if (!Number.isFinite(intervalMeters) || intervalMeters <= 0) {
-    return false;
-  }
-  return Math.abs(value / intervalMeters - Math.round(value / intervalMeters)) < 0.001;
-};
-
 const getObjectState = (
   objectId: string,
   project: Project,
@@ -498,19 +492,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       Number.isFinite(settings.cellSizeMeters) && settings.cellSizeMeters > 0
         ? settings.cellSizeMeters
         : 1;
-    const verticalGridTicks = useMemo(
-      () => createHorizontalGridLines(settings.width, toHorizontalCountingMode(settings.horizontalMeasureMode), gridStepMeters),
-      [gridStepMeters, settings.width, settings.horizontalMeasureMode],
-    );
-    const horizontalGridTicks = useMemo(
-      () =>
-        createMeterGridTicksInRange(
-          -backwardDistanceMeters,
-          settings.totalDistance,
-          gridStepMeters,
-        ),
-      [backwardDistanceMeters, gridStepMeters, settings.totalDistance],
-    );
+    const verticalGridTicks = useMemo(() => horizontalEmphasizedLines(settings.width,
+      toHorizontalCountingMode(settings.horizontalMeasureMode), gridStepMeters, settings), [settings, gridStepMeters]);
+    const horizontalGridTicks = useMemo(() => verticalEmphasizedLines(settings.totalDistance + backwardDistanceMeters,
+      gridStepMeters, project.stage, settings), [settings, backwardDistanceMeters, gridStepMeters, project.stage]);
 
     const horizontalLabels = useMemo(
       () => createHorizontalRulerLabels(settings.width, toHorizontalCountingMode(settings.horizontalMeasureMode)),
@@ -2335,30 +2320,15 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   <span
                     key={`grid-vertical-${meter.positionMeters}`}
                     className={`parade-grid-line parade-grid-line--vertical ${meter.kind === "counting" ? "is-counting" : ""}`}
-                    style={{ left: meter.positionMeters * pxPerMeter }}
+                    data-emphasis={meter.emphasis}
+                    data-position={meter.positionMeters}
+                    style={{ ...gridLineStyle(meter.emphasis, true), left: meter.positionMeters * pxPerMeter }}
                   />
                 ))}
-                {horizontalGridTicks.map((meter) => {
-                  const top = (settings.totalDistance - meter) * pxPerMeter;
-                  const isMajor =
-                    settings.emphasizeEvery10m && isMeterMultiple(meter, 10);
-                  const isMedium =
-                    !isMajor &&
-                    settings.emphasizeEvery5m &&
-                    isMeterMultiple(meter, 5);
-                  return (
-                    <span
-                      key={`grid-horizontal-${meter}`}
-                      className={[
-                        "parade-grid-line",
-                        "parade-grid-line--horizontal",
-                        isMajor ? "is-major" : "",
-                        isMedium ? "is-medium" : "",
-                      ].join(" ")}
-                      style={{ top }}
-                    />
-                  );
-                })}
+                {horizontalGridTicks.map(line => <span key={"grid-horizontal-" + line.positionMeters}
+                  className={"parade-grid-line parade-grid-line--horizontal " + (line.emphasis === "10" ? "is-major" : line.emphasis === "5" ? "is-medium" : "")}
+                  data-emphasis={line.emphasis} data-position={line.positionMeters}
+                  style={{ ...gridLineStyle(line.emphasis, false), top: line.positionMeters * pxPerMeter }} />)}
               </div>
               <div
                 className="parade-center-line"

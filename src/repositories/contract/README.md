@@ -52,7 +52,8 @@ INVALID_ARGUMENT。offset ではなくキーを使う。ページ間の更新に
   許可IDもパスへ連結せず、native が生成する storage key を用いる。
 - `fixtures/commitProjects.json`: stage／parade の正規化済み匿名要求。
   TSとSwiftで同じ本体JSONを使用し、Swift側に正規化ロジックを複製しない。
-  素材fixtureとの一致はcodecのunit testで確認する。
+  素材fixtureとの一致はcodecのunit testで双方を現在の規則で正規化して確認する。旧fixtureの新設定欠落は保持する。
+- `fixtures/emphasisProjects.json`: 線の濃さのtrue/falseを含む匿名stage／parade。codecと共同編集の参加・圧縮・復元・Undo/Redo試験に使用。Swift側を変更せずJSON保持を確認するための追加素材。
 - `fixtures/operations.json`: formatVersion=1。scenario ごとに空の保存領域を用意する。
   expect はオブジェクトの再帰的部分一致。配列と null は完全一致。
   `expect.error` は機械判定用コードに一致する reject を期待する。

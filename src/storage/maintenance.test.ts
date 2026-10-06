@@ -8,6 +8,7 @@ import { SaveCoordinator, canLeaveWithoutSaving } from "./saveCoordinator";
 import { RepositoryError, type ProjectRecord } from "../repositories/types";
 import { oldDataCleanupReasons } from "./maintenance";
 import fixture from "../repositories/contract/fixtures/commitProjects.json";
+import { normalizeProject } from "../project/normalizeProject";
 import type { Project } from "../types";
 
 class MemoryMaintenance extends MemoryMigrationRepository implements MaintenanceRepository {
@@ -22,7 +23,7 @@ class MemoryMaintenance extends MemoryMigrationRepository implements Maintenance
 }
 describe("device recovery and retention", () => {
   it("lists only recovery items, explains origin, copies to a fresh ID and retains original/candidate", async () => {
-    const r = new MemoryMaintenance(), original = fixture.stage as Project;
+    const r = new MemoryMaintenance(), original = normalizeProject(fixture.stage as Project);
     await r.commit({ project: original, localRevision: "1", expectedRepositoryRevision: null, operationId: "seed" });
     const candidate = { ...original, title: "以前の別の版" };
     const result = await migrateLegacyStorage({ repository: r, readers: { includeDrafts: false, local: () => ({ getItem: key => key === "stageflow.projects.v1" ? JSON.stringify([original]) : null }),
@@ -35,7 +36,7 @@ describe("device recovery and retention", () => {
     const request = recoveryRequest(JSON.stringify(candidate)), receipt = await restoreCandidate(r, list[0].id, request);
     expect(receipt.id).not.toBe(original.id);
     expect(await restoreCandidate(r, list[0].id, request)).toEqual(receipt); // response-loss replay
-    expect((await r.get(original.id!))?.project).toEqual(original);
+    expect((await r.get(original.id!))?.project).toEqual(normalizeProject(original));
     expect((await r.list({ limit: 100 })).items).toHaveLength(2);
     expect((await listRecoveryCandidates(r))[0].reviewed).toBe(true);
     expect((await r.readMigration(list[0].id))?.kind).toBe("item");
