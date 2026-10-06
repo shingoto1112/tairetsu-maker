@@ -51,6 +51,13 @@
 | 本番準備 | `a5dcfb0` | Edge 配備の手動 workflow（ユーザー決定: GitHub の自動処理、CAPTCHA は最初は入れない）。手順は workspace の artifacts/production-apply-plan.md |
 | 本番切替（サーバー） | `98ec1d6` | 2026-10-05 実施。SQL 3本の適用と確認、Edge 3関数の配備（タグ `edge-deploy-20261005-1`、すべて ACTIVE）と許可 origin の登録、Realtime の公開アクセス無効化、Confirm email オフ、匿名ログイン オン。未ログインの確認で旧方式の公開チャンネル・変更通知・表の読み取りは拒否、新方式の private topic も未ログインは拒否。旧クラウドの取り込み期限は 2026-11-04 16:48（日本時間）。Web 版（main）と TestFlight は新方式 OFF のまま（未反映） |
 | 起動時の読み込み | `ae7bb1f` | 保存準備中に届いたファイル（LINE からの「このアプリで開く」等）の読み込みが「保存できませんでした」になる不具合を修正。読み込み・通常操作は準備完了を待ち、音源 GC は保存が先行していればスキップ、IndexedDB の書き込みはロック取得後に接続を取得。試験 `scripts/test-startup-storage-browser.mjs`。調査記録 [STARTUP_STORAGE_RACE.md](STARTUP_STORAGE_RACE.md)。iPad（Swift）は macOS の XCTest・実機で未確認 |
+| 本番切替（Web・TestFlight 23） | `c503324` | 2026-10-05。main へ反映（ユーザーが push）、Vercel Production に `VITE_COLLABORATION_V2=1`、Edge 許可 origin に `capacitor://localhost` を追加して再配備（タグ `edge-deploy-20261005-2`）、TestFlight build 23（run #23、共同編集 ON）。本番で2台の共同編集をユーザーが確認 |
+| 招待・選択モード | `b1ed534`・`2eda568` | 招待リンクのコピー表示（ボタン付近に「コピーしました ✓」）、貼り付けボタンの不具合、文章付きリンクの受け付け、旧 Safari の互換、同じタブの招待 URL。ホームに戻ると選択モードを解除 |
+| 招待の複数人化 | `3803684` | 1リンクで複数人・7日間（参加者は最大8人）。追加 migration `20261006000000_collab_v2_multi_use_invites.sql` を 2026-10-06 にユーザーが本番適用し、確認 SQL で権限・制約を確認 |
+| 作成画面と横の数え方 | `3075105`・`d7c9933` | ①センターから1m刻み／②センターから0.5mずらしに名称統一、図付きの選択（新規は②）。数字の位置に線、グリッドと横の吸着をコーンの位置に（①センター、②センター±0.5m）。新規のグリッド間隔は0.5m。既存座標は不変 |
+| 線の濃さ | `0af3211` | 横・縦それぞれ「数字の線／5ごと／10ごと」（隊列表ごと、初期は全部オフ）。共同編集の設定項目を追加し Edge を再配備（タグ `edge-deploy-20261006-1`、以後旧版に戻さない）。build 23 は新設定入りの隊列表を開けないため build 24 へ更新が必要 |
+| 書き出しの縦目盛り | `125b216` | ステージの書き出し（画像/PDF/スマホ/A4）で縦の0mを上／下から選択（初期は上＝従来どおり）。A4 のページ数・余白・縮尺・座標は不変 |
+| 公開ページとパスワード | `812a58e`・`6756cdc` | プライバシーポリシー・利用規約・サポートを新しい共同編集に合わせて更新（2026-10-06 付）。アカウント画面にパスワード変更（再認証つき）。忘れた場合は管理者が手動で再設定（workspace の artifacts/password-reset-admin.md） |
 
 本番適用で利用者にお願いする操作（DB バックアップ、SQL 適用、Edge 配備、許可 origin、Realtime の公開アクセス無効化、匿名ログイン有効化（旧 API 停止の後）、Confirm email オフ、CAPTCHA（公開ゲスト募集の前））は [COLLABORATION_LIFECYCLE.md](COLLABORATION_LIFECYCLE.md) の「本番適用時に利用者が行うこと」。
 
