@@ -10,13 +10,15 @@ export const horizontalCountingOptions = [
 ] as const;
 /** Full-width internal coordinates. Callers apply reflection, scale and cropping.
  * Split mode retains the legacy floor(center + .001) edge inclusion rule.
- * Thinning selects identical ordinals on both sides, independent of the left edge. */
+ * Thinning (only above 40m) selects identical ordinals on both sides, independent of the left edge. */
 export const createHorizontalRulerLabels = (widthMeters: number, mode: HorizontalCountingMode): HorizontalRulerLabel[] => {
   if (!Number.isFinite(widthMeters) || widthMeters <= 0) return [];
   const center = widthMeters / 2;
   const split = mode === "centerSplit";
   const count = Math.floor(center + (split ? 0.001 : 0));
-  const step = widthMeters <= 16 ? 1 : Math.ceil(widthMeters / 12);
+  // Every ordinal 1, 2, 3... (user decision 2026-10-06). Only extreme widths (> 40m) thin
+  // labels so they cannot overlap; the counting lines themselves are never thinned.
+  const step = widthMeters <= 40 ? 1 : Math.ceil(widthMeters / 40);
   const labels: HorizontalRulerLabel[] = [];
   for (const positionMeters of createGridTicksInRange(0, widthMeters, 1, horizontalGridOriginMeters(widthMeters, mode))) {
     const distance = Math.abs(positionMeters - center);

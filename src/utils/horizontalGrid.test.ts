@@ -34,10 +34,11 @@ describe("horizontal grid coordinates", () => {
   }
   it("keeps every 1m counting line when numbers are thinned or grid is coarse", () => {
     for (const mode of ["meters", "centerSplit"] as const) for (const step of [0.3, 2]) {
-      const lines = createHorizontalGridLines(40, mode, step);
+      // Labels are thinned only above 40m; the 1m counting lines never are.
+      const lines = createHorizontalGridLines(100, mode, step);
       const counting = lines.filter(l => l.kind === "counting");
-      expect(counting.length).toBe(mode === "meters" ? 38 : 40);
-      expect(counting.length).toBeGreaterThan(createHorizontalRulerLabels(40, mode).length);
+      expect(counting.length).toBe(mode === "meters" ? 98 : 100);
+      expect(counting.length).toBeGreaterThan(createHorizontalRulerLabels(100, mode).length);
       expect(new Set(lines.map(l => l.positionMeters)).size).toBe(lines.length);
     }
   });

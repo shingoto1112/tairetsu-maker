@@ -11,7 +11,10 @@ describe("center-based horizontal labels", () => {
         expect(Math.abs(item.positionMeters-center)).toBeCloseTo(Number(item.label)-(mode==='centerSplit'?0.5:0));
         expect(item.positionMeters).toBeGreaterThanOrEqual(0);expect(item.positionMeters).toBeLessThanOrEqual(width);
       }
-      if(width>16) expect(result.length).toBeLessThanOrEqual(12);
+      // Up to 40m every ordinal 1, 2, 3... appears on both sides; wider stages thin evenly.
+      const ordinals=[...new Set(result.map(item=>Number(item.label)))].sort((a,b)=>a-b);
+      if(width<=40) expect(ordinals).toEqual(ordinals.map((_,i)=>i+1));
+      else { expect(ordinals[0]).toBeGreaterThan(1); expect(result.length).toBeLessThanOrEqual(82); }
     });
   }
   it("fixed positions, legacy split edge inclusion and unchanged even-width positions",()=>{
@@ -20,7 +23,9 @@ describe("center-based horizontal labels", () => {
     expect(labels(12.5,'meters')[0].positionMeters).toBe(0.25);
     expect(labels(13,'centerSplit').map(i=>i.positionMeters)).toEqual([1,2,3,4,5,6,7,8,9,10,11,12]);
     expect(labels(1,'centerSplit')).toEqual([]);
-    expect(labels(40,'meters').map(i=>i.label)).toEqual(['20','16','12','8','4','4','8','12','16','20']);
+    const all20=Array.from({length:20},(_,i)=>String(i+1));
+    expect(labels(40,'meters').map(i=>i.label)).toEqual([...[...all20].reverse(),...all20]);
+    expect(labels(20,'centerSplit').map(i=>i.label)).toEqual([...Array.from({length:10},(_,i)=>String(10-i)),...Array.from({length:10},(_,i)=>String(i+1))]);
     expect(labels(40,'centerSplit')[0].positionMeters).toBe(0.5);
   });
   it("rejects non-finite widths and adapts existing save values",()=>{
