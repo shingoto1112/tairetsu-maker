@@ -6,7 +6,7 @@
 .object-group-item > .object-group-item__shape { grid-column: 1 / -1; }
 .stage-object.object-shape-icon { position: static; display: inline-block; width: 20px; height: 16px; min-height: 0; border: 1px solid #334155; pointer-events: none; }
 .stage-object.object-shape-icon.shape-line { height: 4px; }
-.object-size-editor { box-sizing: border-box; height: 260px; min-width: 0; padding: 8px 10px; border: 1px solid #dbe7ee; border-radius: 14px; background: #f8fafc; display: flex; flex-direction: column; }
+.object-size-editor { container: object-editor / inline-size; box-sizing: border-box; height: auto; min-width: 0; padding: 8px 10px; border: 1px solid #dbe7ee; border-radius: 14px; background: #f8fafc; display: flex; flex-direction: column; }
 .object-size-editor__header { display: flex; gap: 8px; align-items: center; min-height: 44px; }
 .object-size-editor__header strong { flex: 1; min-width: 0; color: #0f172a; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .object-size-editor__total { background: white; border-radius: 20px; border: 1px solid #ccfbf1; color: #0f766e; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
@@ -17,7 +17,7 @@
 .object-size-editor__choices { min-width: 0; overflow: auto; padding-top: 4px; }
 .object-size-editor__choices .object-shape-buttons { flex-direction: column; }
 .object-size-editor p { font-size: 12px; margin: 5px 0; line-height: 1.35; }
-.object-size-editor__preview { position: relative; overflow: hidden; background: white; min-width: 0; min-height: 0; border-radius: 8px; }
+.object-size-editor__preview { position: relative; overflow: hidden; background: white; min-width: 0; min-height: 194px; border-radius: 8px; }
 .object-size-editor__preview svg { position: absolute; inset: 0; }
 .stage-object.object-size-editor__object { border: 0; box-shadow: inset 0 0 0 1px #334155; box-sizing: border-box; pointer-events: none; }
 .object-size-editor__curtain { background-image: repeating-linear-gradient(90deg, #ffffff38 0, #ffffff38 8px, #00000014 8px, #00000014 16px); }
@@ -62,13 +62,21 @@
 @container roster (min-width: 980px) {
   .roster-manager-modal.is-object-names .roster-manager-topbar { grid-template-columns: max-content minmax(0, 1fr); }
   .roster-manager-modal.is-object-names .roster-manager-mode-controls { display: grid; align-content: start; }
-  .object-size-editor { height: 224px; }
 }
-@container roster (max-width: 620px) {
-  .object-size-editor__body { grid-template-columns: 90px minmax(220px, 1fr) 152px; gap: 4px; }
-  .object-size-editor__stepper { grid-template-columns: 44px minmax(52px, 1fr) 44px; gap: 2px; }
-  .object-size-editor__numbers button { font-size: 12px; padding: 2px; }
+/* Respond to the editor's actual column width without remounting numeric drafts. */
+@container object-editor (max-width: 539px) {
+  .object-size-editor__body { grid-template-columns: 112px minmax(0, 1fr); }
+  .object-size-editor__numbers { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow: visible; }
 }
-@media (orientation: portrait) {
-  .object-size-editor:not(.is-collapsed) { height: 260px; }
+@container object-editor (max-width: 399px) {
+  .object-size-editor__body { grid-template-columns: minmax(0, 1fr); }
+  .object-size-editor__choices { overflow: visible; }
+  .object-size-editor__choices .object-shape-buttons { flex-direction: row; }
+  .object-size-editor__numbers { grid-template-columns: minmax(0, 1fr); }
+  .object-size-editor__header { flex-wrap: wrap; }
+}
+/* Stacked controls may exceed a short split window. Scroll the modal rather
+   than reducing the preview or leaving the roster table with zero height. */
+@media screen and (max-width: 620px) {
+  .roster-manager-modal.is-object-names { grid-template-rows: auto auto minmax(240px, 1fr); overflow-y: auto; }
 }

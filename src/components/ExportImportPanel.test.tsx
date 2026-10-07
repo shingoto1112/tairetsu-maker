@@ -119,6 +119,21 @@ describe("overlay notices", () => {
     expect(screen.getByRole("button", { name: /警告1件/ })).toBeTruthy();
   });
 
+  it("keeps the close control's area when a native keyboard leaves an empty canvas", () => {
+    vi.stubGlobal("visualViewport", Object.assign(new EventTarget(), { height: 460, offsetTop: 0 }));
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("stage-fit-area")
+        ? { top: 253, bottom: 253, height: 0 } as DOMRect
+        : { top: 187, bottom: 253, height: 66 } as DOMRect;
+    });
+    render(<Harness initial="閉じられるお知らせ" />);
+    const overlay = screen.getByRole("region", { name: "お知らせ" });
+    expect(overlay.style.getPropertyValue("--status-top")).toBe("0px");
+    expect(overlay.style.getPropertyValue("--status-height")).toBe("66px");
+    fireEvent.click(screen.getByRole("button", { name: "お知らせを閉じる" }));
+    expect(screen.queryByText("閉じられるお知らせ")).toBeNull();
+  });
+
   it("follows visual viewport keyboard resize and pan, then removes viewport listeners on unmount", () => {
     const viewport = new EventTarget();
     Object.assign(viewport, { height: 600, offsetTop: 0 });

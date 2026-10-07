@@ -19,7 +19,10 @@ export const ExportImportPanel = ({ notice, warnings, onDismissNotice }: ExportI
     const viewport = window.visualViewport;
     const updatePosition = () => {
       const hostRect = host.getBoundingClientRect();
-      const canvasRect = canvas?.getBoundingClientRect() ?? hostRect;
+      const measuredCanvas = canvas?.getBoundingClientRect();
+      // A small native keyboard workspace can leave no canvas height. Keep the
+      // notice's close control within the host's remaining operation area.
+      const canvasRect = measuredCanvas && measuredCanvas.height >= 44 ? measuredCanvas : hostRect;
       const visibleTop = viewport?.offsetTop ?? 0;
       const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight);
       const top = Math.max(canvasRect.top, hostRect.top, visibleTop);

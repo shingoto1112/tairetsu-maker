@@ -558,6 +558,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .fatal-error-screen {
@@ -1986,6 +1987,9 @@ h2 {
 }
 
 .sr-only {
+  /* Anchor hidden descriptions instead of leaking their static position into document scroll. */
+  top: 0;
+  left: 0;
   clip: rect(0, 0, 0, 0);
   border: 0;
   height: 1px;
@@ -2106,7 +2110,7 @@ h2 {
 .formation-tools__primary-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
 }
 
 .formation-tools__large-button,
@@ -2127,6 +2131,7 @@ h2 {
 }
 
 .formation-tools__large-button {
+  white-space: nowrap;
   gap: 12px;
   min-height: 58px;
   padding: 12px 14px;
@@ -5830,6 +5835,8 @@ h2 {
 }
 
 .visually-hidden {
+  top: 0;
+  left: 0;
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
   height: 1px;
@@ -6481,6 +6488,15 @@ h2 {
     padding: 9px 8px;
   }
 
+  .panel-tab {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 4px;
+  }
+
+  .panel-tab > span { white-space: nowrap; }
+
   .tab-panel__content {
     padding: 12px;
   }
@@ -6614,14 +6630,14 @@ h2 {
 
 @media (max-width: 820px) {
   .app-shell {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .workspace {
     grid-template-columns: 1fr;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .stage-frame {
@@ -7540,6 +7556,27 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 }
 .toolbar .toolbar-label-button svg { color: var(--accent); }
 /* Tab selection and panel visibility have separate scroll owners. */
+/* A narrow landscape window still needs two bounded, independently scrolling columns. */
+@media screen and (orientation: landscape) and (max-width: 900px) {
+  .workspace { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); }
+  .tab-panel { grid-template-columns: 80px minmax(0, 1fr); width: 100%; }
+  .tab-panel.is-collapsed { grid-template-columns: 80px 0; width: 80px; }
+  .panel-tabs { display: grid; overflow-x: hidden; }
+  /* Keep every existing command reachable without consuming the short canvas. */
+  .stage-export-header { flex: 0 0 auto; flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 6px; }
+  .stage-primary-controls { flex: 0 0 auto; flex-wrap: nowrap; }
+  .stage-primary-controls .stage-timebar { flex: 0 0 340px; min-width: 340px; grid-template-columns: auto auto minmax(150px, 1fr); }
+  .stage-timebar__skips { flex-wrap: nowrap; }
+  .stage-export-header__actions { flex: 0 0 auto; flex-wrap: nowrap; margin-left: 0; }
+}
+@media screen and (orientation: landscape) and (max-width: 900px) and (max-height: 400px) {
+  /* Rotated split windows need canvas space before explanatory text. */
+  .stage-frame { gap: 6px; padding: 6px; }
+  .stage-export-header { min-height: 56px; padding: 4px; }
+  .ruler-reference-labels { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; }
+  .ruler-reference-labels span { flex: 0 0 auto; }
+  .stage-keyboard-hint { display: none; }
+}
 @media screen {
   .panel-tabs-header { background: #fbfcfe; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; overflow: auto; }
   .panel-tabs-header > .panel-tabs { border-right: 0; flex: 0 0 auto; }
@@ -7747,10 +7784,28 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar { gap: 0; grid-template-columns: minmax(140px, 1fr); grid-template-rows: 12px 44px; }
   .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar__time { font-size: 10px; justify-content: flex-start; }
 }
+@media screen and (max-width: 740px) {
+  /* Keyboard space is limited; one scrollable row retains all commands. */
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .stage-export-header--compact { flex: 0 0 56px; flex-direction: row; height: 56px; overflow-x: auto; overflow-y: hidden; }
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .stage-export-header--compact :is(.stage-primary-controls, .stage-export-header__actions) { flex: 0 0 auto; }
+  .app-shell[data-workspace-layout="portrait"][data-workspace-keyboard="open"] .stage-export-header--compact .stage-timebar { flex: 0 0 200px; grid-template-columns: auto minmax(140px, 1fr); grid-template-rows: 44px; }
+}
+/* Browser bars can make a narrow split window short even with no keyboard. */
+@media screen and (max-width: 740px) and (max-height: 800px) {
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact { flex: 0 0 56px; flex-direction: row; height: 56px; overflow-x: auto; overflow-y: hidden; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact :is(.stage-primary-controls, .stage-export-header__actions) { flex: 0 0 auto; }
+  .app-shell[data-workspace-layout="portrait"] .stage-export-header--compact .stage-timebar { flex: 0 0 200px; grid-template-columns: auto minmax(140px, 1fr); grid-template-rows: 44px; }
+}
 /* Shared visibility DOM: the check label and selection button have separate hit areas. */
 .scene-visibility-picker { min-width: 0; }
 .tab-panel__content:has(> .member-manager, > .object-manager) { grid-template-columns: minmax(0, 1fr); }
 .tab-panel__content :is(.member-manager, .object-manager) { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.scene-visibility-chip { position: relative; /* Contain the accessible status text in its scroll owner. */ }
+/* Narrow side panels (e.g. 11" landscape): keep the short heading on one line; the count and button move down instead. */
+.member-management-block > .panel-section__header,
+.object-group-manager > .object-visibility-list__header { flex-wrap: wrap; row-gap: 4px; }
+.member-management-block > .panel-section__header > h3,
+.object-group-manager > .object-visibility-list__header > strong { white-space: nowrap; }
 .scene-visibility-chip.object-visibility-item {
   box-sizing: border-box; display: flex; gap: 0; min-height: 48px; padding: 0; opacity: 1; border: 2px solid transparent; background: #fff;
 }

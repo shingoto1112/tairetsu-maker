@@ -7661,7 +7661,7 @@ function App() {
       className="app-shell"
       data-workspace-layout={workspaceLayout.isPortrait ? "portrait" : undefined}
       data-workspace-keyboard={workspaceLayout.keyboardOpen ? "open" : undefined}
-      style={{ "--workspace-viewport-height": `${workspaceLayout.height}px` } as CSSProperties}
+      style={workspaceLayout.height === undefined ? undefined : { "--workspace-viewport-height": `${workspaceLayout.height}px` } as CSSProperties}
     >
       <div className="app-top-region">
       <Toolbar
