@@ -36,7 +36,7 @@ try {
     await page.getByRole('button', { name: '線を引く', exact: true }).click();
     await page.getByLabel('線の色').selectOption('blue'); await page.getByLabel('線の種類').selectOption('dashed');
     const box = await surface.boundingBox();
-    const empty = await surface.locator('.annotation-layer').evaluate(svg => {
+    const empty = await surface.locator('.annotation-interaction-layer').evaluate(svg => {
       const b = svg.getBoundingClientRect();
       for (const fy of [.75, .6, .4, .2]) for (const fx of [.2, .4, .6]) {
         const p = { x: b.x + b.width * fx, y: Math.min(b.y + b.height * fy, innerHeight - 100) };

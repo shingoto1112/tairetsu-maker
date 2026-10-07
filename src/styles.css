@@ -7876,10 +7876,15 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .vertical-origin-options input[type="radio"] { width: 18px; height: 18px; min-width: 18px; min-height: 18px; flex: 0 0 18px; margin: 0; padding: 0; }
 
 /* Annotation SVG changes no stage/export geometry. */
-.annotation-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 3; }
-.annotation-layer.is-editing { pointer-events: auto; touch-action: none; z-index: 40; cursor: crosshair; }
-.is-annotation-editing > :not(.annotation-layer),
-.is-annotation-editing > :not(.annotation-layer) * { pointer-events: none !important; }
+.annotation-layer, .annotation-interaction-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.annotation-layer { z-index: 3; }
+/* Confine all finite member/object z-indices while preserving their relative order. */
+.canvas-elements-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.canvas-elements-layer > :is(.member-token, .stage-object, .parade-member, .parade-object) { pointer-events: auto; }
+.annotation-interaction-layer { z-index: 5; }
+.annotation-interaction-layer.is-editing { pointer-events: auto; touch-action: none; cursor: crosshair; }
+.is-annotation-editing > :not(.annotation-interaction-layer),
+.is-annotation-editing > :not(.annotation-interaction-layer) * { pointer-events: none !important; }
 .annotation-toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 4px; }
 .annotation-toolbar button, .annotation-toolbar select { min-height: 44px; }
 .annotation-toolbar select { width: auto; max-width: 100px; }
@@ -7894,7 +7899,7 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   }
   .stage-export-header--compact .annotation-toolbar:has(select) { flex: 0 0 100%; max-width: 100%; }
 }
-@media print { .annotation-toolbar, .annotation-layer [data-ephemeral] { display: none !important; } }
+@media print { .annotation-toolbar, .annotation-interaction-layer { display: none !important; } }
 
 /* Coordinates scroll with the normal panel content near its heading. */
 .selected-position-card {

@@ -31,21 +31,24 @@ describe("annotation storage and grid contract", () => {
     Object.values(a)[0].x1 = 99; expect(original.line.x1).toBe(1); expect(Object.values(b)[0].x1).toBe(1);
   });
   it("uses effective width/counting origins, zero vertical origin, and equal movement", () => {
-    expect(snapAnnotationPoint({ x: 2, y: 1.7 }, 9.3, 10, 1, "meters")).toEqual({ x: 1.65, y: 2 });
-    expect(snapAnnotationPoint({ x: 2, y: 1.7 }, 9.3, 10, 1, "centerSplit")).toEqual({ x: 2.15, y: 2 });
-    expect(snapAnnotationPoint({ x: 2, y: 90.2 }, 9.3, 110, 1, "normalMeter")).toEqual({ x: 1.65, y: 90 });
+    expect(snapAnnotationPoint({ x: 2, y: 1.7 }, 9.3, 10, 1, "meters")).toEqual({ x: 2.15, y: 1.5 });
+    expect(snapAnnotationPoint({ x: 2, y: 1.7 }, 9.3, 10, 1, "centerSplit")).toEqual({ x: 2.15, y: 1.5 });
+    expect(snapAnnotationPoint({ x: 2, y: 90.2 }, 9.3, 110, 1, "normalMeter")).toEqual({ x: 2.15, y: 90 });
     expect(translateAnnotationLine(testLine, { x: 3, y: 4 })).toEqual({ ...testLine, x1: 3, y1: 4, x2: 10, y2: 8 });
   });
   it("keeps exact coordinates through normalize, JSON and ZIP with/without audio", async () => {
+    const existing = { ...testLine, x1: 1.137, y1: 2.193, x2: 8.217, y2: 6.319 };
     for (const withAudio of [false, true]) {
-      const p = normalizeProject(createSampleProject()); p.frames[0].annotationLines = { line: testLine };
+      const p = normalizeProject(createSampleProject()); p.frames[0].annotationLines = { line: existing };
+      p.stage.gridSizeMeters = 0.1;
+      expect(normalizeProject(p).frames[0].annotationLines).toEqual({ line: existing });
       p.audio = withAudio ? { id: "audio-lines", name: "test.wav", type: "audio/wav", size: 3 } : null;
       const encoded = serializeProject(p); expect(encoded.ok).toBe(true); if (!encoded.ok) throw encoded.error;
       const decoded = decodeProjectJson(encoded.value); expect(decoded.ok).toBe(true);
-      if (decoded.ok) expect(decoded.value.frames[0].annotationLines).toEqual({ line: testLine });
+      if (decoded.ok) expect(decoded.value.frames[0].annotationLines).toEqual({ line: existing });
       const blob = await createTairetsuArchive(p, { audioBlob: withAudio ? new Blob(["abc"]) : null });
       const imported = await readTairetsuArchive(new File([await blob.arrayBuffer()], "lines.zip"));
-      expect(imported.project.frames[0].annotationLines).toEqual({ line: testLine });
+      expect(imported.project.frames[0].annotationLines).toEqual({ line: existing });
       expect(Boolean(imported.audioBlob)).toBe(withAudio);
     }
   });

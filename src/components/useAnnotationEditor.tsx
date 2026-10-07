@@ -3,8 +3,8 @@ import type { AnnotationLine, Position } from "../types";
 import { snapAnnotationPoint, translateAnnotationLine } from "../utils/annotationLines";
 import { AnnotationLines, annotationColors } from "./AnnotationLines";
 type Gesture = { pointer: number; id: string; kind: "draw" | "move" | "start" | "end"; start: Position; original: AnnotationLine; line: AnnotationLine };
-export const useAnnotationEditor = ({ lines, width, depth, step, counting, reflected = false, context, disabled, onChange }: {
-  lines?: Record<string, AnnotationLine>; width: number; depth: number; step: number; counting?: string; reflected?: boolean;
+export const useAnnotationEditor = ({ lines, width, depth, step, counting, verticalOrigin = 0, reflected = false, context, disabled, onChange }: {
+  lines?: Record<string, AnnotationLine>; width: number; depth: number; step: number; counting?: string; verticalOrigin?: number; reflected?: boolean;
   context: string; disabled: boolean; onChange?: (id: string, line: AnnotationLine | null) => void;
 }) => {
   const [active, setActive] = useState(false), [selected, setSelected] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, refle
     const x = (e.clientX - rect.left) / rect.width * width, y = (e.clientY - rect.top) / rect.height * depth;
     return { x: reflected ? width - x : x, y: reflected ? depth - y : y };
   };
-  const snap = (p: Position) => snapAnnotationPoint(p, width, depth, step, counting);
+  const snap = (p: Position) => snapAnnotationPoint(p, width, depth, step, counting, verticalOrigin);
   const down = (e: PointerEvent<SVGSVGElement>) => {
     if (!active || disabled || !onChange || !svg.current || e.button !== 0) return;
     pointers.current.add(e.pointerId);
@@ -82,9 +82,12 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, refle
       <button type="button" className="mini-button primary" onClick={finish}>完了</button>
     </>}
   </div>;
-  const layer = <svg ref={svg} className={`annotation-layer ${active ? "is-editing" : ""}`} viewBox={`0 0 ${width} ${depth}`} preserveAspectRatio="none"
-    onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={e => { if (active) e.preventDefault(); }}>
+  const inkLayer = <svg className="annotation-layer" viewBox={`0 0 ${width} ${depth}`} preserveAspectRatio="none" aria-hidden="true">
     <AnnotationLines lines={shown} width={width} depth={depth} reflected={reflected} />
+  </svg>;
+  // One input surface owns coordinates/capture; visible ink never intercepts input.
+  const interactionLayer = <svg ref={svg} data-ephemeral="true" className={`annotation-interaction-layer ${active ? "is-editing" : ""}`} viewBox={`0 0 ${width} ${depth}`} preserveAspectRatio="none"
+    onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onContextMenu={e => { if (active) e.preventDefault(); }}>
     {active && <g data-ephemeral="true">
       {Object.entries(lines ?? {}).map(([id, line]) => { const a = display(line.x1, line.y1), b = display(line.x2, line.y2); return <line key={id} data-line-id={id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth={24 / scale} pointerEvents="stroke" />; })}
       {chosen && ["start", "end"].map(end => { const line = draft?.id === selected ? draft.line : chosen, p = end === "start" ? display(line.x1, line.y1) : display(line.x2, line.y2); return <g key={end}>
@@ -93,5 +96,5 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, refle
       </g>; })}
     </g>}
   </svg>;
-  return { toolbar, layer, active };
+  return { toolbar, inkLayer, interactionLayer, active };
 };

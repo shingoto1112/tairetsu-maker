@@ -2165,7 +2165,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 onPointerCancel={stopTouchContextMenu}
                 onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
               >
-              {annotation.layer}
+              {annotation.inkLayer}
+              {annotation.interactionLayer}
               {remoteLayer}
               {(stageGridVerticalTicks.length > 0 || stageGridHorizontalTicks.length > 0) && (
                 <div className="stage-grid-layer" aria-hidden="true">
@@ -2231,6 +2232,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               {(stage.showCenterMarker ?? true) && (
                 <span className="center-marker" aria-hidden="true" />
               )}
+              <div className="canvas-elements-layer">
               {activeSnapGuides.map((guide, index) => {
                 const displayPosition = stagePointToDisplayPoint(
                   guide.axis === "x"
@@ -2652,6 +2654,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     </StageMemberToken>
                   );
                 })}
+              </div>
               </div>
               <div
                 className="meter-ruler meter-ruler--vertical meter-ruler--vertical-right"

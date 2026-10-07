@@ -440,6 +440,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     );
     const annotation = useAnnotationEditor({ lines: currentFrame?.annotationLines,
       width: settings.width, depth: canvasDistanceMeters, step: settings.cellSizeMeters, counting: settings.horizontalMeasureMode,
+      verticalOrigin: settings.totalDistance,
       context: project.id + ":" + selectedFrameId, disabled: Boolean(isPlaying) || isReadOnly, onChange: onAnnotationLineChange });
     const pxPerMeter = BASE_PX_PER_METER * zoom;
     const canvasWidthPx = settings.width * pxPerMeter;
@@ -2282,7 +2283,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               onPointerCancel={stopTouchContextMenu}
               onContextMenu={(event) => openContextMenu(event, { type: "stage" })}
             >
-              {annotation.layer}
+              {annotation.inkLayer}
+              {annotation.interactionLayer}
               {remoteLayer}
               <div className="parade-grid-layer" aria-hidden="true">
                 {verticalGridTicks.map((meter) => (
@@ -2303,6 +2305,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 className="parade-center-line"
                 style={{ left: canvasWidthPx / 2 }}
               />
+              <div className="canvas-elements-layer">
               {visibleObjects.map(({ object, state }) => {
                 const left = state.x * pxPerMeter;
                 const top = state.y * pxPerMeter;
@@ -2442,6 +2445,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                   </button>
                 );
               })}
+              </div>
             </div>
             {rightRulerVisible && (
               <div
