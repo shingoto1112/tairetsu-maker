@@ -5,6 +5,7 @@ import { copyAnnotationLines } from "./utils/annotationLines";
 import { validAnnotationLines, validProjectLineCount } from "./project/annotationLines";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./utils/horizontalGrid";
 import { useSharedSession } from "./hooks/useSharedSession";
+import { useModalFocus } from "./hooks/useModalFocus";
 import { useHelpPage } from "./components/HelpPageLoader";
 import { cloudAuthIdentity, subscribeCloudAuth, getValidCloudAuthSession, waitCloudAuthPersistence } from "./cloud/session";
 import { useAppShellScrollGuard } from "./hooks/useAppShellScrollGuard";
@@ -14,6 +15,7 @@ import { normalizeProject } from "./project/normalizeProject";
 import { prepareIndependentProjectCopy, sharingContentKey } from "./project/independentCopy";
 import type { SharingOperation } from "./collaboration/uiTypes";
 import { createEmptyFormationProject } from "./project/createEmptyFormationProject";
+import { applyObjectAppearance, objectDraftForGroup, changeObjectMembership, type ObjectAppearancePatch } from "./project/objectAppearance";
 import {
   createProjectId,
   positiveNumber,
@@ -31,6 +33,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createVisibilityMemory } from "./utils/sceneVisibility";
 import { selectionScrollBounds } from "./utils/selectionScrollBounds";
@@ -417,7 +420,7 @@ const defaultStageObjectDraft: StageObjectDraft = {
 
 const curtainDraft: StageObjectDraft = {
   type: "curtain",
-  shape: "curtain",
+  shape: "rectangle",
   name: "移動幕",
   color: "#7c3aed",
   widthMeters: 1.4,
@@ -984,6 +987,8 @@ function App() {
   const appConfirmResolverRef = useRef<((confirmed: boolean) => void) | null>(
     null,
   );
+  const appConfirmDialogRef = useRef<HTMLElement>(null);
+  const handleAppConfirmTab = useModalFocus(appConfirmDialogRef, Boolean(appConfirm));
 
   const stageFullscreenRef = useRef<HTMLDivElement | null>(null);
   const animationPreviewRef = useRef<number | null>(null);
@@ -1249,14 +1254,14 @@ function App() {
     (
       recipe: (previous: Project) => Project,
       label?: string,
-      options: { coalesceHistory?: boolean } = {},
+      options: { coalesceHistory?: boolean; checkSharedUpdateSize?: boolean } = {},
     ) => {
       if (sharedEditorRef.current) {
         sharedEditorRef.current.edit(previous => {
           const next = recipe(previous);
           if (!validProjectLineCount(next.frames) || next.frames.some(f => !validAnnotationLines(f.annotationLines))) { setNotice("線は1シーン100本、隊列表全体5,000本までです。"); return previous; }
           return next;
-        });
+        }, false, options.checkSharedUpdateSize);
         refreshHistoryCounts(); return;
       }
       const previous = projectRef.current;
@@ -2691,97 +2696,78 @@ function App() {
     });
   };
 
+  const sharedObjectEditingActive = useSyncExternalStore(sharedSession.store.subscribe,
+    () => sharedSession.store.getSnapshot().sharing === "active");
+  const canEditObjectMaster = () => appView === "editor" && !canvasPlaybackRef.current &&
+    (!sharedSession.active?.attached || sharedSession.store.getSnapshot().sharing === "active");
+  const canEditRosterObjects = (!sharedSession.active?.attached || sharedObjectEditingActive) && appView === "editor" && !isPlaying && animationPreviewTimeSec === null;
+  const objectEditingAllowedRef = useRef(canEditObjectMaster);
+  objectEditingAllowedRef.current = canEditObjectMaster;
+  const objectReadOnlyMessage = "閲覧のみ、または再生中のため道具を編集できません。";
+
+  const commitObjectAppearance = (id: string, patch: ObjectAppearancePatch): string | null => {
+    if (!objectEditingAllowedRef.current()) return objectReadOnlyMessage;
+    const live = sharedEditorRef.current?.project ?? projectRef.current;
+    if (!live.stageObjects.some(object => object.id === id)) return "この道具は削除されたため、編集できません。";
+    try {
+      updateProject(previous => objectEditingAllowedRef.current() ? applyObjectAppearance(previous, id, patch) : previous,
+        "道具の形と大きさ", { coalesceHistory: false, checkSharedUpdateSize: true });
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "形と大きさを確定できませんでした。";
+      setNotice(message); return message;
+    }
+  };
+
   const addStageObject = (
     draft: StageObjectDraft = defaultStageObjectDraft,
     visibleInCurrentFrame = true,
     position?: Position,
     objectGroupId?: string,
     shouldScrollToNewObject = true,
-  ) => {
+  ): string | undefined => {
+    if (!objectEditingAllowedRef.current()) return undefined;
     const id = createId("o");
-
-    const group = (project.objectGroups ?? []).find(
-      (item) => item.id === objectGroupId,
-    );
-    const effectiveDraft: StageObjectDraft = group
-      ? {
-          ...draft,
-          name: nextGroupObjectName(group.name),
-          color: group.color ?? draft.color,
-          type: group.defaultType ?? draft.type,
-          shape: group.defaultShape ?? draft.shape,
-        }
-      : draft;
-    const activeFrameId = selectedFrame?.id ?? project.frames[0]?.id;
-    const paradeDefaultPosition = getParadeVisibleCenterPosition(
-      project,
-      selectedFrame ?? project.frames[0],
-    );
-    const center = constrainMemberPosition(
-      position ??
-        paradeDefaultPosition ?? {
-          x: effectiveStage.widthMeters / 2,
-          y: effectiveStage.depthMeters / 2,
-        },
-      effectiveStage,
-    );
-    const topLeft = constrainObjectPosition(
-      {
-        x: center.x - effectiveDraft.widthMeters / 2,
-        y: center.y - effectiveDraft.heightMeters / 2,
-      },
-      effectiveDraft.widthMeters,
-      effectiveDraft.heightMeters,
-      effectiveStage,
-    );
-    const object: StageObject = {
-      id,
-      ...effectiveDraft,
-      defaultX: topLeft.x,
-      defaultY: topLeft.y,
-      defaultRotation: 0,
-      visible: true,
-      locked: false,
-      zIndex: 10 + project.stageObjects.length,
-    };
-    const objectState = createDefaultObjectState(object);
-
-    updateProject((previous) => ({
-      ...previous,
-      stageObjects: [...previous.stageObjects, object],
-      objectGroups: (previous.objectGroups ?? []).map((item) =>
-        item.id === group?.id
-          ? {
-              ...item,
-              objectIds: [...new Set([...item.objectIds, id])],
-            }
-          : item,
-      ),
-      frames: previous.frames.map((frame) => ({
-            ...frame,
-            objectStates: {
-              ...frame.objectStates,
-              [id]: {
-                ...objectState,
-                visible: frame.id === activeFrameId ? visibleInCurrentFrame : false,
-              },
-            },
-          })),
-    }));
-    setSelected({ type: "object", id });
-    setMode("objects");
-    setActivePanelTab("objects");
-    setObjectVisibilityTab(visibleInCurrentFrame ? "visible" : "hidden");
-    setIsPanelOpen(true);
-    if (shouldScrollToNewObject) {
-      requestPanelScroll("object", id);
-    }
-    setNotice(
-      group
-        ? `${group.name} に ${object.name} を追加しました。`
-        : `${effectiveDraft.name}を追加しました。`,
-      "success",
-    );
+    const activeFrameId = selectedFrameIdRef.current;
+    updateProject(previous => {
+      if (!objectEditingAllowedRef.current()) return previous;
+      const group = previous.objectGroups?.find(item => item.id === objectGroupId);
+      if (objectGroupId && !group) return previous;
+      const effectiveDraft = group ? objectDraftForGroup(previous, group, {
+        ...draft, name: nextRosterItemName(previous.stageObjects, previous.objectGroups ?? [], "objects", group.id),
+        color: group.color ?? draft.color, type: group.defaultType ?? draft.type,
+      }) : draft;
+      const activeFrame = previous.frames.find(frame => frame.id === activeFrameId) ?? previous.frames[0];
+      const activeStage = { ...previous.stage, ...getEffectiveStageSize(previous, activeFrame) };
+      const center = constrainMemberPosition(position ?? getParadeVisibleCenterPosition(previous, activeFrame) ?? {
+        x: activeStage.widthMeters / 2, y: activeStage.depthMeters / 2,
+      }, activeStage);
+      const topLeft = constrainObjectPosition({
+        x: center.x - effectiveDraft.widthMeters / 2, y: center.y - effectiveDraft.heightMeters / 2,
+      }, effectiveDraft.widthMeters, effectiveDraft.heightMeters, activeStage);
+      const object: StageObject = { id, ...effectiveDraft, defaultX: topLeft.x, defaultY: topLeft.y,
+        defaultRotation: 0, visible: true, locked: false, zIndex: 10 + previous.stageObjects.length };
+      const state = createDefaultObjectState(object);
+      return { ...previous, stageObjects: [...previous.stageObjects, object],
+        objectGroups: previous.objectGroups?.map(item => item.id === group?.id ? {
+          ...item, objectIds: [...new Set([...item.objectIds, id])],
+        } : item),
+        frames: previous.frames.map(frame => {
+          const stage = { ...previous.stage, ...getEffectiveStageSize(previous, frame) };
+          const xy = constrainObjectPosition(topLeft, object.widthMeters, object.heightMeters, stage);
+          return { ...frame, objectStates: { ...frame.objectStates, [id]: {
+            ...state, ...xy, visible: frame.id === activeFrame?.id ? visibleInCurrentFrame : false,
+          } } };
+        }),
+      };
+    }, "道具追加", { coalesceHistory: false });
+    const added = (sharedEditorRef.current?.project ?? projectRef.current).stageObjects.find(object => object.id === id);
+    if (!added) return undefined;
+    setSelected({ type: "object", id }); setMode("objects"); setActivePanelTab("objects");
+    setObjectVisibilityTab(visibleInCurrentFrame ? "visible" : "hidden"); setIsPanelOpen(true);
+    if (shouldScrollToNewObject) requestPanelScroll("object", id);
+    setNotice(added.name + "を追加しました。", "success");
+    return id;
   };
 
   const updateMember = (id: string, patch: Partial<Member>) => {
@@ -3219,6 +3205,11 @@ function App() {
   };
 
   const updateObject = (id: string, patch: Partial<StageObject>) => {
+    if (!objectEditingAllowedRef.current()) return;
+    if (patch.shape !== undefined) {
+      commitObjectAppearance(id, { shape: patch.shape === "circle" ? "circle" : "rectangle" });
+      return;
+    }
     updateProject((previous) => ({
       ...previous,
       stageObjects: previous.stageObjects.map((object) =>
@@ -3226,14 +3217,8 @@ function App() {
           ? {
               ...object,
               ...patch,
-              widthMeters: Math.max(
-                0.1,
-                patch.widthMeters ?? object.widthMeters,
-              ),
-              heightMeters: Math.max(
-                0.1,
-                patch.heightMeters ?? object.heightMeters,
-              ),
+              ...(patch.widthMeters !== undefined ? { widthMeters: Math.max(.1, patch.widthMeters) } : {}),
+              ...(patch.heightMeters !== undefined ? { heightMeters: Math.max(.1, patch.heightMeters) } : {}),
             }
           : object,
       ),
@@ -6663,7 +6648,7 @@ function App() {
     group: ObjectGroup,
     visibleInCurrentFrame = true,
   ) => {
-    addStageObject(
+    return addStageObject(
       {
         ...defaultStageObjectDraft,
         name: nextGroupObjectName(group.name),
@@ -6757,12 +6742,14 @@ function App() {
   };
 
   const addRosterObject = (groupId: string | null, name?: string) => {
+    if (!objectEditingAllowedRef.current()) return undefined;
     if (name !== undefined && !name.trim()) {
       return;
     }
     const id = createId("o");
 
     updateProject((previous) => {
+      if (!objectEditingAllowedRef.current()) return previous;
       const group = (previous.objectGroups ?? []).find(
         (item) => item.id === groupId,
       );
@@ -6771,13 +6758,14 @@ function App() {
         nextRosterItemName(
           previous.stageObjects, previous.objectGroups ?? [], "objects", groupId,
         );
-      const draft: StageObjectDraft = {
+      const baseDraft: StageObjectDraft = {
         ...defaultStageObjectDraft,
         name: trimmedName,
         color: group?.color ?? defaultStageObjectDraft.color,
         type: group?.defaultType ?? defaultStageObjectDraft.type,
         shape: group?.defaultShape ?? defaultStageObjectDraft.shape,
       };
+      const draft = group ? objectDraftForGroup(previous, group, baseDraft) : baseDraft;
       const activeFrame =
         previous.frames.find((frame) => frame.id === selectedFrame?.id) ??
         previous.frames[0];
@@ -6860,9 +6848,10 @@ function App() {
               };
             }),
       };
-    }, "名簿道具追加");
-    const added = projectRef.current.stageObjects.find((object) => object.id === id);
+    }, "名簿道具追加", { coalesceHistory: false });
+    const added = (sharedEditorRef.current?.project ?? projectRef.current).stageObjects.find((object) => object.id === id);
     if (added) setNotice(`${added.name} を名簿に追加しました。`, "success");
+    return added?.id;
   };
 
   const createRosterMemberGroup = () => {
@@ -6901,30 +6890,36 @@ function App() {
     setNotice(`${group.name} を作成しました。`, "success");
   };
 
-  const updateObjectGroupMembership = (
-    objectId: string,
-    groupId: string | null,
-  ) => {
-    updateProject((previous) => ({
-      ...previous,
-      objectGroups: (previous.objectGroups ?? []).map((group) => {
-        const withoutObject = group.objectIds.filter((id) => id !== objectId);
-        if (group.id === groupId) {
-          return {
-            ...group,
-            objectIds: [...withoutObject, objectId],
-          };
-        }
-        return {
-          ...group,
-          objectIds: withoutObject,
-        };
-      }),
-    }), "道具グループ所属変更");
-    setNotice(
-      groupId ? "道具の所属グループを変更しました。" : "道具の所属を解除しました。",
-      "success",
-    );
+  const updateObjectGroupMembership = async (objectId: string, groupId: string | null) => {
+    const generation = editorLoadGenerationRef.current;
+    const editor = sharedEditorRef.current;
+    const projectId = projectRef.current.id;
+    const current = () => generation === editorLoadGenerationRef.current && editor === sharedEditorRef.current &&
+      projectId === projectRef.current.id && objectEditingAllowedRef.current();
+    while (current()) {
+      const live = editor?.project ?? projectRef.current;
+      const object = live.stageObjects.find(item => item.id === objectId);
+      const destination = live.objectGroups?.find(group => group.id === groupId);
+      if (!object || groupId !== null && !destination) return;
+      if (changeObjectMembership(live, objectId, groupId) === live) return;
+      let copyColor = false;
+      if (destination?.color && destination.color !== object.color) {
+        copyColor = await requestAppConfirm({ title: "道具の色を変更しますか？", confirmLabel: "はい", cancelLabel: "いいえ",
+          message: "道具の色も「" + destination.name + "」グループの色にしますか？\n閉じても所属は変更し、色はそのままです。" });
+        if (!current()) return;
+        const latest = editor?.project ?? projectRef.current;
+        const latestObject = latest.stageObjects.find(item => item.id === objectId);
+        const latestGroup = latest.objectGroups?.find(group => group.id === groupId);
+        if (!latestObject || !latestGroup) return;
+        if (latestObject.color !== object.color || latestGroup.color !== destination.color || latestGroup.name !== destination.name) continue;
+      }
+      try {
+        updateProject(previous => current() ? changeObjectMembership(previous, objectId, groupId, copyColor) : previous,
+          "道具グループ所属変更", { coalesceHistory: false, checkSharedUpdateSize: true });
+      } catch (error) { setNotice(error instanceof Error ? error.message : "所属を変更できませんでした。"); return; }
+      setNotice(groupId ? "道具の所属グループを変更しました。" : "道具の所属を解除しました。", "success");
+      return;
+    }
   };
 
   const nudgeSelection = (dx: number, dy: number) => {
@@ -7338,7 +7333,8 @@ function App() {
           scrollTarget={
             panelScrollTarget?.type === "object" ? panelScrollTarget : null
           }
-          canEditProject={true}
+          canEditProject={canEditRosterObjects}
+          projectReadOnlyMessage={objectReadOnlyMessage}
           canEditScene={true}
 
           onVisibilityTabChange={setObjectVisibilityTab}
@@ -8342,6 +8338,8 @@ function App() {
           role="dialog"
           aria-modal="true"
           aria-label={appConfirm.title}
+          ref={appConfirmDialogRef}
+          onKeyDown={handleAppConfirmTab}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <h2>{appConfirm.title}</h2>
@@ -8379,6 +8377,10 @@ function App() {
       memberVisibility={selectedFrameSnapshot.memberVisibility}
       project={project}
       canEditAssignments={(true)}
+      canEditObjects={canEditRosterObjects}
+      objectReadOnlyMessage={objectReadOnlyMessage}
+      onCommitObjectAppearance={commitObjectAppearance}
+      isAppConfirmOpen={Boolean(appConfirm)}
       readOnlyMessage={"このシーンは閲覧のみです。"}
       onAssignMember={(objectId, memberId) => {
 

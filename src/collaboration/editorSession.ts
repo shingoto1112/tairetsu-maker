@@ -12,6 +12,7 @@ import { ENTITY_ROOTS, getModel } from "./model";
 import { sameSong, type SongDescriptor } from "../repositories/audioBindings";
 import { SharedNotesAdapter } from "./notesAdapter";
 import { planRecipe, type PlannedWrite } from "./recipeCommands";
+import { assertRecipeUpdateSize } from "./recipeUpdateSize";
 
 /** No transport/auth/UI creation here. Owns one persistent editing Y.Doc and its
  * UndoManager; durable merges apply into that identity, never recreate from JSON. */
@@ -71,13 +72,17 @@ export class SharedProjectEditor {
       return next;
     }) };
   }
-  edit(recipe: (previous: Project) => Project, intentionalImport = false): void {
+  edit(recipe: (previous: Project) => Project, intentionalImport = false, checkUpdateSize = false): void {
     if (this.disposed) return;
     const previous = this.project, next = recipe(previous);
     if (next === previous) return;
     if (!intentionalImport) this.rejectStale(previous, next);
     // Compile now, before any asynchronous save or remote update.
     const writes = planRecipe(this.doc, previous, next, this.sharedDocumentId);
+    if (checkUpdateSize) {
+      if (this.batch) throw new Error("ほかの操作が完了してから、形と大きさを確定してください。");
+      assertRecipeUpdateSize(this.doc, previous, next, this.sharedDocumentId);
+    }
     this.local = { ...next, updatedAt: new Date().toISOString() };
     if (this.batch) {
       writes.forEach(w => this.batch!.writes.set(JSON.stringify(w.target), w));

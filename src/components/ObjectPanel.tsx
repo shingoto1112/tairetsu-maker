@@ -34,6 +34,7 @@ import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { isMemberShownInScene } from "../utils/assignmentCandidates";
 import type { MemberPickerSceneVisibility } from "./MemberPicker";
 import { ColorPaletteInput } from "./ColorPaletteInput";
+import { ObjectShapeButtons } from "./ObjectShapeButtons";
 
 type ObjectPanelProps = {
   portrait?: boolean;
@@ -103,22 +104,6 @@ const objectTypes: StageObjectType[] = [
   "area",
   "custom",
 ];
-
-const shapes: StageObjectShape[] = [
-  "rectangle",
-  "circle",
-  "line",
-  "curtain",
-  "custom",
-];
-
-const shapeLabel: Record<StageObjectShape, string> = {
-  rectangle: "四角形",
-  circle: "円",
-  line: "線",
-  curtain: "幕",
-  custom: "カスタム",
-};
 
 const typeLabel: Record<StageObjectType, string> = {
   prop: "道具",
@@ -457,23 +442,9 @@ export const ObjectPanel = ({
                     ))}
                   </select>
                 </label>
-                <label>
-                  形
-                  <select
-                    value={groupDraftShape}
-                    disabled={projectDisabled}
-                    title={projectDisabled ? projectReadOnlyMessage : undefined}
-                    onChange={(event) =>
-                      setGroupDraftShape(event.target.value as StageObjectShape)
-                    }
-                  >
-                    {shapes.map((shape) => (
-                      <option key={shape} value={shape}>
-                        {shapeLabel[shape]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="object-panel-shape-field"><span>形</span>
+                  <ObjectShapeButtons shape={groupDraftShape} disabled={projectDisabled} label="新しいグループの追加時の形" onChange={setGroupDraftShape} />
+                </div>
               </div>
               <button
                 className="mini-button primary"
@@ -657,6 +628,10 @@ export const ObjectPanel = ({
                                     </option>
                                   ))}
                                 </select>
+                                <div className="object-group-item__shape"><span>形</span>
+                                  <ObjectShapeButtons shape={object.shape} disabled={projectDisabled} label={object.name + "の形"}
+                                    onChange={shape => onUpdateObject(object.id, { shape })} />
+                                </div>
                                 <button
                                   className="mini-button"
                                   onClick={(event) => {
@@ -760,23 +735,16 @@ export const ObjectPanel = ({
                   ))}
                 </select>
               </label>
+              <div className="object-panel-shape-field"><span>形</span>
+                <ObjectShapeButtons shape={object.shape} disabled={projectDisabled} label={object.name + "の形"}
+                  onChange={shape => onUpdateObject(object.id, { shape })} />
+              </div>
               <label>
-                形
-                <select
-                  value={object.shape}
-                  disabled={projectDisabled}
-                  title={projectDisabled ? projectReadOnlyMessage : undefined}
-                  onChange={(event) =>
-                    onUpdateObject(object.id, {
-                      shape: event.target.value as StageObjectShape,
-                    })
-                  }
-                >
-                  {shapes.map((shape) => (
-                    <option key={shape} value={shape}>
-                      {shapeLabel[shape]}
-                    </option>
-                  ))}
+                所属グループ
+                <select value="" disabled={projectDisabled} aria-label={`${object.name} の所属グループ`}
+                  onChange={event => onChangeObjectGroup(object.id, event.target.value || null)}>
+                  <option value="">未所属</option>
+                  {objectGroups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
                 </select>
               </label>
               <div className="palette-field">

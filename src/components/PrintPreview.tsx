@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { objectRenderShape } from "../project/objectAppearance";
 import { boundedTicks } from "../utils/boundedTicks";
 import { AnnotationLines } from "./AnnotationLines";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, stageVerticalRulerPositions } from "../utils/gridEmphasis";
@@ -1022,7 +1023,7 @@ const PrintStagePreview = ({
                   key={entry.object.id}
                 >
                   <div
-                    className={`print-assignment-sheet__object shape-${entry.object.shape}`}
+                    className={`print-assignment-sheet__object shape-${objectRenderShape(entry.object)}`}
                     style={{
                       backgroundColor: `${entry.object.color}24`,
                       borderColor: entry.object.color,
@@ -1148,7 +1149,7 @@ const PrintStagePreview = ({
           const objectTopMeters = state.y - verticalRange.topMeters;
           return (
             <div
-              className={`print-object shape-${object.shape}`}
+              className={`print-object shape-${objectRenderShape(object)}`}
               key={object.id}
               style={{
                 backgroundColor: `${object.color}24`,

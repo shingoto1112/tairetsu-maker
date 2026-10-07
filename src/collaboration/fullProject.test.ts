@@ -16,7 +16,10 @@ import { MemoryProjectRepository } from "../repositories/contract/testing/Memory
 import { MemoryTransport } from "./testing/memoryTransport";
 import { validateState } from "./serverValidation";
 import { orderedIds, orderKey, deleted } from "./projectModel";
-import { sortFrames } from "../utils/interpolation";
+import { sortFrames, createDefaultObjectState } from "../utils/interpolation";
+import { applyObjectAppearance } from "../project/objectAppearance";
+import { assertRecipeUpdateSize, recipeUpdateBytes } from "./recipeUpdateSize";
+import { SHARED_DOCUMENT_LIMITS } from "../config/collaborationLimits";
 
 const resources: { destroy(): void }[] = [];
 const keep = <T extends { destroy(): void }>(resource: T): T => { resources.push(resource); return resource; };
@@ -207,8 +210,8 @@ describe("Y.Text and anchored IME input", () => {
 });
 
 describe("App entry/save-session boundary", () => {
-  async function setup() {
-    const p = fixture(), doc = keep(createSharedDocument(p)), repository = new MemoryProjectRepository(); await repository.initialize();
+  async function setup(p = fixture()) {
+    const doc = keep(createSharedDocument(p)), repository = new MemoryProjectRepository(); await repository.initialize();
     await repository.commit({ project: p, collaboration: createCollaborationData(doc), localRevision: "1", expectedRepositoryRevision: null, operationId: "create" });
     let editor: SharedProjectEditor | undefined, latest = p;
     const coordinator = new SaveCoordinator(repository, () => editor?.receiveDurable());
@@ -236,6 +239,65 @@ describe("App entry/save-session boundary", () => {
     expect(await s.coordinator.flush()).toBe(true);
     expect(s.failed).not.toHaveBeenCalled();
     expect((await s.repository.get(s.p.id!))!.project.title).toBe("live");
+  });
+  it("object appearance commits once, keeps received movement/untouched size, supports Undo/Redo and remote deletion", async () => {
+    const p = fixture();
+    p.frames.forEach(frame => { frame.objectStates.o_001 = createDefaultObjectState(p.stageObjects[0]); });
+    const s = await setup(p), id = "o_001";
+    await s.receive(() => {
+      const before = projectSharedDocument(s.remote, s.p);
+      s.commands.applyRecipe(before, { ...before, frames: before.frames.map(frame => ({ ...frame, objectStates: {
+        ...frame.objectStates, [id]: { ...frame.objectStates[id], x: 6, y: 3, heightMeters: 2 },
+      } })) });
+    });
+    const before = s.editor.project, baseWidth = before.stageObjects.find(o => o.id === id)!.widthMeters;
+    const updates = vi.fn(); s.editor.doc.on("update", updates);
+    s.editor.edit(p => applyObjectAppearance(p, id, { widthMeters: baseWidth + .1 }), false, true);
+    expect(updates).toHaveBeenCalledTimes(1); expect(s.coordinator.collaborationProjection!.outbox).toHaveLength(1);
+    expect(s.latest().frames[0].objectStates[id]).toMatchObject({ x: 5.95, y: 3, heightMeters: 2 });
+    expect(s.editor.undo().status).toBe("applied"); expect(s.latest().frames).toEqual(before.frames);
+    expect(s.editor.redo().status).toBe("applied"); expect(s.latest().frames[0].objectStates[id].widthMeters).toBe(baseWidth + .1);
+    const next = s.editor.project;
+    const count = updates.mock.calls.length;
+    s.editor.edit(p => applyObjectAppearance(p, id, { widthMeters: baseWidth + .1 }), false, true);
+    expect(updates).toHaveBeenCalledTimes(count);
+    await s.receive(() => {
+      const previous = projectSharedDocument(s.remote, s.p);
+      s.commands.applyRecipe(previous, { ...previous, stageObjects: previous.stageObjects.filter(o => o.id !== id) });
+    });
+    expect(s.editor.project.stageObjects.some(o => o.id === id)).toBe(false);
+    const bytes = Y.encodeStateAsUpdate(s.editor.doc);
+    s.editor.edit(p => applyObjectAppearance(p, id, { shape: "circle" }), false, true);
+    expect(Y.encodeStateAsUpdate(s.editor.doc)).toEqual(bytes);
+    expect(next.stageObjects.some(o => o.id === id)).toBe(true);
+  });
+  it("preflight measures exact Yjs bytes, accepts boundary, rejects above boundary without history/outbox/live changes", async () => {
+    const s = await setup(), before = s.editor.project;
+    const after = applyObjectAppearance(before, "o_001", { widthMeters: 1.33 });
+    const original = Y.encodeStateAsUpdate(s.editor.doc);
+    const measured = recipeUpdateBytes(s.editor.doc, before, after);
+    expect(measured).toBeGreaterThan(0); expect(Y.encodeStateAsUpdate(s.editor.doc)).toEqual(original);
+    expect(() => assertRecipeUpdateSize(s.editor.doc, before, after, null, measured)).not.toThrow();
+    expect(() => assertRecipeUpdateSize(s.editor.doc, before, after, null, measured - 1)).toThrow(/256KiB/);
+    const boundaryRecipe = (padding: number) => ({ ...before, frames: before.frames.map((f, i) => ({ ...f,
+      notes: i < 2 ? "a".repeat(60000) : "あ".repeat(47000) + "a".repeat(padding),
+    })) });
+    let padding = SHARED_DOCUMENT_LIMITS.updateBytes - recipeUpdateBytes(s.editor.doc, before, boundaryRecipe(0));
+    for (let attempt = 0; attempt < 3; attempt++) padding += SHARED_DOCUMENT_LIMITS.updateBytes - recipeUpdateBytes(s.editor.doc, before, boundaryRecipe(padding));
+    expect(recipeUpdateBytes(s.editor.doc, before, boundaryRecipe(padding))).toBe(262144);
+    expect(() => assertRecipeUpdateSize(s.editor.doc, before, boundaryRecipe(padding))).not.toThrow();
+    expect(recipeUpdateBytes(s.editor.doc, before, boundaryRecipe(padding + 1))).toBe(262145);
+    expect(() => assertRecipeUpdateSize(s.editor.doc, before, boundaryRecipe(padding + 1))).toThrow(/256KiB/);
+    const update = vi.fn(); s.editor.doc.on("update", update);
+    s.editor.edit(p => applyObjectAppearance(p, "o_001", { widthMeters: 1.33 }), false, true);
+    expect(update).toHaveBeenCalledTimes(1); expect(update.mock.calls[0][0].byteLength).toBe(measured);
+    const beforeOversized = s.editor.project, bytes = Y.encodeStateAsUpdate(s.editor.doc);
+    const oversized = (p: Project) => ({ ...p, frames: p.frames.map(f => ({ ...f, notes: "あ".repeat(40000) })) });
+    expect(recipeUpdateBytes(s.editor.doc, beforeOversized, oversized(beforeOversized))).toBeGreaterThan(SHARED_DOCUMENT_LIMITS.updateBytes);
+    expect(() => s.editor.edit(oversized, false, true)).toThrow(/256KiB/);
+    expect(Y.encodeStateAsUpdate(s.editor.doc)).toEqual(bytes); expect(s.editor.project).toEqual(beforeOversized);
+    expect(s.coordinator.collaborationProjection!.outbox).toHaveLength(1); expect(update).toHaveBeenCalledTimes(1);
+    expect(s.editor.undo().status).toBe("applied"); expect(s.editor.project.frames).toEqual(before.frames);
   });
   it("pointer-up emits one operation, own dragged geometry survives remote reflection, and remote hide is preserved", async () => {
     const s = await setup(); s.editor.begin("f_001", [{ id: "m_001", type: "member-position" }]);

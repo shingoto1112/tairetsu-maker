@@ -1,4 +1,5 @@
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "../utils/horizontalGrid";
+import { objectRenderShape } from "../project/objectAppearance";
 import {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
@@ -506,7 +507,7 @@ export const ResizableRotatableObject = ({
       ref={objectRef}
       className={[
         "stage-object",
-        `shape-${object.shape}`,
+        `shape-${objectRenderShape(object)}`,
         selected ? "is-selected" : "",
         object.locked ? "is-locked" : "",
         remoteLockOwner ? "is-remote-locked" : "",

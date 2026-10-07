@@ -12,7 +12,7 @@ export const createSampleProject = (): Project => {
     type: "curtain" as const,
     name: "移動幕",
     color: "#7c3aed",
-    shape: "curtain" as const,
+    shape: "rectangle" as const,
     widthMeters: 2.2,
     heightMeters: 5.6,
     defaultX: 4.9,
