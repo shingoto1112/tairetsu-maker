@@ -2,6 +2,18 @@ import type { ProjectSummary } from "../repositories/types";
 import type { ParticipantAuthState } from "./guestAuth";
 import type { SharedDocumentSummary } from "./managementTransport";
 
+/** Presentation only. Counts never determine permissions or sharing identity. */
+export const cloudSharingBadge = (memberCount?: number | null): string =>
+  Number.isInteger(memberCount) && memberCount! >= 2 ? `共有中・${memberCount}人` : "クラウド";
+
+export const localSharingBadge = (summary: ProjectSummary, documents: readonly SharedDocumentSummary[],
+  auth: ParticipantAuthState | undefined, online = typeof navigator === "undefined" || navigator.onLine !== false): string => {
+  if (!summary.sharing) return "ローカル";
+  const document = online && auth?.status === "signed-in" && auth.userId === summary.sharing.accountId
+    ? documents.find(item => item.documentId === summary.sharing!.documentId) : undefined;
+  return cloudSharingBadge(document?.memberCount);
+};
+
 /** Cloud-only card in the home grid. Metadata only: never tokens, e-mail or document content. */
 export type CloudLibraryCard = {
   documentId: string;
@@ -32,10 +44,11 @@ export const toCloudLibraryCards = (
   documents: readonly SharedDocumentSummary[],
   summaries: readonly ProjectSummary[],
   auth: ParticipantAuthState | undefined,
+  online = typeof navigator === "undefined" || navigator.onLine !== false,
 ): CloudLibraryCard[] => auth?.status !== "signed-in" ? [] : cloudOnlyDocuments(documents, summaries, auth.userId).map((document) => ({
   documentId: document.documentId,
   title: document.title || "名称未設定",
-  badge: document.memberCount > 1 ? `共有中・${document.memberCount}人` : "クラウド",
+  badge: cloudSharingBadge(online ? document.memberCount : undefined),
   detail: `${document.isCreator ? "自分が作成" : "参加中"}・作成日 ${createdDate(document.createdAt)}`,
   openable: document.documentSchema === 2,
   note: document.documentSchema === 2 ? "この端末に取り込んで開く" : "このアプリでは開けない形式です",

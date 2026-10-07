@@ -1,5 +1,5 @@
 import type { AudioSelection } from "../platform/audioStorage";
-import { ChangeEvent, FormEvent, MouseEvent, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChangeEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Cloud, CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
 import type { CloudLibraryCard } from "../collaboration/libraryCards";
@@ -73,12 +73,12 @@ type LibraryMenu = {
 };
 
 const MENU_WIDTH = 196;
-const MENU_HEIGHT = 230;
 const MENU_MARGIN = 12;
 
-const clampMenuPosition = (left: number, top: number): { left: number; top: number } => {
-  const maxLeft = Math.max(MENU_MARGIN, window.innerWidth - MENU_WIDTH - MENU_MARGIN);
-  const maxTop = Math.max(MENU_MARGIN, window.innerHeight - MENU_HEIGHT - MENU_MARGIN);
+const clampMenuPosition = (left: number, top: number, width = MENU_WIDTH, height = 0): { left: number; top: number } => {
+  const viewport = window.visualViewport;
+  const maxLeft = Math.max(MENU_MARGIN, (viewport?.width ?? window.innerWidth) - width - MENU_MARGIN);
+  const maxTop = Math.max(MENU_MARGIN, (viewport?.height ?? window.innerHeight) - height - MENU_MARGIN);
   return {
     left: Math.min(Math.max(MENU_MARGIN, left), maxLeft),
     top: Math.min(Math.max(MENU_MARGIN, top), maxTop),
@@ -185,6 +185,23 @@ export const FormationLibrary = ({
   const [isImporting, setIsImporting] = useState(false);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!libraryMenu || !menuRef.current) return;
+    const place = () => {
+      const rect = menuRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setLibraryMenu(previous => {
+        if (!previous) return previous;
+        const position = clampMenuPosition(previous.left, previous.top, rect.width, rect.height);
+        return position.left === previous.left && position.top === previous.top ? previous : { ...previous, ...position };
+      });
+    };
+    place();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(place) : null;
+    observer?.observe(menuRef.current);
+    window.addEventListener("resize", place); window.visualViewport?.addEventListener("resize", place);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", place); window.visualViewport?.removeEventListener("resize", place); };
+  }, [libraryMenu]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const sortedProjects = useMemo(
@@ -416,12 +433,22 @@ export const FormationLibrary = ({
         </button>
 
         {sortedProjects.map((project, index) => (
-          // Open and "…" are sibling buttons so key presses on the menu never reach the open action.
+          // The upper action row has no open handler; the gap is non-interactive.
           <div
             className="formation-card formation-card--saved"
+            data-project-id={project.id}
             key={project.id ?? `${project.title}-${index}`}
             onContextMenu={(event) => openMenu(project, event)}
           >
+            <div className="formation-card__actions">
+              <span className="formation-card__badge">{renderProjectBadge?.(project) ?? "ローカル"}</span>
+              <button className="formation-card__menu" type="button" disabled={disabled}
+                aria-label={`${project.title || "名称未設定"}のメニュー`} title="隊列表の操作"
+                aria-haspopup="menu" aria-expanded={libraryMenu?.projectId === project.id}
+                onClick={(event) => openMenu(project, event, "button")}>
+                <MoreHorizontal size={20} />
+              </button>
+            </div>
             <button
               className="formation-card__open"
               type="button"
@@ -435,25 +462,22 @@ export const FormationLibrary = ({
                   </span>
                 )}
               </span>
-              <span className="formation-card__badge">{renderProjectBadge?.(project) ?? "ローカル"}</span>
               <strong>{project.title || "名称未設定"}</strong>
               <small>最終使用: {formatProjectDate(project)}</small>
-            </button>
-            <button
-              className="formation-card__menu"
-              type="button"
-              aria-label={`${project.title || "名称未設定"}のメニュー`}
-              onClick={(event) => openMenu(project, event, "button")}
-            >
-              <MoreHorizontal size={18} />
             </button>
           </div>
         ))}
 
         {cloudProjects.map((card) => (
-          <button
-            className="formation-card formation-card--cloud"
+          <div
+            className="formation-card formation-card--saved formation-card--cloud"
             key={`cloud-${card.documentId}`}
+          >
+            <div className="formation-card__actions">
+              <span className="formation-card__badge formation-card__badge--cloud">{card.badge}</span>
+            </div>
+          <button
+            className="formation-card__open"
             type="button"
             disabled={!card.openable || cloudBusy || !onOpenCloudProject}
             onClick={() => onOpenCloudProject?.(card.documentId)}
@@ -463,7 +487,6 @@ export const FormationLibrary = ({
             <span className="formation-card__preview formation-card__preview--cloud" aria-hidden="true">
               <Cloud size={44} />
             </span>
-            <span className="formation-card__badge formation-card__badge--cloud">{card.badge}</span>
             <strong>{card.title}</strong>
             <span className="formation-card__details" id={`cloud-card-${card.documentId}`}>
               <span className="sr-only">{card.badge}・</span>
@@ -471,6 +494,7 @@ export const FormationLibrary = ({
               <small className={card.openable ? "formation-card__note" : "formation-card__note is-blocked"}>{card.note}</small>
             </span>
           </button>
+          </div>
         ))}
       </section>
 

@@ -97,6 +97,19 @@ export class SharedProjectEditor {
   setLocal(project: Project): void {
     this.local = project; this.coordinator.editCollaborationLocal(project); this.emit();
   }
+  /** Replay only the edits made while the local-to-shared transition awaited
+   * its reply. Compile against the clicked snapshot so unrelated durable edits
+   * are preserved, rather than importing the entire stale local projection. */
+  applySharingDraft(before: Project, after: Project): void {
+    if (this.disposed) return;
+    if (this.batch || before.id !== this.local.id || after.id !== this.local.id)
+      throw new Error("共有開始時の編集対象が変わりました。");
+    const writes = planRecipe(this.doc, before, after, this.sharedDocumentId);
+    this.local = { ...after, updatedAt: new Date().toISOString() };
+    this.commands.executePrepared(writes);
+    if (!writes.length) this.coordinator.editCollaborationLocal(this.local);
+    this.emit();
+  }
   begin(sceneId?: string, targets: SceneElementEditTarget[] = []): void {
     if (this.batch) return;
     this.batch = { sceneId, targets, writes: new Map(), draft: this.project };

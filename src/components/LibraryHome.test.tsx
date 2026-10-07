@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProjectSummary } from "../repositories/types";
 import type { SharedDocumentSummary } from "../collaboration/managementTransport";
-import { cloudOnlyDocuments, libraryAccountButton, toCloudLibraryCards } from "../collaboration/libraryCards";
+import { cloudOnlyDocuments, libraryAccountButton, toCloudLibraryCards, cloudSharingBadge, localSharingBadge } from "../collaboration/libraryCards";
 import { FormationLibrary } from "./FormationLibrary";
 
 afterEach(cleanup);
@@ -20,6 +20,16 @@ const cloudDoc = (documentId: string, extra: Partial<SharedDocumentSummary> = {}
 const signedIn = { status: "signed-in", userId: "u1", isGuest: false, sessionPersistence: "existing-account" } as const;
 
 describe("cloud-only cards", () => {
+  it.each([1, 2, 8, undefined, null])("uses the same badge wording locally and in the cloud: %s", count => {
+    const expected = count && count >= 2 ? `共有中・${count}人` : "クラウド";
+    expect(cloudSharingBadge(count)).toBe(expected);
+    const documents = count == null ? [] : [cloudDoc("d1", { memberCount: count })];
+    expect(localSharingBadge(summary("a", { accountId: "u1", documentId: "d1" }), documents, signedIn)).toBe(expected);
+    if (documents.length) expect(toCloudLibraryCards(documents, [], signedIn)[0].badge).toBe(expected);
+    expect(localSharingBadge(summary("a", { accountId: "u1", documentId: "different" }), documents, signedIn)).toBe("クラウド");
+    expect(localSharingBadge(summary("a", { accountId: "u1", documentId: "d1" }), documents, signedIn, false)).toBe("クラウド");
+    if (documents.length) expect(toCloudLibraryCards(documents, [], signedIn, false)[0].badge).toBe("クラウド");
+  });
   it("hides documents this account already stores on the device, by account and documentId", () => {
     const summaries = [summary("a", { documentId: "d1", accountId: "u1" }), summary("b", { documentId: "d2", accountId: "other" })];
     expect(cloudOnlyDocuments([cloudDoc("d1"), cloudDoc("d2"), cloudDoc("d3")], summaries, "u1").map((item) => item.documentId))

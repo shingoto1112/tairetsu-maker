@@ -34,11 +34,13 @@ export class CollaborationLifecycle {
   private async record(id: string): Promise<ProjectRecord> {
     const record = await this.repository.get(id); if (!record) throw new RepositoryError("NOT_FOUND"); return record;
   }
-  async startSharing(localId: string, name: string, signal = new AbortController().signal): Promise<ProjectRecord> {
+  async startSharing(localId: string, name: string, signal = new AbortController().signal,
+    check?: (record: ProjectRecord) => Promise<void>): Promise<ProjectRecord> {
     const normalizedName = displayName(name), auth = await this.credential(signal);
     let record = await this.record(localId);
     if (record.sync) throw new TransportError("validation", "PERSONAL_SYNC_CONFLICT");
     if (record.collaboration?.sharedDocumentId) throw new TransportError("validation", "ALREADY_SHARED");
+    await check?.(record);
     if (!record.collaboration) {
       const doc = createSharedDocument(record.project);
       try {
@@ -51,9 +53,16 @@ export class CollaborationLifecycle {
     }
     // Durable initial bytes survive a lost create reply; never regenerate Y.Doc.
     if (record.collaboration?.documentSchema !== 2) throw new TransportError("validation", "UNSUPPORTED_SCHEMA");
-    const receipt = await this.management.create(record.collaboration.base, normalizedName, auth, signal);
+    await check?.(record);
+    // A retry after further editing must include the durable journal as well.
+    // The document identity/generation stays fixed across lost create replies.
+    const initial = hydrateCollaboration(record.collaboration);
+    let bytes: string;
+    try { bytes = encodeUpdate(Y.encodeStateAsUpdate(initial)); } finally { initial.destroy(); }
+    const receipt = await this.management.create(bytes, normalizedName, auth, signal);
     if (receipt.generation !== record.collaboration.generation) throw new TransportError("generation", "STALE_GENERATION");
     await this.confirmAccess(receipt, auth, signal);
+    await check?.(record);
     const coordinator = new SaveCoordinator(this.repository, () => {}); coordinator.activate(record);
     if (!await coordinator.bindSharedDocument(receipt.documentId, { accountId: auth.accountId, membershipGeneration: receipt.membershipGeneration }))
       throw coordinator.state?.error ?? new RepositoryError("IO_ERROR");

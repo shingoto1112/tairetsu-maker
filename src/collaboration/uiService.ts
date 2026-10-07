@@ -1,4 +1,4 @@
-import type { CollaborationUiOptions } from "./uiTypes";
+import type { CollaborationUiOptions, SharingOperation } from "./uiTypes";
 import type { CommitRequest, ProjectRecord } from "../repositories/types";
 import type { ParticipantAuthState } from "./guestAuth";
 import type { DocumentCursor, SharedDocumentSummary, SharedInvite, SharedMember } from "./managementTransport";
@@ -12,6 +12,7 @@ import { invitationBaseUrl, invitationOrigins } from "../config/collaborationLin
 import { readInvitation, rememberInvitation, forgetInvitation } from "../storage/invitationMemory";
 import { createCloudAuthClient, CloudAuthError } from "../cloud/auth";
 import { cloudAuthEpoch, saveCloudAuthSession, waitCloudAuthPersistence, waitCloudAuthRestoration } from "../cloud/session";
+import { prepareIndependentProjectCopy, sharingContentKey } from "../project/independentCopy";
 
 type Screen = "manage" | "invite" | "account" | null;
 type UiState = { screen: Screen; busy: boolean; error: string | null; notice: string | null; auth: ParticipantAuthState;
@@ -55,6 +56,8 @@ export class CollaborationUiService {
   private ready: Promise<void> | null = null;
   private afterLogin: "manage" | null = null;
   private linkRevision = 0;
+  private sharingCopies = new Map<string, { accountId: string; content: string; request: CommitRequest }>();
+  private listRevision = 0;
   private receivedInvitation = readInvitation();
   constructor(private options: () => CollaborationUiOptions) {
     const invitation = readInvitation();
@@ -81,7 +84,7 @@ export class CollaborationUiService {
     const previous = this.state.auth;
     const changed = previous.status !== auth.status || previous.status === "signed-in" && auth.status === "signed-in" && previous.userId !== auth.userId;
     this.patch({ auth, ...(changed ? { documents: [], cursor: null, members: [], invites: [], issued: null } : {}) });
-    if (changed) { this.fixed = null; this.rescue = null; }
+    if (changed) { this.fixed = null; this.rescue = null; this.sharingCopies.clear(); this.listRevision++; }
   }
   async run(action: () => Promise<void>) {
     if (this.state.busy) return;
@@ -118,13 +121,19 @@ export class CollaborationUiService {
   }
   async refresh(more = false) {
     const epoch = cloudAuthEpoch();
-    if (this.auth?.state().status !== "signed-in") { this.patch({ documents: [], cursor: null }); return; }
+    const revision = ++this.listRevision, auth = this.auth?.state();
+    if (auth?.status !== "signed-in" || typeof navigator !== "undefined" && navigator.onLine === false) { this.patch({ documents: [], cursor: null }); return; }
+    if (!more) this.patch({ documents: [], cursor: null });
     // Foundation caps the whole service at 100 documents. This lightweight
     // page covers every local badge without reading any CRDT; cursor remains
     // supported if that server limit grows in a later version.
     const page = await this.lifecycle().listMyDocuments(100, more ? this.state.cursor : null);
-    if (epoch !== cloudAuthEpoch()) return;
+    const latest = this.auth?.state();
+    if (epoch !== cloudAuthEpoch() || revision !== this.listRevision || latest?.status !== "signed-in" || latest.userId !== auth.userId) return;
     this.patch({ documents: more ? [...this.state.documents, ...page.items] : page.items, cursor: page.nextCursor });
+  }
+  connectivityChanged() {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) { this.listRevision++; this.patch({ documents: [], cursor: null }); }
   }
   // Independent editor has no shared session: App supplies its current ID.
   manageLocal(localId: string) { this.patch({ screen: "manage", localId, error: null, members: [], invites: [] }); void this.run(() => this.refreshManagement()); }
@@ -138,6 +147,7 @@ export class CollaborationUiService {
     const epoch = cloudAuthEpoch();
     const [members, invites] = await Promise.all([this.lifecycle().members(documentId), this.lifecycle().invites(documentId)]);
     if (epoch === cloudAuthEpoch() && record.project.id === this.state.localId) this.patch({ members, invites });
+    await this.refresh().catch(() => {});
   }
   async signIn(email: string, password: string, name?: string) {
     const config = this.options().config; if (!config) throw new Error("共同編集は現在利用できません。");
@@ -162,15 +172,19 @@ export class CollaborationUiService {
       : "パスワードを変更しました。" });
   }
   async start(name: string) {
-    const auth = this.auth?.state();
-    if (auth?.status !== "signed-in" || auth.isGuest) { this.afterLogin = "manage"; this.account(); return; }
-    await this.options().transform(localId => this.lifecycle().startSharing(localId, name));
-    this.patch({ screen: null });
+    return this.saveLocalToCloud(this.state.localId ?? undefined, undefined, name);
   }
-  /** Holds busy across authentication, local open and sharing. The caller fixes
-   * the editor generation in the click, before the lazy service is loaded. */
-  async saveLocalToCloud(localId: string, operation: { open: () => Promise<boolean>; current: () => boolean }) {
+  /** Both entry points fix the operation synchronously, before initialization.
+   * No login continuation, editor open, rescue copy or invitation is involved. */
+  async saveLocalToCloud(localId?: string, operation?: SharingOperation, name?: string) {
+    if (this.state.busy) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      this.patch({ error: "オフラインです。通信できる状態で、もう一度操作してください。", notice: null }); return;
+    }
+    const epoch = cloudAuthEpoch();
+    const fixedOperation = operation ?? this.options().sharingOperation(localId);
     await this.run(async () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("オフラインです。通信できる状態で、もう一度操作してください。");
       const auth = this.auth?.state();
       if (auth?.status !== "signed-in" || auth.isGuest) {
         this.afterLogin = null;
@@ -178,24 +192,61 @@ export class CollaborationUiService {
         this.patch({ notice: "クラウドに保存するにはログインしてください。ログイン後、もう一度「クラウドに保存」を押してください。" });
         return;
       }
-      const epoch = cloudAuthEpoch();
-      // Capture options before opening: no dependency on React re-rendering the bridge.
-      const transform = this.options().transform;
-      const current = () => operation.current() && epoch === cloudAuthEpoch();
-      if (!current()) throw new Error("開く対象が変わりました。ホームからもう一度操作してください。");
-      if (!await operation.open()) throw new Error("隊列表を開けませんでした。端末の内容を確認して再試行してください。");
-      if (!current()) throw new Error("開いている隊列表が変わりました。ホームからもう一度操作してください。");
-      await transform(id => {
-        if (id !== localId || !current()) throw new Error("開いている隊列表が変わりました。");
-        return this.lifecycle().startSharing(localId, auth.displayName || "作成者");
-      }, { localId, current });
-      this.patch({ screen: null, notice: "クラウドに保存しました。別の端末でも開けます。" });
+      const current = () => {
+        const latest = this.auth?.state();
+        return fixedOperation.current() && epoch === cloudAuthEpoch() && latest?.status === "signed-in" && !latest.isGuest && latest.userId === auth.userId;
+      };
+      const assertCurrent = () => { if (!current()) throw new Error("対象またはログイン状態が変わりました。もう一度操作してください。"); };
+      assertCurrent();
+      let copied = false, success = false, attempted = false;
+      try {
+        const source = await fixedOperation.prepare();
+        assertCurrent();
+        if (source.project.id !== fixedOperation.localId) throw new Error("開く対象が変わりました。");
+        if (source.sync) throw Object.assign(new Error(messages.PERSONAL_SYNC_CONFLICT), { code: "PERSONAL_SYNC_CONFLICT" });
+        if (source.collaboration?.sharedDocumentId) throw Object.assign(new Error(messages.ALREADY_SHARED), { code: "ALREADY_SHARED" });
+        const content = sharingContentKey(source.project);
+        let copy = this.sharingCopies.get(fixedOperation.localId);
+        if (!copy || copy.accountId !== auth.userId || copy.content !== content) {
+          copy = { accountId: auth.userId, content, request: prepareIndependentProjectCopy(source.project) };
+          this.sharingCopies.set(fixedOperation.localId, copy);
+        }
+        await this.repository().commit(copy.request); copied = true;
+        assertCurrent();
+        const latest = await this.repository().get(fixedOperation.localId);
+        if (latest?.repositoryRevision !== source.repositoryRevision) throw new Error("端末の隊列表が更新されました。内容を確認して、もう一度操作してください。");
+        assertCurrent();
+        attempted = true;
+        let initialChecked = false;
+        await this.lifecycle().startSharing(fixedOperation.localId, name || auth.displayName || "作成者", new AbortController().signal,
+          async record => {
+            assertCurrent();
+            if (!initialChecked && record.repositoryRevision !== source.repositoryRevision) throw new Error("端末の隊列表が更新されました。内容を確認してください。");
+            initialChecked = true;
+            const saved = await this.repository().get(fixedOperation.localId);
+            assertCurrent();
+            if (saved?.repositoryRevision !== record.repositoryRevision) throw new Error("端末の隊列表が更新されました。内容を確認してください。");
+          });
+        assertCurrent(); success = true;
+      } catch (error) {
+        if (copied) throw new Error("共有を始めた時点のコピーは保存しました。クラウドへの保存は確認できませんでした。" + collaborationUiError(error));
+        throw error;
+      } finally {
+        // Release preparation for every outcome; only an attempted lifecycle
+        // may change sessions. Keep durable results explicit if UI setup fails.
+        try { await fixedOperation.settle(success, attempted); }
+        catch (error) { throw new Error((success ? "クラウドへの保存と開始時のコピー保存は完了しました。編集画面を準備できませんでした。ホームから隊列表を開いてください。"
+          : copied ? "共有を始めた時点のコピーは保存しました。クラウドへの保存は確認できませんでした。" : "") + collaborationUiError(error)); }
+      }
+      this.patch({ screen: null, notice: "クラウドに保存しました。共有を始めた時点の独立したコピーも端末に残っています。コピーは以後の共同編集を受け取りません。" });
+      await this.refresh().catch(() => {}); // A metadata failure cannot undo sharing.
     });
   }
   private async saveAndOpen(request: CommitRequest) {
     const record = await this.lifecycle().saveJoinedProject(request);
     if (!await this.options().open(record)) throw new Error("隊列表を保存しました。編集中の内容を保存してから開き直してください。");
     this.fixed = null; forgetInvitation(); this.patch({ screen: null, link: "" });
+    await this.refresh().catch(() => {});
   }
   async join(name: string) {
     if (this.options().platform === "ipad" && this.auth?.state().status !== "signed-in") { this.account(); return; }
@@ -226,6 +277,7 @@ export class CollaborationUiService {
     const id = (await this.sharedRecord()).collaboration?.sharedDocumentId; if (!id) return;
     if (end) await this.lifecycle().deleteSharedDocument(id); else await this.lifecycle().leave(id);
     this.options().active()?.provider?.wake(); this.patch({ members: [], invites: [], issued: null, notice: end ? "共有が終了しました。この端末のコピーは残っています" : "共有から退出しました。この端末のコピーは残っています" });
+    await this.refresh().catch(() => {});
   }
   async independentCopy() {
     const active = this.options().active(); if (!active) return;

@@ -1,28 +1,56 @@
 /* @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import CollaborationSurface from './CollaborationSurface';
+import CollaborationSurface, { CollaborationBadge } from './CollaborationSurface';
 import { CollaborationUiService } from '../collaboration/uiService';
 import type { CollaborationUiOptions } from '../collaboration/uiTypes';
 import { SharedSessionStore } from '../storage/sharedSessionState';
 import { forgetInvitation } from '../storage/invitationMemory';
 import { installInvitationRouting } from '../collaboration/invitationRouting';
 import { clearCloudAuthSession, saveCloudAuthSession } from '../cloud/session';
+import { createProjectSummary } from '../project/codec';
+import { createSampleProject } from '../sampleProject';
 
 const link = `${location.origin}/#invite=${'a'.repeat(64)}`;
 function setup(platform: 'web' | 'ipad' = 'web') {
   const options: CollaborationUiOptions = { config: null, platform, mock: true, repository: () => null, active: () => null,
-    store: new SharedSessionStore(), summaries: () => [], open: vi.fn(), transform: vi.fn(), localRemoved: vi.fn() };
+    store: new SharedSessionStore(), summaries: () => [], open: vi.fn(), sharingOperation: vi.fn(), transform: vi.fn(), localRemoved: vi.fn() };
   const service = new CollaborationUiService(() => options);
   service.invitation('');
   render(<CollaborationSurface bridge={{ options, get: async () => service }} view="editor" />);
   return service;
 }
 beforeEach(() => { forgetInvitation(); history.replaceState({}, '', '/'); });
-afterEach(() => { cleanup(); forgetInvitation(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); forgetInvitation(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it.each([
+  { count: 1, badge: 'クラウド' }, { count: 2, badge: '共有中・2人' }, { count: 8, badge: '共有中・8人' },
+  { count: null, badge: 'クラウド' }, { count: 3, account: 'other', badge: 'クラウド' },
+  { count: 3, offline: true, badge: 'クラウド' }, { count: 3, signedOut: true, badge: 'クラウド' },
+])('local badge uses current account/document metadata with unknown fallback: %s', async variant => {
+  const summary = createProjectSummary({ ...createSampleProject(), id: 'local' }, '1');
+  summary.sharing = { accountId: 'owner', documentId: 'doc' };
+  const service = new CollaborationUiService(() => ({}) as CollaborationUiOptions);
+  const snapshot: ReturnType<typeof service.getSnapshot> = { ...service.getSnapshot(),
+    auth: variant.signedOut ? { status: 'signed-out', guestRecovery: 'new-invite-required' }
+      : { status: 'signed-in', userId: variant.account ?? 'owner', isGuest: false, sessionPersistence: 'existing-account' },
+    documents: variant.count === null ? [] : [{ documentId: 'doc', title: '架空隊列', createdAt: '2026-10-07', isCreator: true, memberCount: variant.count, documentSchema: 2 }],
+  };
+  if (variant.offline) vi.stubGlobal('navigator', { onLine: false });
+  vi.spyOn(service, 'getSnapshot').mockReturnValue(snapshot);
+  render(<CollaborationBadge bridge={{ options: null, get: async () => service }} summary={summary} />);
+  await screen.findByText(variant.badge);
+  await waitFor(() => expect(service.getSnapshot).toHaveBeenCalled());
+});
+it('badge is クラウド while the lazy service is still loading', () => {
+  const summary = createProjectSummary({ ...createSampleProject(), id: 'local' }, '1');
+  summary.sharing = { accountId: 'owner', documentId: 'doc' };
+  render(<CollaborationBadge bridge={{ options: null, get: () => new Promise(() => {}) }} summary={summary} />);
+  expect(screen.getByText('クラウド')).toBeTruthy();
+});
 it.each([false, true])('home cloud-save login guidance does not open invite/management; guest=%s', async guest => {
   const options: CollaborationUiOptions = { config: null, platform: 'web', mock: true, repository: () => null,
-    active: () => null, store: new SharedSessionStore(), summaries: () => [], open: vi.fn(), transform: vi.fn(), localRemoved: vi.fn() };
+    active: () => null, store: new SharedSessionStore(), summaries: () => [], open: vi.fn(), sharingOperation: vi.fn(), transform: vi.fn(), localRemoved: vi.fn() };
   const service = new CollaborationUiService(() => options);
   const auth = guest ? { status: 'signed-in', userId: 'guest', isGuest: true, sessionPersistence: 'browser-data' } as const
     : { status: 'signed-out', guestRecovery: 'new-invite-required' } as const;
@@ -33,7 +61,7 @@ it.each([false, true])('home cloud-save login guidance does not open invite/mana
   await waitFor(() => expect(service.initialize).toHaveBeenCalled());
   await waitFor(() => expect(service.getSnapshot().busy).toBe(false));
   const open = vi.fn().mockResolvedValue(true);
-  await act(async () => { await service.saveLocalToCloud('target', { open, current: () => true }); });
+  await act(async () => { await service.saveLocalToCloud('target', { localId: 'target', prepare: open, current: () => true, settle: vi.fn() }); });
   await screen.findByRole('dialog', { name: 'アカウント' });
   expect(screen.getByText(/クラウドに保存するにはログインしてください/)).toBeTruthy();
   expect(screen.queryByRole('dialog', { name: 'みんなで編集' })).toBeNull();
@@ -44,7 +72,7 @@ it.each([false, true])('home cloud-save login guidance does not open invite/mana
 });
 it('hides password change for guests and destroys credentials on account/screen changes', async () => {
   const options = { config:null,platform:'web',mock:true,repository:()=>null,active:()=>null,
-    store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() } as CollaborationUiOptions;
+    store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),sharingOperation:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() } as CollaborationUiOptions;
   const service = new CollaborationUiService(()=>options);
   vi.spyOn(service,'initialize').mockResolvedValue();
   let snapshot: ReturnType<typeof service.getSnapshot> = { ...service.getSnapshot(), screen:'account',
@@ -66,7 +94,7 @@ it('hides password change for guests and destroys credentials on account/screen 
 it('shows multi-use statuses/counts and preserves old single-use labels', async () => {
   const options: CollaborationUiOptions = { config:null,platform:'web',mock:true,repository:()=>null,
     active:()=>({attached:true,localId:'local'}) as ReturnType<CollaborationUiOptions['active']>,
-    store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() };
+    store:new SharedSessionStore(),summaries:()=>[],open:vi.fn(),sharingOperation:vi.fn(),transform:vi.fn(),localRemoved:vi.fn() };
   const service = new CollaborationUiService(()=>options);
   vi.spyOn(service,'initialize').mockResolvedValue();
   const snapshot: ReturnType<typeof service.getSnapshot> = { ...service.getSnapshot(),screen:'manage',

@@ -9,6 +9,8 @@ import { useAppShellScrollGuard } from "./hooks/useAppShellScrollGuard";
 import { scrollWithinContainer } from "./utils/scrollWithinContainer";
 import type { AudioSelection } from "./platform/audioStorage";
 import { normalizeProject } from "./project/normalizeProject";
+import { prepareIndependentProjectCopy, sharingContentKey } from "./project/independentCopy";
+import type { SharingOperation } from "./collaboration/uiTypes";
 import { createEmptyFormationProject } from "./project/createEmptyFormationProject";
 import {
   createProjectId,
@@ -808,6 +810,7 @@ function App() {
   const saveCoordinatorRef = useRef<SaveCoordinator | null>(null);
   const editorLoadGenerationRef = useRef(0);
   const cloudSavePendingRef = useRef(false);
+  const sharingPreparationRef = useRef<string | null>(null);
   const [cloudSaveBusy, setCloudSaveBusy] = useState(false);
   const [positionFocusRequest, setPositionFocusRequest] = useState(0);
   const libraryLoadGenerationRef = useRef(0);
@@ -1361,6 +1364,9 @@ function App() {
 
   const flushPendingAutoSave = useCallback(async () => {
     clearPendingAutoSave();
+    // The lifecycle owns this record until its reply is settled. New edits stay
+    // in the live editor and are applied to its resulting session, never overwritten.
+    if (sharingPreparationRef.current === saveCoordinatorRef.current?.state?.id) return !saveCoordinatorRef.current?.state?.dirty;
     if (sharedSession.active) return sharedSession.active.flush();
     sharedEditorRef.current?.end();
     if (sharedEditorRef.current && !sharedEditorRef.current.stagePending()) return false;
@@ -5250,21 +5256,81 @@ function App() {
     return opened && generation === editorLoadGenerationRef.current && projectRef.current.id === id;
   };
 
+  const createSharingOperation = (requestedId?: string): SharingOperation => {
+    const localId = requestedId ?? projectRef.current.id ?? "";
+    const generation = editorLoadGenerationRef.current;
+    const fromEditor = appView === "editor" && projectRef.current.id === localId;
+    const snapshot = fromEditor ? cloneProject(projectRef.current) : null;
+    const summaryRevision = savedProjects.find(item => item.id === localId)?.repositoryRevision;
+    const current = () => generation === editorLoadGenerationRef.current && (appView !== "editor" || projectRef.current.id === localId);
+    return {
+      localId, current,
+      prepare: async () => {
+        if (!current() || !localId) throw new Error("開く対象が変わりました。もう一度操作してください。");
+        if (!await storagePreparationRef.current || !repositoryRef.current) throw new RepositoryError("BUSY");
+        if (fromEditor) {
+          if (!await flushPendingAutoSave()) throw new Error("この端末に保存できませんでした。編集内容は画面に残っています。");
+          if (!current() || sharingContentKey(projectRef.current) !== sharingContentKey(snapshot!)) throw new Error("編集中の内容が変わりました。もう一度操作してください。");
+        }
+        const record = await getRequiredProject(repositoryRef.current, localId);
+        if (!current() || (snapshot ? sharingContentKey(record.project) !== sharingContentKey(snapshot) : record.repositoryRevision !== summaryRevision))
+          throw new Error("隊列表の内容または開く対象が変わりました。もう一度操作してください。");
+        if (fromEditor) sharingPreparationRef.current = localId;
+        return record;
+      },
+      settle: async (success, attempted) => {
+        try {
+          if (!attempted || !current()) return;
+          const record = await getRequiredProject(repositoryRef.current!, localId);
+          if (!current()) return;
+          if (!fromEditor) {
+            if (success && !await openProjectInEditor(record.project, undefined, { record, loadGeneration: generation }))
+              throw new Error("クラウドへの保存とコピー保存は完了しました。ホームから隊列表を開いてください。");
+            return;
+          }
+          if (!record.collaboration) return;
+          // Attach in place, keeping the selected scene, panel, viewport and any
+          // edits made while awaiting the reply. Only the original ID is opened.
+          if (!await sharedSession.shutdown()) throw new Error("編集内容は画面に残っています。保存を再試行してください。");
+          sharedEditorRef.current = null;
+          let installed = false;
+          const controller = await sharedSession.open(repositoryRef.current!, record, {
+            enabled: APP_FEATURES.collaborationV2, config: cloudConfig, platform: APP_FEATURES.nativeFileShare ? "ipad" : "web",
+            mock: import.meta.env.DEV && !!(window as Window & { __sharedSessionMock?: unknown }).__sharedSessionMock,
+            current: () => installed ? sharedSession.active?.localId === localId && sharedSession.active.editor === sharedEditorRef.current : current(),
+            publish: projection => { if (installed) { projectRef.current = projection; setProject(projection); refreshHistoryCounts(); } },
+            saved: observeSave, committed: updateLibrarySummary,
+            failed: error => setNotice(error instanceof Error ? error.message : "共同編集の端末保存に失敗しました。"),
+          });
+          if (!controller || !current()) return;
+          const draft = cloneProject(projectRef.current);
+          saveCoordinatorRef.current = controller.coordinator; sharedEditorRef.current = controller.editor; installed = true;
+          if (sharingContentKey(draft) !== sharingContentKey(snapshot!))
+            controller.editor.applySharingDraft(normalizeProject(snapshot!), normalizeProject(draft));
+          else { const projection = controller.editor.project; projectRef.current = projection; setProjectState(projection); }
+          if (success) { undoStackRef.current = []; redoStackRef.current = []; historyBatchRef.current = null; lastHistoryPushRef.current = null; }
+          refreshHistoryCounts(); controller.start();
+        } finally {
+          if (sharingPreparationRef.current === localId) sharingPreparationRef.current = null;
+          if (current() && saveCoordinatorRef.current?.state?.dirty) autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 800);
+          await refreshLocalLibrary().catch(() => {});
+        }
+      },
+    };
+  };
+
   const saveStoredProjectToCloud = async (id: string) => {
     if (cloudSavePendingRef.current) return;
     cloudSavePendingRef.current = true;
     setCloudSaveBusy(true);
-    const generation = ++editorLoadGenerationRef.current;
+    const operation = createSharingOperation(id);
     try {
       const ui = await collaborationUi.get();
       if (ui.getSnapshot().busy) {
         setNotice("クラウドの操作中です。完了後にもう一度「クラウドに保存」を押してください。");
         return;
       }
-      await ui.saveLocalToCloud(id, {
-        open: () => openStoredProject(id, generation),
-        current: () => generation === editorLoadGenerationRef.current,
-      });
+      await ui.saveLocalToCloud(id, operation);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "クラウド保存を準備できませんでした。もう一度操作してください。");
     } finally {
@@ -5288,10 +5354,7 @@ function App() {
 
   const duplicateStoredProject = async (id: string) => localAction(async repository => {
     const { project: source } = await getRequiredProject(repository, id);
-    const now = new Date().toISOString();
-    const duplicated = normalizeProject({ ...cloneProject(source), id: createProjectId(),
-      title: source.title + " のコピー", createdAt: now, updatedAt: now, lastOpenedAt: now });
-    await repository.commit({ project: duplicated, localRevision: "1", expectedRepositoryRevision: null, operationId: createProjectId() });
+    await repository.commit(prepareIndependentProjectCopy(source, source.title + " のコピー"));
     await refreshLocalLibrary(); setNotice("隊列表を複製しました。", "success");
   });
 
@@ -7467,6 +7530,7 @@ function App() {
     config: cloudConfig, platform: APP_FEATURES.nativeFileShare ? "ipad" : "web",
     mock: import.meta.env.DEV && !!(window as Window & { __sharedSessionMock?: unknown }).__sharedSessionMock,
     repository: () => repositoryRef.current, active: () => sharedSession.active, store: sharedSession.store, summaries: () => savedProjects,
+    sharingOperation: createSharingOperation,
     open: async (record, rescued) => {
       if (rescued) {
         if (!sharedSession.releaseRescued(rescued.localId, rescued.projection)) { await refreshLocalLibrary(); return false; }
@@ -7536,7 +7600,7 @@ function App() {
           disabled={!storageReady}
           collaborationSlot={APP_FEATURES.collaborationV2 && storageReady ? <Suspense fallback={<p role="status">共同編集を準備中…</p>}><CollaborationSurface bridge={collaborationUi} view="library" />
             {repositoryRef.current && <LegacyRescuePanel repository={repositoryRef.current as import("./legacyImport/importer").ImportRepository} config={cloudConfig} onChanged={refreshLocalLibrary} />}</Suspense> : undefined}
-          renderProjectBadge={APP_FEATURES.collaborationV2 ? summary => summary.sharing ? <Suspense fallback="共有中"><CollaborationBadge bridge={collaborationUi} summary={summary} /></Suspense> : "ローカル" : undefined}
+          renderProjectBadge={APP_FEATURES.collaborationV2 ? summary => summary.sharing ? <Suspense fallback="クラウド"><CollaborationBadge bridge={collaborationUi} summary={summary} /></Suspense> : "ローカル" : undefined}
           onJoinInvitation={APP_FEATURES.collaborationV2 ? () => { void collaborationUi.get().then(ui => ui.invitation("")); } : undefined}
           onSaveToCloud={APP_FEATURES.collaborationV2 ? saveStoredProjectToCloud : undefined}
           cloudSaveBusy={cloudSaveBusy}

@@ -11,6 +11,7 @@ import "./collaboration.css";
 import CollaborationHistoryPanel from './CollaborationHistoryPanel';
 import InvitationLinkTools from './InvitationLinkTools';
 import { readInvitation, subscribeInvitation } from '../storage/invitationMemory';
+import { localSharingBadge } from "../collaboration/libraryCards";
 
 type Props = { bridge: CollaborationUiBridge; view: "library" | "editor"; localId?: string; attached?: boolean };
 export default function CollaborationSurface(props: Props) {
@@ -25,13 +26,17 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
   useEffect(() => {
     if (invitation && invitation !== received.current && service.receiveInvitation(invitation)) received.current = invitation;
   }, [invitation, service, ui.busy, ui.screen, ui.link]);
-  const initialized = useRef(false);
   useEffect(() => {
     const release = subscribeCloudAuth(() => service.authChanged());
     void service.initialize().then(() => {
-      if (view === "library" && !initialized.current) { initialized.current = true; void service.run(() => service.refresh()); }
+      if (view === "library") void service.run(() => service.refresh());
     });
-    return release;
+    const connectivity = () => {
+      service.connectivityChanged();
+      if (view === "library" && navigator.onLine !== false) void service.run(() => service.refresh());
+    };
+    window.addEventListener("offline", connectivity); window.addEventListener("online", connectivity);
+    return () => { release(); window.removeEventListener("offline", connectivity); window.removeEventListener("online", connectivity); };
   }, [service, view]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -89,9 +94,10 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
           {ui.error && <p className="collab-error" role="alert">{ui.error}</p>}{ui.notice && <p role="status">{ui.notice}</p>}
           {ui.screen === "manage" && <>
             {!isShared ? <><p>クラウドに保存して別の端末でも開けます。一人だけでも使えます。</p>
+              <p>共有を始めた時点の独立したコピーが、同じ名前でこの端末に残ります。そのコピーは以後の共同編集を受け取りません。</p>
               <p>共有を始めるには恒久アカウントでログインしてください。</p>
               <label>共有で使う表示名<input value={name} maxLength={80} onChange={event => setName(event.target.value)} placeholder={signed?.displayName || "表示名"} /></label>
-              <button className="collab-primary" type="button" disabled={ui.busy} onClick={() => run(() => service.start(name || signed?.displayName || "作成者"))}>共有を始める</button></> : <>
+              <button className="collab-primary" type="button" disabled={ui.busy} onClick={() => void service.start(name || signed?.displayName || "作成者")}>共有を始める</button></> : <>
               <StatusLabel session={session} localId={localId!} />
               <p>編集内容のクラウドへの送信は自動です。「この端末に保存」は端末への保存操作です。</p>
               <button type="button" disabled={ui.busy} onClick={() => run(() => service.refreshManagement())}>最新の状態を確認</button>
@@ -167,12 +173,11 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
 export function CollaborationBadge({ bridge, summary }: { bridge: CollaborationUiBridge; summary: import("../repositories/types").ProjectSummary }) {
   const [service, setService] = useState<CollaborationUiService | null>(null);
   useEffect(() => { let current = true; void bridge.get().then(value => { if (current) setService(value); }); return () => { current = false; }; }, [bridge]);
-  return service ? <Badge service={service} summary={summary} /> : <span>共有中</span>;
+  return service ? <Badge service={service} summary={summary} /> : <span>クラウド</span>;
 }
 function Badge({ service, summary }: { service: CollaborationUiService; summary: import("../repositories/types").ProjectSummary }) {
   const ui = useSyncExternalStore(service.subscribe, service.getSnapshot);
-  const document = ui.auth.status === "signed-in" && ui.auth.userId === summary.sharing?.accountId ? ui.documents.find(item => item.documentId === summary.sharing?.documentId) : null;
-  return <span>{document ? document.memberCount === 1 ? "クラウド保存" : `共有中・${document.memberCount}人` : "共有中"}</span>;
+  return <span>{localSharingBadge(summary, ui.documents, ui.auth)}</span>;
 }
 export function CollaborationStatus({ bridge, localId }: { bridge: CollaborationUiBridge; localId: string }) {
   const session = bridge.options!.store;

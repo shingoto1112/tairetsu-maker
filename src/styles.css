@@ -969,11 +969,22 @@ h2 {
 }
 
 .formation-card--saved {
-  padding: 0;
-  position: relative;
+  align-content: start;
+  padding: 8px;
+  gap: 8px;
 }
 
-/* The open button fills the card; the "…" button is its sibling, not a child. */
+.formation-card__actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 44px;
+  min-width: 0;
+  width: 100%;
+}
+
+/* The open region starts below the action row and its non-interactive gap. */
 .formation-card__open {
   align-items: center;
   background: transparent;
@@ -985,8 +996,8 @@ h2 {
   font: inherit;
   gap: 8px;
   justify-items: center;
-  min-height: 178px;
-  padding: 12px;
+  min-height: 156px;
+  padding: 0 4px 8px;
   text-align: center;
   width: 100%;
 }
@@ -1006,12 +1017,12 @@ h2 {
   width: 128px;
 }
 
-.formation-card--cloud {
+.formation-card--cloud .formation-card__open {
   cursor: pointer;
   font: inherit;
 }
 
-.formation-card--cloud:disabled {
+.formation-card--cloud .formation-card__open:disabled {
   cursor: default;
   opacity: 0.75;
 }
@@ -1105,14 +1116,14 @@ h2 {
   border-radius: 999px;
   color: #475569;
   display: inline-flex;
-  height: 30px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  flex: 0 0 44px;
   justify-content: center;
   padding: 0;
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  width: 30px;
-  z-index: 2;
+  width: 44px;
+  touch-action: manipulation;
 }
 
 .formation-card__menu:hover,
@@ -1251,6 +1262,11 @@ h2 {
   gap: 4px;
   padding: 8px;
   position: fixed;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   width: 196px;
   z-index: 120;
 }
@@ -1266,6 +1282,8 @@ h2 {
   justify-content: flex-start;
   padding: 9px 10px;
   text-align: left;
+  min-height: 44px;
+  flex-shrink: 0;
 }
 
 .library-context-menu button:hover,

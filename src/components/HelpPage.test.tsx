@@ -23,7 +23,9 @@ describe("HelpPage", () => {
       const region = within(dialog).getByRole("region", { name: section.title });
       expect(within(region).getAllByRole("listitem")).toHaveLength(section.items.length);
       if (section.collaboration) {
-        expect(section.items).toHaveLength(12);
+        expect(region.textContent).toContain("共有を始めた時点の独立したコピー");
+        expect(region.textContent).toContain("コピーは以後の共同編集を受け取りません");
+        expect(region.textContent).toContain("人数をまだ確認できていない");
         expect(region.textContent).toContain("現在のパスワードを忘れた場合はサポート");
         expect(region.textContent).toContain("共有先への送信と確認が済んでいます");
         expect(region.textContent).toContain("日時の行を押すと操作が出ます");

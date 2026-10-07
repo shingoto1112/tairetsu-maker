@@ -4,6 +4,12 @@ import type { Project } from "../types";
 import type { SharedSessionController } from "./sharedSessionController";
 import type { SharedSessionStore } from "../storage/sharedSessionState";
 import type { CollaborationUiService } from "./uiService";
+export type SharingOperation = {
+  localId: string;
+  current: () => boolean;
+  prepare: () => Promise<ProjectRecord>;
+  settle: (success: boolean, attempted: boolean) => Promise<void>;
+};
 export type CollaborationUiOptions = {
   config: CloudConfig | null; platform: "web" | "ipad"; mock: boolean;
   repository: () => ProjectRepository | null;
@@ -13,5 +19,6 @@ export type CollaborationUiOptions = {
   transform: (action: (localId: string) => Promise<ProjectRecord>, expected?: { localId: string; current: () => boolean }) => Promise<void>;
   localRemoved: () => Promise<void>;
   summaries: () => ProjectSummary[];
+  sharingOperation: (localId?: string) => SharingOperation;
 };
 export type CollaborationUiBridge = { options: CollaborationUiOptions | null; get: () => Promise<CollaborationUiService> };
