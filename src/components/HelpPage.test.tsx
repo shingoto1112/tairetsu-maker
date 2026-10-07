@@ -41,6 +41,10 @@ describe("HelpPage", () => {
     expect(helpSections.find(section => section.title === "位置を数字で合わせる")?.location).toContain("座標カード");
     expect(helpSections.find(section => section.title === "座標の見方")?.items.join("")).toContain("後方はマイナス");
     expect(helpSections.find(section => section.title === "ショートカット")?.items.join("")).toContain("Ctrl/Cmd＋1");
+    const sceneHelp = helpSections.find(section => section.title === "シーンを効率よく作る")?.items.join("");
+    expect(sceneHelp).toContain("分と秒のダイヤル");
+    expect(sceneHelp).toContain("元の小数秒もそのまま残り");
+    expect(sceneHelp).toContain("再生で別のシーンへ移ったときは取消");
   });
   it("focuses close, traps Tab, closes with Escape/button, and restores background and focus", async () => {
     const user = userEvent.setup();

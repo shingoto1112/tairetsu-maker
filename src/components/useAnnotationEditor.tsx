@@ -11,17 +11,28 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, verti
   const [color, setColor] = useState<AnnotationLine["color"]>("black"), [dash, setDash] = useState<AnnotationLine["dash"]>("solid");
   const [draft, setDraft] = useState<Gesture | null>(null);
   const gesture = useRef<Gesture | null>(null), svg = useRef<SVGSVGElement>(null), pointers = useRef(new Set<number>());
+  const activeRef = useRef(active), blocked = useRef(false);
+  activeRef.current = active;
   const [scale, setScale] = useState(32);
   const cancel = () => { gesture.current = null; setDraft(null); };
-  const finish = () => { pointers.current.clear(); cancel(); setActive(false); setSelected(null); };
+  const finish = () => { pointers.current.clear(); blocked.current = false; cancel(); setActive(false); setSelected(null); };
   useEffect(() => { finish(); pointers.current.clear(); }, [context, disabled]);
   useEffect(() => { cancel(); if (selected && !lines?.[selected]) setSelected(null); }, [lines]);
   useEffect(() => { const escape = (e: KeyboardEvent) => { if (e.key === "Escape") finish(); }; window.addEventListener("keydown", escape); return () => window.removeEventListener("keydown", escape); }, []);
   useEffect(() => {
-    // A second touch may land on a ruler/outside the SVG. The viewport still
-    // starts its pan/pinch; discard ink before its capture handler runs.
-    const down = (e: globalThis.PointerEvent) => { if (gesture.current && e.pointerId !== gesture.current.pointer) { pointers.current.add(e.pointerId); cancel(); } };
-    const release = (e: globalThis.PointerEvent) => { pointers.current.delete(e.pointerId); if (e.type === "pointercancel" && gesture.current?.pointer === e.pointerId) cancel(); };
+    // Track the whole contact sequence, including rulers/outside the SVG.
+    // After multiple pointers, only an all-pointers-up boundary permits drawing.
+    const down = (e: globalThis.PointerEvent) => {
+      if (!activeRef.current) return;
+      pointers.current.add(e.pointerId);
+      if (pointers.current.size > 1) { blocked.current = true; cancel(); }
+    };
+    const release = (e: globalThis.PointerEvent) => {
+      pointers.current.delete(e.pointerId);
+      if (gesture.current?.pointer === e.pointerId &&
+          (e.type === "pointercancel" || !(e.target instanceof Node) || !svg.current?.contains(e.target))) cancel();
+      if (!pointers.current.size) blocked.current = false;
+    };
     window.addEventListener("pointerdown", down, true); window.addEventListener("pointerup", release, true); window.addEventListener("pointercancel", release, true);
     return () => { window.removeEventListener("pointerdown", down, true); window.removeEventListener("pointerup", release, true); window.removeEventListener("pointercancel", release, true); };
   }, []);
@@ -36,10 +47,14 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, verti
     return { x: reflected ? width - x : x, y: reflected ? depth - y : y };
   };
   const snap = (p: Position) => snapAnnotationPoint(p, width, depth, step, counting, verticalOrigin);
+  const inside = (e: PointerEvent) => {
+    const rect = svg.current!.getBoundingClientRect();
+    return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+  };
   const down = (e: PointerEvent<SVGSVGElement>) => {
     if (!active || disabled || !onChange || !svg.current || e.button !== 0) return;
     pointers.current.add(e.pointerId);
-    if (pointers.current.size > 1) { cancel(); return; }
+    if (blocked.current || pointers.current.size > 1) { cancel(); return; }
     e.preventDefault(); e.stopPropagation();
     const target = e.target as Element, id = target.getAttribute("data-line-id"), handle = target.getAttribute("data-endpoint");
     const start = point(e), p = snap(start);
@@ -51,6 +66,7 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, verti
   };
   const move = (e: PointerEvent<SVGSVGElement>) => {
     const g = gesture.current; if (!g || !svg.current || g.pointer !== e.pointerId || pointers.current.size > 1) return;
+    if (!inside(e)) { cancel(); return; }
     e.stopPropagation(); const p = point(e), original = g.original;
     const snapped = snap(g.kind === "move" ? { x: original.x1 + p.x - g.start.x, y: original.y1 + p.y - g.start.y } : p);
     const line = g.kind === "move" ? translateAnnotationLine(original, snapped) : g.kind === "start" ? { ...original, x1: snapped.x, y1: snapped.y } : { ...original, x2: snapped.x, y2: snapped.y };
@@ -60,7 +76,7 @@ export const useAnnotationEditor = ({ lines, width, depth, step, counting, verti
     const g = gesture.current; pointers.current.delete(e.pointerId);
     if (!g || g.pointer !== e.pointerId) return;
     e.stopPropagation(); cancel();
-    if (e.type !== "pointercancel" && (g.line.x1 !== g.line.x2 || g.line.y1 !== g.line.y2) &&
+    if (e.type !== "pointercancel" && svg.current && inside(e) && (g.line.x1 !== g.line.x2 || g.line.y1 !== g.line.y2) &&
       JSON.stringify(g.line) !== JSON.stringify(g.kind === "draw" ? null : g.original)) {
       onChange?.(g.id, g.line); setSelected(g.id);
     }

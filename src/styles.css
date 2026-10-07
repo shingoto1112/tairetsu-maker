@@ -4047,6 +4047,15 @@ h2 {
   touch-action: none;
 }
 
+.stage-fit-area.is-annotation-mode {
+  touch-action: none;
+}
+
+.scene-time-button {
+  min-height: 44px;
+  font-variant-numeric: tabular-nums;
+}
+
 .stage-zoom-layout {
   flex: 0 0 auto;
   position: relative;

@@ -1043,7 +1043,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     });
 
     const beginStagePinchIfReady = () => {
-      if (isStagePinchLockedRef.current) {
+      if (isStagePinchLockedRef.current && !annotation.active) {
         return;
       }
       cancelTouchContextMenu();
@@ -1117,7 +1117,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (event.pointerType !== "touch") {
         return;
       }
-      if (canPanStageFromTarget(event.target) && fitAreaRef.current) {
+      if (!annotation.active && canPanStageFromTarget(event.target) && fitAreaRef.current) {
         stagePanRef.current = {
           pointerId: event.pointerId,
           startClientX: event.clientX,
@@ -1127,7 +1127,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           hasMoved: false,
         };
       }
-      if (isStagePinchLockedRef.current) {
+      if (isStagePinchLockedRef.current && !annotation.active) {
         return;
       }
       stageTouchPointsRef.current.set(event.pointerId, {
@@ -1153,6 +1153,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const pan = stagePanRef.current;
       if (
         event.pointerType === "touch" &&
+        !annotation.active &&
         pan?.pointerId === event.pointerId &&
         !stagePinchZoomRef.current &&
         fitAreaRef.current
@@ -1172,7 +1173,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       }
       if (
         event.pointerType !== "touch" ||
-        isStagePinchLockedRef.current ||
+        (isStagePinchLockedRef.current && !annotation.active) ||
         !stageTouchPointsRef.current.has(event.pointerId)
       ) {
         return;
@@ -1193,7 +1194,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       const distance = Math.max(1, getTouchDistance(first, second));
       const anchor = getTouchMidpoint(first, second);
       scheduleStageZoom(
-        pinch.startZoom * (distance / pinch.startDistance),
+        isStagePinchLockedRef.current ? pinch.startZoom : pinch.startZoom * (distance / pinch.startDistance),
         anchor,
       );
       event.preventDefault();
@@ -1890,6 +1891,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       width: stage.widthMeters, depth: stage.depthMeters, step: stage.gridSizeMeters, counting: horizontalGuideMode,
       reflected: viewerPerspective === "performer", context: project.id + ":" + selectedFrameId, disabled: isPlaying || isReadOnly,
       onChange: onAnnotationLineChange });
+    useLayoutEffect(() => {
+      if (annotation.active) clearStagePan();
+    }, [annotation.active]);
     return (
       <main className="stage-area">
         <div className={isReadOnly ? "stage-frame is-read-only" : "stage-frame"}>
@@ -2066,6 +2070,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
           <div
             className={[
               "stage-fit-area",
+              annotation.active ? "is-annotation-mode" : "",
               isStageZoomed ? "is-stage-zoomed" : "",
               isStagePinching ? "is-stage-pinching" : "",
               isStagePanning ? "is-stage-panning" : "",

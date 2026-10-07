@@ -10,16 +10,20 @@ import {
   StickyNote,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FormationFrame } from "../types";
 import { formatTime } from "../utils/time";
-import { SceneTimeInput } from "./SceneTimeInput";
+import { TimeDial } from "./TimeDial";
 import { SceneNotesField } from "./SceneNotesField";
 import type { SharedNotesAdapter } from "../collaboration/notesAdapter";
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
 type TimelineProps = {
+  audioDuration?: number;
+  canEditTime?: () => boolean;
+  subscribeTimePermission?: (listener: () => void) => () => void;
+  onUpdateFrameTime: (id: string, timeSec: number) => void;
   frames: FormationFrame[];
   selectedFrameId: string | null;
   currentTime: number;
@@ -58,7 +62,13 @@ type TimelineProps = {
   getSharedNotes?: (frameId: string) => SharedNotesAdapter | undefined;
 };
 
+const noSubscription = () => () => {};
+
 export const Timeline = ({
+  audioDuration,
+  canEditTime,
+  subscribeTimePermission = noSubscription,
+  onUpdateFrameTime,
   frames,
   selectedFrameId,
   currentTime,
@@ -92,6 +102,10 @@ export const Timeline = ({
   const [includePreviousObjectVisibility, setIncludePreviousObjectVisibility] =
     useState(false);
   const inlineDetailsRef = useRef<HTMLElement | null>(null);
+  const [timeDial, setTimeDial] = useState<{ frameId: string; initialTimeSec: number; maxSeconds: number } | null>(null);
+  const timeDialRef = useRef(timeDial); timeDialRef.current = timeDial;
+  const revealTimeCommitRef = useRef(false);
+  const timePermission = useSyncExternalStore(subscribeTimePermission, canEditTime ?? (() => canEditProject));
   const selectedFrame =
     frames.find((frame) => frame.id === selectedFrameId) ?? frames[0] ?? null;
   const selectedIndex = selectedFrame
@@ -101,17 +115,25 @@ export const Timeline = ({
   const addFrameDisabled = !canAddFrame;
   const sceneDisabled = !canEditScene;
 
+  const validTimeTarget = timeDial !== null && timePermission && canEditProject &&
+    selectedFrameId === timeDial.frameId && frames.some(frame => frame.id === timeDial.frameId);
+  useLayoutEffect(() => {
+    if (timeDial && !validTimeTarget) setTimeDial(null);
+  }, [timeDial, validTimeTarget]);
+
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
       // Do not move the list while someone is typing in the scene details (memo, label, time).
-      if (inlineDetailsRef.current?.contains(document.activeElement)) return;
+      if (timeDialRef.current) return;
+      if (!revealTimeCommitRef.current && inlineDetailsRef.current?.contains(document.activeElement)) return;
+      revealTimeCommitRef.current = false;
       scrollWithinContainer(inlineDetailsRef.current, {
         behavior: "smooth",
         block: "nearest",
       });
     });
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [selectedFrameId, selectedFrame?.timeSec, selectedIndex]);
+  }, [selectedFrameId, selectedFrame?.timeSec, selectedIndex, timeDial]);
 
   const renderSceneDetails = (frame: FormationFrame, index: number) => (
     <section
@@ -147,14 +169,19 @@ export const Timeline = ({
           />
         </label>
         <label>
-          時刻（秒）
-          <SceneTimeInput
-            key={frame.id}
-            value={frame.timeSec}
-            disabled={projectDisabled}
+          時刻
+          <button
+            type="button"
+            className="mini-button scene-time-button"
+            aria-label={`シーンの時刻を変更（現在 ${formatTime(frame.timeSec)}）`}
+            disabled={projectDisabled || !timePermission}
             title={projectDisabled ? projectReadOnlyMessage : undefined}
-            onCommit={(timeSec) => onUpdateFrame(frame.id, { timeSec })}
-          />
+            onClick={() => {
+              const knownDuration = typeof audioDuration === "number" && Number.isFinite(audioDuration) && audioDuration > 0;
+              setTimeDial({ frameId: frame.id, initialTimeSec: frame.timeSec,
+                maxSeconds: Math.max(knownDuration ? audioDuration + 60 : 3600, frame.timeSec) });
+            }}
+          >{formatTime(frame.timeSec)}</button>
         </label>
       </div>
 
@@ -307,6 +334,17 @@ export const Timeline = ({
 
   return (
     <footer className="timeline">
+      {validTimeTarget && timeDial && <TimeDial label={(() => { const index = frames.findIndex((item) => item.id === timeDial.frameId); return `シーン${index + 1}「${frames[index]?.label || "無題"}」`; })()} value={timeDial.initialTimeSec} maxSeconds={timeDial.maxSeconds}
+        onCancel={() => setTimeDial(null)}
+        onCommit={(seconds, { changed }) => {
+          // Recheck the live target and permission; unchanged confirmation preserves remote values.
+          if (canEditProject && (canEditTime?.() ?? timePermission) && selectedFrameId === timeDial.frameId &&
+              frames.some(frame => frame.id === timeDial.frameId)) {
+            revealTimeCommitRef.current = true;
+            if (changed) onUpdateFrameTime(timeDial.frameId, seconds);
+          }
+          setTimeDial(null);
+        }} />}
       <PanelStickyHeader
         title="シーン一覧"
         meta={
@@ -420,7 +458,7 @@ export const Timeline = ({
                 </div>
                 <div className="timeline-card__time">
                   <Clock size={14} />
-                  {formatTime(frame.timeSec)} / {frame.timeSec.toFixed(1)}秒
+                  {formatTime(frame.timeSec)}
                 </div>
                 {frame.section && <span className="scene-section">{frame.section}</span>}
               </article>

@@ -3988,6 +3988,18 @@ function App() {
     applyChange();
   };
 
+  const canEditSceneTime = () => !sharedSession.active?.attached || sharedSession.store.getSnapshot().sharing === "active";
+  // Scene details choose integer seconds without the waveform's rounding/tolerance.
+  const updateFrameTime = (id: string, timeSec: number) => {
+    if (!canEditSceneTime() || activePanelTab !== "timeline" || displayFrame?.id !== id ||
+        !Number.isFinite(timeSec) || timeSec < 0) return;
+    updateProject(previous => {
+      const frame = previous.frames.find(item => item.id === id);
+      if (!frame || frame.timeSec === timeSec || !canEditSceneTime()) return previous;
+      return { ...previous, frames: previous.frames.map(item => item.id === id ? { ...item, timeSec } : item) };
+    }, "シーンの時刻", { coalesceHistory: false });
+  };
+
   const deleteFrame = async (id: string) => {
     if (project.frames.length <= 1) {
       setNotice("シーンは最低1個必要です。");
@@ -7376,6 +7388,10 @@ function App() {
     if (activePanelTab === "timeline") {
       return (
         <Timeline
+          audioDuration={duration > 0 && Number.isFinite(duration) ? duration : project.audio?.duration}
+          canEditTime={canEditSceneTime}
+          subscribeTimePermission={sharedSession.store.subscribe}
+          onUpdateFrameTime={updateFrameTime}
           frames={displayFrames}
           selectedFrameId={displayFrame?.id ?? null}
           currentTime={currentTime}

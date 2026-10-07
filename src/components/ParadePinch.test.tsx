@@ -36,6 +36,7 @@ describe("parade pinch lifecycle", () => {
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
     vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(2000);
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(5000);
+    vi.spyOn(SVGElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, right: 700, bottom: 500, width: 700, height: 500 } as DOMRect);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
       const stage = this.classList.contains("parade-stage");
       const viewport = this.classList.contains("parade-viewport");
@@ -59,6 +60,90 @@ describe("parade pinch lifecycle", () => {
     const preview = view.container.querySelector<HTMLElement>(".parade-pinch-preview")!;
     return { p, view, viewport, layout, preview };
   };
+  const annotationSetup = (activate = true) => {
+    const p = props(); p.onAnnotationLineChange = vi.fn();
+    p.project.frames[0].sceneViewState = { zoom: 2, scrollLeft: 300, scrollTop: 400 };
+    const view = render(<ParadeCanvas {...p} />); flush();
+    vi.mocked(p.onFrameViewStateChange).mockClear();
+    const viewport = view.container.querySelector<HTMLElement>(".parade-viewport")!;
+    const svg = view.container.querySelector<SVGSVGElement>(".annotation-interaction-layer")!;
+    svg.setPointerCapture = vi.fn();
+    if (activate) fireEvent.click(view.getByRole("button", { name: "線を引く" }));
+    return { p, view, viewport, svg };
+  };
+  it.each([false, true])("clears ordinary pan/inertia when entering line mode (released=%s)", released => {
+    const { view, viewport, svg } = annotationSetup(false);
+    const send = (type: string, x: number, time: number) => {
+      const event = new PointerEvent(type, { ...touch(1, x), bubbles: true });
+      Object.defineProperty(event, "timeStamp", { value: time }); fireEvent(viewport, event);
+    };
+    send("pointerdown", 300, 100); send("pointermove", 270, 120);
+    expect(viewport.scrollLeft).toBe(330);
+    if (released) { send("pointerup", 270, 130); expect(frames.size).toBeGreaterThan(0); }
+    fireEvent.click(view.getByRole("button", { name: "線を引く" }));
+    fireEvent.pointerMove(svg, touch(1, 230)); flush();
+    expect(viewport.scrollLeft).toBe(330);
+    fireEvent.pointerCancel(svg, touch(1, 230));
+  });
+  it("retains unlocked two-finger zoom on the SVG and discards draft ink", () => {
+    const { p, svg } = annotationSetup();
+    fireEvent.pointerDown(svg, touch(1, 300)); fireEvent.pointerMove(svg, touch(1, 280));
+    fireEvent.pointerDown(svg, touch(2, 500)); fireEvent.pointerMove(svg, touch(2, 560)); flush();
+    fireEvent.pointerUp(svg, touch(2, 560)); fireEvent.pointerMove(svg, touch(1, 250));
+    fireEvent.pointerUp(svg, touch(1, 250)); flush();
+    expect(vi.mocked(p.onFrameViewStateChange).mock.lastCall![1].zoom).toBeGreaterThan(2);
+    expect(p.onAnnotationLineChange).not.toHaveBeenCalled();
+  });
+  it("draws once on the SVG at 200% without pan/inertia; completion restores ordinary pan", () => {
+    const { p, view, viewport, svg } = annotationSetup();
+    const scroll = [viewport.scrollLeft, viewport.scrollTop];
+    fireEvent.pointerDown(svg, touch(1, 300));
+    fireEvent.pointerMove(svg, { ...touch(1, 250), clientY: 200 }); flush();
+    expect([viewport.scrollLeft, viewport.scrollTop]).toEqual(scroll);
+    fireEvent.pointerUp(svg, { ...touch(1, 250), clientY: 200 }); flush();
+    fireEvent.pointerUp(svg, touch(1, 250));
+    expect(p.onAnnotationLineChange).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(viewport, touch(2, 300)); fireEvent.pointerMove(viewport, touch(2, 250));
+    fireEvent.pointerUp(viewport, touch(2, 250)); flush();
+    expect([viewport.scrollLeft, viewport.scrollTop]).toEqual(scroll);
+    fireEvent.click(view.getByRole("button", { name: "完了" }));
+    fireEvent.pointerDown(viewport, touch(3, 300)); fireEvent.pointerMove(viewport, touch(3, 250));
+    expect(viewport.scrollLeft).toBe(scroll[0] + 50);
+    fireEvent.pointerCancel(viewport, touch(3, 250));
+  });
+  it("pans on the SVG with pinch locked, fixes zoom, and waits for all fingers before another line", () => {
+    const { p, view, viewport, svg } = annotationSetup();
+    fireEvent.click(view.container.querySelector(".stage-pinch-lock-button")!);
+    const scroll = [viewport.scrollLeft, viewport.scrollTop];
+    fireEvent.pointerDown(svg, touch(1, 300)); fireEvent.pointerMove(svg, touch(1, 320));
+    fireEvent.pointerDown(svg, touch(2, 500));
+    fireEvent.pointerMove(svg, { ...touch(1, 240), clientY: 200 });
+    fireEvent.pointerMove(svg, { ...touch(2, 470), clientY: 210 }); flush();
+    fireEvent.pointerUp(svg, { ...touch(2, 470), clientY: 210 }); flush();
+    expect([viewport.scrollLeft, viewport.scrollTop]).not.toEqual(scroll);
+    expect(p.onFrameViewStateChange).toHaveBeenLastCalledWith("one", expect.objectContaining({ zoom: 2 }));
+    expect(viewport.classList.contains("is-parade-pinch-locked")).toBe(true);
+    fireEvent.pointerMove(svg, touch(1, 350));
+    fireEvent.pointerDown(svg, touch(3, 450)); fireEvent.pointerUp(svg, touch(3, 450));
+    fireEvent.pointerUp(svg, touch(1, 350)); flush();
+    expect(p.onAnnotationLineChange).not.toHaveBeenCalled();
+    fireEvent.pointerDown(svg, touch(4, 300)); fireEvent.pointerMove(svg, touch(4, 250));
+    fireEvent.pointerUp(svg, touch(4, 250));
+    expect(p.onAnnotationLineChange).toHaveBeenCalledTimes(1);
+  });
+  it.each(["third finger", "cancel", "outside", "scene"])("never commits an interrupted SVG line: %s", interruption => {
+    const { p, view, svg } = annotationSetup();
+    fireEvent.pointerDown(svg, touch(1, 300)); fireEvent.pointerMove(svg, touch(1, 250));
+    if (interruption === "third finger") {
+      fireEvent.pointerDown(svg, touch(2, 500)); fireEvent.pointerDown(svg, touch(3, 600));
+      fireEvent.pointerUp(svg, touch(3, 600)); fireEvent.pointerUp(svg, touch(2, 500));
+    }
+    if (interruption === "cancel") fireEvent.pointerCancel(svg, touch(1, 250));
+    if (interruption === "outside") fireEvent.pointerMove(svg, touch(1, 800));
+    if (interruption === "scene") view.rerender(<ParadeCanvas {...p} selectedFrameId="two" />);
+    fireEvent.pointerUp(svg, touch(1, 250)); flush();
+    expect(p.onAnnotationLineChange).not.toHaveBeenCalled();
+  });
   it("does not commit or save on ordinary/locked pointer releases", () => {
     const { p, view, viewport, layout } = setup(); const width = layout.style.width;
     fireEvent.pointerDown(viewport,touch(1,300)); fireEvent.pointerUp(viewport,touch(1,300)); flush();
