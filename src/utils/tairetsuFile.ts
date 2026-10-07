@@ -21,8 +21,6 @@ type TairetsuManifest = {
   includesAudio: boolean;
 };
 
-const ZIP_SIGNATURE = "PK";
-
 type JSZip = JSZipType;
 type JSZipObject = JSZipType.JSZipObject;
 type JSZipConstructor = {
@@ -214,10 +212,7 @@ const readProjectFromJsonBuffer = (buffer: ArrayBuffer): Project => {
 
 const readPayloadFromZip = async (
   zip: JSZip,
-  sourceName: string,
 ): Promise<TairetsuZipPayload | null> => {
-  const entries = Object.keys(zip.files);
-  console.info("[tairetsu import] zip entries", entries);
 
   const pair = findProjectFilePair(zip);
   if (!pair) {
@@ -232,7 +227,6 @@ const readPayloadFromZip = async (
     ),
     "共有ファイルの情報を読み込めませんでした。",
   );
-  console.info("[tairetsu import] manifest", manifest, { sourceName });
   if (manifest.fileType !== TAIRETSU_FILE_TYPE) {
     throw new Error("このファイルは隊列メーカーの共有ファイルではありません。");
   }
@@ -337,11 +331,6 @@ export const createTairetsuArchive = async (
 export const readTairetsuArchive = async (
   file: File,
 ): Promise<TairetsuImportResult> => {
-  console.info("[tairetsu import] selected file", {
-    name: file.name,
-    size: file.size,
-    type: file.type || "(empty)",
-  });
   if (file.size <= 0) {
     throw new Error("選択したファイルが空です。");
   }
@@ -349,9 +338,6 @@ export const readTairetsuArchive = async (
     throw new Error("隊列表ファイルは256MB以下にしてください。");
   }
   const buffer = await file.arrayBuffer();
-  const signature = String.fromCharCode(
-    ...new Uint8Array(buffer.slice(0, 2)),
-  );
   const lowerName = file.name.toLowerCase();
   if (
     lowerName.endsWith(".json") ||
@@ -364,11 +350,6 @@ export const readTairetsuArchive = async (
     };
   }
 
-  if (signature !== ZIP_SIGNATURE) {
-    console.warn("[tairetsu import] file does not start with PK; trying JSZip anyway", {
-      signature,
-    });
-  }
 
   let zip: JSZip;
   try {
@@ -379,11 +360,10 @@ export const readTairetsuArchive = async (
   }
   assertSafeZip(zip);
 
-  let payload = await readPayloadFromZip(zip, file.name);
+  let payload = await readPayloadFromZip(zip);
   if (!payload) {
     const nestedArchive = findNestedArchive(zip);
     if (nestedArchive) {
-      console.info("[tairetsu import] trying nested archive", nestedArchive.name);
       try {
         const JSZip = await loadJsZip();
         const nestedBuffer = await nestedArchive.async("arraybuffer");
@@ -392,9 +372,9 @@ export const readTairetsuArchive = async (
         }
         const nestedZip = await JSZip.loadAsync(nestedBuffer);
         assertSafeZip(nestedZip);
-        payload = await readPayloadFromZip(nestedZip, nestedArchive.name);
-      } catch (error) {
-        console.warn("[tairetsu import] nested archive failed", error);
+        payload = await readPayloadFromZip(nestedZip);
+      } catch {
+        // Preserve the existing generic invalid-archive message without exposing file metadata.
       }
     }
   }

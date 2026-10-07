@@ -11,6 +11,16 @@ const config = { url: "http://127.0.0.1:9999", anonKey: "mock" };
 const session = (id = "owner", token = "old"): CloudAuthSession => ({ accessToken: token, refreshToken: token, expiresAt: Date.now()+3600000, tokenType: "bearer", user: { id, email: "test@example.invalid" } });
 beforeEach(async () => { native.write.mockResolvedValue(undefined); clearCloudAuthSession(); await waitCloudAuthPersistence(); saveCloudAuthSession(session()); await waitCloudAuthPersistence(); });
 afterEach(() => vi.restoreAllMocks());
+it("times out deletion password verification without sending deletion or clearing the account", async () => {
+  vi.useFakeTimers();
+  try {
+    const remove = vi.fn(), clear = vi.fn();
+    const api = createCollaborationAccountApi(config, { reauthenticate: () => new Promise(() => {}), deleteCurrentAccount: remove, clear });
+    const result = expect(api.deleteAccountWithPassword("password", "DELETE_MY_ACCOUNT")).rejects.toThrow(/本人確認.*時間切れ.*再試行/);
+    await vi.advanceTimersByTimeAsync(20_000); await result;
+    expect(remove).not.toHaveBeenCalled(); expect(clear).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});
 function setup() {
   const reauthenticate = vi.fn().mockResolvedValue(session("owner", "fresh")), updatePassword = vi.fn().mockResolvedValue(undefined);
   return { reauthenticate, updatePassword, api: createCollaborationAccountApi(config, { reauthenticate, updatePassword }) };

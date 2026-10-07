@@ -12,10 +12,14 @@ function FailureDetail({ detail }: { detail?: string }) {
   return detail ? <details className="legacy-rescue-detail"><summary>詳しい理由</summary><p>{detail}</p></details> : null;
 }
 
-export default function LegacyRescuePanel({ repository, config, onChanged }: {
+export default function LegacyRescuePanel({ repository, config, onChanged, openRequest = 0, hideEntry = false }: {
   repository: ImportRepository; config: CloudConfig | null; onChanged: () => Promise<void>;
+  /** Incremented by the home "…" menu; opens the chooser (旧クラウドの隊列表 / 端末の下書き). */
+  openRequest?: number;
+  /** The home header owns the entry, so the home page shows no legacy buttons. */
+  hideEntry?: boolean;
 }) {
-  const [view, setView] = useState<"cloud" | "draft" | null>(null);
+  const [view, setView] = useState<"choose" | "cloud" | "draft" | null>(null);
   const [auth, setAuth] = useState(cloudAuthIdentity);
   const [rows, setRows] = useState<LegacyListItem[]>([]), [selected, setSelected] = useState<string[]>([]);
   const [cursor, setCursor] = useState<LegacyCursor | null>(null), [loaded, setLoaded] = useState(false);
@@ -85,14 +89,28 @@ export default function LegacyRescuePanel({ repository, config, onChanged }: {
         <FailureDetail detail={result.detail} />
         {result.recoveryId && result.canRescueChanged && <button className="mini-button primary" type="button" disabled={busy || expired} onClick={() => void importRows([row], true)}>変更された内容を別の独立コピーとして救出</button>}</div>}</li>;
   })}</ul>;
-  return <section className="legacy-rescue-entry" aria-label="旧データの取り込みと救出">
-    <button className="mini-button" type="button" onClick={() => { setView("cloud"); setLoaded(rows.length > 0); setMessage(null); setFailureDetail(undefined); }}>旧クラウドの隊列表を取り込む</button>
-    <button className="mini-button" type="button" onClick={() => { setView("draft"); setLoaded(false); setMessage(null); setFailureDetail(undefined); }}>この端末に残っている旧クラウドの下書き</button>
-    {view && createPortal(<div className="legacy-rescue-backdrop"><div className="legacy-rescue-dialog" role="dialog" aria-modal="true" aria-labelledby="legacy-rescue-heading" tabIndex={-1}>
-      <header><h2 id="legacy-rescue-heading">{view === "cloud" ? "旧クラウドの隊列表を取り込む" : "旧クラウドの下書き"}</h2>
-        <button className="mini-button" type="button" aria-label="救出画面を閉じる" onClick={() => { controller.current?.abort(); setView(null); }}>閉じる</button></header>
+  const openCloud = () => { setView("cloud"); setLoaded(rows.length > 0); setMessage(null); setFailureDetail(undefined); };
+  const openDraft = () => { setView("draft"); setLoaded(false); setMessage(null); setFailureDetail(undefined); };
+  const handledRequest = useRef(openRequest);
+  useEffect(() => {
+    if (openRequest === handledRequest.current) return;
+    handledRequest.current = openRequest;
+    if (!controller.current) { setMessage(null); setFailureDetail(undefined); setView("choose"); }
+  }, [openRequest]);
+  const dialog = view && createPortal(<div className="legacy-rescue-backdrop"><div className="legacy-rescue-dialog" role="dialog" aria-modal="true" aria-labelledby="legacy-rescue-heading" tabIndex={-1}>
+      <header><h2 id="legacy-rescue-heading">{view === "choose" ? "旧クラウドのデータを取り込む" : view === "cloud" ? "旧クラウドの隊列表を取り込む" : "旧クラウドの下書き"}</h2>
+        <div className="legacy-rescue-header-actions">
+          {hideEntry && view !== "choose" && <button className="mini-button" type="button" disabled={busy} onClick={() => { setMessage(null); setFailureDetail(undefined); setView("choose"); }}>戻る</button>}
+          <button className="mini-button" type="button" aria-label="救出画面を閉じる" onClick={() => { controller.current?.abort(); setView(null); }}>閉じる</button>
+        </div></header>
       <p>この端末に独立した隊列表として保存します。共同編集は始まりません。元のデータは削除しません。</p>
-      {view === "cloud" ? <>
+      {view === "choose" ? <>
+        <p>以前のクラウド機能（2026年10月5日に停止）で保存した隊列表を取り込めます。</p>
+        <div className="legacy-rescue-actions">
+          <button className="mini-button" type="button" onClick={openCloud}>旧クラウドの隊列表を取り込む</button>
+          <button className="mini-button" type="button" onClick={openDraft}>この端末に残っている旧クラウドの下書き</button>
+        </div>
+      </> : view === "cloud" ? <>
         <p>取り込み期限：本番切替から30日{until ? `（${new Date(until).toLocaleString("ja-JP")}まで）` : "。終了日時は一覧取得後に表示します。"}</p>
         {!canCloud && <p>旧クラウドで使ったアカウントにホームからログインしてください。下書きの救出はログイン不要です。</p>}
         <div className="legacy-rescue-actions"><button className="mini-button" type="button" disabled={!canCloud || busy || expired} onClick={() => void list()}>一覧を取得</button>
@@ -122,6 +140,11 @@ export default function LegacyRescuePanel({ repository, config, onChanged }: {
       {message && <p role="status" className="legacy-rescue-message">{message}</p>}
       {message && <FailureDetail detail={failureDetail} />}
       {busy && <p role="status">{view === "cloud" ? "取得・保存中…" : "端末ファイルを確認・保存中…"}</p>}
-    </div></div>, document.body)}
+    </div></div>, document.body);
+  if (hideEntry) return <>{dialog}</>;
+  return <section className="legacy-rescue-entry" aria-label="旧データの取り込みと救出">
+    <button className="mini-button" type="button" onClick={openCloud}>旧クラウドの隊列表を取り込む</button>
+    <button className="mini-button" type="button" onClick={openDraft}>この端末に残っている旧クラウドの下書き</button>
+    {dialog}
   </section>;
 }

@@ -46,6 +46,17 @@ describe("parade pinch lifecycle", () => {
     });
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  it("renders a huge remote/legacy route with bounded full-range meter labels and grid lines", () => {
+    const p = props();
+    p.project.paradeSettings = { totalDistance: 1e12, backwardDistanceMeters: 1e12, width: 10, cellSizeMeters: .5,
+      direction: "up", rulerPosition: "both", horizontalMeasureMode: "centerSplit", emphasizeEvery5m: true, emphasizeEvery10m: true };
+    const view = render(<ParadeCanvas {...p} />); flush();
+    const labels = view.container.querySelectorAll(".parade-ruler span");
+    expect(labels.length).toBeGreaterThan(0); expect(labels.length).toBeLessThanOrEqual(16384 * 2);
+    expect(view.container.querySelectorAll(".parade-grid-line").length).toBeLessThanOrEqual(16384 * 2 + 100);
+    fireEvent.scroll(view.container.querySelector(".parade-viewport")!);
+    expect(view.container.querySelectorAll(".parade-ruler span").length).toBe(labels.length);
+  }, 20_000);
   const setup = (includeObject = false) => {
     const p = props();
     if (includeObject) {

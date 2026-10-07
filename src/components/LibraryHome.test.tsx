@@ -7,6 +7,8 @@ import type { ProjectSummary } from "../repositories/types";
 import type { SharedDocumentSummary } from "../collaboration/managementTransport";
 import { cloudOnlyDocuments, libraryAccountButton, toCloudLibraryCards, cloudSharingBadge, localSharingBadge } from "../collaboration/libraryCards";
 import { FormationLibrary } from "./FormationLibrary";
+import LegacyRescuePanel from "./LegacyRescuePanel";
+import type { ImportRepository } from "../legacyImport/importer";
 
 afterEach(cleanup);
 
@@ -62,9 +64,9 @@ const baseProps = () => ({
 
 describe("home layout", () => {
   it("puts 使い方, account and a … popover in the header; Escape closes it and returns focus", async () => {
-    const onOpenHelp = vi.fn(), onAccount = vi.fn(), onOpenStorageManager = vi.fn(), onRefreshCloud = vi.fn();
+    const onOpenHelp = vi.fn(), onAccount = vi.fn(), onOpenStorageManager = vi.fn(), onRefreshCloud = vi.fn(), onOpenLegacyImport = vi.fn();
     render(<FormationLibrary {...baseProps()} onOpenHelp={onOpenHelp} account={{ label: "ログイン", pending: false, onClick: onAccount }}
-      onOpenStorageManager={onOpenStorageManager} onRefreshCloud={onRefreshCloud} />);
+      onOpenStorageManager={onOpenStorageManager} onRefreshCloud={onRefreshCloud} onOpenLegacyImport={onOpenLegacyImport} />);
     const header = screen.getByRole("banner");
     await userEvent.click(within(header).getByRole("button", { name: "使い方" }));
     await userEvent.click(within(header).getByRole("button", { name: "ログイン" }));
@@ -82,6 +84,9 @@ describe("home layout", () => {
     await userEvent.click(more);
     await userEvent.click(within(header).getByRole("button", { name: "クラウドの一覧を更新" }));
     expect(onRefreshCloud).toHaveBeenCalledTimes(1);
+    await userEvent.click(more);
+    await userEvent.click(within(header).getByRole("button", { name: "旧クラウドのデータを取り込む" }));
+    expect(onOpenLegacyImport).toHaveBeenCalledTimes(1);
     // 使い方 lives in the header, so the footer keeps only the policy links.
     expect(within(screen.getByRole("navigation", { name: "規約とサポート" })).queryByRole("button", { name: "使い方" })).toBeNull();
   });
@@ -119,5 +124,28 @@ describe("home layout", () => {
     expect((within(grid).getByRole("button", { name: "共有d2をクラウドから開く" }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "クラウドの続きを表示" }));
     expect(onLoadMoreCloud).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("old cloud import entry", () => {
+  const repository = {} as ImportRepository;
+  it("shows no legacy buttons on the home page and opens a chooser from the … menu request", async () => {
+    const { rerender } = render(<LegacyRescuePanel repository={repository} config={null} onChanged={async () => {}} openRequest={0} hideEntry />);
+    expect(screen.queryByRole("button", { name: "旧クラウドの隊列表を取り込む" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<LegacyRescuePanel repository={repository} config={null} onChanged={async () => {}} openRequest={1} hideEntry />);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "旧クラウドのデータを取り込む" })).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "この端末に残っている旧クラウドの下書き" }));
+    expect(within(dialog).getByRole("heading", { name: "旧クラウドの下書き" })).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "戻る" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "旧クラウドの隊列表を取り込む" }));
+    expect(within(dialog).getByRole("heading", { name: "旧クラウドの隊列表を取り込む" })).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "救出画面を閉じる" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("does not reopen on remount with an already handled request", () => {
+    render(<LegacyRescuePanel repository={repository} config={null} onChanged={async () => {}} openRequest={3} hideEntry />);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

@@ -14,6 +14,27 @@ const toFile = async (
 ): Promise<File> => new File([await blob.arrayBuffer()], name, { type });
 
 describe("tairetsu file compatibility", () => {
+  it.each(["zip", "json", "nested"])("accepts legacy excess parade distance on %s import without logging names or manifest", async format => {
+    const project = { ...createSampleProject(), mode: "parade" as const, paradeSettings: { totalDistance: 501 } } as Project;
+    const logs = [vi.spyOn(console, "info"), vi.spyOn(console, "warn"), vi.spyOn(console, "log")];
+    let file: File;
+    if (format === "json") file = new File([JSON.stringify({ project })], "private-name.json", { type: "application/json" });
+    else {
+      const archive = await createTairetsuArchive(project);
+      if (format === "nested") {
+        const zip = new JSZip(); zip.file("private-name.tairetsu", await archive.arrayBuffer());
+        file = new File([await zip.generateAsync({ type: "arraybuffer" })], "private-name.zip");
+      } else file = await toFile(archive, "private-name.zip");
+    }
+    await expect(readTairetsuArchive(file)).resolves.toMatchObject({ project });
+    for (const log of logs) expect(log).not.toHaveBeenCalled();
+  });
+  it("accepts legacy excess backward distance and both boundary distances", async () => {
+    const project = { ...createSampleProject(), mode: "parade" as const, paradeSettings: { totalDistance: 500, backwardDistanceMeters: 501 } } as Project;
+    await expect(readTairetsuArchive(new File([JSON.stringify(project)], "project.json"))).resolves.toMatchObject({ project });
+    project.paradeSettings!.backwardDistanceMeters = 500;
+    await expect(readTairetsuArchive(await toFile(await createTairetsuArchive(project), "project.zip"))).resolves.toMatchObject({ project });
+  });
   afterEach(() => {
     vi.restoreAllMocks();
   });

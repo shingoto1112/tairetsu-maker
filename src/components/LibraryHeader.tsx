@@ -1,4 +1,4 @@
-import { CircleHelp, FileText, HardDrive, LifeBuoy, MoreHorizontal, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
+import { ArchiveRestore, CircleHelp, FileText, HardDrive, LifeBuoy, MoreHorizontal, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { PUBLIC_LINKS } from "../config/publicLinks";
 
@@ -10,6 +10,8 @@ type Props = {
   onOpenStorageManager?: () => void;
   onRefreshCloud?: () => void;
   cloudBusy?: boolean;
+  /** Old cloud (stopped 2026-10-05) import and on-device draft rescue. */
+  onOpenLegacyImport?: () => void;
 };
 
 /**
@@ -18,7 +20,7 @@ type Props = {
  * buttons and links, so it is not a role="menu"; Escape and outside taps close it
  * and focus returns to the trigger.
  */
-export const LibraryHeader = ({ onOpenHelp, account, onOpenStorageManager, onRefreshCloud, cloudBusy = false }: Props) => {
+export const LibraryHeader = ({ onOpenHelp, account, onOpenStorageManager, onRefreshCloud, cloudBusy = false, onOpenLegacyImport }: Props) => {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,9 @@ export const LibraryHeader = ({ onOpenHelp, account, onOpenStorageManager, onRef
           </button>}
           {onRefreshCloud && <button type="button" disabled={cloudBusy} onClick={() => choose(onRefreshCloud)}>
             <RefreshCw size={16} aria-hidden="true" />クラウドの一覧を更新
+          </button>}
+          {onOpenLegacyImport && <button type="button" onClick={() => choose(onOpenLegacyImport)}>
+            <ArchiveRestore size={16} aria-hidden="true" />旧クラウドのデータを取り込む
           </button>}
           <a href={PUBLIC_LINKS.privacy} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
             <ShieldCheck size={16} aria-hidden="true" />プライバシー

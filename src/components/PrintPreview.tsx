@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { boundedTicks } from "../utils/boundedTicks";
 import { AnnotationLines } from "./AnnotationLines";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, stageVerticalRulerPositions } from "../utils/gridEmphasis";
 import { EmphasizedGrid } from "./EmphasizedGrid";
@@ -812,7 +813,7 @@ const PrintStagePreview = ({
           label: string;
           top: string;
         }> = [];
-        for (let meter = start; meter <= end; meter += 1) {
+        for (const meter of boundedTicks(start, end)) {
           const internalY = paradeDistanceToInternalY(
             meter,
             totalDistance,

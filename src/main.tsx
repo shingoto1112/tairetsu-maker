@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { startApplication } from "./startup";
 import { getAppRuntime } from "./platform";
 import { installGlobalDiagnosticCapture } from "./utils/diagnostics";
 import "./styles.css";
@@ -25,4 +26,4 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   </React.StrictMode>,
 );
 }
-void mount();
+void startApplication(mount);

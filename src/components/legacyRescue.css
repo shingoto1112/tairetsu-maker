@@ -5,6 +5,7 @@
 .legacy-rescue-dialog header { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .legacy-rescue-dialog h2 { margin: 0; font-size: 20px; }
 .legacy-rescue-dialog header button { flex-shrink: 0; }
+.legacy-rescue-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .legacy-rescue-dialog p { line-height: 1.6; margin: 10px 0; }
 .legacy-rescue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .legacy-rescue-dialog button { min-height: 44px; white-space: normal; }

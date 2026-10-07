@@ -6,7 +6,12 @@ import { createSampleProject } from "./sampleProject";
 import * as audioStorage from "./utils/audioStorage";
 import type { Project, FormationFrame } from "./types";
 import { MemoryProjectRepository } from "./repositories/contract/testing/MemoryProjectRepository";
+import { createSharedDocument } from "./collaboration/model";
+import { createCollaborationData } from "./collaboration/persistence";
+import { SharedProjectEditor } from "./collaboration/editorSession";
+import { SaveCoordinator } from "./storage/saveCoordinator";
 import type { ParadeCanvas } from "./components/ParadeCanvas";
+let useYjs = false;
 let project: Project;
 let repository: MemoryProjectRepository;
 const observed = vi.hoisted(() => ({ canvas: null as ComponentProps<typeof ParadeCanvas> | null, rosterFrames: [] as FormationFrame[] }));
@@ -14,7 +19,9 @@ vi.mock("./storage/appRepository", async original => ({
   ...await original<typeof import("./storage/appRepository")>(),
   prepareAppRepository: async () => {
     repository = new MemoryProjectRepository();
-    await repository.commit({ project, localRevision: "1", expectedRepositoryRevision: null, operationId: "seed-build26" });
+    const doc = useYjs ? createSharedDocument(project) : null;
+    await repository.commit({ project, ...(doc ? { collaboration: createCollaborationData(doc) } : {}), localRevision: "1", expectedRepositoryRevision: null, operationId: "seed-build26" });
+    doc?.destroy();
     return { repository, result: { completed: true, canContinue: true, failures: [] } };
   },
 }));
@@ -26,6 +33,7 @@ vi.mock("./components/RosterManagementModal", () => ({ RosterManagementModal: (p
 } }));
 import App from "./App";
 beforeEach(() => {
+  useYjs = false;
   localStorage.clear();
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} unobserve() {} });
@@ -41,6 +49,117 @@ beforeEach(() => {
   observed.canvas = null; observed.rosterFrames = [];
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it("opens a saved over-limit parade, rejects excess settings without changing them, and accepts the boundary", async () => {
+  project.paradeSettings = { totalDistance: 501, backwardDistanceMeters: 501, width: 10, cellSizeMeters: .5,
+    direction: "up", rulerPosition: "both", horizontalMeasureMode: "centerSplit", emphasizeEvery5m: true, emphasizeEvery10m: true };
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));
+  await screen.findByTestId("canvas");
+  expect(observed.canvas!.project.paradeSettings!.totalDistance).toBe(501);
+  const memberId = observed.canvas!.project.members[0].id;
+  act(() => observed.canvas!.onMoveMember(memberId, { x: 2, y: 2 }));
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(async () => expect((await repository.get("build26"))?.project).toMatchObject({ paradeSettings: { totalDistance: 501, backwardDistanceMeters: 501 } }));
+  await waitFor(async () => expect((await repository.get("build26"))?.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual({ x: 2, y: 2 }));
+  fireEvent.click(screen.getByRole("tab", { name: "ステージ" }));
+  const distance = await screen.findByRole("spinbutton", { name: "全体距離" });
+  fireEvent.change(distance, { target: { value: "502" } });
+  expect(observed.canvas!.project.paradeSettings!.totalDistance).toBe(501);
+  expect(await screen.findByText(/全体距離は1〜500m/)).toBeTruthy();
+  fireEvent.change(distance, { target: { value: "500" } });
+  const backward = screen.getByRole("spinbutton", { name: "後方表示距離" });
+  fireEvent.change(backward, { target: { value: "502" } });
+  expect(observed.canvas!.project.paradeSettings!.backwardDistanceMeters).toBe(501);
+  fireEvent.change(backward, { target: { value: "500" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(async () => expect((await repository.get("build26"))?.project.paradeSettings).toMatchObject({ totalDistance: 500, backwardDistanceMeters: 500 }));
+}, 20_000);
+
+it.each([false, true])("saves continuous non-batch edits at the first edit's five-second deadline (Yjs=%s)", async yjs => {
+  useYjs = yjs;
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));
+  await screen.findByTestId("canvas");
+  const memberId = observed.canvas!.project.members[0].id;
+  const commits = vi.spyOn(repository, "commit");
+  vi.useFakeTimers();
+  try {
+    for (let i = 0; i < 12; i++) {
+      act(() => observed.canvas!.onMoveMember(memberId, { x: 1 + i / 50, y: 2 }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    }
+    expect(commits).not.toHaveBeenCalled();
+    act(() => observed.canvas!.onMoveMember(memberId, { x: 2, y: 2 }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(commits).toHaveBeenCalledOnce();
+    expect((await repository.get("build26"))!.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual({ x: 2, y: 2 });
+  } finally { vi.useRealTimers(); }
+}, 20_000);
+it.each([false, true])("re-queues the pending save after a gesture that wrote nothing (Yjs=%s)", async yjs => {
+  useYjs = yjs;
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));
+  await screen.findByTestId("canvas");
+  const memberId = observed.canvas!.project.members[0].id;
+  const commits = vi.spyOn(repository, "commit");
+  vi.useFakeTimers();
+  try {
+    act(() => observed.canvas!.onMoveMember(memberId, { x: 1.5, y: 2 }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    // Pointer-down cancels the queued save; pointer-up without movement must queue it again.
+    act(() => { observed.canvas!.onBeginProjectEdit("移動", { id: memberId, type: "member-position" }); });
+    act(() => observed.canvas!.onEndProjectEdit());
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(commits).toHaveBeenCalledOnce();
+    expect((await repository.get("build26"))!.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual({ x: 1.5, y: 2 });
+  } finally { vi.useRealTimers(); }
+}, 20_000);
+it.each([[false, false], [false, true], [true, false], [true, true]])("defers timer/drag races until a long drag ends and undoes the whole gesture (Yjs=%s, queued=%s)", async (yjs, queued) => {
+  useYjs = yjs;
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));
+  await screen.findByTestId("canvas");
+  const memberId = observed.canvas!.project.members[0].id;
+  const move = (x: number) => act(() => observed.canvas!.onMoveMember(memberId, { x, y: 2 }));
+  const original = observed.canvas!.project.frames.find(f => f.id === "late")!.positions[memberId];
+  const commits = vi.spyOn(repository, "commit");
+  vi.useFakeTimers();
+  const fakeSetTimeout = window.setTimeout;
+  let scheduled: (() => void) | undefined;
+  window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (delay === 800 && typeof handler === "function") scheduled = handler as () => void;
+    return fakeSetTimeout(handler, delay, ...args);
+  }) as typeof window.setTimeout;
+  const ends = vi.spyOn(SharedProjectEditor.prototype, "end");
+  const stages = vi.spyOn(SharedProjectEditor.prototype, "stagePending");
+  try {
+    move(1);
+    expect(scheduled).toBeDefined();
+    await act(async () => { await vi.advanceTimersByTimeAsync(799); });
+    act(() => { observed.canvas!.onBeginProjectEdit("長い移動", { id: memberId, type: "member-position" }); });
+    // Model a callback already dequeued before clearTimeout: it must still guard the batch.
+    ends.mockClear(); stages.mockClear();
+    if (queued) act(() => { scheduled!(); });
+    for (let i = 0; i < 15; i++) {
+      move(Number((2 + i / 50).toFixed(2)));
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    }
+    expect(commits).not.toHaveBeenCalled();
+    expect(ends).not.toHaveBeenCalled(); expect(stages).not.toHaveBeenCalled();
+    act(() => observed.canvas!.onEndProjectEdit());
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(commits).toHaveBeenCalledOnce();
+    expect((await repository.get("build26"))!.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual({ x: 2.28, y: 2 });
+    act(() => observed.canvas!.onUndo());
+    expect(observed.canvas!.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual({ x: 1, y: 2 });
+    act(() => observed.canvas!.onUndo());
+    expect(observed.canvas!.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual(original);
+  } finally { window.setTimeout = fakeSetTimeout; vi.useRealTimers(); }
+}, 20_000);
+it("catches a lifecycle save rejection and keeps a Japanese retry message", async () => {
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));
+  await screen.findByTestId("canvas");
+  vi.spyOn(SaveCoordinator.prototype, "flush").mockRejectedValue(new Error("private-error"));
+  fireEvent(window, new Event("pagehide"));
+  expect(await screen.findByText("編集内容を保存できませんでした。画面の内容を確認し、保存を再試行してください。")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("private-error");
+}, 20_000);
 it("App keeps its saved order while timeline, navigation, numbering and roster use the same time order", async () => {
   const view = render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "順序検証を開く" }));

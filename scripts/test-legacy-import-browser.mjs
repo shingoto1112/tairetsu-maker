@@ -43,7 +43,7 @@ try {
  await page.locator('.library-header').getByRole('button',{name:'ログイン',exact:true}).click();
  await page.getByLabel('メールアドレス',{exact:true}).fill('session-test@example.invalid');await page.getByLabel('パスワード',{exact:true}).fill('mock-pass');
  await page.getByRole('dialog',{name:'アカウント',exact:true}).getByRole('button',{name:'ログイン',exact:true}).click();await expect(page.locator('.library-header').getByRole('button',{name:'アカウント',exact:true})).toBeEnabled();
- await page.getByRole('button',{name:'旧クラウドの隊列表を取り込む',exact:true}).last().click();const dialog=page.getByRole('dialog');
+ await page.getByRole('button',{name:'ホームのその他の操作',exact:true}).click();await page.getByRole('button',{name:'旧クラウドのデータを取り込む',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'旧クラウドの隊列表を取り込む',exact:true}).click();const dialog=page.getByRole('dialog');
  await dialog.getByRole('button',{name:'一覧を取得',exact:true}).click();await expect(dialog.getByText('試験用旧隊列表',{exact:true})).toBeVisible();
  await dialog.locator('summary').click();await expect(dialog.getByRole('checkbox').last()).not.toBeChecked();await dialog.locator('summary').click();
  let release;const held=new Promise(resolve=>release=resolve);let first=true;
@@ -71,7 +71,7 @@ try {
     draftNames:async()=>['old.json','old.pending.json','old.backup.json','bad.json','denied.json'],
     readText:async path=>{if(path.includes('denied'))throw Object.assign(new Error(),{name:'NotAllowedError'});return path.includes('bad')?'{':path.startsWith('personal-cloud-drafts/')?raw:null;}}};
  });
- await page.getByRole('button',{name:'この端末に残っている旧クラウドの下書き',exact:true}).last().click();await expect(dialog.getByRole('heading',{name:'旧クラウドの下書き',exact:true})).toBeVisible();await dialog.getByRole('button',{name:'端末の下書きを調べる',exact:true}).click();
+ await page.getByRole('button',{name:'ホームのその他の操作',exact:true}).click();await page.getByRole('button',{name:'旧クラウドのデータを取り込む',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'この端末に残っている旧クラウドの下書き',exact:true}).click();await expect(dialog.getByRole('heading',{name:'旧クラウドの下書き',exact:true})).toBeVisible();await dialog.getByRole('button',{name:'端末の下書きを調べる',exact:true}).click();
  await expect(dialog.getByText('読取りが拒否されました。',{exact:true})).toBeVisible();await expect(dialog.getByText('破損しているため読めません。',{exact:true})).toBeVisible();
  await dialog.getByRole('button',{name:'この下書きを独立コピーとして救出',exact:true}).first().click();await expect(dialog.getByText('独立コピーを保存しました。元ファイルは残っています。',{exact:true})).toBeVisible();for(const label of ['通常の下書き','保存途中の下書き','予備の下書き'])await expect(dialog.getByText(label,{exact:false}).last()).toBeVisible();
  await expect(dialog.getByText('old.pending.json',{exact:true})).toBeHidden();
@@ -82,7 +82,7 @@ try {
  // Expired backend denial is shown, without disabling local draft rescue.
  await context.route('**/rest/v1/rpc/legacy_list_owned_projects',route=>route.fulfill({status:403,json:{message:'LEGACY_EXPORT_EXPIRED'}}));
  await page.evaluate(async()=>{const{saveCloudAuthSession}=await import('/src/cloud/session.ts');saveCloudAuthSession({accessToken:'synthetic-fixture-token',refreshToken:'synthetic-refresh',expiresAt:Date.now()+3600000,tokenType:'bearer',user:{id:'11000000-0000-0000-0001-000000000001',email:'fixture@example.invalid'}});});
- await page.getByRole('button',{name:'旧クラウドの隊列表を取り込む',exact:true}).last().click();await dialog.getByRole('button',{name:'一覧を取得',exact:true}).click();await expect(dialog.getByText(/取り込み期限が終了しました/)).toBeVisible();checks.push('deadline denial and signed-out draft UI');
+ await page.getByRole('button',{name:'ホームのその他の操作',exact:true}).click();await page.getByRole('button',{name:'旧クラウドのデータを取り込む',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'旧クラウドの隊列表を取り込む',exact:true}).click();await dialog.getByRole('button',{name:'一覧を取得',exact:true}).click();await expect(dialog.getByText(/取り込み期限が終了しました/)).toBeVisible();checks.push('deadline denial and signed-out draft UI');
  assert.equal(errors.length,0,errors.join('\n'));assert(requests.every(p=>p.includes('legacy_list_owned_projects')||p.includes('legacy_export_project')||p.includes('/rpc/collab_v2_')),'no removed document API calls');
  console.log('LEGACY_IMPORT_BROWSER',JSON.stringify({checks,shots,requests,errors}));
 } finally {await context.close();await browser.close();await server.close();await vite.close();}

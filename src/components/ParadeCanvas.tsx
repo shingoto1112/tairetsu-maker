@@ -1,4 +1,5 @@
 import { useAnnotationEditor } from "./useAnnotationEditor";
+import { paradeMeterTicks } from "../utils/boundedTicks";
 import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle } from "../utils/gridEmphasis";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
@@ -264,31 +265,6 @@ const snapMeters = (value: number, gridSize: number) => {
   return roundMeters(Math.round(value / gridSize) * gridSize);
 };
 
-const createMeterGridTicksInRange = (
-  minMeters: number,
-  maxMeters: number,
-  stepMeters: number,
-) => {
-  const safeMin = Math.min(minMeters, maxMeters);
-  const safeMax = Math.max(minMeters, maxMeters);
-  const safeStep = Number.isFinite(stepMeters) && stepMeters > 0 ? stepMeters : 1;
-  const ticks: number[] = [];
-
-  const firstTick = Math.ceil((safeMin - 0.001) / safeStep) * safeStep;
-  for (let value = firstTick; value <= safeMax + 0.001; value += safeStep) {
-    ticks.push(roundMeters(value));
-  }
-
-  [safeMin, safeMax].forEach((edge) => {
-    const roundedEdge = roundMeters(edge);
-    if (!ticks.some((tick) => Math.abs(tick - roundedEdge) < 0.001)) {
-      ticks.push(roundedEdge);
-    }
-  });
-
-  return Array.from(new Set(ticks)).sort((a, b) => a - b);
-};
-
 const getParadeMeterRulerClassName = (meter: number) => {
   const rounded = Math.round(meter);
   if (Math.abs(meter - rounded) > 0.001) {
@@ -503,10 +479,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     );
 
     const meterTicks = useMemo(() => {
-      return createMeterGridTicksInRange(
+      return paradeMeterTicks(
         -backwardDistanceMeters,
         settings.totalDistance,
-        1,
       );
     }, [backwardDistanceMeters, settings.totalDistance]);
 

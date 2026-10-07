@@ -1,4 +1,5 @@
 import type { AudioSelection } from "../platform/audioStorage";
+import { paradeDistanceError } from "../project/paradeLimits";
 import { ChangeEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Cloud, CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
@@ -47,6 +48,8 @@ type FormationLibraryProps = {
   account?: LibraryHeaderAccount;
   /** "…" → 保存データの管理 (StorageTools stays mounted in storageTools). */
   onOpenStorageManager?: () => void;
+  /** "…" → 旧クラウドのデータを取り込む (LegacyRescuePanel stays mounted in collaborationSlot). */
+  onOpenLegacyImport?: () => void;
   /** Card picture for a stored formation; the folder icon is used without it. */
   renderProjectPreview?: (summary: ProjectSummary) => ReactNode;
   /** Formations only in the cloud, shown after the local ones in the same grid. */
@@ -133,6 +136,7 @@ export const FormationLibrary = ({
   cloudSaveBusy = false,
   account,
   onOpenStorageManager,
+  onOpenLegacyImport,
   renderProjectPreview,
   cloudProjects = [],
   onOpenCloudProject,
@@ -308,6 +312,10 @@ export const FormationLibrary = ({
         errors[input.name] = input.dataset.fieldLabel + "は" + input.min + "以上の数値にしてください。";
       }
     });
+    if (formationMode === "parade") {
+      const distanceError = paradeDistanceError({ totalDistance: paradeTotalDistance });
+      if (distanceError) errors.paradeTotalDistance = distanceError;
+    }
     setFieldErrors(errors);
     if (Object.keys(errors).length) {
       const input = form.elements.namedItem(Object.keys(errors)[0]) as HTMLInputElement | null;
@@ -412,7 +420,7 @@ export const FormationLibrary = ({
   return (
     <main className="library-shell">
       <LibraryHeader onOpenHelp={onOpenHelp} account={account} onOpenStorageManager={onOpenStorageManager}
-        onRefreshCloud={onRefreshCloud} cloudBusy={cloudBusy} />
+        onRefreshCloud={onRefreshCloud} cloudBusy={cloudBusy} onOpenLegacyImport={onOpenLegacyImport} />
       <p className="library-lead">作成済みの隊列表を開くか、新しい隊列表を作成します。</p>
 
       {notice && <p className="library-notice" role="status">{notice}</p>}

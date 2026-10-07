@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { boundedTicks } from "./boundedTicks";
 import type { ParadeSettings, StageConfig } from "../types";
 import { createGridTicksInRange, createHorizontalGridLines } from "./horizontalGrid";
 import { internalYToParadeDistance } from "./parade";
@@ -53,9 +54,10 @@ export const verticalEmphasizedLines = (depth: number, step: number, stage: Stag
   const flags = verticalEmphasisFlags(stage, parade);
   const topOrigin = verticalOrigin ? verticalOrigin === "top" : stage.frontDirection === "top";
   const origin = parade ? parade.totalDistance : topOrigin ? 0 : depth;
-  const ticks = new Set(createGridTicksInRange(top, bottom, step, parade ? origin : 0));
+  const generate = parade ? boundedTicks : createGridTicksInRange;
+  const ticks = new Set(generate(top, bottom, step, parade ? origin : 0));
   // Number positions remain lines even when step is larger or non-integral.
-  for (const y of createGridTicksInRange(top, bottom, 1, origin)) ticks.add(y);
+  for (const y of generate(top, bottom, 1, origin)) ticks.add(y);
   return [...ticks].sort((a,b) => a-b).filter(y => y > 1e-7 && y < depth - 1e-7).map(y => ({
     positionMeters: y,
     emphasis: lineEmphasis(parade ? internalYToParadeDistance(y, parade.totalDistance, parade.backwardDistanceMeters) : topOrigin ? y : depth - y, flags),

@@ -1,4 +1,5 @@
 import type { NewFormationInput } from "../components/FormationLibrary";
+import { paradeDistanceError } from "./paradeLimits";
 import type { AudioMeta, Project } from "../types";
 import { createId } from "../utils/ids";
 import { createDefaultParadeSettings, createProjectId } from "./defaults";
@@ -21,6 +22,11 @@ export const createEmptyFormationProject = (
 ): Project => {
   const now = new Date().toISOString();
   const formationMode = settings.formationMode ?? "stage";
+  if (formationMode === "parade") {
+    const error = paradeDistanceError({ totalDistance: settings.paradeSettings?.totalDistance ?? settings.heightMeters,
+      backwardDistanceMeters: settings.paradeSettings?.backwardDistanceMeters });
+    if (error) throw new Error(error);
+  }
   const paradeSettings =
     formationMode === "parade"
       ? createDefaultParadeSettings(

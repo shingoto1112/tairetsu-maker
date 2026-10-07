@@ -6,6 +6,18 @@ import { FormationLibrary } from "./FormationLibrary";
 afterEach(cleanup);
 const setup=()=>{const onCreate=vi.fn();render(<FormationLibrary projects={[]} onCreate={onCreate} onOpenProject={vi.fn()} onRenameProject={vi.fn()} onDuplicateProject={vi.fn()} onExportProject={vi.fn()} onImportProjectFile={vi.fn()} onDeleteProject={vi.fn()}/>);return onCreate;};
 const open=async(mode:string)=>{await userEvent.click(screen.getByRole('button',{name:/追加/}));await userEvent.click(screen.getByRole('button',{name:/新しく作る/}));await userEvent.click(screen.getByRole('button',{name:mode==='stage'?/ステージ隊列/:/パレード隊列/}));};
+it('rejects parade creation above 500m with an accessible reason and accepts 500m', async () => {
+ const create=setup(); await open('parade');
+ fireEvent.change(screen.getByRole('textbox',{name:'隊列表名'}),{target:{value:'上限'}});
+ const distance=screen.getByRole('spinbutton',{name:'全体距離'});
+ fireEvent.change(distance,{target:{value:'501'}});
+ fireEvent.submit(screen.getByRole('dialog',{name:'新しい隊列表を作成'}));
+ expect(create).not.toHaveBeenCalled(); expect(distance.getAttribute('aria-invalid')).toBe('true');
+ expect(document.getElementById(distance.getAttribute('aria-describedby')!)?.textContent).toContain('500m');
+ fireEvent.change(distance,{target:{value:'500'}});
+ fireEvent.submit(screen.getByRole('dialog',{name:'新しい隊列表を作成'}));
+ expect(create).toHaveBeenCalledOnce(); expect(create.mock.calls[0][0].paradeSettings.totalDistance).toBe(500);
+});
 for(const mode of ['stage','parade']) {
  it(mode+' defaults and reset use split; first choice saves existing values',async()=>{
   const create=setup();await open(mode);

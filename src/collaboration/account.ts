@@ -1,4 +1,5 @@
 import type { CloudConfig } from "../cloud/config";
+import { withRequestTimeout } from "../cloud/requestTimeout";
 import { createCloudAuthClient, CloudAuthError, type CloudAuthSession } from "../cloud/auth";
 import { validatePasswordChange } from "../cloud/password";
 import type { CloudAccountDeleteResult } from "../cloud/account";
@@ -60,7 +61,8 @@ export function createCollaborationAccountApi(config: CloudConfig, options: {
       if (confirmation !== "DELETE_MY_ACCOUNT" || !password) throw new TransportError("validation", "CONFIRMATION_REQUIRED");
       const read = options.read ?? readCloudAuthSession, current = read();
       if (!current?.user.email || (current as CloudAuthSession & { collaborationGuest?: boolean }).collaborationGuest) throw new TransportError("auth", "PERMANENT_ACCOUNT_REQUIRED");
-      const fresh = await (options.reauthenticate ?? createCloudAuthClient(config).signInWithPassword)(current.user.email, password);
+      const fresh = await withRequestTimeout(signal => (options.reauthenticate ?? createCloudAuthClient(config, signal).signInWithPassword)(current.user.email!, password),
+        "本人確認の応答が時間切れになりました。通信状態を確認して、アカウント削除を再試行してください。");
       if (fresh.user.id !== current.user.id || read()?.user.id !== current.user.id) throw new TransportError("auth", "ACCOUNT_CHANGED");
       (options.save ?? saveCloudAuthSession)(fresh);
       const result = await (options.deleteCurrentAccount ?? (token => deleteCurrentAccount(config, token)))(fresh.accessToken);

@@ -1,4 +1,6 @@
 import { CameraExportDialog } from "./components/CameraExportDialog";
+import { paradeDistanceError } from "./project/paradeLimits";
+import { autoSaveDelay } from "./utils/autoSaveSchedule";
 import { copyAnnotationLines } from "./utils/annotationLines";
 import { validAnnotationLines, validProjectLineCount } from "./project/annotationLines";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./utils/horizontalGrid";
@@ -827,6 +829,7 @@ function App() {
   // Home header and cloud-only cards follow the lazy collaboration service (same dynamic boundary as CollaborationSurface).
   const collaborationLibrary = useCollaborationLibrary(collaborationUi, APP_FEATURES.collaborationV2 && storageReady && appView === "library");
   const [storageMenuRequest, setStorageMenuRequest] = useState(0);
+  const [legacyMenuRequest, setLegacyMenuRequest] = useState(0);
   // One stable source per repository so every home card shares the read queue and the small preview cache.
   const projectPreviewSource = useMemo<ProjectCardPreviewSource | null>(() => {
     const repository = storageReady ? repositoryRef.current : null;
@@ -988,6 +991,7 @@ function App() {
   const sceneContextMenuRef = useRef<HTMLDivElement | null>(null);
   const memberColorEditorRef = useRef<HTMLDivElement | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
+  const firstUnsavedEditAtRef = useRef<number | null>(null);
   const pendingAutoSaveProjectRef = useRef<Project | null>(null);
 
   const cloudSessionRef = useRef<CloudAuthSession | null>(cloudSession);
@@ -1093,7 +1097,8 @@ function App() {
       cancelled = true; ++editorLoadGenerationRef.current;
       const closingShared = sharedSession.shutdown(); sharedEditorRef.current = null;
       const close = () => { if (repository && "close" in repository) (repository as ProjectRepository & { close(): void }).close(); };
-      void closingShared.then(() => saveCoordinatorRef.current?.flush()).finally(close);
+      void closingShared.then(() => saveCoordinatorRef.current?.flush()).finally(close)
+        .catch(() => console.warn("終了時の保存処理を完了できませんでした。"));
     };
   }, [refreshLocalLibrary, storageRetry]);
 
@@ -1360,46 +1365,61 @@ function App() {
       autoSaveTimerRef.current = null;
     }
     pendingAutoSaveProjectRef.current = null;
+    firstUnsavedEditAtRef.current = null;
   }, []);
+  useEffect(() => clearPendingAutoSave, [clearPendingAutoSave]);
 
   const flushPendingAutoSave = useCallback(async () => {
     clearPendingAutoSave();
     // The lifecycle owns this record until its reply is settled. New edits stay
     // in the live editor and are applied to its resulting session, never overwritten.
     if (sharingPreparationRef.current === saveCoordinatorRef.current?.state?.id) return !saveCoordinatorRef.current?.state?.dirty;
-    if (sharedSession.active) return sharedSession.active.flush();
-    sharedEditorRef.current?.end();
-    if (sharedEditorRef.current && !sharedEditorRef.current.stagePending()) return false;
-    return await (saveCoordinatorRef.current?.flush() ?? Promise.resolve(true));
+    try {
+      if (sharedSession.active) return await sharedSession.active.flush();
+      sharedEditorRef.current?.end();
+      if (sharedEditorRef.current && !sharedEditorRef.current.stagePending()) return false;
+      return await (saveCoordinatorRef.current?.flush() ?? Promise.resolve(true));
+    } catch { setNotice("編集内容を保存できませんでした。画面の内容を確認し、保存を再試行してください。"); return false; }
   }, [clearPendingAutoSave]);
+
+  const runTimedAutoSave = useCallback(async () => {
+    autoSaveTimerRef.current = null;
+    // A queued callback may race pointer-down. Keep dirty/scheduling state until pointer-up.
+    if (isProjectEditBatchActiveRef.current) return;
+    if (sharingPreparationRef.current === saveCoordinatorRef.current?.state?.id) return;
+    pendingAutoSaveProjectRef.current = null;
+    firstUnsavedEditAtRef.current = null;
+    try {
+      if (sharedEditorRef.current && !sharedEditorRef.current.stagePending()) return;
+      // Ordinary false results already appear in the existing storage error banner.
+      await saveCoordinatorRef.current?.flush();
+    } catch { setNotice("自動保存に失敗しました。保存を再試行してください。"); }
+  }, []);
+
+  const scheduleAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (isProjectEditBatchActiveRef.current) return;
+    firstUnsavedEditAtRef.current ??= Date.now();
+    autoSaveTimerRef.current = window.setTimeout(() => void runTimedAutoSave(),
+      autoSaveDelay(firstUnsavedEditAtRef.current, Date.now()));
+  }, [runTimedAutoSave]);
 
   useEffect(() => {
     if (appView !== "editor" || isSharedProject) {
       clearPendingAutoSave();
       return;
     }
-    if (!saveCoordinatorRef.current?.state?.dirty) return;
+    if (!saveCoordinatorRef.current?.state?.dirty && !isProjectEditBatchActiveRef.current) return;
     pendingAutoSaveProjectRef.current = project;
-    if (autoSaveTimerRef.current !== null) {
-      window.clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-    if (isProjectEditBatchActiveRef.current) {
-      return;
-    }
-    autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 800);
-  }, [
-    appView,
-    null,
-    clearPendingAutoSave,
-    flushPendingAutoSave,
-    isSharedProject,
-    project,
-  ]);
+    scheduleAutoSave();
+  }, [appView, clearPendingAutoSave, scheduleAutoSave, isSharedProject, project]);
 
   useEffect(() => {
     const handlePageHide = () => {
-      flushPendingAutoSave();
+      void flushPendingAutoSave().catch(() => setNotice("終了前の保存に失敗しました。保存を再試行してください。"));
 
     };
     let disposed = false;
@@ -1411,11 +1431,11 @@ function App() {
         } else sharedSession.active?.provider?.wake();
       }).then((listener) => {
         if (disposed) {
-          void listener.remove();
+          void listener.remove().catch(() => {});
           return;
         }
         removeAppStateListener = () => listener.remove();
-      });
+      }).catch(() => setNotice("アプリの状態監視を開始できませんでした。編集後は保存ボタンで保存してください。"));
     }
     const handleVisibility = () => { if (document.visibilityState === "hidden") handlePageHide(); };
     document.addEventListener("visibilitychange", handleVisibility);
@@ -1424,7 +1444,7 @@ function App() {
     return () => {
       disposed = true;
       if (removeAppStateListener) {
-        void removeAppStateListener();
+        void removeAppStateListener().catch(() => {});
       }
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("pagehide", handlePageHide);
@@ -1437,6 +1457,10 @@ function App() {
       label?: string,
       target?: SceneElementEditTarget | SceneElementEditTarget[],
     ): boolean | Promise<boolean> => {
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
       if (sharedEditorRef.current) {
         sharedEditorRef.current.begin(selectedFrameIdRef.current ?? undefined, target ? Array.isArray(target) ? target : [target] : []);
         isProjectEditBatchActiveRef.current = true; return true;
@@ -1458,7 +1482,7 @@ function App() {
     target?: SceneElementEditTarget | SceneElementEditTarget[],
   ) => {
     if (sharedEditorRef.current) {
-      sharedEditorRef.current.end(); isProjectEditBatchActiveRef.current = false;
+      isProjectEditBatchActiveRef.current = false; sharedEditorRef.current.end();
       refreshHistoryCounts(); return;
     }
 
@@ -1471,11 +1495,8 @@ function App() {
     ) {
       return;
     }
-    if (autoSaveTimerRef.current !== null) {
-      window.clearTimeout(autoSaveTimerRef.current);
-    }
-    autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 250);
-  }, [appView, flushPendingAutoSave, isSharedProject, refreshHistoryCounts]);
+    scheduleAutoSave();
+  }, [appView, scheduleAutoSave, isSharedProject, refreshHistoryCounts]);
 
   useEffect(() => {
     if (project.frames.length === 0) {
@@ -3354,6 +3375,8 @@ function App() {
   };
 
   const updateParadeSettings = (patch: Partial<ParadeSettings>) => {
+    const error = paradeDistanceError(patch);
+    if (error) { setNotice(error); return; }
     updateProject((previous) => {
       const nextParadeSettings = createDefaultParadeSettings({
         ...(previous.paradeSettings ?? {}),
@@ -5312,7 +5335,7 @@ function App() {
           refreshHistoryCounts(); controller.start();
         } finally {
           if (sharingPreparationRef.current === localId) sharingPreparationRef.current = null;
-          if (current() && saveCoordinatorRef.current?.state?.dirty) autoSaveTimerRef.current = window.setTimeout(flushPendingAutoSave, 800);
+          if (current() && saveCoordinatorRef.current?.state?.dirty) scheduleAutoSave();
           await refreshLocalLibrary().catch(() => {});
         }
       },
@@ -5570,7 +5593,7 @@ function App() {
         }
       } catch (error) {
         if (!disposed) {
-          console.warn("iPadのログイン情報を復元できませんでした。", error);
+          console.warn("iPadのログイン情報を復元できませんでした。");
           setCloudError("ログイン情報を復元できませんでした。再度ログインしてください。");
         }
       }
@@ -5627,27 +5650,27 @@ function App() {
     if (APP_FEATURES.nativeFileShare) {
       void restoreSession();
       void CapacitorApp.addListener("appUrlOpen", ({ url }) => {
-        void handleAuthUrl(url);
+        void handleAuthUrl(url).catch(() => setCloudError("受信したログイン情報を確認できませんでした。再度ログインしてください。"));
       }).then((handle) => {
         if (disposed) {
-          void handle.remove();
+          void handle.remove().catch(() => {});
         } else {
           removeNativeListener = () => handle.remove();
         }
-      });
+      }).catch(() => setCloudError("ログイン通知を開始できませんでした。アプリを再起動してください。"));
       void CapacitorApp.getLaunchUrl().then((launch) => {
         if (launch?.url) {
-          void handleAuthUrl(launch.url);
+          void handleAuthUrl(launch.url).catch(() => setCloudError("受信したログイン情報を確認できませんでした。再度ログインしてください。"));
         }
-      });
+      }).catch(() => setCloudError("起動時のログイン情報を確認できませんでした。再度ログインしてください。"));
     } else {
-      void handleAuthUrl(window.location.href);
+      void handleAuthUrl(window.location.href).catch(() => setCloudError("ログイン情報を確認できませんでした。再度ログインしてください。"));
     }
 
     return () => {
       disposed = true;
       if (removeNativeListener) {
-        void removeNativeListener();
+        void removeNativeListener().catch(() => {});
       }
     };
   }, [cloudConfig]);
@@ -7588,6 +7611,7 @@ function App() {
           account={collaborationOnHome ? { ...libraryAccountButton(libraryUi?.auth, collaborationLibrary.failed),
             onClick: () => { void collaborationUi.get().then(service => service.account()); } } : undefined}
           onOpenStorageManager={hasStorageTools ? () => setStorageMenuRequest(request => request + 1) : undefined}
+          onOpenLegacyImport={APP_FEATURES.collaborationV2 && storageReady && repositoryRef.current ? () => setLegacyMenuRequest(request => request + 1) : undefined}
           cloudProjects={libraryUi ? toCloudLibraryCards(libraryUi.documents, savedProjects, libraryUi.auth) : []}
           onOpenCloudProject={libraryService ? documentId => { void libraryService.run(() => libraryService.openExisting(documentId)); } : undefined}
           onRefreshCloud={libraryService && libraryUi?.auth.status === "signed-in" ? () => { void libraryService.run(() => libraryService.refresh()); } : undefined}
@@ -7599,7 +7623,8 @@ function App() {
           notice={storageStatus ?? storageWarning ?? notice}
           disabled={!storageReady}
           collaborationSlot={APP_FEATURES.collaborationV2 && storageReady ? <Suspense fallback={<p role="status">共同編集を準備中…</p>}><CollaborationSurface bridge={collaborationUi} view="library" />
-            {repositoryRef.current && <LegacyRescuePanel repository={repositoryRef.current as import("./legacyImport/importer").ImportRepository} config={cloudConfig} onChanged={refreshLocalLibrary} />}</Suspense> : undefined}
+            {repositoryRef.current && <LegacyRescuePanel repository={repositoryRef.current as import("./legacyImport/importer").ImportRepository} config={cloudConfig} onChanged={refreshLocalLibrary}
+              openRequest={legacyMenuRequest} hideEntry />}</Suspense> : undefined}
           renderProjectBadge={APP_FEATURES.collaborationV2 ? summary => summary.sharing ? <Suspense fallback="クラウド"><CollaborationBadge bridge={collaborationUi} summary={summary} /></Suspense> : "ローカル" : undefined}
           onJoinInvitation={APP_FEATURES.collaborationV2 ? () => { void collaborationUi.get().then(ui => ui.invitation("")); } : undefined}
           onSaveToCloud={APP_FEATURES.collaborationV2 ? saveStoredProjectToCloud : undefined}

@@ -154,7 +154,7 @@ const parseAuthSession = (response: SupabaseAuthResponse): CloudAuthSession => {
   };
 };
 
-export const createCloudAuthClient = (config: CloudConfig) => {
+export const createCloudAuthClient = (config: CloudConfig, requestSignal?: AbortSignal) => {
   const request = async <TResult>(
     path: string,
     body: Record<string, unknown> | null,
@@ -162,6 +162,7 @@ export const createCloudAuthClient = (config: CloudConfig) => {
     method: "POST" | "PUT" = "POST",
   ): Promise<TResult> => {
     const response = await fetch(`${config.url}/auth/v1/${path}`, {
+      ...(requestSignal ? { signal: requestSignal } : {}),
       body: body ? JSON.stringify(body) : undefined,
       headers: {
         apikey: config.anonKey,

@@ -4,6 +4,7 @@ const config: CapacitorConfig = {
   appId: "jp.tairetsu.maker",
   appName: "隊列メーカー",
   webDir: "dist",
+  loggingBehavior: "none",
   ios: {
     allowsLinkPreview: false,
     contentInset: "never",
