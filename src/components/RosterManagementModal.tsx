@@ -115,8 +115,14 @@ export const RosterManagementModal = ({
   const dialogRef = useRef<HTMLElement>(null);
   const handleModalTab = useModalFocus(dialogRef, isOpen);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const exportContainerRef = useRef<HTMLDivElement>(null);
+  const initialMenuItem = useRef(0);
   const composing = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"png" | "xlsx">("png");
+  const dirtyGroups = useRef(new Set<string>());
   const [exportNotice, setExportNotice] = useState("");
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   useEffect(() => { setSelectedObjectId(null); }, [isOpen, mode, objectView]);
@@ -125,12 +131,21 @@ export const RosterManagementModal = ({
   }, [objects, selectedObjectId]);
   const reportEditNotice = (message: string) => { setEditNotice(message); onNotice(message); };
   const latestData = useRef<ExportSource>({ projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates });
-  latestData.current = { projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates };
+  latestData.current = { projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates, project };
   const getExportSource = (): ExportSource => {
     if (composing.current) throw new Error("入力を確定してから書き出してください。");
     flushSync(() => {
       const active = document.activeElement;
       if (active instanceof HTMLElement && dialogRef.current?.contains(active)) active.blur();
+    });
+    flushSync(() => {
+      for (const draftMode of ["members", "objects"] as const) {
+        const draftColumns = draftMode === "members" ? memberColumns : objectColumns;
+        for (const column of draftColumns) {
+          for (let index = 0; index <= column.items.length; index++) commitCell(column, index, draftMode);
+          if (dirtyGroups.current.has(`${draftMode}:${column.id}`)) commitGroupName(column.id, draftMode);
+        }
+      }
     });
     return structuredClone(latestData.current);
   };
@@ -138,7 +153,42 @@ export const RosterManagementModal = ({
     if (composing.current) {
       setExportNotice("入力を確定してから書き出してください。"); onNotice("入力を確定してから書き出してください。"); return;
     }
-    getExportSource(); setExportNotice(""); setExportOpen(true);
+    setExportNotice(""); initialMenuItem.current = 0; setExportMenuOpen(previous => !previous);
+  };
+  const chooseExport = (format: "png" | "xlsx") => {
+    setExportMenuOpen(false);
+    if (composing.current) { setExportNotice("入力を確定してから書き出してください。"); onNotice("入力を確定してから書き出してください。"); exportButtonRef.current?.focus(); return; }
+    getExportSource(); setExportNotice(""); setExportFormat(format); setExportOpen(true);
+  };
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    exportMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[initialMenuItem.current]?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!exportContainerRef.current?.contains(event.target as Node)) setExportMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [exportMenuOpen]);
+  useEffect(() => { setExportMenuOpen(false); }, [mode]);
+
+  const handleExportMenuKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      event.stopPropagation();
+      const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]') ?? [])
+        .filter(control => !exportMenuRef.current?.contains(control) && !control.closest('[hidden], [aria-hidden="true"]'));
+      const index = controls.findIndex(control => control === exportButtonRef.current);
+      setExportMenuOpen(false);
+      controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus();
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const items = Array.from(exportMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+    const current = items.findIndex(item => item === document.activeElement);
+    const index = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[index]?.focus();
   };
 
   useEffect(() => {
@@ -146,7 +196,7 @@ export const RosterManagementModal = ({
   }, [isOpen, mode]);
 
   useEffect(() => {
-    if (!isOpen) { composing.current = false; setExportOpen(false); }
+    if (!isOpen) { composing.current = false; setExportOpen(false); setExportMenuOpen(false); }
     if (isOpen && !wasOpen.current && initialMode) {
       setMode(
         allowedModes && !allowedModes.includes(initialMode)
@@ -163,12 +213,13 @@ export const RosterManagementModal = ({
     }
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !event.defaultPrevented && !exportOpen && !deleting.current && !isAppConfirmOpen && !document.querySelector(".app-confirm-dialog")) {
-        onClose();
+        if (exportMenuOpen) { setExportMenuOpen(false); exportButtonRef.current?.focus(); }
+        else onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, exportOpen, isAppConfirmOpen]);
+  }, [isOpen, onClose, exportOpen, exportMenuOpen, isAppConfirmOpen]);
 
   useEffect(() => {
     if (!isOpen || !allowedModes || allowedModes.includes(mode)) {
@@ -226,10 +277,11 @@ export const RosterManagementModal = ({
   const commitCell = (
     column: RosterColumn<Member | StageObject>,
     rowIndex: number,
+    draftMode: RosterMode = mode,
   ) => {
-    if (composing.current || deleting.current || objectNamesDisabled) return;
+    if (composing.current || deleting.current || (draftMode === "objects" && !canEditObjects && Boolean(onCommitObjectAppearance))) return;
     const item = column.items[rowIndex];
-    const key = getCellKey(mode, column.id, item?.id);
+    const key = getCellKey(draftMode, column.id, item?.id);
     const draft = cellDraftsRef.current[key];
     if (draft === undefined) {
       return;
@@ -244,10 +296,10 @@ export const RosterManagementModal = ({
         return;
       }
       if (nextName === item.name) return;
-      if (mode === "members") onRenameMember(item.id, nextName);
+      if (draftMode === "members") onRenameMember(item.id, nextName);
       else onRenameObject(item.id, nextName);
     } else if (nextName) {
-      if (mode === "members") onAddMember(column.groupId, nextName);
+      if (draftMode === "members") onAddMember(column.groupId, nextName);
       else {
         const id = onAddObject(column.groupId, nextName);
         if (id) setSelectedObjectId(id);
@@ -302,20 +354,21 @@ export const RosterManagementModal = ({
     focusCell(column.id, rowIndex + 1);
   };
 
-  const commitGroupName = (groupId: string) => {
-    if (composing.current || deleting.current || objectNamesDisabled) return;
+  const commitGroupName = (groupId: string, draftMode: RosterMode = mode) => {
+    if (composing.current || deleting.current || (draftMode === "objects" && !canEditObjects && Boolean(onCommitObjectAppearance))) return;
+    if (!dirtyGroups.current.delete(`${draftMode}:${groupId}`)) return;
     if (groupId === "ungrouped") {
       return;
     }
-    const drafts = mode === "members" ? memberGroupDrafts : objectGroupDrafts;
-    const groups = mode === "members" ? memberGroups : objectGroups;
+    const drafts = draftMode === "members" ? memberGroupDrafts : objectGroupDrafts;
+    const groups = draftMode === "members" ? memberGroups : objectGroups;
     const group = groups.find((item) => item.id === groupId);
     if (!group) {
       return;
     }
     const nextName = (drafts[groupId] ?? group.name).trim();
     if (!nextName) {
-      const setDrafts = mode === "members" ? setMemberGroupDrafts : setObjectGroupDrafts;
+      const setDrafts = draftMode === "members" ? setMemberGroupDrafts : setObjectGroupDrafts;
       setDrafts((previous) => ({ ...previous, [groupId]: group.name }));
       reportEditNotice(emptyNameNotice);
       return;
@@ -323,7 +376,7 @@ export const RosterManagementModal = ({
     if (nextName === group.name) {
       return;
     }
-    if (mode === "members") {
+    if (draftMode === "members") {
       onRenameMemberGroup(groupId, nextName);
     } else {
       onRenameObjectGroup(groupId, nextName);
@@ -356,12 +409,13 @@ export const RosterManagementModal = ({
           aria-label={`${column.label}のグループ名`}
           disabled={objectNamesDisabled}
           value={drafts[column.id] ?? column.label}
-          onChange={(event) =>
+          onChange={(event) => {
+            dirtyGroups.current.add(`${mode}:${column.id}`);
             setDrafts((previous) => ({
               ...previous,
               [column.id]: event.target.value,
-            }))
-          }
+            }));
+          }}
           onBlur={() => commitGroupName(column.id)}
           onCompositionEnd={(event) => {
             if (document.activeElement !== event.currentTarget) commitGroupName(column.id);
@@ -423,10 +477,22 @@ export const RosterManagementModal = ({
             <p>全体名簿</p>
             <h2 id="roster-manager-title">メンバー/道具の管理</h2>
           </div>
-          {mode === "members" && <div className="roster-manager-export">
-            <button ref={exportButtonRef} type="button" onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()} onClick={openExport}>
+          {mode === "members" && <div ref={exportContainerRef} className="roster-manager-export">
+            <button ref={exportButtonRef} type="button" aria-haspopup="menu" aria-expanded={exportMenuOpen} aria-controls={exportMenuOpen ? "roster-export-options" : undefined} onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()} onClick={openExport}
+              onKeyDown={event => {
+                if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                event.preventDefault();
+                if (composing.current) return;
+                initialMenuItem.current = event.key === "ArrowUp" ? 1 : 0;
+                if (exportMenuOpen) exportMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[initialMenuItem.current]?.focus();
+                else setExportMenuOpen(true);
+              }}>
               <FileDown size={18} aria-hidden="true" />書き出し ▾
             </button>
+            {exportMenuOpen && <div ref={exportMenuRef} id="roster-export-options" className="library-context-menu roster-export-menu" role="menu" aria-label="名簿の書き出し形式" onKeyDown={handleExportMenuKey}>
+              <button type="button" role="menuitem" tabIndex={-1} onClick={() => chooseExport("png")}>画像・PDF</button>
+              <button type="button" role="menuitem" tabIndex={-1} onClick={() => chooseExport("xlsx")}>Excel（.xlsx）</button>
+            </div>}
           </div>}
           {editNotice && <p className="roster-manager-edit-notice" role="status">{editNotice}</p>}
         </header>
@@ -622,7 +688,7 @@ export const RosterManagementModal = ({
           </table>
         </div>}
         {exportOpen && mode === "members" && <Suspense fallback={<p role="status">書き出しを読み込み中…</p>}>
-          <DocumentExportSheet initialTarget="members" getSource={getExportSource} onClose={() => { setExportOpen(false); exportButtonRef.current?.focus({ preventScroll: true }); }} />
+          <DocumentExportSheet initialTarget="members" initialFormat={exportFormat} hasObjects={objects.length > 0} getSource={getExportSource} onClose={() => { setExportOpen(false); exportButtonRef.current?.focus({ preventScroll: true }); }} />
         </Suspense>}
       </section>
     </div>

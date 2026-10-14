@@ -16,6 +16,7 @@ import { normalizeProject } from "./project/normalizeProject";
 import { prepareIndependentProjectCopy, sharingContentKey } from "./project/independentCopy";
 import type { SharingOperation } from "./collaboration/uiTypes";
 import { createEmptyFormationProject } from "./project/createEmptyFormationProject";
+import { copyRosterToNewProject } from "./project/rosterCopy";
 import { applyObjectAppearance, objectDraftForGroup, changeObjectMembership, type ObjectAppearancePatch } from "./project/objectAppearance";
 import {
   createProjectId,
@@ -5152,7 +5153,15 @@ function App() {
     return true;
   };
 
+  const loadRosterSource = useCallback(async (id: string): Promise<Project> => {
+    if (!await storagePreparationRef.current || !repositoryRef.current) throw new RepositoryError("BUSY");
+    // Device-only snapshot. Do not open a shared session or fetch the cloud document.
+    return (await getRequiredProject(repositoryRef.current, id)).project;
+  }, []);
+
   const createNewFormationProject = async (input: NewFormationInput) => {
+    const empty = createEmptyFormationProject(input.title, input, null);
+    const prepared = input.rosterCopy ? copyRosterToNewProject(empty, input.rosterCopy.source, input.rosterCopy, createId) : empty;
     let audio: AudioMeta | null = null;
     let audioNotice: string | null = null;
     if (input.audioFile) {
@@ -5162,14 +5171,8 @@ function App() {
         audioNotice = "音源保存に失敗したため、音源なしで作成しました。";
       }
     }
-    const nextProject = normalizeProject(
-      createEmptyFormationProject(
-        input.title,
-        input,
-        audio,
-      ),
-    );
-    await openProjectInEditor(
+    const nextProject = normalizeProject({ ...prepared, audio });
+    return await openProjectInEditor(
       nextProject,
       audioNotice ?? "新しい隊列表を作成しました。",
       { noticeKind: audioNotice ? "persistent" : "success" },
@@ -7624,6 +7627,7 @@ function App() {
             menuRequest={storageMenuRequest} hideMenuButton /></Suspense> : null}
 
           onCreate={createNewFormationProject}
+          onLoadRosterSource={loadRosterSource}
           onOpenProject={openStoredProject}
           onRenameProject={renameStoredProject}
           onDuplicateProject={duplicateStoredProject}

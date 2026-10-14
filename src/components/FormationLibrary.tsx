@@ -15,6 +15,10 @@ import type {
 } from "../types";
 
 import { AudioFilePickerButton } from "./AudioFilePickerButton";
+import { createEmptyFormationProject } from "../project/createEmptyFormationProject";
+import { oversizedRosterObjects, type OversizedObjectPolicy } from "../project/rosterCopy";
+import { RosterCopySizeDialog } from "./RosterCopySizeDialog";
+import type { Project } from "../types";
 
 import { LegalLinks } from "./LegalLinks";
 import { HorizontalCountingCards } from "./HorizontalCountingCards";
@@ -31,6 +35,7 @@ export type NewFormationInput = {
   memberDiameterMeters: number;
   paradeSettings?: ParadeSettings;
   audioFile: AudioSelection | null;
+  rosterCopy?: { source: Project; includeObjects: boolean; oversizedPolicy?: OversizedObjectPolicy };
 };
 
 type FormationLibraryProps = {
@@ -60,7 +65,8 @@ type FormationLibraryProps = {
   cloudBusy?: boolean;
   onImportProjectFiles?: (files: File[]) => void | Promise<void>;
 
-  onCreate: (input: NewFormationInput) => void | Promise<void>;
+  onLoadRosterSource?: (projectId: string) => Promise<Project>;
+  onCreate: (input: NewFormationInput) => void | boolean | Promise<void | boolean>;
   onOpenProject: (projectId: string) => void | Promise<void | boolean>;
   onRenameProject: (projectId: string, title: string) => void | Promise<void>;
   onDuplicateProject: (projectId: string) => void | Promise<void>;
@@ -145,6 +151,7 @@ export const FormationLibrary = ({
   cloudBusy = false,
   onImportProjectFiles,
   onCreate,
+  onLoadRosterSource,
   onOpenProject,
   onRenameProject,
   onDuplicateProject,
@@ -178,6 +185,25 @@ export const FormationLibrary = ({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rosterSourceId, setRosterSourceId] = useState("");
+  const [rosterSource, setRosterSource] = useState<Project | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [includeObjects, setIncludeObjects] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  const [pendingCreation, setPendingCreation] = useState<NewFormationInput | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setRosterSource(null);
+    if (!rosterSourceId || !onLoadRosterSource) { setRosterLoading(false); return; }
+    setRosterLoading(true);
+    void onLoadRosterSource(rosterSourceId).then(source => {
+      if (!cancelled) setRosterSource(source);
+    }).catch(() => {
+      if (!cancelled) setError("コピー元の名簿を読み込めませんでした。端末に保存された隊列表を確認して、もう一度作成してください。");
+    }).finally(() => { if (!cancelled) setRosterLoading(false); });
+    return () => { cancelled = true; };
+  }, [rosterSourceId, onLoadRosterSource]);
   const [libraryMenu, setLibraryMenu] = useState<LibraryMenu | null>(null);
   const [renameTarget, setRenameTarget] = useState<ProjectSummary | null>(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -246,6 +272,10 @@ export const FormationLibrary = ({
   }, [libraryMenu]);
 
   const resetDialog = () => {
+    setRosterSourceId("");
+    setRosterSource(null);
+    setIncludeObjects(true);
+    setPendingCreation(null);
     setFieldErrors({});
     setAdvancedOpen(false);
     setFormationMode("stage");
@@ -268,6 +298,7 @@ export const FormationLibrary = ({
   };
 
   const closeDialog = () => {
+    if (creatingRef.current) return;
     setIsDialogOpen(false);
     resetDialog();
   };
@@ -277,9 +308,10 @@ export const FormationLibrary = ({
     setIsTypeDialogOpen(true);
   };
 
-  const openCreateDialog = (nextMode: FormationMode) => {
+  const openCreateDialog = (nextMode: FormationMode, sourceId = "") => {
     resetDialog();
     setFormationMode(nextMode);
+    setRosterSourceId(sourceId);
     setIsTypeDialogOpen(false);
     setIsDialogOpen(true);
   };
@@ -300,8 +332,22 @@ export const FormationLibrary = ({
     }
   };
 
+  const finishCreation = async (input: NewFormationInput) => {
+    if (creatingRef.current) return;
+    creatingRef.current = true; setCreating(true); setError(null);
+    try {
+      if (await onCreate(input) !== false) {
+        setIsDialogOpen(false); resetDialog();
+      }
+    } catch (cause) {
+      setPendingCreation(null);
+      setError(cause instanceof Error ? cause.message : "隊列表を作成できませんでした。もう一度お試しください。");
+    } finally { creatingRef.current = false; setCreating(false); }
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (creatingRef.current || rosterLoading) return;
     const form = event.currentTarget;
     const trimmedTitle = title.trim();
     const errors: Record<string, string> = {};
@@ -326,7 +372,7 @@ export const FormationLibrary = ({
       return;
     }
     const isParade = formationMode === "parade";
-    await onCreate({
+    const input: NewFormationInput = {
       title: trimmedTitle,
       formationMode,
       widthMeters: isParade ? paradeWidthMeters : widthMeters,
@@ -348,8 +394,24 @@ export const FormationLibrary = ({
           }
         : undefined,
       audioFile,
-    });
-    closeDialog();
+    };
+    if (rosterSourceId) {
+      if (!onLoadRosterSource) return;
+      creatingRef.current = true; setCreating(true); setError(null);
+      try {
+        // Re-read the device snapshot on submit; confirmation and creation use this same snapshot.
+        const source = await onLoadRosterSource(rosterSourceId);
+        input.rosterCopy = { source, includeObjects: includeObjects && source.stageObjects.length > 0 };
+      } catch {
+        setError("コピー元の名簿を読み込めませんでした。端末に保存された隊列表を確認して、もう一度作成してください。");
+        return;
+      } finally { creatingRef.current = false; setCreating(false); }
+      if (input.rosterCopy.includeObjects && oversizedRosterObjects(input.rosterCopy.source,
+        createEmptyFormationProject(input.title, input, null)).length) {
+        setPendingCreation(input); return;
+      }
+    }
+    await finishCreation(input);
   };
 
   const openMenu = (
@@ -538,6 +600,9 @@ export const FormationLibrary = ({
             <Edit3 size={15} />
             名前を変更
           </button>
+          {onLoadRosterSource && <button type="button" onClick={() => {
+            openCreateDialog(menuProject.mode, menuProject.id); setLibraryMenu(null);
+          }}><Users size={15} />この名簿で新しく作る</button>}
           {onSaveToCloud && !menuProject.sharing && <button type="button" disabled={cloudSaveBusy}
             onClick={() => runMenuAction(() => onSaveToCloud(menuProject.id))}>
             <CloudUpload size={15} />クラウドに保存
@@ -696,10 +761,10 @@ export const FormationLibrary = ({
         </div>
       )}
 
-      {isDialogOpen && (
+      {isDialogOpen && !pendingCreation && (
         <div className="new-formation-backdrop" onPointerDown={closeDialog}>
           <form
-            className="new-formation-dialog"
+            className="new-formation-dialog roster-copy-creation-dialog"
             noValidate
             onSubmit={(event) => void submit(event)}
             onPointerDown={(event) => event.stopPropagation()}
@@ -723,6 +788,12 @@ export const FormationLibrary = ({
               </button>
             </header>
 
+            <label>作成タイプ
+              <select value={formationMode} disabled={creating} onChange={event => setFormationMode(event.target.value as FormationMode)}>
+                <option value="stage">ステージ隊列</option><option value="parade">パレード隊列</option>
+              </select>
+            </label>
+
             <label>
               隊列表名
               <input
@@ -737,6 +808,27 @@ export const FormationLibrary = ({
             </label>
 
             {fieldErrors.title && <small id="create-title-error" className="formation-field-error">{fieldErrors.title}</small>}
+
+            {onLoadRosterSource && <section className="roster-copy-field">
+              <label>名簿をコピー（任意）
+                <select value={rosterSourceId} disabled={creating} aria-describedby="roster-copy-description"
+                  onChange={event => { setRosterSourceId(event.target.value); setIncludeObjects(true); setError(null); }}>
+                  <option value="">コピーしない</option>
+                  {sortedProjects.map(source => <option key={source.id} value={source.id}>
+                    {source.title} ／ 更新 {formatProjectDate({ ...source, lastOpenedAt: undefined })} ／ {source.memberCount}人
+                  </option>)}
+                </select>
+              </label>
+              <small id="roster-copy-description">この端末に保存された内容からコピーします。配置・シーン・音源・道具の担当はコピーしません。</small>
+              {rosterSourceId && <>
+                <label className="checkbox-row"><input type="checkbox" checked={includeObjects}
+                  disabled={creating || rosterLoading || !rosterSource?.stageObjects.length}
+                  onChange={event => setIncludeObjects(event.target.checked)} />道具もコピーする</label>
+                <small>{rosterLoading ? "名簿を読み込み中…" : rosterSource
+                  ? `${rosterSource.members.length}人・道具${rosterSource.stageObjects.length}個。最初のシーンでは全員・全道具が非表示です。`
+                  : "コピー元を読み込めていません。作成時に再試行します。"}</small>
+              </>}
+            </section>}
 
             <div className="new-formation-field">
               <span>音源（任意）</span>
@@ -834,19 +926,25 @@ export const FormationLibrary = ({
               </section>
             )}
 
-            {error && <p className="dialog-error">{error}</p>}
+            {error && <p className="dialog-error" role="alert">{error}</p>}
 
             <footer>
-              <button className="mini-button" onClick={closeDialog} type="button">
+              <button className="mini-button" onClick={closeDialog} type="button" disabled={creating}>
                 キャンセル
               </button>
-              <button className="mini-button primary" type="submit">
-                作成する
+              <button className="mini-button primary" type="submit" disabled={creating || rosterLoading}>
+                {creating ? "作成中…" : "作成する"}
               </button>
             </footer>
           </form>
         </div>
       )}
+
+      {pendingCreation?.rosterCopy && <RosterCopySizeDialog
+        input={pendingCreation} busy={creating}
+        onBack={() => setPendingCreation(null)}
+        onChoose={oversizedPolicy => void finishCreation({ ...pendingCreation,
+          rosterCopy: { ...pendingCreation.rosterCopy!, oversizedPolicy } })} />}
 
       {renameTarget && (
         <div className="new-formation-backdrop" onPointerDown={() => setRenameTarget(null)}>

@@ -6,6 +6,8 @@ import { generateDocumentExport } from "../utils/mobileExport";
 import { shareExportFiles, saveExportFile } from "../utils/exportDelivery";
 import type { ExportSource, GeneratedExport } from "../utils/mobileExportTypes";
 import { prepareMemberMobilePlan } from "../utils/memberMobileExport";
+import { generateRosterXlsx, XLSX_MIME } from "../utils/rosterXlsx";
+vi.mock("../utils/rosterXlsx", () => ({ generateRosterXlsx: vi.fn(), XLSX_MIME: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 vi.mock("../utils/memberMobileExport", () => ({ prepareMemberMobilePlan: vi.fn() }));
 
 vi.mock("../utils/mobileExport", () => ({
@@ -28,6 +30,27 @@ describe("DocumentExportSheet", () => {
     vi.stubGlobal("URL", class extends URL { static createObjectURL = vi.fn(() => "blob:preview"); static revokeObjectURL = vi.fn(); });
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+  it.each([false, true])("shows Excel-only options and the default-on tool checkbox only when tools exist (%s)", async hasObjects => {
+    vi.mocked(generateRosterXlsx).mockReset().mockResolvedValue({ files: [new File(["xlsx"], "演目_名簿.xlsx", { type: XLSX_MIME })], preview: null, targetLabel: "名簿（Excel）", scopeLabel: "メンバー", pageCount: 1 });
+    const getSource = vi.fn(() => structuredClone(source));
+    render(<DocumentExportSheet initialTarget="members" initialFormat="xlsx" hasObjects={hasObjects} getSource={getSource} onClose={vi.fn()} />);
+    expect(screen.queryByText("用途")).toBeNull(); expect(screen.queryByText("1枚の名簿")).toBeNull();
+    expect(screen.queryByRole("button", { name: "画像" })).toBeNull(); expect(screen.queryByRole("button", { name: "印刷向け（A4）" })).toBeNull();
+    const checkbox = screen.queryByRole("checkbox", { name: "道具も含める" }) as HTMLInputElement | null;
+    expect(Boolean(checkbox)).toBe(hasObjects);
+    if (checkbox) { expect(checkbox.checked).toBe(true); fireEvent.click(checkbox); }
+    expect(prepareMemberMobilePlan).not.toHaveBeenCalled(); expect(getSource).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "名簿のExcelを作成" }));
+    const share = await screen.findByRole("button", { name: "共有する" });
+    expect(generateRosterXlsx).toHaveBeenCalledWith(source, !hasObjects, expect.any(AbortSignal));
+    expect(generateDocumentExport).not.toHaveBeenCalled(); expect(screen.queryByRole("img")).toBeNull();
+    vi.mocked(shareExportFiles).mockResolvedValueOnce("cancelled").mockRejectedValueOnce(new Error("共有失敗")).mockResolvedValueOnce("shared");
+    fireEvent.click(share); await screen.findByText(/取り消しました。作成済み/);
+    fireEvent.click(share); await screen.findByText(/受け渡しに失敗しました/);
+    fireEvent.click(share); await screen.findByText("共有先への受け渡しが完了しました。");
+    expect(generateRosterXlsx).toHaveBeenCalledTimes(1); expect(getSource).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(shareExportFiles).mock.calls[0][0]).toBe(vi.mocked(shareExportFiles).mock.calls[2][0]);
+  });
   it("tracks the initial target and exposes explicit action labels and supported purposes", async () => {
     const props = { getSource: () => structuredClone(source), onClose: vi.fn() };
     render(<DocumentExportSheet {...props} initialTarget="members" initialFormat="png" />);

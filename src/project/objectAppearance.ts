@@ -17,7 +17,7 @@ export const sameObjectSize = (a: ObjectSize, b: ObjectSize): boolean =>
 const sameSavedSize = (a: ObjectSize, b: ObjectSize): boolean => a.widthMeters === b.widthMeters && a.heightMeters === b.heightMeters;
 
 /** Count saved states, including hidden ones. Ties return registration even if it is not a mode. */
-export function objectBaseSize(project: Project, object: StageObject): ObjectSize {
+export function objectBaseSize(project: Pick<Project, "frames">, object: StageObject): ObjectSize {
   const counts: { size: ObjectSize; count: number }[] = [];
   for (const frame of project.frames) {
     const state = frame.objectStates[object.id];

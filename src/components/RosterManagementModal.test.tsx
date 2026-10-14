@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RosterManagementModal } from "./RosterManagementModal";
 
 vi.mock("./DocumentExportSheet", () => ({
-  DocumentExportSheet: ({ initialTarget, getSource }: { initialTarget: string; getSource: () => { members: { name: string }[] } }) => {
+  DocumentExportSheet: ({ initialTarget, initialFormat, getSource }: { initialTarget: string; initialFormat?: string; getSource: () => { members: { name: string }[]; memberGroups: { name: string }[]; objects: { name: string }[]; objectGroups: { name: string }[] } }) => {
     const [name, setName] = useState("");
-    return <div data-testid="export-probe">{initialTarget} {name}<button onClick={() => setName(getSource().members[0]?.name ?? "")}>snapshot probe</button></div>;
+    return <div data-testid="export-probe">{initialTarget} {initialFormat} {name}<button onClick={() => { const source = getSource(); setName([...source.members, ...source.memberGroups, ...source.objects, ...source.objectGroups].map(item => item.name).join(" ")); }}>snapshot probe</button></div>;
   },
 }));
 
@@ -174,6 +174,7 @@ describe("RosterManagementModal", () => {
     await user.click(screen.getByRole("button", { name: "道具管理" }));
     expect(screen.getByRole("button", { name: "名前の編集" }).getAttribute("aria-pressed")).toBe("true");
     await user.click(screen.getByRole("button", { name: "道具割当" }));
+    await act(async () => { await vi.dynamicImportSettled(); });
     expect(await screen.findByLabelText("道具名簿の割当")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "メンバー管理" }));
     expect(screen.queryByLabelText("道具名簿の割当")).toBeNull();
@@ -198,10 +199,47 @@ describe("RosterManagementModal", () => {
     fireEvent.compositionEnd(input);
     fireEvent.change(input, { target: { value: "確定後" } });
     fireEvent.click(screen.getByRole("button", { name: "書き出し ▾" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "画像・PDF" }));
     const probe = await screen.findByTestId("export-probe");
     expect(probe.textContent).toContain("members");
     fireEvent.click(screen.getByRole("button", { name: "snapshot probe" }));
     expect(probe.textContent).toContain("確定後");
+  });
+
+  it("offers Excel and commits unfocused cell, new-row and group drafts from both tabs before snapshot", async () => {
+    const props = createProps();
+    const Harness = () => {
+      const [members, setMembers] = useState([member]);
+      const [groups, setGroups] = useState(props.memberGroups);
+      const [objects, setObjects] = useState<ComponentProps<typeof RosterManagementModal>["objects"]>([object]);
+      const [objectGroups, setObjectGroups] = useState(props.objectGroups);
+      return <RosterManagementModal {...props} members={members} memberGroups={groups} objects={objects} objectGroups={objectGroups}
+        onRenameMember={(id, name) => setMembers(items => items.map(item => item.id === id ? { ...item, name } : item))}
+        onAddMember={(_groupId, name) => setMembers(items => [...items, { ...member, id: "new", name }])}
+        onRenameMemberGroup={(id, name) => setGroups(items => items.map(item => item.id === id ? { ...item, name } : item))}
+        onRenameObject={(id, name) => setObjects(items => items.map(item => item.id === id ? { ...item, name } : item))}
+        onRenameObjectGroup={(id, name) => setObjectGroups(items => items.map(item => item.id === id ? { ...item, name } : item))} />;
+    };
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "道具管理" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "未所属 1行目" }), { target: { value: "道具草稿" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "旗のグループ名" }), { target: { value: "道具組草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "メンバー管理" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "未所属 1行目" }), { target: { value: "名前草稿" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "未所属 2行目" }), { target: { value: "追加草稿" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "赤組のグループ名" }), { target: { value: "組草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "書き出し ▾" }));
+    const excel = screen.getByRole("menuitem", { name: "Excel（.xlsx）" });
+    fireEvent.compositionStart(screen.getByRole("textbox", { name: "未所属 1行目" }));
+    fireEvent.click(excel); expect(screen.queryByTestId("export-probe")).toBeNull();
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.compositionEnd(screen.getByRole("textbox", { name: "未所属 1行目" }));
+    fireEvent.click(screen.getByRole("button", { name: "書き出し ▾" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Excel（.xlsx）" }));
+    const probe = await screen.findByTestId("export-probe");
+    fireEvent.click(screen.getByRole("button", { name: "snapshot probe" }));
+    expect(probe.textContent).toContain("xlsx");
+    for (const name of ["名前草稿", "追加草稿", "組草稿", "道具草稿", "道具組草稿"]) expect(probe.textContent).toContain(name);
   });
 
   it("offers export only for members and keeps tool management and assignment screens", async () => {
@@ -210,9 +248,57 @@ describe("RosterManagementModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "道具管理" }));
     expect(screen.queryByRole("button", { name: "書き出し ▾" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "道具割当" }));
+    await act(async () => { await vi.dynamicImportSettled(); });
     await screen.findByLabelText("道具名簿の割当");
     expect(screen.queryByLabelText("名簿の人数")).toBeNull();
     expect(screen.queryByRole("button", { name: "書き出し ▾" })).toBeNull();
+  });
+
+  it("toggles the anchored menu, closes on outside taps and Escape, and closes when leaving the member tab", () => {
+    const props = createProps();
+    render(<RosterManagementModal {...props} />);
+    const trigger = screen.getByRole("button", { name: "書き出し ▾" });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(trigger.parentElement?.contains(screen.getByRole("menu"))).toBe(true);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "書き出し ▾" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    fireEvent.pointerDown(screen.getByRole("textbox", { name: "赤組 1行目" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "画像・PDF" }), { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(props.onClose).not.toHaveBeenCalled();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "道具管理" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "メンバー管理" }));
+    expect(screen.getByRole("button", { name: "書き出し ▾" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("supports arrows, Home/End, Tab and native keyboard selection", async () => {
+    const user = userEvent.setup();
+    render(<RosterManagementModal {...createProps()} />);
+    const trigger = screen.getByRole("button", { name: "書き出し ▾" });
+    trigger.focus(); await user.keyboard("{ArrowUp}");
+    const image = screen.getByRole("menuitem", { name: "画像・PDF" });
+    const excel = screen.getByRole("menuitem", { name: "Excel（.xlsx）" });
+    expect(document.activeElement).toBe(excel);
+    await user.keyboard("{ArrowDown}"); expect(document.activeElement).toBe(image);
+    await user.keyboard("{ArrowUp}"); expect(document.activeElement).toBe(excel);
+    await user.keyboard("{Home}"); expect(document.activeElement).toBe(image);
+    await user.keyboard("{End}"); expect(document.activeElement).toBe(excel);
+    await user.tab(); expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "メンバー管理" }));
+    trigger.focus(); await user.keyboard("{ArrowDown}"); await user.tab({ shift: true });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "隊列表へ戻る" }));
+    trigger.focus(); await user.keyboard("{ArrowDown}{Enter}");
+    expect((await screen.findByTestId("export-probe")).textContent).toContain("png");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("quick-adds members to a group or ungrouped while retaining button focus after rerender", async () => {
