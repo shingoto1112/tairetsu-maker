@@ -30,7 +30,7 @@ describe("line-only half-grid snapping", () => {
     }
     expect(snapAnnotationPoint({ x: 6, y: 0 }, 12, depth, 0.5, "normalMeter", parade.totalDistance).y).toBe(0.13);
   });
-  it("stage keeps its zero-based fine grid even with non-integral depth", () => {
+  it("legacy utility callers can still omit the vertical origin", () => {
     expect(snapAnnotationPoint({ x: 6, y: 1.27 }, 12, 8.13, 0.5).y).toBe(1.25);
   });
 });

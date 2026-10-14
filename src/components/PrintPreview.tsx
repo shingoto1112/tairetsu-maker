@@ -189,7 +189,11 @@ const getPrintMemberLabelFontSizeMm = (
   getMemberLabelFontSize(diameterMm, labelLines, {
     min: 1.8,
     precision: 2,
-  }) + PRINT_MEMBER_LABEL_FONT_BOOST_MM;
+    boost: PRINT_MEMBER_LABEL_FONT_BOOST_MM,
+    border: 0,
+    inset: 0,
+    borderOverlap: 0,
+  });
 
 const getAssignmentObjectOrder = (project: Project): Map<string, number> => {
   const orderById = new Map<string, number>();
@@ -910,6 +914,9 @@ const PrintStagePreview = ({
     return (
       <span
         className={`print-member ${memberLabelClassName} ${extraClassName}`.trim()}
+        title={member.name}
+        role="img"
+        aria-label={member.name}
         key={key}
         style={{
           backgroundColor: memberColor,
@@ -953,6 +960,9 @@ const PrintStagePreview = ({
     return (
       <span
         className={`print-assignment-sheet__member ${memberLabelClassName}`}
+        title={member.name}
+        role="img"
+        aria-label={member.name}
         key={key}
         style={{
           backgroundColor: memberColor,

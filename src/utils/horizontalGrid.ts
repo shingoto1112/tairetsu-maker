@@ -1,5 +1,6 @@
 import type { Position } from "../types";
 import type { HorizontalCountingMode } from "./horizontalRuler";
+import { snapPosition, snapPositionInBounds, snapMemberGroupAxis } from "./positionGrid";
 
 const EPSILON = 1e-9;
 const validStep = (step: number, origin: number) => Number.isFinite(step) && step > 0 && Number.isFinite(origin);
@@ -18,19 +19,9 @@ export const createGridTicksInRange = (min: number, max: number, step: number, o
   return Array.from({ length: Math.max(0, last - first + 1) }, (_, i) => clean(origin + (first + i) * step));
 };
 
-export const snapHorizontalPosition = (x: number, step: number, origin: number): number =>
-  Number.isFinite(x) && validStep(step, origin) ? clean(origin + Math.round((x - origin) / step) * step) : x;
-
-export const snapHorizontalPositionInBounds = (x: number, step: number, origin: number, min: number, max: number): number => {
-  if (!Number.isFinite(x) || !Number.isFinite(min) || !Number.isFinite(max) || min > max) return x;
-  const bounded = Math.min(max, Math.max(min, x));
-  if (!validStep(step, origin)) return bounded;
-  const first = Math.ceil((min - origin) / step - EPSILON);
-  const last = Math.floor((max - origin) / step + EPSILON);
-  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first > last) return bounded;
-  const index = Math.min(last, Math.max(first, Math.round((x - origin) / step)));
-  return clean(origin + index * step);
-};
+// Keep the established horizontal API for existing callers.
+export const snapHorizontalPosition = snapPosition;
+export const snapHorizontalPositionInBounds = snapPositionInBounds;
 
 export type HorizontalGridLine = { positionMeters: number; kind: "counting" | "fine" };
 /** Border > center > counting > fine. Center and border are drawn by the caller. */
@@ -50,7 +41,5 @@ export const createHorizontalGridLines = (width: number, mode: HorizontalCountin
 
 /** Snap the primary member in the intersection of all members' movement bounds. */
 export const snapMemberGroupHorizontal = (requestedX: number, primaryX: number, positions: Position[], width: number, step: number, origin: number): number => {
-  const minDelta = Math.max(...positions.map(p => -p.x));
-  const maxDelta = Math.min(...positions.map(p => width - p.x));
-  return snapHorizontalPositionInBounds(requestedX, step, origin, primaryX + minDelta, primaryX + maxDelta);
+  return snapMemberGroupAxis(requestedX, primaryX, positions.map(p => p.x), width, step, origin);
 };

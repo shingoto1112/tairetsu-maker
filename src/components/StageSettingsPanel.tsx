@@ -234,7 +234,7 @@ export const StageSettingsPanel = ({
             </select>
           </label>
         </div>
-        <details className="settings-disclosure"><summary>詳しい設定</summary>
+        <details className="settings-disclosure" open><summary>詳しい設定</summary>
           <GridEmphasisSettings stage={stage} parade={effectiveParadeSettings} disabled={disabled}
             onStageChange={onChange} onParadeChange={onParadeSettingsChange} />
         </details>
@@ -321,7 +321,7 @@ export const StageSettingsPanel = ({
       現在: {useGlobalStageSize ? `全シーン共通 横${stage.widthMeters}m × 縦${stage.depthMeters}m` : "シーンごとのサイズを使用"}
     </p>
 
-    <details className="settings-disclosure">
+    <details className="settings-disclosure" open>
       <summary>詳しい設定</summary>
       <div className="settings-grid">
         <label>

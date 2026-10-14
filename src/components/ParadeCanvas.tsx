@@ -3,7 +3,9 @@ import { paradeMeterTicks } from "../utils/boundedTicks";
 import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle } from "../utils/gridEmphasis";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
+import { snapMemberGroupAxis, snapPositionInBounds } from "../utils/positionGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
+import { paradeRulerPosition } from "../utils/rulerPosition";
 import {
   Camera,
   Lock,
@@ -47,7 +49,6 @@ import {
 } from "../utils/memberLabel";
 import {
   internalYToParadeDistance,
-  clampParadeObjectTopY,
   getSafeParadeBackwardDistance,
   getSafeParadeCanvasDistance,
   normalizeParadeHorizontalMeasureMode,
@@ -644,13 +645,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           ((clientY - rect.top) / Math.max(1, rect.height)) *
           canvasDistanceMeters;
         return {
-          x: snapHorizontalPositionInBounds(rawX, settings.cellSizeMeters,
-            horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode), 0, settings.width),
-          y: clamp(
-            snapMeters(rawY, settings.cellSizeMeters),
-            0,
-            canvasDistanceMeters,
-          ),
+          x: rawX,
+          y: rawY,
         };
       },
       [canvasDistanceMeters, settings.cellSizeMeters, settings.totalDistance, settings.width, settings.horizontalMeasureMode],
@@ -1289,11 +1285,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             x: snapMemberGroupHorizontal(primaryStartPosition.x + dx, primaryStartPosition.x,
               Object.values(dragState.startPositions), settings.width, settings.cellSizeMeters,
               horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode)),
-            y: clamp(
-              snapMeters(primaryStartPosition.y + dy, settings.cellSizeMeters),
-              0,
-              canvasDistanceMeters,
-            ),
+            y: snapMemberGroupAxis(primaryStartPosition.y + dy, primaryStartPosition.y,
+              Object.values(dragState.startPositions).map(p => p.y), canvasDistanceMeters,
+              settings.cellSizeMeters, settings.totalDistance),
           };
           const primaryDelta = {
             x: primaryNextPosition.x - primaryStartPosition.x,
@@ -1306,8 +1300,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               return;
             }
             nextPositions[id] = {
-              x: clamp(startPosition.x + primaryDelta.x, 0, settings.width),
-              y: clamp(startPosition.y + primaryDelta.y, 0, canvasDistanceMeters),
+              x: startPosition.x + primaryDelta.x,
+              y: startPosition.y + primaryDelta.y,
             };
           });
           latestMemberPositions = nextPositions;
@@ -1382,12 +1376,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             dragState.startState.x + dx, OBJECT_DRAG_SNAP_METERS,
             horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode), 0, maxObjectX,
           );
-          const nextY = clampParadeObjectTopY(
-            snapMeters(dragState.startState.y + dy, OBJECT_DRAG_SNAP_METERS),
-            dragState.startState.heightMeters,
-            settings.totalDistance,
-            backwardDistanceMeters,
-          );
+          const nextY = snapPositionInBounds(dragState.startState.y + dy, OBJECT_DRAG_SNAP_METERS,
+            settings.totalDistance, 0, Math.max(0, canvasDistanceMeters - dragState.startState.heightMeters));
           latestObjectPatch = { x: nextX, y: nextY };
           if (deferObjectDragCommit) {
             previewObjectDrag(dragState, latestObjectPatch);
@@ -2214,7 +2204,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               style={{ width: canvasWidthPx, height: horizontalRulerHeight }}
             >
               {horizontalLabels.map((item) => (
-                <span key={item.key} style={{ left: item.positionMeters * pxPerMeter }}>{item.label}</span>
+                <span key={item.key} data-position={item.positionMeters}
+                  style={{ left: paradeRulerPosition(item.positionMeters * pxPerMeter, canvasWidthPx) }}>{item.label}</span>
               ))}
             </div>
             <div className="parade-ruler-spacer" />
@@ -2229,7 +2220,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     <span
                       key={`left-${meter}`}
                       className={getParadeMeterRulerClassName(meter)}
-                      style={{ top }}
+                      data-position={settings.totalDistance - meter}
+                      style={{ top: paradeRulerPosition(top, canvasHeightPx) }}
                     >
                       {meter}m
                     </span>
@@ -2400,13 +2392,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                       memberLabelClassName
                     } ${remoteMemberLockOwner ? "is-remote-locked" : ""}`}
                     style={memberStyle}
+                    aria-label={member.name}
                     onPointerDown={(event) => startMemberDrag(member.id, position, event)}
                     onContextMenu={(event) =>
                       openContextMenu(event, { type: "member", id: member.id })
                     }
                     title={
                       remoteMemberLockOwner
-                        ? `${remoteMemberLockOwner}が操作中です`
+                        ? `${member.name}（${remoteMemberLockOwner}が操作中です）`
                         : member.name
                     }
                   >
@@ -2436,7 +2429,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                     <span
                       key={`right-${meter}`}
                       className={getParadeMeterRulerClassName(meter)}
-                      style={{ top }}
+                      data-position={settings.totalDistance - meter}
+                      style={{ top: paradeRulerPosition(top, canvasHeightPx) }}
                     >
                       {meter}m
                     </span>

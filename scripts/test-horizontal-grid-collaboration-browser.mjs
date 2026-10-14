@@ -123,7 +123,7 @@ try {
     await pages[0].evaluate(mode=>window.__sharedSession.active.editor.edit(p=>({...p,mode})),mode);
     await until(async()=>(await sharedProject(1)).mode===mode,'emphasis mode received');
     await pages[0].getByRole('tab',{name:'ステージ',exact:true}).click();
-    await pages[0].getByText('詳しい設定',{exact:true}).click();
+    await expect(pages[0].locator('.settings-disclosure')).toHaveAttribute('open','');
     const checkbox=pages[0].getByRole('checkbox',{name:'目盛りの数字の線を濃くする',exact:true});
     const before=structuredClone((await sharedProject(0)).frames.map(f=>f.positions));
     await checkbox.check();

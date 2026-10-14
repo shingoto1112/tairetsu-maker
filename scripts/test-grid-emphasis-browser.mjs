@@ -31,7 +31,7 @@ try {
    for(const line of lines){const d=Math.abs(line.position-23.5/2),n=d+(p.stage.horizontalGuideMode==='centerSplit'?.5:0);const number=Math.abs(n-Math.round(n))<1e-7&&d>1e-7;const expected=number&&p.stage.emphasizeHorizontalEvery10&&Math.round(n)%10===0?'10':number&&p.stage.emphasizeHorizontalEvery5&&Math.round(n)%5===0?'5':number&&p.stage.emphasizeHorizontalNumbers?'number':'none';assert.equal(line.emphasis,expected);assert.ok(Math.abs(line.width-(expected==='10'?1.5:expected==='5'?1.25:1))<.02,JSON.stringify(line));}
    assert.ok(lines.length>20);await page.screenshot({path:path.join(out,prefix+'.png')});
    if(p.id.endsWith('-7')){
-    await page.getByRole('tab',{name:'ステージ',exact:true}).click();await page.getByText('詳しい設定',{exact:true}).click();
+    await page.getByRole('tab',{name:'ステージ',exact:true}).click();await expect(page.locator('.settings-disclosure')).toHaveAttribute('open','');
     await expect(page.getByRole('checkbox',{name:'目盛りの数字の線を濃くする',exact:true})).toBeChecked();
     await page.getByText(p.mode==='stage'?'縦の目盛り（前後）':'縦の目盛り（距離）',{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,prefix+'-settings.png')});
     for(const [index,group] of (await page.locator('.grid-emphasis-settings fieldset').all()).entries()){

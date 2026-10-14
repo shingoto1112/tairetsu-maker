@@ -1,4 +1,6 @@
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "../utils/horizontalGrid";
+import { snapPositionInBounds } from "../utils/positionGrid";
+import { stageVerticalGridOriginMeters } from "../utils/verticalGrid";
 import { objectRenderShape } from "../project/objectAppearance";
 import {
   CSSProperties,
@@ -357,7 +359,10 @@ export const ResizableRotatableObject = ({
           horizontalGridOriginMeters(stage.widthMeters, stage.horizontalGuideMode),
           Math.min(stage.widthMeters, drag.startState.widthMeters / 2),
           Math.max(drag.startState.widthMeters / 2, stage.widthMeters - drag.startState.widthMeters / 2)),
-        y: snapToGrid(clampedCenter.y, OBJECT_DRAG_SNAP_METERS, true),
+        y: snapPositionInBounds(clampedCenter.y, OBJECT_DRAG_SNAP_METERS,
+          stageVerticalGridOriginMeters(stage.depthMeters, stage),
+          Math.min(stage.depthMeters, drag.startState.heightMeters / 2),
+          Math.max(drag.startState.heightMeters / 2, stage.depthMeters - drag.startState.heightMeters / 2)),
       },
       drag.startState.widthMeters,
       drag.startState.heightMeters,

@@ -2,7 +2,10 @@ import { useAnnotationEditor } from "./useAnnotationEditor";
 import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle, stageVerticalRulerPositions } from "../utils/gridEmphasis";
 import { horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
+import { memberGroupAxisBounds, snapMemberGroupAxis, snapPositionInBounds } from "../utils/positionGrid";
+import { stageVerticalGridOriginMeters } from "../utils/verticalGrid";
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
+import { stageRulerPosition } from "../utils/rulerPosition";
 import {
   Camera,
   ArrowUpDown,
@@ -51,7 +54,6 @@ import {
   constrainObjectPosition,
   roundMeters,
   stagePointToDisplayPoint,
-  snapToGrid,
 } from "../utils/coordinates";
 import {
   createEdgeAutoScroller,
@@ -472,7 +474,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       [stage.widthMeters, horizontalGuideMode],
     );
     const verticalTicks = useMemo(
-      () => stageVerticalRulerPositions(stage.depthMeters, frontDirection === "top")
+      () => stageVerticalRulerPositions(stage.depthMeters, stageVerticalGridOriginMeters(stage.depthMeters, stage) === 0)
         .map(y => viewerPerspective === "performer" ? stage.depthMeters - y : y).sort((a,b) => a-b),
       [stage.depthMeters, frontDirection, viewerPerspective],
     );
@@ -1236,11 +1238,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         stage,
         viewerPerspective,
       );
-      const constrained = constrainMemberPosition(pointer, stage);
-      onStagePointerPositionChange({
-        x: roundMeters(constrained.x),
-        y: roundMeters(constrained.y),
-      });
+      onStagePointerPositionChange(pointer);
     };
 
     const applySnapGuides = (
@@ -1334,12 +1332,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         stage,
         viewerPerspective,
       );
-      const constrained = constrainMemberPosition(pointer, stage);
-      onStagePointerPositionChange(constrained);
+      onStagePointerPositionChange(pointer);
       onContextMenuRequest({
         clientX,
         clientY,
-        stagePosition: constrained,
+        stagePosition: pointer,
         target,
       });
     }
@@ -1479,24 +1476,30 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       );
       const primaryStartPosition =
         drag.startPositions[drag.memberId] ?? drag.startPosition;
-      const next = constrainMemberPosition(
-        {
-          x: snapMemberGroupHorizontal(
-            primaryStartPosition.x + pointer.x - drag.startPointer.x,
-            primaryStartPosition.x,
-            Object.values(drag.startPositions),
-            stage.widthMeters,
-            stage.showGrid ? stage.gridSizeMeters : NaN,
-            horizontalGridOriginMeters(stage.widthMeters, horizontalGuideMode),
-          ),
-          y: snapToGrid(
-            primaryStartPosition.y + pointer.y - drag.startPointer.y,
-            stage.gridSizeMeters,
-            stage.showGrid,
-          ),
-        },
-        stage,
-      );
+      const requested = {
+        x: primaryStartPosition.x + pointer.x - drag.startPointer.x,
+        y: primaryStartPosition.y + pointer.y - drag.startPointer.y,
+      };
+      if (!stage.showGrid) {
+        requested.x = roundMeters(requested.x);
+        requested.y = roundMeters(requested.y);
+      }
+      const next = {
+        x: snapMemberGroupHorizontal(
+          requested.x,
+          primaryStartPosition.x,
+          Object.values(drag.startPositions),
+          stage.widthMeters,
+          stage.showGrid ? stage.gridSizeMeters : NaN,
+          horizontalGridOriginMeters(stage.widthMeters, horizontalGuideMode),
+        ),
+        y: snapMemberGroupAxis(
+          requested.y,
+          primaryStartPosition.y, Object.values(drag.startPositions).map(p => p.y), stage.depthMeters,
+          stage.showGrid ? stage.gridSizeMeters : NaN,
+          stageVerticalGridOriginMeters(stage.depthMeters, stage),
+        ),
+      };
       const guided = applySnapGuides(next, {
         type: "member",
         id: drag.memberId,
@@ -1504,13 +1507,17 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       if (!deferMemberDragCommit) {
         setActiveSnapGuides(guided.guides);
       }
-      const primaryNextPosition = constrainMemberPosition(guided.position, stage);
+      const primaryNextPosition = stage.showGrid ? guided.position : {
+        x: roundMeters(guided.position.x), y: roundMeters(guided.position.y),
+      };
       const delta = {
         x: Math.min(
           Math.min(...Object.values(drag.startPositions).map(p => stage.widthMeters - p.x)),
           Math.max(Math.max(...Object.values(drag.startPositions).map(p => -p.x)), primaryNextPosition.x - primaryStartPosition.x),
         ),
-        y: primaryNextPosition.y - primaryStartPosition.y,
+        // Guides win over the grid, but the entire selection must still fit.
+        y: snapPositionInBounds(primaryNextPosition.y, NaN, 0,
+          ...memberGroupAxisBounds(primaryStartPosition.y, Object.values(drag.startPositions).map(p => p.y), stage.depthMeters)) - primaryStartPosition.y,
       };
       const nextPositions: Record<string, Position> = {};
       drag.memberIds.forEach((id) => {
@@ -1518,15 +1525,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         if (!startPosition) {
           return;
         }
-        nextPositions[id] = constrainMemberPosition(
-            {
-              x: startPosition.x + delta.x,
-              y: startPosition.y + delta.y,
-            },
-            stage,
-        );
-        // The shared delta is already bounded; do not round each member's x again.
-        nextPositions[id].x = startPosition.x + delta.x;
+        // The shared delta is already bounded; preserve the group's exact relative positions.
+        nextPositions[id] = { x: startPosition.x + delta.x, y: startPosition.y + delta.y };
       });
       drag.latestPositions = nextPositions;
       if (deferMemberDragCommit) {
@@ -1889,6 +1889,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
 
     const annotation = useAnnotationEditor({ lines: project.frames.find(f => f.id === selectedFrameId)?.annotationLines,
       width: stage.widthMeters, depth: stage.depthMeters, step: stage.gridSizeMeters, counting: horizontalGuideMode,
+      verticalOrigin: stageVerticalGridOriginMeters(stage.depthMeters, stage),
       reflected: viewerPerspective === "performer", context: project.id + ":" + selectedFrameId, disabled: isPlaying || isReadOnly,
       onChange: onAnnotationLineChange });
     useLayoutEffect(() => {
@@ -2112,7 +2113,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 {horizontalLabels.map((item) => (
                   <span key={item.key}
                     className="meter-ruler__tick"
-                    style={{ left: String(((viewerPerspective === "performer" ? stage.widthMeters - item.positionMeters : item.positionMeters) / stage.widthMeters) * 100) + "%" }}>
+                    data-position={item.positionMeters}
+                    style={{ left: stageRulerPosition(viewerPerspective === "performer" ? stage.widthMeters - item.positionMeters : item.positionMeters, stage.widthMeters) }}>
                     {item.label}
                   </span>
                 ))}
@@ -2126,7 +2128,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   <span
                     key={`y-${tick}`}
                     className="meter-ruler__tick"
-                    style={{ top: `${(tick / stage.depthMeters) * 100}%` }}
+                    data-position={viewerPerspective === "performer" ? stage.depthMeters - tick : tick}
+                    style={{ top: stageRulerPosition(tick, stage.depthMeters) }}
                   >
                     {coordinateLabel(
                       "y",
@@ -2652,7 +2655,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       } as MemberTokenStyle}
                       title={
                         remoteMemberLockOwner
-                          ? `${remoteMemberLockOwner}が操作中です`
+                          ? `${member.name}（${remoteMemberLockOwner}が操作中です）`
                           : member.name
                       }
                     >
@@ -2669,7 +2672,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   <span
                     key={`y-right-${tick}`}
                     className="meter-ruler__tick"
-                    style={{ top: `${(tick / stage.depthMeters) * 100}%` }}
+                    data-position={viewerPerspective === "performer" ? stage.depthMeters - tick : tick}
+                    style={{ top: stageRulerPosition(tick, stage.depthMeters) }}
                   >
                     {coordinateLabel(
                       "y",

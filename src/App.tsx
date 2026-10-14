@@ -4,6 +4,7 @@ import { autoSaveDelay } from "./utils/autoSaveSchedule";
 import { copyAnnotationLines } from "./utils/annotationLines";
 import { validAnnotationLines, validProjectLineCount } from "./project/annotationLines";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./utils/horizontalGrid";
+import { snapPastedMemberPosition, snapPastedObjectPosition } from "./utils/placementGrid";
 import { useSharedSession } from "./hooks/useSharedSession";
 import { useModalFocus } from "./hooks/useModalFocus";
 import { useHelpPage } from "./components/HelpPageLoader";
@@ -98,7 +99,6 @@ import {
   getObjectCenter,
   objectTopLeftFromCenter,
   roundMeters,
-  snapToGrid,
 } from "./utils/coordinates";
 import {
   elementToJpegDataUrl,
@@ -1939,29 +1939,12 @@ function App() {
     [effectiveStage, project],
   );
 
-  const getSnappedStagePosition = (
-    position: Position,
-    stage: Project["stage"],
-  ): Position =>
-    constrainMemberPosition(
-      {
-        x: snapHorizontalPositionInBounds(position.x,
-          stage.showGrid ? stage.gridSizeMeters : NaN,
-          horizontalGridOriginMeters(stage.widthMeters, project.mode === "parade" ? project.paradeSettings?.horizontalMeasureMode : stage.horizontalGuideMode),
-          0, stage.widthMeters),
-        y: snapToGrid(position.y, stage.gridSizeMeters, stage.showGrid),
-      },
-      stage,
-    );
-
+  // Keep pointer coordinates raw; each paste target chooses its own lattice once.
   const getPasteStagePosition = (stage: Project["stage"] = effectiveStage) =>
-    getSnappedStagePosition(
-      lastStagePointerPositionRef.current ?? {
-        x: stage.widthMeters / 2,
-        y: stage.depthMeters / 2,
-      },
-      stage,
-    );
+    lastStagePointerPositionRef.current ?? {
+      x: stage.widthMeters / 2,
+      y: stage.depthMeters / 2,
+    };
 
   const handleStagePointerPositionChange = useCallback((position: Position) => {
     lastStagePointerPositionRef.current = position;
@@ -2639,10 +2622,17 @@ function App() {
                 ...previous.stage,
                 ...getEffectiveStageSize(previous, frame),
               };
-              const basePosition = constrainMemberPosition(requestedPosition ?? paradeDefaultPosition ?? {
+              const basePosition = previous.mode === "parade" && requestedPosition
+                ? snapPastedMemberPosition(requestedPosition, frameStage, createDefaultParadeSettings({
+                    ...previous.paradeSettings,
+                    width: frameStage.widthMeters,
+                    totalDistance: previous.paradeSettings?.totalDistance ?? previous.stage.depthMeters,
+                    cellSizeMeters: previous.paradeSettings?.cellSizeMeters ?? frameStage.gridSizeMeters,
+                  }))
+                : constrainMemberPosition(requestedPosition ?? paradeDefaultPosition ?? {
                 x: frameStage.widthMeters / 2, y: frameStage.depthMeters / 2,
               }, frameStage);
-              basePosition.x = snapHorizontalPositionInBounds(basePosition.x,
+              if (!(previous.mode === "parade" && requestedPosition)) basePosition.x = snapHorizontalPositionInBounds(basePosition.x,
                 previous.mode === "parade" ? previous.paradeSettings?.cellSizeMeters ?? frameStage.gridSizeMeters
                   : frameStage.showGrid ? frameStage.gridSizeMeters : NaN,
                 horizontalGridOriginMeters(frameStage.widthMeters, previous.mode === "parade"
@@ -2739,10 +2729,21 @@ function App() {
       }) : draft;
       const activeFrame = previous.frames.find(frame => frame.id === activeFrameId) ?? previous.frames[0];
       const activeStage = { ...previous.stage, ...getEffectiveStageSize(previous, activeFrame) };
-      const center = constrainMemberPosition(position ?? getParadeVisibleCenterPosition(previous, activeFrame) ?? {
+      const requestedCenter = position ?? getParadeVisibleCenterPosition(previous, activeFrame) ?? {
         x: activeStage.widthMeters / 2, y: activeStage.depthMeters / 2,
-      }, activeStage);
-      const topLeft = constrainObjectPosition({
+      };
+      const center = constrainMemberPosition(requestedCenter, activeStage);
+      // Only explicit context-menu placement lost snapping when the canvas began returning raw points.
+      // Default viewport-center additions retain their historical unsnapped placement.
+      const topLeft = previous.mode === "parade" && position
+        ? snapPastedObjectPosition(position, effectiveDraft.widthMeters, effectiveDraft.heightMeters,
+            activeStage, createDefaultParadeSettings({
+              ...previous.paradeSettings,
+              width: activeStage.widthMeters,
+              totalDistance: previous.paradeSettings?.totalDistance ?? previous.stage.depthMeters,
+              cellSizeMeters: previous.paradeSettings?.cellSizeMeters ?? activeStage.gridSizeMeters,
+            }))
+        : constrainObjectPosition({
         x: center.x - effectiveDraft.widthMeters / 2, y: center.y - effectiveDraft.heightMeters / 2,
       }, effectiveDraft.widthMeters, effectiveDraft.heightMeters, activeStage);
       const object: StageObject = { id, ...effectiveDraft, defaultX: topLeft.x, defaultY: topLeft.y,
@@ -4080,7 +4081,8 @@ function App() {
     const existingMember = project.members.find(
       (member) => member.id === clipboard.member.id,
     );
-    const pastePosition = getPasteStagePosition();
+    const pastePosition = snapPastedMemberPosition(getPasteStagePosition(), effectiveStage,
+      project.mode === "parade" ? project.paradeSettings : undefined);
     if (existingMember && !isMemberVisibleInFrame(existingMember, activeFrameId)) {
       updateProject((previous) => ({
         ...previous,
@@ -4229,18 +4231,10 @@ function App() {
       selectedFrame?.objectStates?.[clipboard.object.id] ??
       createDefaultObjectState(clipboard.object);
     const intendedPasteCenter = getPasteStagePosition();
-    intendedPasteCenter.x = snapHorizontalPositionInBounds(intendedPasteCenter.x,
-      effectiveStage.showGrid ? effectiveStage.gridSizeMeters : NaN,
-      horizontalGridOriginMeters(effectiveStage.widthMeters, project.mode === "parade"
-        ? project.paradeSettings?.horizontalMeasureMode : effectiveStage.horizontalGuideMode),
-      Math.min(effectiveStage.widthMeters, sourceActiveState.widthMeters / 2),
-      Math.max(sourceActiveState.widthMeters / 2, effectiveStage.widthMeters - sourceActiveState.widthMeters / 2));
     const activeTopLeft = constrainObjectPosition(
-      objectTopLeftFromCenter(
-        intendedPasteCenter,
-        sourceActiveState.widthMeters,
-        sourceActiveState.heightMeters,
-      ),
+      snapPastedObjectPosition(intendedPasteCenter, sourceActiveState.widthMeters,
+        sourceActiveState.heightMeters, effectiveStage,
+        project.mode === "parade" ? project.paradeSettings : undefined),
       sourceActiveState.widthMeters,
       sourceActiveState.heightMeters,
       effectiveStage,

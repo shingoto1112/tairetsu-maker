@@ -4,6 +4,7 @@ import type { ParadeSettings, StageConfig } from "../types";
 import { createGridTicksInRange, createHorizontalGridLines } from "./horizontalGrid";
 import { internalYToParadeDistance } from "./parade";
 import type { HorizontalCountingMode } from "./horizontalRuler";
+import { stageVerticalGridOriginMeters } from "./verticalGrid";
 
 export type VerticalOrigin = "top" | "bottom";
 export type GridEmphasis = "none" | "number" | "5" | "10";
@@ -52,10 +53,11 @@ export const horizontalEmphasizedLines = (width: number, mode: HorizontalCountin
 export const verticalEmphasizedLines = (depth: number, step: number, stage: StageConfig, parade?: ParadeSettings,
   includeGrid = true, top = 0, bottom = depth, verticalOrigin?: VerticalOrigin): EmphasizedLine[] => {
   const flags = verticalEmphasisFlags(stage, parade);
-  const topOrigin = verticalOrigin ? verticalOrigin === "top" : stage.frontDirection === "top";
-  const origin = parade ? parade.totalDistance : topOrigin ? 0 : depth;
+  const stageOrigin = stageVerticalGridOriginMeters(depth, stage, verticalOrigin);
+  const topOrigin = stageOrigin === 0;
+  const origin = parade ? parade.totalDistance : stageOrigin;
   const generate = parade ? boundedTicks : createGridTicksInRange;
-  const ticks = new Set(generate(top, bottom, step, parade ? origin : 0));
+  const ticks = new Set(generate(top, bottom, step, origin));
   // Number positions remain lines even when step is larger or non-integral.
   for (const y of generate(top, bottom, 1, origin)) ticks.add(y);
   return [...ticks].sort((a,b) => a-b).filter(y => y > 1e-7 && y < depth - 1e-7).map(y => ({

@@ -222,6 +222,7 @@
 }
 
 .parade-stage-wrap {
+  --parade-border-width: 1px;
   display: grid;
   width: max-content;
 }
@@ -300,7 +301,7 @@
 
 .parade-stage {
   background-color: #ffffff;
-  border: 1px solid #cbd5e1;
+  border: var(--parade-border-width) solid #cbd5e1;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   position: relative;
 }
@@ -327,6 +328,7 @@
   height: 1px;
   left: 0;
   right: 0;
+  transform: translateY(-50%);
 }
 
 .parade-grid-line--horizontal.is-medium {
@@ -344,6 +346,7 @@
   pointer-events: none;
   position: absolute;
   top: 0;
+  transform: translateX(-50%);
   width: 2px;
   z-index: 2;
 }
@@ -4206,14 +4209,16 @@ h2 {
 }
 
 .meter-ruler--horizontal .meter-ruler__tick::after {
-  background: #cbd5e1;
+  background: #94a3b8;
   bottom: auto;
   content: "";
-  height: calc(var(--ruler-member-bleed-px, 24px) + 1px);
+  /* End at the stage boundary without overlapping the vertical grid. */
+  height: max(0px, calc(var(--ruler-member-bleed-px, 24px) - 4px));
   left: 50%;
   position: absolute;
   top: 19px;
   width: 1px;
+  transform: translateX(-50%);
 }
 
 .meter-ruler--horizontal .meter-ruler__tick--label-only::after {
@@ -4238,6 +4243,7 @@ h2 {
   right: var(--ruler-label-offset-negative-px, -31px);
   top: 50%;
   width: var(--ruler-label-offset-px, 31px);
+  transform: translateY(-50%);
 }
 
 .meter-ruler--vertical-right .meter-ruler__tick::after {
@@ -4284,6 +4290,7 @@ h2 {
   height: var(--stage-grid-line-width);
   left: 0;
   right: 0;
+  transform: translateY(-50%);
 }
 
 .stage-surface.is-previewing {
@@ -6239,6 +6246,32 @@ h2 {
   overflow: visible;
 }
 
+/* Long names are sized against the circle's chord in memberLabel.ts.
+   Keep text visible even when the readable floor wins at very small zoom. */
+.member-token--label-long,
+.parade-member--label-long,
+.print-member--label-long {
+  overflow: visible;
+}
+
+.member-token--label-long .member-token__label,
+.parade-member--label-long .parade-member__label,
+.print-member--label-long .print-member__label {
+  gap: 0;
+  left: 0;
+  right: 0;
+  line-height: 0.84;
+  min-height: auto;
+  overflow: visible;
+}
+
+.member-token--label-long .member-token__label-line,
+.parade-member--label-long .parade-member__label-line,
+.print-member--label-long .print-member__label-line {
+  max-width: none;
+  overflow: visible;
+}
+
 .print-object {
   align-items: center;
   border: 1px solid currentColor;
@@ -7941,8 +7974,6 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 .print-counting-line { vector-effect: non-scaling-stroke; }
 
 .counting-diagram__tick { stroke: var(--stage-ruler-color); stroke-width: 1px; }
-/* End ruler ticks at the stage boundary, without overlapping the vertical grid. */
-.meter-ruler--horizontal .meter-ruler__tick::after { height: max(0px, calc(var(--ruler-member-bleed-px, 24px) - 4px)); background: #94a3b8; }
 .stage-grid-line--vertical, .parade-grid-line--vertical { transform: translateX(-50%); }
 
 .grid-emphasis-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 12px 0; }
