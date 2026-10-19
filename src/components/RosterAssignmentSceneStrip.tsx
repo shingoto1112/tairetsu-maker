@@ -28,7 +28,8 @@ export const RosterAssignmentSceneStrip = ({ project, frames, selectedFrameId, o
       className="roster-scene-strip__card" aria-pressed={frame.id === selectedFrameId}
       aria-label={`${index + 1}. ${frame.label} ${formatTime(frame.timeSec)}`}
       onClick={() => onSelectFrame(frame.id)}>
-      <SceneThumbnailPreview project={project} frame={frame} visible={visible.has(frame.id)} />
+      {/* Match the adjacent static assignment preview, which uses the audience view. */}
+      <SceneThumbnailPreview project={project} frame={frame} visible={visible.has(frame.id)} viewerPerspective="audience" />
       <span className="roster-scene-strip__label"><b>{index + 1}</b> {frame.label}</span>
       <small>{formatTime(frame.timeSec)}</small>
     </button>)}

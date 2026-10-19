@@ -1,3 +1,5 @@
+import { constrainObjectPosition, roundMeters } from "../utils/coordinates";
+import { objectPositionBounds } from "../utils/objectGeometry";
 import {
   FormationFrame,
   Member,
@@ -62,58 +64,6 @@ const fromCenterSplitDistance = (
     return center + distance;
   }
   return currentOffset < 0 ? center - distance : center + distance;
-};
-
-const getObjectDisplayXBounds = (
-  currentInternalX: number | undefined,
-  objectWidthMeters: number | undefined,
-  stageWidth: number,
-  useCenterSplit: boolean,
-) => {
-  const safeObjectWidth =
-    Number.isFinite(objectWidthMeters) && (objectWidthMeters ?? 0) > 0
-      ? (objectWidthMeters as number)
-      : 0;
-  const maxInternalX = Math.max(0, stageWidth - safeObjectWidth);
-  if (!useCenterSplit) {
-    return {
-      max: toDisplayX(maxInternalX, stageWidth) ?? stageWidth / 2,
-      min: toDisplayX(0, stageWidth) ?? -stageWidth / 2,
-    };
-  }
-
-  const center = stageWidth / 2;
-  const currentOffset =
-    currentInternalX === undefined ? 0 : currentInternalX - center;
-  return {
-    max:
-      currentOffset < -0.001
-        ? center
-        : Math.max(0, center - safeObjectWidth),
-    min: 0,
-  };
-};
-
-const getObjectDisplayYBounds = (
-  objectHeightMeters: number | undefined,
-  stageDepth: number,
-  projectMode: "stage" | "parade",
-  backwardDistanceMeters = 0,
-) => {
-  const safeObjectHeight =
-    Number.isFinite(objectHeightMeters) && (objectHeightMeters ?? 0) > 0
-      ? (objectHeightMeters as number)
-      : 0;
-  if (projectMode === "parade") {
-    return {
-      max: stageDepth,
-      min: Math.max(-backwardDistanceMeters, -backwardDistanceMeters + safeObjectHeight),
-    };
-  }
-  return {
-    max: Math.max(0, stageDepth - safeObjectHeight),
-    min: 0,
-  };
 };
 
 export const SelectedPositionCard = ({
@@ -210,13 +160,12 @@ export const SelectedPositionCard = ({
       : frontAtTop ? displayY : stageDepthMeters - displayY;
   // Props are stored by their corner; on stage show the distance from 最前 to the prop's front edge.
   const objectDisplayYValue = (internalY: number | undefined, heightMeters: number) =>
-    projectMode === "parade" || internalY === undefined || frontAtTop
-      ? displayYValue(internalY)
-      : fromFront(internalY + heightMeters);
+    internalY === undefined ? undefined : projectMode === "parade"
+      ? roundDetailMeters(stageDepthMeters - internalY)
+      : frontAtTop ? internalY : fromFront(internalY + heightMeters);
   const objectInternalYValue = (displayY: number, heightMeters: number) =>
-    projectMode === "parade" || frontAtTop
-      ? internalYValue(displayY)
-      : stageDepthMeters - displayY - heightMeters;
+    projectMode === "parade" ? stageDepthMeters - displayY
+      : frontAtTop ? displayY : stageDepthMeters - displayY - heightMeters;
   const displayXValue = (internalX: number | undefined) =>
     useParadeCenterSplitX
       ? internalX === undefined
@@ -232,18 +181,17 @@ export const SelectedPositionCard = ({
       : fromDisplayX(displayX, stageWidthMeters);
   const minDisplayX = useParadeCenterSplitX ? 0 : -stageWidthMeters / 2;
   const maxDisplayX = stageWidthMeters / 2;
-  const objectDisplayXBounds = getObjectDisplayXBounds(
-    objectState?.x,
-    objectState?.widthMeters,
-    stageWidthMeters,
-    useParadeCenterSplitX,
-  );
-  const objectDisplayYBounds = getObjectDisplayYBounds(
-    objectState?.heightMeters,
-    stageDepthMeters,
-    projectMode,
-    paradeBackwardDistanceMeters,
-  );
+  const objectStage = { ...stage, widthMeters: stageWidthMeters, depthMeters: coordinateDepthMeters };
+  const objectBounds = objectState ? objectPositionBounds(objectState, objectStage) : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  const leftSide = (objectState?.x ?? stageWidthMeters / 2) < stageWidthMeters / 2 - 0.001;
+  const signedMinX = roundMeters(objectBounds.minX) - stageWidthMeters / 2;
+  const signedMaxX = roundMeters(objectBounds.maxX) - stageWidthMeters / 2;
+  const objectDisplayXBounds = !useParadeCenterSplitX ? { min: signedMinX, max: signedMaxX }
+    : leftSide ? { min: Math.max(0, -signedMaxX), max: Math.max(0, -signedMinX) }
+    : { min: Math.max(0, signedMinX), max: Math.max(0, signedMaxX) };
+  const yEnds = [objectDisplayYValue(roundMeters(objectBounds.minY), objectState?.heightMeters ?? 0) ?? 0,
+    objectDisplayYValue(roundMeters(objectBounds.maxY), objectState?.heightMeters ?? 0) ?? 0];
+  const objectDisplayYBounds = { min: Math.min(...yEnds), max: Math.max(...yEnds) };
 
   const updateMemberCoordinate = (axis: "x" | "y", rawValue: string) => {
     if (sceneDisabled || !selectedMember || !memberPosition) {
@@ -270,38 +218,12 @@ export const SelectedPositionCard = ({
     if (value === null) {
       return;
     }
-    const maxObjectX = Math.max(
-      0,
-      stageWidthMeters - objectState.widthMeters,
-    );
-    const maxObjectY = Math.max(
-      0,
-      coordinateDepthMeters - objectState.heightMeters,
-    );
-    onUpdateObjectState(selectedObject.id, {
-      [axis]:
-        axis === "x"
-          ? roundDetailMeters(
-              clamp(
-                internalXValue(
-                  clamp(value, objectDisplayXBounds.min, objectDisplayXBounds.max),
-                  objectState.x,
-                ),
-                0,
-                maxObjectX,
-              ),
-            )
-          : roundDetailMeters(
-              clamp(
-                objectInternalYValue(
-                  clamp(value, objectDisplayYBounds.min, objectDisplayYBounds.max),
-                  objectState.heightMeters,
-                ),
-                0,
-                maxObjectY,
-              ),
-            ),
-    });
+    const requested = { x: objectState.x, y: objectState.y,
+      [axis]: axis === "x" ? internalXValue(value, objectState.x) : objectInternalYValue(value, objectState.heightMeters) };
+    const next = constrainObjectPosition(requested, objectState, objectStage);
+    const otherAxis = axis === "x" ? "y" : "x";
+    onUpdateObjectState(selectedObject.id, { [axis]: next[axis],
+      ...(next[otherAxis] !== objectState[otherAxis] ? { [otherAxis]: next[otherAxis] } : {}) });
   };
 
   const updateObjectPositiveNumber = (
@@ -325,20 +247,10 @@ export const SelectedPositionCard = ({
       field === "heightMeters"
         ? roundDetailMeters(clamp(value, 0.01, coordinateDepthMeters))
         : currentHeight;
-    const nextX = roundDetailMeters(
-      clamp(objectState?.x ?? 0, 0, Math.max(0, stageWidthMeters - nextWidth)),
-    );
-    const nextY = roundDetailMeters(
-      clamp(
-        objectState?.y ?? 0,
-        0,
-        Math.max(0, coordinateDepthMeters - nextHeight),
-      ),
-    );
+    const next = constrainObjectPosition({ x: objectState?.x ?? 0, y: objectState?.y ?? 0 },
+      { widthMeters: nextWidth, heightMeters: nextHeight, rotation: objectState?.rotation ?? selectedObject.defaultRotation }, objectStage);
     onUpdateObjectState(selectedObject.id, {
-      [field]: field === "widthMeters" ? nextWidth : nextHeight,
-      x: nextX,
-      y: nextY,
+      [field]: field === "widthMeters" ? nextWidth : nextHeight, ...next,
     });
   };
 

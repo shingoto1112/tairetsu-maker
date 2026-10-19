@@ -1,7 +1,7 @@
 import { scrollWithinContainer } from "../utils/scrollWithinContainer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { memo, useEffect, useMemo, useRef } from "react";
-import { FormationFrame, Project } from "../types";
+import { FormationFrame, Project, ViewerPerspective } from "../types";
 import { sortFrames } from "../utils/interpolation";
 import { SceneThumbnailPreview } from "./SceneThumbnailPreview";
 import { useVisibleScenePreviews } from "../hooks/useVisibleScenePreviews";
@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 type SceneThumbnailRailProps = {
   presenceForScene?: (sceneId: string) => ReactNode;
   project: Project;
+  viewerPerspective: ViewerPerspective;
   selectedFrameId: string | null;
   collapsed: boolean;
   remoteEditingByFrameId?: Record<string, string>;
@@ -34,6 +35,7 @@ const formatPresenceNames = (names: string[]): string => {
 
 export const SceneThumbnailRail = memo(function SceneThumbnailRail({
   project,
+  viewerPerspective,
   selectedFrameId,
   collapsed,
   remoteEditingByFrameId = {},
@@ -146,6 +148,7 @@ export const SceneThumbnailRail = memo(function SceneThumbnailRail({
                   )}
                   <SceneThumbnailPreview
                     project={project}
+                    viewerPerspective={viewerPerspective}
                     frame={frame}
                     visible={isSelected || visibleFrames.has(frame.id)}
                   />

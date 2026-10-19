@@ -90,3 +90,28 @@ it.each(["member", "object"] as const)("disables readonly/playback edits for %s,
   }
   expect(p.onMoveMember).not.toHaveBeenCalled(); expect(p.onUpdateObjectState).not.toHaveBeenCalled();
 });
+
+it('accepts negative tool corners with rotation-aware numeric bounds and keeps a rotation-only patch', () => {
+  const p = props(); p.selected = { type: "object", id: "o_chair" };
+  p.snapshot.objectStates.o_chair = { objectId: "o_chair", x: -1.25, y: 2, widthMeters: 3, heightMeters: .5, rotation: 90, visible: true, zIndex: 10 };
+  render(<SelectedPositionCard {...p} />);
+  change(/^横（/, "-6.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: -1.2 });
+  change(/横幅/, "4"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { widthMeters: 4, x: -1.25, y: 2 });
+  change(/回転角度/, "45"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { rotation: 45 });
+});
+it('parade numeric y does not clamp a legitimate negative corner before geometry constraint', () => {
+  const p = props(); p.selected = { type: "object", id: "o_chair" }; p.projectMode = "parade";
+  p.paradeSettings = { width: 10, totalDistance: 20, backwardDistanceMeters: 5, cellSizeMeters: 1,
+    direction: "up", rulerPosition: "both", horizontalMeasureMode: "centerSplit", emphasizeEvery5m: true, emphasizeEvery10m: true };
+  p.snapshot.objectStates.o_chair = { objectId: "o_chair", x: 2, y: -1.25, widthMeters: .5, heightMeters: 3, rotation: 90, visible: true, zIndex: 10 };
+  render(<SelectedPositionCard {...p} />);
+  expect((input(/^m位置/) as HTMLInputElement).value).toBe("21.25");
+  change(/^m位置/, "21.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { y: -1.2 });
+});
+it('leaves old overflow untouched on selection and corrects both axes on the next numeric move', () => {
+  const p = props(); p.selected = { type: "object", id: "o_chair" };
+  p.snapshot.objectStates.o_chair = { objectId: "o_chair", x: -9, y: -9, widthMeters: 3, heightMeters: .5, rotation: 90, visible: true, zIndex: 10 };
+  render(<SelectedPositionCard {...p} />);
+  expect(p.onUpdateObjectState).not.toHaveBeenCalled();
+  change(/^横（/, "-6.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: -1.2, y: 1.25 });
+});

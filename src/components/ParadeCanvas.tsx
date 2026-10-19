@@ -1,9 +1,10 @@
+import { snapObjectPosition } from "../utils/objectMovement";
 import { useAnnotationEditor } from "./useAnnotationEditor";
 import { paradeMeterTicks } from "../utils/boundedTicks";
 import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle } from "../utils/gridEmphasis";
-import { horizontalGridOriginMeters, snapHorizontalPositionInBounds, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
-import { snapMemberGroupAxis, snapPositionInBounds } from "../utils/positionGrid";
+import { horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
+import { snapMemberGroupAxis } from "../utils/positionGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import { paradeRulerPosition } from "../utils/rulerPosition";
 import {
@@ -1368,16 +1369,10 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           }
           onUpdateObjectState(dragState.id, latestObjectPatch);
         } else {
-          const maxObjectX = Math.max(
-            0,
-            settings.width - dragState.startState.widthMeters,
-          );
-          const nextX = snapHorizontalPositionInBounds(
-            dragState.startState.x + dx, OBJECT_DRAG_SNAP_METERS,
-            horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode), 0, maxObjectX,
-          );
-          const nextY = snapPositionInBounds(dragState.startState.y + dy, OBJECT_DRAG_SNAP_METERS,
-            settings.totalDistance, 0, Math.max(0, canvasDistanceMeters - dragState.startState.heightMeters));
+          const { x: nextX, y: nextY } = snapObjectPosition(
+            { x: dragState.startState.x + dx, y: dragState.startState.y + dy }, dragState.startState,
+            { ...project.stage, widthMeters: settings.width, depthMeters: canvasDistanceMeters }, OBJECT_DRAG_SNAP_METERS,
+            { x: horizontalGridOriginMeters(settings.width, settings.horizontalMeasureMode), y: settings.totalDistance }, "topLeft");
           latestObjectPatch = { x: nextX, y: nextY };
           if (deferObjectDragCommit) {
             previewObjectDrag(dragState, latestObjectPatch);

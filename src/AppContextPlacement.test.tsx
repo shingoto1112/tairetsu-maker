@@ -75,10 +75,16 @@ it.each([true, false])("parade context additions snap once with T origin, includ
     await contextAdd(point, "道具追加");
     const object = observed.canvas!.project.stageObjects.find(o => !before.stageObjects.some(old => old.id === o.id))!;
     const state = observed.canvas!.project.frames[0].objectStates[object.id];
-    lattice(state.x, .25, 5); lattice(state.y, .25, 10.13);
+    // Tools additionally snap to exact edges; members above retain their grid-only contract.
+    if (point.x < 0) expect(state.x).toBe(0);
+    else if (point.x > 9) expect(state.x).toBe(9 - state.widthMeters);
+    else lattice(state.x, .25, 5);
+    if (point.y < 0) expect(state.y).toBe(0);
+    else if (point.y > 12.44) expect(state.y).toBeCloseTo(12.44 - state.heightMeters, 3);
+    else lattice(state.y, .25, 10.13);
     expect(state.x).toBeGreaterThanOrEqual(0); expect(state.y).toBeGreaterThanOrEqual(0);
-    expect(state.x + state.widthMeters).toBeLessThanOrEqual(9);
-    expect(state.y + state.heightMeters).toBeLessThanOrEqual(12.44);
+    expect(state.x + state.widthMeters).toBeLessThanOrEqual(9 + 1e-9);
+    expect(state.y + state.heightMeters).toBeLessThanOrEqual(12.44 + 1e-9);
     act(() => observed.canvas!.onUndo!());
     expect(observed.canvas!.project.frames[0].objectStates).toEqual(before.frames[0].objectStates);
   }

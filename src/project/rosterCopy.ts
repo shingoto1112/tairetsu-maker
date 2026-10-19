@@ -44,7 +44,7 @@ export function copyRosterToNewProject(
       widthMeters: Math.min(base.widthMeters, limits.widthMeters), heightMeters: Math.min(base.heightMeters, limits.heightMeters),
     } : base;
     const position = constrainObjectPosition({ x: limits.widthMeters / 2 - size.widthMeters / 2,
-      y: limits.heightMeters / 2 - size.heightMeters / 2 }, size.widthMeters, size.heightMeters, destination.stage);
+      y: limits.heightMeters / 2 - size.heightMeters / 2 }, { ...size, rotation: 0 }, destination.stage);
     return { id: objectsById.get(object.id)!, name: object.name, color: object.color, type: object.type, shape: object.shape,
       ...size, defaultX: position.x, defaultY: position.y, defaultRotation: 0, visible: true, locked: false, zIndex: 10 + index };
   });

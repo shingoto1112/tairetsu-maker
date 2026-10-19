@@ -60,11 +60,11 @@ describe('10-local ephemeral isolation and protocol', () => {
     const { p, peers, advance } = await setup(); const b = peers[1]; const original = JSON.stringify(p);
     b.receive({ actorId: 'actor0', payload: encodeEphemeral(start()) });
     expect(b.position('f_001', ['member', 'm_001', 1, 2], 100, -100)).toEqual({ x: 12, y: 0 });
-    expect(b.position('f_001', ['object', 'o_001', 2, 2, 1, 1, 15], 100, 100)).toEqual({ x: 11, y: 5 });
+    expect(b.position('f_001', ['object', 'o_001', 2, 2, 1, 1, 15], 100, 100)).toEqual({ x: 10.888, y: 4.888 });
     expect(JSON.stringify(p)).toBe(original);
     b.view('f_002', []); expect(b.drags.size).toBe(0); expect(b.getSnapshot().participants).toHaveLength(0);
     p.mode = 'parade'; p.paradeSettings = { ...fixture('parade').paradeSettings!, width: 20, totalDistance: 100, backwardDistanceMeters: 5 };
-    expect(b.position('f_001', ['object', 'o_001', 0, 0, 1, 1, 15], 100, 1000)).toEqual({ x: 19, y: 104 });
+    expect(b.position('f_001', ['object', 'o_001', 0, 0, 1, 1, 15], 100, 1000)).toEqual({ x: 18.888, y: 103.888 });
     p.members = []; b.receive({ actorId: 'actor0', payload: encodeEphemeral(start(2, 'deleted')) }); await b.tick(); expect(b.drags.size).toBe(0);
     advance(45001); await b.tick(); expect(b.getSnapshot().participants).toHaveLength(0);
   });
@@ -129,4 +129,14 @@ describe('10-local ephemeral isolation and protocol', () => {
       expect(await owner.close()).toBe(true); expect(owner.ephemeral!.getSnapshot().participants).toHaveLength(0);
     } finally { owner.dispose(); }
   });
+});
+
+it('uses current local object rotation, not wire rotation, without modifying saved positions', async () => {
+  const { p, peers } = await setup(); const b = peers[1], state = p.frames[0].objectStates.o_001;
+  Object.assign(state, { x: -9, widthMeters: 3, heightMeters: .5, rotation: 90.41 });
+  const before = JSON.stringify(p);
+  expect(b.position('f_001', ['object', 'o_001', 0, 2, 3, .5, 0], -100, 0)).toEqual({ x: -1.239, y: 2 });
+  expect(JSON.stringify(p)).toBe(before);
+  state.rotation = 0;
+  expect(b.position('f_001', ['object', 'o_001', 0, 2, 3, .5, 90.41], -100, 0)).toEqual({ x: 0, y: 2 });
 });

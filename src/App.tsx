@@ -1,3 +1,6 @@
+import { alignedObjectPosition, constrainObjectMovePatch } from "./utils/objectMovement";
+import { rotatedObjectBounds } from "./utils/formationExportLayout";
+import { isObjectOutsideStage } from "./utils/objectGeometry";
 import { CameraExportDialog } from "./components/CameraExportDialog";
 import { paradeDistanceError } from "./project/paradeLimits";
 import { autoSaveDelay } from "./utils/autoSaveSchedule";
@@ -2458,13 +2461,7 @@ function App() {
 
     const outObject = project.stageObjects.find((object) => {
       const state = snapshot.objectStates[object.id];
-      return (
-          state &&
-          (state.x < 0 ||
-            state.y < 0 ||
-          state.x + state.widthMeters > effectiveStage.widthMeters ||
-          state.y + state.heightMeters > effectiveStage.depthMeters)
-      );
+      return state && isObjectOutsideStage(state, effectiveStage);
     });
     if (outObject) {
       messages.push(`${outObject.name} がこのシーンの横・縦の範囲外にはみ出しています。`);
@@ -2737,7 +2734,7 @@ function App() {
       // Only explicit context-menu placement lost snapping when the canvas began returning raw points.
       // Default viewport-center additions retain their historical unsnapped placement.
       const topLeft = previous.mode === "parade" && position
-        ? snapPastedObjectPosition(position, effectiveDraft.widthMeters, effectiveDraft.heightMeters,
+        ? snapPastedObjectPosition(position, { ...effectiveDraft, rotation: 0 },
             activeStage, createDefaultParadeSettings({
               ...previous.paradeSettings,
               width: activeStage.widthMeters,
@@ -2746,7 +2743,7 @@ function App() {
             }))
         : constrainObjectPosition({
         x: center.x - effectiveDraft.widthMeters / 2, y: center.y - effectiveDraft.heightMeters / 2,
-      }, effectiveDraft.widthMeters, effectiveDraft.heightMeters, activeStage);
+      }, { ...effectiveDraft, rotation: 0 }, activeStage);
       const object: StageObject = { id, ...effectiveDraft, defaultX: topLeft.x, defaultY: topLeft.y,
         defaultRotation: 0, visible: true, locked: false, zIndex: 10 + previous.stageObjects.length };
       const state = createDefaultObjectState(object);
@@ -2756,7 +2753,7 @@ function App() {
         } : item),
         frames: previous.frames.map(frame => {
           const stage = { ...previous.stage, ...getEffectiveStageSize(previous, frame) };
-          const xy = constrainObjectPosition(topLeft, object.widthMeters, object.heightMeters, stage);
+          const xy = constrainObjectPosition(topLeft, state, stage);
           return { ...frame, objectStates: { ...frame.objectStates, [id]: {
             ...state, ...xy, visible: frame.id === activeFrame?.id ? visibleInCurrentFrame : false,
           } } };
@@ -3231,6 +3228,7 @@ function App() {
     if (!selectedFrame || canvasPlaybackRef.current) {
       return;
     }
+    if (Object.values(patch).some(value => typeof value === "number" && !Number.isFinite(value))) return;
     const activeFrameId = selectedFrame.id;
     const applyChange = () => {
       if (canvasPlaybackRef.current) return;
@@ -3597,18 +3595,8 @@ function App() {
       updateObjectState(id, patch);
       return;
     }
-    const nextPatch: Partial<ObjectState> =
-      patch.x !== undefined || patch.y !== undefined
-        ? constrainObjectPosition(
-            {
-              x: patch.x ?? objectState.x,
-              y: patch.y ?? objectState.y,
-            },
-            patch.widthMeters ?? objectState.widthMeters,
-            patch.heightMeters ?? objectState.heightMeters,
-            effectiveStage,
-          )
-        : patch;
+    if (Object.values(patch).some(value => typeof value === "number" && !Number.isFinite(value))) return;
+    const nextPatch = constrainObjectMovePatch(objectState, patch, effectiveStage);
     updateObjectState(id, nextPatch);
     if (selectedFrame) {
       const nextState = {
@@ -3675,16 +3663,11 @@ function App() {
             x: roundMeters(current.x + delta.x),
             y: roundMeters(current.y + delta.y),
           },
-          current.widthMeters,
-          current.heightMeters,
+          current,
           effectiveStage,
         );
-        boundsList.push({
-          heightMeters: current.heightMeters,
-          widthMeters: current.widthMeters,
-          x: position.x,
-          y: position.y,
-        });
+        const b = rotatedObjectBounds({ ...current, ...position });
+        boundsList.push({ x: b.left, y: b.top, widthMeters: b.right - b.left, heightMeters: b.bottom - b.top });
       }
     }
 
@@ -3788,8 +3771,7 @@ function App() {
                     x: roundMeters(current.x + delta.x),
                     y: roundMeters(current.y + delta.y),
                   },
-                  current.widthMeters,
-                  current.heightMeters,
+                  current,
                   frameStage,
                 );
                 nextObjectStates = {
@@ -4233,11 +4215,9 @@ function App() {
       createDefaultObjectState(clipboard.object);
     const intendedPasteCenter = getPasteStagePosition();
     const activeTopLeft = constrainObjectPosition(
-      snapPastedObjectPosition(intendedPasteCenter, sourceActiveState.widthMeters,
-        sourceActiveState.heightMeters, effectiveStage,
+      snapPastedObjectPosition(intendedPasteCenter, sourceActiveState, effectiveStage,
         project.mode === "parade" ? project.paradeSettings : undefined),
-      sourceActiveState.widthMeters,
-      sourceActiveState.heightMeters,
+      sourceActiveState,
       effectiveStage,
     );
     const pasteCenter = getObjectCenter(
@@ -4333,8 +4313,7 @@ function App() {
             sourceState.widthMeters,
             sourceState.heightMeters,
           ),
-          sourceState.widthMeters,
-          sourceState.heightMeters,
+          sourceState,
           frameStage,
         );
         return {
@@ -6187,8 +6166,7 @@ function App() {
         const current = frame.objectStates[selected.id] ?? createDefaultObjectState(object);
         const constrained = constrainObjectPosition(
           position,
-          current.widthMeters,
-          current.heightMeters,
+          current,
           frameStage,
         );
         return {
@@ -6782,8 +6760,7 @@ function App() {
           x: baseCenter.x - draft.widthMeters / 2,
           y: baseCenter.y - draft.heightMeters / 2,
         },
-        draft.widthMeters,
-        draft.heightMeters,
+        { ...draft, rotation: 0 },
         baseStage,
       );
       const object: StageObject = {
@@ -6823,8 +6800,7 @@ function App() {
                   x: frameCenter.x - draft.widthMeters / 2,
                   y: frameCenter.y - draft.heightMeters / 2,
                 },
-                draft.widthMeters,
-                draft.heightMeters,
+                { ...draft, rotation: 0 },
                 frameStage,
               );
               return {
@@ -7138,31 +7114,7 @@ function App() {
     if (!object || !state) {
       return;
     }
-    const next = { ...state };
-    if (action === "objectLeft") next.x = 0;
-    if (action === "objectRight") {
-      next.x = effectiveStage.widthMeters - state.widthMeters;
-    }
-    if (action === "objectCenterX") {
-      next.x = (effectiveStage.widthMeters - state.widthMeters) / 2;
-    }
-    if (action === "objectTop") next.y = 0;
-    if (action === "objectBottom") {
-      next.y = effectiveStage.depthMeters - state.heightMeters;
-    }
-    if (action === "objectCenterY") {
-      next.y = (effectiveStage.depthMeters - state.heightMeters) / 2;
-    }
-    if (action === "objectStageCenter") {
-      next.x = (effectiveStage.widthMeters - state.widthMeters) / 2;
-      next.y = (effectiveStage.depthMeters - state.heightMeters) / 2;
-    }
-    const constrained = constrainObjectPosition(
-      { x: roundMeters(next.x), y: roundMeters(next.y) },
-      state.widthMeters,
-      state.heightMeters,
-      effectiveStage,
-    );
+    const constrained = alignedObjectPosition(state, action, effectiveStage);
     updateObjectState(object.id, constrained);
     setNotice(`${object.name} を配置しました。`, "success");
   };
@@ -7748,6 +7700,7 @@ function App() {
             <SceneThumbnailRail
               presenceForScene={ephemeral ? sceneId => <Suspense fallback={null}><ScenePresence session={ephemeral} sceneId={sceneId} /></Suspense> : undefined}
               project={project}
+              viewerPerspective={viewerPerspective}
               selectedFrameId={displayFrame?.id ?? null}
               collapsed={isSceneThumbnailRailCollapsed}
 

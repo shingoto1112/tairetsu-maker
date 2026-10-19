@@ -1,4 +1,5 @@
 import { Position, StageConfig, ViewerPerspective } from "../types";
+import { boundObjectPosition, type ObjectGeometry } from "./objectGeometry";
 
 export const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
@@ -27,13 +28,12 @@ export const constrainMemberPosition = (
 
 export const constrainObjectPosition = (
   position: Position,
-  widthMeters: number,
-  heightMeters: number,
+  geometry: ObjectGeometry,
   stage: StageConfig,
-): Position => ({
-  x: roundMeters(clamp(position.x, 0, Math.max(0, stage.widthMeters - widthMeters))),
-  y: roundMeters(clamp(position.y, 0, Math.max(0, stage.depthMeters - heightMeters))),
-});
+): Position => {
+  const bounded = boundObjectPosition(position, geometry, stage);
+  return { x: roundMeters(bounded.x), y: roundMeters(bounded.y) };
+};
 
 export const getObjectCenter = (
   position: Position,
@@ -55,25 +55,13 @@ export const objectTopLeftFromCenter = (
 
 export const constrainObjectCenterPosition = (
   center: Position,
-  widthMeters: number,
-  heightMeters: number,
+  geometry: ObjectGeometry,
   stage: StageConfig,
-): Position => ({
-  x: roundMeters(
-    clamp(
-      center.x,
-      Math.min(stage.widthMeters, widthMeters / 2),
-      Math.max(widthMeters / 2, stage.widthMeters - widthMeters / 2),
-    ),
-  ),
-  y: roundMeters(
-    clamp(
-      center.y,
-      Math.min(stage.depthMeters, heightMeters / 2),
-      Math.max(heightMeters / 2, stage.depthMeters - heightMeters / 2),
-    ),
-  ),
-});
+): Position => {
+  const position = constrainObjectPosition({ x: center.x - geometry.widthMeters / 2,
+    y: center.y - geometry.heightMeters / 2 }, geometry, stage);
+  return getObjectCenter(position, geometry.widthMeters, geometry.heightMeters);
+};
 
 export const clientPointToMeters = (
   clientX: number,

@@ -2570,11 +2570,12 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                           x: roundMeters(guided.position.x - width / 2),
                           y: roundMeters(guided.position.y - height / 2),
                         },
-                        width,
-                        height,
+                        { widthMeters: width, heightMeters: height, rotation: patch.rotation ?? objectState.rotation },
                         stage,
                       );
-                      setActiveSnapGuides(guided.guides);
+                      setActiveSnapGuides(guided.guides.filter(guide => guide.axis === "x"
+                        ? Math.abs(guidedTopLeft.x + width / 2 - guided.position.x) < 0.001
+                        : Math.abs(guidedTopLeft.y + height / 2 - guided.position.y) < 0.001));
                       return { ...patch, x: guidedTopLeft.x, y: guidedTopLeft.y };
                     }}
                     onInteractionStart={(kind) =>

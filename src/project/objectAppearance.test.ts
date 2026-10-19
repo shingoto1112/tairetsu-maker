@@ -1,3 +1,4 @@
+import { rotatedObjectBounds } from "../utils/formationExportLayout";
 import { describe, expect, it } from "vitest";
 import { createSampleProject } from "../sampleProject";
 import type { Project, StageObjectShape } from "../types";
@@ -57,8 +58,8 @@ describe("道具単位の形・普段の大きさ", () => {
     p.frames[0].objectStates[id].x = 0;
     p.frames[1].objectStates[id].x = p.stage.widthMeters - 1.23;
     const next = applyObjectAppearance(p, id, { widthMeters: 2 });
-    expect(next.frames[0].objectStates[id].x).toBe(0);
-    expect(next.frames[1].objectStates[id].x).toBe(p.stage.widthMeters - 2);
+    expect(rotatedObjectBounds(next.frames[0].objectStates[id]).left).toBeCloseTo(0, 10);
+    expect(rotatedObjectBounds(next.frames[1].objectStates[id]).right).toBeCloseTo(p.stage.widthMeters, 10);
     p.useGlobalStageSize = false; p.frames[1].stageWidthMeters = 1.5;
     const before = structuredClone(p);
     expect(() => applyObjectAppearance(p, id, { widthMeters: 2 })).toThrow(/場面1.*収まらない/);

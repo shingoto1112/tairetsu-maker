@@ -1,5 +1,5 @@
 import type { FormationFrame, ObjectGroup, Project, StageObject, StageObjectDraft, StageObjectShape } from "../types";
-import { clamp } from "../utils/coordinates";
+import { boundObjectPosition } from "../utils/objectGeometry";
 import { getSafeParadeCanvasDistance } from "../utils/parade";
 import { positiveNumber } from "./defaults";
 
@@ -81,8 +81,9 @@ export function applyObjectAppearance(project: Project, objectId: string, patch:
     if (!state || !sameObjectSize(state, base)) return frame;
     const bounds = objectSceneBounds(project, frame);
     return { ...frame, objectStates: { ...frame.objectStates, [objectId]: { ...state, ...size,
-      x: clamp(state.x + (state.widthMeters - size.widthMeters) / 2, 0, bounds.widthMeters - size.widthMeters),
-      y: clamp(state.y + (state.heightMeters - size.heightMeters) / 2, 0, bounds.heightMeters - size.heightMeters),
+      ...boundObjectPosition({ x: state.x + (state.widthMeters - size.widthMeters) / 2,
+        y: state.y + (state.heightMeters - size.heightMeters) / 2 }, { ...state, ...size },
+        { ...project.stage, widthMeters: bounds.widthMeters, depthMeters: bounds.heightMeters }),
     } } };
   }) : project.frames;
   return { ...project, frames, stageObjects: project.stageObjects.map(item => item.id !== objectId ? item : {

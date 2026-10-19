@@ -1,3 +1,4 @@
+import { rotatedObjectHalfExtents } from "./objectGeometry";
 import type { Project, StageConfig, StageSnapshot, ViewerPerspective } from "../types";
 
 export type SelectionScrollBounds = { x: number; y: number; widthMeters: number; heightMeters: number; minimumScroll?: boolean };
@@ -19,9 +20,8 @@ export const selectionScrollBounds = (
   } else {
     const state = snapshot.objectStates[id];
     if (!state?.visible) return null;
-    const rotation = state.rotation * Math.PI / 180;
-    const width = Math.abs(Math.cos(rotation)) * state.widthMeters + Math.abs(Math.sin(rotation)) * state.heightMeters;
-    const height = Math.abs(Math.sin(rotation)) * state.widthMeters + Math.abs(Math.cos(rotation)) * state.heightMeters;
+    const { halfWidth, halfHeight } = rotatedObjectHalfExtents(state);
+    const width = halfWidth * 2, height = halfHeight * 2;
     bounds = { x: state.x + (state.widthMeters - width) / 2, y: state.y + (state.heightMeters - height) / 2, widthMeters: width, heightMeters: height };
   }
   if (project.mode !== "parade" && perspective === "performer") {

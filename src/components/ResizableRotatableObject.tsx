@@ -1,5 +1,5 @@
-import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "../utils/horizontalGrid";
-import { snapPositionInBounds } from "../utils/positionGrid";
+import { horizontalGridOriginMeters } from "../utils/horizontalGrid";
+import { snapObjectPosition } from "../utils/objectMovement";
 import { stageVerticalGridOriginMeters } from "../utils/verticalGrid";
 import { objectRenderShape } from "../project/objectAppearance";
 import {
@@ -17,10 +17,6 @@ import {
 } from "../types";
 import {
   clientPointToMeters,
-  constrainObjectCenterPosition,
-  constrainObjectPosition,
-  getObjectCenter,
-  objectTopLeftFromCenter,
   stagePointToDisplayPoint,
   snapToGrid,
 } from "../utils/coordinates";
@@ -339,45 +335,9 @@ export const ResizableRotatableObject = ({
       return;
     }
 
-    const movedCenter = getObjectCenter(
-      {
-        x: drag.startState.x + dx,
-        y: drag.startState.y + dy,
-      },
-      drag.startState.widthMeters,
-      drag.startState.heightMeters,
-    );
-    const clampedCenter = constrainObjectCenterPosition(
-      movedCenter,
-      drag.startState.widthMeters,
-      drag.startState.heightMeters,
-      stage,
-    );
-    const snappedCenter = constrainObjectCenterPosition(
-      {
-        x: snapHorizontalPositionInBounds(clampedCenter.x, OBJECT_DRAG_SNAP_METERS,
-          horizontalGridOriginMeters(stage.widthMeters, stage.horizontalGuideMode),
-          Math.min(stage.widthMeters, drag.startState.widthMeters / 2),
-          Math.max(drag.startState.widthMeters / 2, stage.widthMeters - drag.startState.widthMeters / 2)),
-        y: snapPositionInBounds(clampedCenter.y, OBJECT_DRAG_SNAP_METERS,
-          stageVerticalGridOriginMeters(stage.depthMeters, stage),
-          Math.min(stage.depthMeters, drag.startState.heightMeters / 2),
-          Math.max(drag.startState.heightMeters / 2, stage.depthMeters - drag.startState.heightMeters / 2)),
-      },
-      drag.startState.widthMeters,
-      drag.startState.heightMeters,
-      stage,
-    );
-    const next = constrainObjectPosition(
-      objectTopLeftFromCenter(
-        snappedCenter,
-        drag.startState.widthMeters,
-        drag.startState.heightMeters,
-      ),
-      drag.startState.widthMeters,
-      drag.startState.heightMeters,
-      stage,
-    );
+    const next = snapObjectPosition({ x: drag.startState.x + dx, y: drag.startState.y + dy }, drag.startState, stage,
+      OBJECT_DRAG_SNAP_METERS, { x: horizontalGridOriginMeters(stage.widthMeters, stage.horizontalGuideMode),
+        y: stageVerticalGridOriginMeters(stage.depthMeters, stage) }, "center");
     applyObjectPatch(drag, resolveMove ? resolveMove(next) : next, measuredAt);
   };
 

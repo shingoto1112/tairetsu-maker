@@ -66,7 +66,7 @@ describe("parade internal T-origin snapping", () => {
       expect(snapPositionInBounds(0, 0.25, 10.13, 0, 11.64)).toBe(0.13);
       expect(snapPositionInBounds(100, 0.25, 10.13, 0, 11.64)).toBe(11.63);
       const center = { x: 4.77, y: 10.42 };
-      const pasted = snapPastedObjectPosition(center, 0.73, 0.8, effective, parade);
+      const pasted = snapPastedObjectPosition(center, { widthMeters: 0.73, heightMeters: 0.8, rotation: 0 }, effective, parade);
       expect(pasted.y).toBe(10.13);
       expect(pasted.y).toBe(snapPositionInBounds(center.y - 0.4, 0.25, 10.13, 0, 11.64));
       expect(center).toEqual({ x: 4.77, y: 10.42 });

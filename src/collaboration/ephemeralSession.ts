@@ -214,7 +214,7 @@ export class EphemeralSession {
     const stage = p.mode === 'parade' ? { ...p.stage, widthMeters: p.paradeSettings?.width ?? 10, depthMeters: getSafeParadeCanvasDistance(p.paradeSettings?.totalDistance, p.paradeSettings?.backwardDistanceMeters) } :
       { ...p.stage, widthMeters: global ? p.stage.widthMeters : frame.stageWidthMeters ?? p.stage.widthMeters, depthMeters: global ? p.stage.depthMeters : frame.stageDepthMeters ?? p.stage.depthMeters };
     const position = { x: x + dx, y: y + dy };
-    return kind === 'member' ? constrainMemberPosition(position, stage) : constrainObjectPosition(position, frame.objectStates[id].widthMeters, frame.objectStates[id].heightMeters, stage);
+    return kind === 'member' ? constrainMemberPosition(position, stage) : constrainObjectPosition(position, frame.objectStates[id], stage);
   }
   localSample(ms: number, baselineMs?: number) {
     if (!finite(ms) || ms < 0) return;

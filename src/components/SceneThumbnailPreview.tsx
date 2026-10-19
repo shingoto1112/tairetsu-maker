@@ -1,6 +1,6 @@
 import { AnnotationLines } from "./AnnotationLines";
 import { memo } from "react";
-import type { FormationFrame, Project, StageObject } from "../types";
+import type { FormationFrame, Project, StageObject, ViewerPerspective } from "../types";
 import { createDefaultObjectState, getSnapshotForFrame } from "../utils/interpolation";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import { getSafeParadeCanvasDistance } from "../utils/parade";
@@ -34,9 +34,9 @@ const objectOpacity = (object: StageObject): number =>
   object.type === "curtain" ? 0.42 : 0.32;
 
 
-type Props = { project: Project; frame: FormationFrame; visible: boolean };
+type Props = { project: Project; frame: FormationFrame; visible: boolean; viewerPerspective?: ViewerPerspective };
 
-export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({project, frame, visible}: Props) {
+export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({project, frame, visible, viewerPerspective = "audience"}: Props) {
   // Leave an identically sized SVG placeholder; card labels and interaction stay live.
   if (!visible) return <svg className="scene-thumbnail-preview" aria-hidden="true" />;
   const snapshot = getSnapshotForFrame(project, frame.id);
@@ -78,59 +78,63 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
         strokeOpacity="0.35"
         strokeWidth="0.035"
       />
-      <AnnotationLines lines={frame.annotationLines} />
-      {project.stageObjects.map((object) => {
-        const state =
-          snapshot.objectStates[object.id] ??
-          createDefaultObjectState(object);
-        if (state.visible === false) {
-          return null;
-        }
-        const objectWidth = Math.max(0.08, state.widthMeters);
-        const objectHeight = Math.max(0.08, state.heightMeters);
-        const x = state.x;
-        const y = state.y;
-        return (
-          <rect
-            key={object.id}
-            x={x}
-            y={y}
-            width={objectWidth}
-            height={objectHeight}
-            rx={object.shape === "circle" ? objectWidth / 2 : 0.06}
-            fill={object.color}
-            fillOpacity={objectOpacity(object)}
-            stroke={object.color}
-            strokeWidth="0.04"
-          />
-        );
-      })}
-      {project.members.map((member) => {
-        if (
-          member.visible === false ||
-          snapshot.memberVisibility[member.id] === false
-        ) {
-          return null;
-        }
-        const position = snapshot.positions[member.id];
-        if (!position) {
-          return null;
-        }
-        return (
-          <circle
-            key={member.id}
-            cx={position.x}
-            cy={position.y}
-            r={(isDenseProject ? 0.075 : 0.11) * radiusScale}
-            fill={getMemberDisplayColor(member, {
-              groups: project.memberGroups ?? [],
-              snapshot,
-            })}
-            stroke="#ffffff"
-            strokeWidth={(isDenseProject ? 0.025 : 0.04) * radiusScale}
-          />
-        );
-      })}
+      {/* Transform contents once; stored coordinates and annotation endpoints stay unchanged. */}
+      <g transform={!isParade && viewerPerspective === "performer" ? `rotate(180 ${width / 2} ${depth / 2})` : undefined}>
+        <AnnotationLines lines={frame.annotationLines} />
+        {project.stageObjects.map((object) => {
+          const state =
+            snapshot.objectStates[object.id] ??
+            createDefaultObjectState(object);
+          if (state.visible === false) {
+            return null;
+          }
+          const objectWidth = Math.max(0.08, state.widthMeters);
+          const objectHeight = Math.max(0.08, state.heightMeters);
+          const x = state.x;
+          const y = state.y;
+          return (
+            <rect
+              key={object.id}
+              x={x}
+              y={y}
+              width={objectWidth}
+              height={objectHeight}
+              transform={`rotate(${state.rotation} ${x + objectWidth / 2} ${y + objectHeight / 2})`}
+              rx={object.shape === "circle" ? objectWidth / 2 : 0.06}
+              fill={object.color}
+              fillOpacity={objectOpacity(object)}
+              stroke={object.color}
+              strokeWidth="0.04"
+            />
+          );
+        })}
+        {project.members.map((member) => {
+          if (
+            member.visible === false ||
+            snapshot.memberVisibility[member.id] === false
+          ) {
+            return null;
+          }
+          const position = snapshot.positions[member.id];
+          if (!position) {
+            return null;
+          }
+          return (
+            <circle
+              key={member.id}
+              cx={position.x}
+              cy={position.y}
+              r={(isDenseProject ? 0.075 : 0.11) * radiusScale}
+              fill={getMemberDisplayColor(member, {
+                groups: project.memberGroups ?? [],
+                snapshot,
+              })}
+              stroke="#ffffff"
+              strokeWidth={(isDenseProject ? 0.025 : 0.04) * radiusScale}
+            />
+          );
+        })}
+      </g>
     </svg>
   );
 }, (previous, next) => {
@@ -138,6 +142,7 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
   // Snapshot fallback can inherit positions/object states from any earlier frame.
   // Comparing only the current frame would leave those inherited previews stale.
   return previous.visible === next.visible && previous.frame === next.frame &&
+    previous.viewerPerspective === next.viewerPerspective &&
     a.frames === b.frames && a.members === b.members && a.stageObjects === b.stageObjects &&
     a.memberGroups === b.memberGroups && a.stage === b.stage &&
     a.mode === b.mode && a.paradeSettings === b.paradeSettings &&

@@ -1,3 +1,4 @@
+import { rotatedObjectHalfExtents } from "./objectGeometry";
 import type { FormationFrame, Project } from "../types";
 import { createDefaultObjectState } from "./interpolation";
 import { getSafeParadeCanvasDistance } from "./parade";
@@ -16,9 +17,7 @@ export const formationSize = (project: Project, frame: FormationFrame) => {
 };
 
 export const rotatedObjectBounds = (state: { x: number; y: number; widthMeters: number; heightMeters: number; rotation: number }) => {
-  const angle = state.rotation * Math.PI / 180;
-  const halfWidth = (Math.abs(Math.cos(angle)) * state.widthMeters + Math.abs(Math.sin(angle)) * state.heightMeters) / 2;
-  const halfHeight = (Math.abs(Math.sin(angle)) * state.widthMeters + Math.abs(Math.cos(angle)) * state.heightMeters) / 2;
+  const { halfWidth, halfHeight } = rotatedObjectHalfExtents(state);
   const x = state.x + state.widthMeters / 2, y = state.y + state.heightMeters / 2;
   return { left: x - halfWidth, right: x + halfWidth, top: y - halfHeight, bottom: y + halfHeight };
 };

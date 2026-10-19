@@ -41,7 +41,10 @@ export default function RemoteInteractionLayer({ session, project, sceneId, pers
       const viewport = surface.closest('.parade-viewport, .stage-fit-area')?.getBoundingClientRect();
       const fragment = document.createDocumentFragment();
       const append = (target: EphemeralTarget, dx: number, dy: number, color: string, label: string, dragging: boolean, lane: number) => {
-        const position = session.position(sceneId, target, dx, dy, project); if (!position) return;
+        if (!dragging && (target[0] === 'object'
+          ? !project.stageObjects.some(o => o.id === target[1]) || !frame.objectStates[target[1]]?.visible
+          : !project.members.some(m => m.id === target[1]) || !frame.positions[target[1]] || frame.memberVisibility?.[target[1]] === false)) return;
+        const position = dragging ? session.position(sceneId, target, dx, dy, project) : { x: target[2], y: target[3] }; if (!position) return;
         const object = target[0] === 'object', state = object ? frame.objectStates[target[1]] : undefined;
         const w = state?.widthMeters ?? project.stage.memberDiameterMeters ?? project.stage.memberCircleDiameterM ?? .6;
         const h = state?.heightMeters ?? w;
