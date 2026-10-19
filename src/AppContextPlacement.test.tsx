@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { forwardRef, type ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createSampleProject } from "./sampleProject";
 import { MemoryProjectRepository } from "./repositories/contract/testing/MemoryProjectRepository";
 import { createDefaultParadeSettings } from "./project/defaults";
-import type { Project, Position } from "./types";
+import type { Project, Position, StageContextMenuTarget } from "./types";
 import type { ParadeCanvas } from "./components/ParadeCanvas";
 
 let project: Project;
@@ -48,6 +48,31 @@ const contextAdd = async (point: Position, name: string) => {
   fireEvent.click(await screen.findByRole("button", { name }));
 };
 const lattice = (value: number, step: number, origin: number) => expect((value - origin) / step).toBeCloseTo(Math.round((value - origin) / step), 7);
+
+it.each(["stage", "parade"] as const)("%s shows paste guidance only while the internal clipboard is empty", async mode => {
+  project.mode = mode;
+  await open();
+  const hint = "メンバーや道具を長押し→「コピー」すると使えます";
+  const showMenu = (target: StageContextMenuTarget) => {
+    act(() => observed.canvas!.onContextMenuRequest({ clientX: 100, clientY: 100, stagePosition: { x: 4, y: 2 }, target }));
+    return within(screen.getByRole("menu"));
+  };
+  const emptyMenu = showMenu({ type: "stage" });
+  expect(emptyMenu.getByRole<HTMLButtonElement>("button", { name: "貼り付け" }).disabled).toBe(true);
+  expect(emptyMenu.getByText(hint)).toBeTruthy();
+  expect(emptyMenu.getByRole("button", { name: "貼り付け" }).nextElementSibling?.textContent).toBe(hint);
+  for (const target of [
+    { type: "member" as const, id: project.members[0].id },
+    { type: "object" as const, id: project.stageObjects[0].id },
+  ]) {
+    const sourceMenu = showMenu(target);
+    expect(sourceMenu.queryByText(hint)).toBeNull();
+    fireEvent.click(sourceMenu.getByRole("button", { name: "コピー" }));
+    const pasteMenu = showMenu({ type: "stage" });
+    expect(pasteMenu.getByRole<HTMLButtonElement>("button", { name: "貼り付け" }).disabled).toBe(false);
+    expect(pasteMenu.queryByText(hint)).toBeNull();
+  }
+}, 20_000);
 
 it.each([true, false])("parade context additions snap once with T origin, including Grid %s; Undo restores stored positions", async showGrid => {
   project.stage.showGrid = showGrid;

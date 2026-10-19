@@ -204,6 +204,10 @@
 }
 
 .parade-viewport {
+  /* 将来キャンバス内に入力欄を置く場合は、その要素で user-select: text と -webkit-touch-callout: default に戻す。 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   height: 100%;
   min-height: 0;
   overflow: auto;
@@ -4042,6 +4046,10 @@ h2 {
 }
 
 .stage-fit-area {
+  /* 将来キャンバス内に入力欄を置く場合は、その要素で user-select: text と -webkit-touch-callout: default に戻す。 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   align-items: center;
   display: flex;
   flex: 1 1 0;
@@ -5473,6 +5481,16 @@ h2 {
 .stage-context-menu button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.stage-context-menu__paste-hint {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  inline-size: 0;
+  min-inline-size: 100%;
+  overflow-wrap: anywhere;
+  padding: 0 8px 4px;
 }
 
 .member-color-popover {

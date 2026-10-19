@@ -45,8 +45,9 @@ describe("stage view-only pinch", () => {
     });
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
-  const setup = () => {
-    const p = props(), view = render(<StageCanvas {...p} />); flush();
+  const setup = (compact = true) => {
+    const p = props(); p.compact = compact;
+    const view = render(<StageCanvas {...p} />); flush();
     const viewport = view.container.querySelector<HTMLElement>(".stage-fit-area")!;
     const layout = view.container.querySelector<HTMLElement>(".stage-zoom-layout")!;
     const preview = view.container.querySelector<HTMLElement>(".stage-pinch-preview")!;
@@ -173,8 +174,8 @@ describe("stage view-only pinch", () => {
     fireEvent.pointerDown(viewport,touch(1,300)); fireEvent.pointerDown(viewport,touch(2,500)); fireEvent.pointerUp(viewport,touch(2,500)); flush();
     expect(set).not.toHaveBeenCalled();
   });
-  it("restores each scene's last memory view and uses the old defaults for first visits", () => {
-    const { p, view, viewport } = setup();
+  it.each([true, false])("restores each scene's last memory view and fits first visits (compact: %s)", compact => {
+    const { p, view, viewport } = setup(compact);
     fireEvent.wheel(viewport, { ctrlKey: true, deltaY: -100, clientX: 300, clientY: 250 }); flush();
     viewport.scrollLeft = 234; viewport.scrollTop = 456; fireEvent.scroll(viewport);
     view.rerender(<StageCanvas {...p} selectedFrameId="two" />); flush();
@@ -209,12 +210,12 @@ describe("stage view-only pinch", () => {
     const viewport = view.container.querySelector<HTMLElement>(".stage-fit-area")!;
     expect(viewport.scrollLeft).toBe(400); expect(viewport.scrollTop).toBe(400);
   });
-  it("centers the first landscape view after StrictMode effect replay", () => {
+  it("fits the first landscape view without scrolling after StrictMode effect replay", () => {
     const p = props(); p.compact = false;
     const view = render(<StrictMode><StageCanvas {...p} /></StrictMode>);
     flush(); flush(); flush();
     const viewport = view.container.querySelector<HTMLElement>(".stage-fit-area")!;
-    expect(viewport.scrollLeft).toBeGreaterThan(0);
+    expect([viewport.scrollLeft, viewport.scrollTop]).toEqual([0, 0]);
     expect(p.viewStates!.size).toBe(0);
   });
   it("defers one-touch selection and suppresses it for a pinch so roster scrolling cannot move the viewport", () => {

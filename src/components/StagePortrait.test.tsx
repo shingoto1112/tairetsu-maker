@@ -40,13 +40,13 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("portrait stage controls and fit", () => {
-  it("starts portrait at 100% and preserves the landscape 175% initial zoom", () => {
+  it("starts both portrait and landscape at 100%", () => {
     const portrait = render(<StageCanvas {...props} compact />);
     expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("100%");
     expect(portrait.container.querySelector(".ruler-reference-labels")).toBeNull();
     portrait.unmount();
     render(<StageCanvas {...props} />);
-    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("175%");
+    expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("100%");
     expect(screen.queryByRole("button", { name: "ステージを拡大" })).toBeNull();
   });
   it("fits only on the first portrait entry, preserving later zoom across playback, panel resize and rotation", async () => {

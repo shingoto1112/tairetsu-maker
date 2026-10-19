@@ -8036,6 +8036,12 @@ function App() {
               >
                 貼り付け
               </button>
+              {!clipboard && (
+                <div className="stage-context-menu__paste-hint">
+                  {/* Break at the arrow so 「コピー」 is never split mid-word. */}
+                  メンバーや道具を長押し→<br />「コピー」すると使えます
+                </div>
+              )}
               <button
                 onClick={() =>
                   runContextMenuAction(() =>

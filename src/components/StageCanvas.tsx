@@ -265,7 +265,6 @@ const RULER_BOTTOM_PADDING_PX = 18;
 const MEMBER_OVERLAP_KEY_SCALE = 100;
 const STAGE_ZOOM_MIN = 1;
 const STAGE_ZOOM_MAX = 4;
-const STAGE_ZOOM_DEFAULT = 1.75;
 
 const oppositeDirection: Record<FrontDirection, FrontDirection> = {
   bottom: "top",
@@ -424,7 +423,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const stagePanRef = useRef<StagePanState | null>(null);
     const touchContextMenuRef = useRef<TouchContextMenuState | null>(null);
     const stageZoomFrameRef = useRef<number | null>(null);
-    const initialZoom = compact ? STAGE_ZOOM_MIN : STAGE_ZOOM_DEFAULT;
+    const initialZoom = STAGE_ZOOM_MIN;
     const stageZoomRef = useRef(initialZoom);
     const portraitFitAppliedRef = useRef(compact);
     const stageHorizontalViewInitializedRef = useRef(false);
@@ -978,7 +977,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         fitAreaRef.current.scrollLeft = 0;
         fitAreaRef.current.scrollTop = 0;
       }
-      setStageZoom(saved?.zoom ?? (compact ? STAGE_ZOOM_MIN : STAGE_ZOOM_DEFAULT));
+      setStageZoom(saved?.zoom ?? STAGE_ZOOM_MIN);
       setIsStagePinching(false);
       return () => { finishStagePinch("restore"); rememberView(selectedFrameId); };
     }, [selectedFrameId, sceneViews]);
