@@ -1,0 +1,117 @@
+# Codemagic (macOS M2, 500 free minutes/month on the personal plan). Both workflows start only when
+# triggered by hand in the Codemagic web UI; there is no automatic trigger. They mirror the GitHub
+# workflows ios-build.yml (native check) and ios-testflight.yml (TestFlight upload).
+#
+# Variable groups to create in Codemagic (app settings > Environment variables, mark secrets "Secure"):
+#   app_store: APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER,
+#              APP_STORE_CONNECT_PRIVATE_KEY (contents of the Codemagic-only AuthKey_XXXX.p8),
+#              APPLE_TEAM_ID, APP_STORE_APPLE_ID (the app's numeric Apple ID)
+#   supabase:  VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+workflows:
+  ipad-native-check:
+    name: iPad native check (simulator, no signing)
+    instance_type: mac_mini_m2
+    max_build_duration: 40
+    environment:
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Xcode version
+        script: xcodebuild -version
+      - name: Native repository core tests
+        script: swift test --package-path ios/ProjectRepositoryCore -c release -Xswiftc -enable-testing
+      - name: Install dependencies
+        script: npm ci
+      - name: Build web assets
+        script: npm run build
+      - name: Sync Capacitor iOS project
+        script: npx cap sync ios
+      - name: Build release configuration without signing
+        script: |
+          set -o pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+  ipad-testflight:
+    name: iPad TestFlight upload
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 22
+      xcode: latest
+      groups:
+        - app_store
+        - supabase
+    scripts:
+      - name: Validate configuration
+        script: |
+          for v in APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY_IDENTIFIER APP_STORE_CONNECT_PRIVATE_KEY APPLE_TEAM_ID APP_STORE_APPLE_ID VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            [ -n "${!v:-}" ] || { echo "missing $v"; exit 1; }
+          done
+      - name: Install dependencies
+        script: npm ci
+      - name: Run tests
+        script: npm test
+      - name: Build web assets
+        script: VITE_COLLABORATION_V2=1 npm run build
+      - name: Sync Capacitor iOS project
+        script: npx cap sync ios
+      - name: Archive, upload and clean up signing
+        script: |
+          set -euo pipefail
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"; mkdir -p "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8"
+          printf '%s\n' "$APP_STORE_CONNECT_PRIVATE_KEY" > "$KEY_PATH"; chmod 600 "$KEY_PATH"
+          export APP_STORE_CONNECT_API_ISSUER_ID="$APP_STORE_CONNECT_ISSUER_ID"
+          export APP_STORE_CONNECT_API_KEY_ID="$APP_STORE_CONNECT_KEY_IDENTIFIER"
+          export APP_STORE_CONNECT_API_KEY_PATH="$KEY_PATH"
+          WORK="$CM_BUILD_DIR/build-tmp"; mkdir -p "$WORK"
+          # Next build number = newest TestFlight build + 1 (keeps numbering continuous with GitHub run numbers).
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID")
+          NEXT=$((LATEST + 1)); echo "Build number: $NEXT"
+          node scripts/apple-signing-certificates.mjs snapshot --output "$WORK/development-certificates-before.json"
+          cleanup() {
+            security find-identity -v -p codesigning > "$WORK/runner-signing-identities.txt" || true
+            node scripts/apple-signing-certificates.mjs cleanup-created \
+              --before "$WORK/development-certificates-before.json" \
+              --identities "$WORK/runner-signing-identities.txt" --apply || true
+            rm -f "$KEY_PATH"
+          }
+          trap cleanup EXIT
+          xcodebuild \
+            -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$WORK/TairetsuMaker.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$NEXT" \
+            archive
+          cat > "$WORK/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key><string>upload</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$WORK/TairetsuMaker.xcarchive" \
+            -exportPath "$WORK/TestFlightExport" -exportOptionsPlist "$WORK/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+    artifacts:
+      - build-tmp/TestFlightExport/DistributionSummary.plist
+      - build-tmp/TestFlightExport/Packaging.log
