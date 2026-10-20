@@ -27,9 +27,9 @@
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",
     "@capacitor/app": "^8.1.1",
-    "@capacitor/core": "^8.5.0",
+    "@capacitor/core": "^8.5.1",
     "@capacitor/filesystem": "^8.1.2",
-    "@capacitor/ios": "^8.5.0",
+    "@capacitor/ios": "^8.5.1",
     "@capacitor/share": "^8.0.1",
     "@supabase/supabase-js": "^2.105.4",
     "html-to-image": "^1.11.11",
@@ -42,7 +42,7 @@
     "yjs": "13.6.33"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.0",
+    "@capacitor/cli": "^8.5.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@tauri-apps/cli": "^2.11.1",
