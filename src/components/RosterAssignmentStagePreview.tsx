@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { FormationFrame, Project } from "../types";
+import type { FormationFrame, Project, ViewerPerspective } from "../types";
 import { createDefaultObjectState, getSnapshotForFrame } from "../utils/interpolation";
 import { FORMATION_BOTTOM, FORMATION_TOP, formationSize, formationVerticalRange } from "../utils/formationExportLayout";
 import { formationRulerSide } from "../utils/formationRulers";
@@ -8,6 +8,7 @@ import "./rosterAssignmentPreview.css";
 
 type Props = {
   project: Project;
+  viewerPerspective?: ViewerPerspective;
   frame: FormationFrame;
   highlightedObjectId?: string;
   /** Width available beside the scene strip (px). Nothing is drawn until it is known. */
@@ -24,7 +25,7 @@ export const rosterPreviewHeight = (viewportHeight: number) => Math.max(140, Mat
  * export drawing without names (no editing events) and resolves only the selected scene.
  * Stage and parade both fit the height; parade shows only the range people and props occupy.
  */
-export const RosterAssignmentStagePreview = ({ project, frame, highlightedObjectId, maxWidth = 0, maxHeight = 180 }: Props) => {
+export const RosterAssignmentStagePreview = ({ project, viewerPerspective = "audience", frame, highlightedObjectId, maxWidth = 0, maxHeight = 180 }: Props) => {
   // Inherited positions/props must match the scene thumbnails, so resolve the snapshot.
   const resolved = useMemo<FormationFrame>(() => ({ ...frame, ...getSnapshotForFrame(project, frame.id) }), [project, frame]);
   const size = formationSize(project, resolved);
@@ -41,7 +42,7 @@ export const RosterAssignmentStagePreview = ({ project, frame, highlightedObject
   return <section className="roster-stage-preview" aria-label={`${frame.label} の隊列（見るだけ）`}
     style={drawn ? { width: outputWidth } : undefined}>
     <div className="roster-stage-preview__drawing">
-      {drawn && <StaticStagePreview project={project} frame={resolved} stageWidth={size.width} side={side}
+      {drawn && <StaticStagePreview viewerPerspective={viewerPerspective} project={project} frame={resolved} stageWidth={size.width} side={side}
         range={{ left: 0, right: size.width, top: vertical.top, bottom: vertical.bottom }}
         outputWidth={outputWidth} highlightedObjectId={highlightedObjectId} hideLabels />}
     </div>

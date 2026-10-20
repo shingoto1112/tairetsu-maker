@@ -3,8 +3,6 @@ import { HorizontalCountingCards } from "./HorizontalCountingCards";
 import { toHorizontalCountingMode, toParadeHorizontalMeasureMode } from "../utils/horizontalRuler";
 import {
   FormationMode,
-  FrontDirection,
-  OriginMode,
   ParadeSettings,
   StageConfig,
 } from "../types";
@@ -105,17 +103,6 @@ export const StageSettingsPanel = ({
                 }
               />
               センターマーカー表示
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={stage.showStageLabels}
-                disabled={disabled}
-                onChange={(event) =>
-                  onChange({ showStageLabels: event.target.checked })
-                }
-              />
-              上手 / 下手ラベル
             </label>
             <label>
               <input
@@ -323,44 +310,6 @@ export const StageSettingsPanel = ({
 
     <details className="settings-disclosure" open>
       <summary>詳しい設定</summary>
-      <div className="settings-grid">
-        <label>
-          正面方向
-          <select
-            value={stage.frontDirection ?? stage.audienceSide ?? "bottom"}
-            disabled={disabled}
-            onChange={(event) => {
-              const frontDirection = event.target.value as FrontDirection;
-              onChange({
-                frontDirection,
-                audienceSide:
-                  frontDirection === "top" || frontDirection === "bottom"
-                    ? frontDirection
-                    : stage.audienceSide,
-              });
-            }}
-          >
-            <option value="bottom">客席側が下</option>
-            <option value="top">客席側が上</option>
-            <option value="left">客席側が左</option>
-            <option value="right">客席側が右</option>
-          </select>
-        </label>
-        <label>
-          0m基準位置
-          <select
-            value={stage.originMode ?? "center"}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({ originMode: event.target.value as OriginMode })
-            }
-          >
-            <option value="topLeft">左上基準</option>
-            <option value="center">中央基準</option>
-            <option value="audienceCenter">客席中央基準</option>
-          </select>
-        </label>
-      </div>
       <GridEmphasisSettings stage={stage} disabled={disabled} onStageChange={onChange} />
     </details>
     {displaySettings}

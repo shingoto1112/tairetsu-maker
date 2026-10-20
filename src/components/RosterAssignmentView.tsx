@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Project, StageObject } from "../types";
+import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Project, StageObject, ViewerPerspective } from "../types";
 import { RosterAssignmentSceneStrip } from "./RosterAssignmentSceneStrip";
 import { RosterAssignmentStagePreview, rosterPreviewHeight } from "./RosterAssignmentStagePreview";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
@@ -32,13 +32,14 @@ export type RosterAssignmentViewProps = {
   memberVisibility?: Readonly<Record<string, boolean>>;
   /** Enables the scene strip and the read-only formation preview. */
   project?: Project;
+  viewerPerspective?: ViewerPerspective;
 };
 
 const sceneTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
 export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
   const { frames, currentFrame, members, memberGroups, objects, objectGroups, objectStates,
-    previousFrame, previousObjectStates, canEditAssignments, readOnlyMessage, onSelectFrame, canUndo, onUndo, memberVisibility, project } = props;
+    previousFrame, previousObjectStates, canEditAssignments, readOnlyMessage, onSelectFrame, canUndo, onUndo, memberVisibility, project, viewerPerspective = "audience" } = props;
   // "非表示の人だけ" starts off when the view opens and survives prop/scene switches.
   const [hiddenMembersOnly, setHiddenMembersOnly] = useState(false);
   const sceneVisibility = useMemo<MemberPickerSceneVisibility | undefined>(() => memberVisibility && ({
@@ -254,10 +255,10 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
       {notice && <p role="status" className="roster-assignment-help">{notice}</p>}
     </header>
     {project && (currentFrame || frames.length > 0) && <div className="roster-assignment-media">
-      {currentFrame && <RosterAssignmentStagePreview project={project} frame={currentFrame}
+      {currentFrame && <RosterAssignmentStagePreview viewerPerspective={viewerPerspective} project={project} frame={currentFrame}
         highlightedObjectId={selectedObject?.id} maxWidth={rootWidth * (narrow ? 0.5 : 0.45)}
         maxHeight={rosterPreviewHeight(typeof window === "undefined" ? 900 : window.innerHeight)} />}
-      {frames.length > 0 && <RosterAssignmentSceneStrip project={project} frames={frames}
+      {frames.length > 0 && <RosterAssignmentSceneStrip viewerPerspective={viewerPerspective} project={project} frames={frames}
         selectedFrameId={currentFrame?.id ?? null} onSelectFrame={onSelectFrame} />}
     </div>}
     <div className="roster-assignment-body">

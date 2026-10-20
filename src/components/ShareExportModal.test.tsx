@@ -10,7 +10,7 @@ afterEach(cleanup);
 describe("ShareExportModal mobile and A4 coexistence", () => {
   it.each(["current", "all"] as const)("offers both formats and preserves assignments for %s A4 export", async scope => {
     const onExport = vi.fn();
-    render(<ShareExportModal isOpen projectTitle="演目" currentSceneLabel="1" onClose={vi.fn()} onExport={onExport} />);
+    render(<ShareExportModal stage={formationExportFixture().stage} isOpen projectTitle="演目" currentSceneLabel="1" onClose={vi.fn()} onExport={onExport} />);
     fireEvent.click(screen.getByRole("button", { name: scope === "current" ? /^このシーンを書き出す/ : /^すべてのシーンを書き出す/ }));
     expect(screen.getByRole("button", { name: "PDF" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "画像" }));
@@ -18,27 +18,30 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "画像を作成" }));
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ scope, format: "image", fileName: expect.stringMatching(/^演目_隊列表_/), options: expect.objectContaining({ includeAssignments: true }) }));
   });
-  it("passes the chosen A4 origin, resets on reopen, and hides it for parade", async () => {
-    const onExport = vi.fn(), props = { projectTitle: "確認", currentSceneLabel: "1", onClose: vi.fn(), onExport };
-    const { rerender } = render(<ShareExportModal {...props} isOpen />);
+  it("initializes from the current view, keeps selection local, resets on reopen, and hides it for parade", async () => {
+    const onExport = vi.fn(), props = { projectTitle: "確認", currentSceneLabel: "1", onClose: vi.fn(), onExport, viewerPerspective: "performer" as const };
+    const { rerender } = render(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen />);
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
-    expect((screen.getByRole("radio", { name: "上を0mにする" }) as HTMLInputElement).checked).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: "下を0mにする" }));
+    expect(screen.queryByText(/縦の目盛りの0m/)).toBeNull();
+    expect(screen.getByRole("group", { name: "書き出す向き" }).querySelectorAll(".counting-card")).toHaveLength(2);
+    expect(screen.getByRole("radio", { name: "踊る人側から見た向き" }).closest("label")?.textContent).toContain("0m（客席側）が上");
+    expect((screen.getByRole("radio", { name: "踊る人側から見た向き" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "観客側から見た向き" }));
     fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
-    expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ verticalOrigin: "bottom" }) }));
-    rerender(<ShareExportModal {...props} isOpen={false} />);
-    rerender(<ShareExportModal {...props} isOpen />);
+    expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ viewerPerspective: "audience" }) }));
+    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen={false} />);
+    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen />);
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
-    expect((screen.getByRole("radio", { name: "上を0mにする" }) as HTMLInputElement).checked).toBe(true);
-    rerender(<ShareExportModal {...props} isOpen isParade />);
+    expect((screen.getByRole("radio", { name: "踊る人側から見た向き" }) as HTMLInputElement).checked).toBe(true);
+    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen isParade />);
     expect(screen.queryByRole("radio")).toBeNull();
   });
   it("focuses on open, cycles Tab, permits input/Escape and restores the opener", () => {
     const onClose = vi.fn();
     const props = { projectTitle: "練習用", currentSceneLabel: "1", onClose, onExport: vi.fn() };
-    const { rerender } = render(<><button>開く</button><ShareExportModal {...props} isOpen={false} /></>);
+    const { rerender } = render(<><button>開く</button><ShareExportModal stage={formationExportFixture().stage} {...props} isOpen={false} /></>);
     screen.getByRole("button", { name: "開く" }).focus();
-    rerender(<><button>開く</button><ShareExportModal {...props} isOpen /></>);
+    rerender(<><button>開く</button><ShareExportModal stage={formationExportFixture().stage} {...props} isOpen /></>);
     const close = screen.getByRole("button", { name: "共有と書き出しを閉じる" });
     expect(document.activeElement).toBe(close);
     const controls = screen.getByRole("dialog").querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)');
@@ -52,12 +55,12 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     expect((input as HTMLInputElement).value).toBe("任意の名前");
     fireEvent.keyDown(input, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
-    rerender(<><button>開く</button><ShareExportModal {...props} isOpen={false} /></>);
+    rerender(<><button>開く</button><ShareExportModal stage={formationExportFixture().stage} {...props} isOpen={false} /></>);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "開く" }));
   });
   it("opens only the member sheet from the share dialog and keeps the original A4 export", async () => {
     const project = formationExportFixture(), onExport = vi.fn();
-    render(<ShareExportModal isOpen projectTitle="練習用" currentSceneLabel="シーン1" onClose={vi.fn()} onExport={onExport}
+    render(<ShareExportModal stage={formationExportFixture().stage} isOpen projectTitle="練習用" currentSceneLabel="シーン1" onClose={vi.fn()} onExport={onExport}
       getMobileExportSource={() => ({ project, projectTitle: project.title, members: [], memberGroups: [], objects: [], objectGroups: [], frames: [], currentFrame: project.frames[0], objectStates: {} })} />);
     expect(screen.queryByText("スマホで見る（LINE向け）")).toBeNull();
     expect(screen.queryByText("道具名簿")).toBeNull();

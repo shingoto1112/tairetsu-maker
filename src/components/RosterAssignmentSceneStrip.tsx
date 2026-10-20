@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import type { FormationFrame, Project } from "../types";
+import type { FormationFrame, Project, ViewerPerspective } from "../types";
 import { sortFrames } from "../utils/interpolation";
 import { formatTime } from "../utils/time";
 import { useVisibleScenePreviews } from "../hooks/useVisibleScenePreviews";
@@ -8,13 +8,14 @@ import "./rosterAssignmentPreview.css";
 
 type Props = {
   project: Project;
+  viewerPerspective?: ViewerPerspective;
   frames: FormationFrame[];
   selectedFrameId: string | null;
   onSelectFrame: (frameId: string) => void;
 };
 
 /** Horizontal scene picker for the roster assignment screen. Selection only; no editing menus. */
-export const RosterAssignmentSceneStrip = ({ project, frames, selectedFrameId, onSelectFrame }: Props) => {
+export const RosterAssignmentSceneStrip = ({ project, viewerPerspective = "audience", frames, selectedFrameId, onSelectFrame }: Props) => {
   const listRef = useRef<HTMLDivElement>(null);
   const sorted = useMemo(() => sortFrames(frames), [frames]);
   const visible = useVisibleScenePreviews(listRef, sorted, false);
@@ -28,8 +29,7 @@ export const RosterAssignmentSceneStrip = ({ project, frames, selectedFrameId, o
       className="roster-scene-strip__card" aria-pressed={frame.id === selectedFrameId}
       aria-label={`${index + 1}. ${frame.label} ${formatTime(frame.timeSec)}`}
       onClick={() => onSelectFrame(frame.id)}>
-      {/* Match the adjacent static assignment preview, which uses the audience view. */}
-      <SceneThumbnailPreview project={project} frame={frame} visible={visible.has(frame.id)} viewerPerspective="audience" />
+      <SceneThumbnailPreview project={project} frame={frame} visible={visible.has(frame.id)} viewerPerspective={viewerPerspective} />
       <span className="roster-scene-strip__label"><b>{index + 1}</b> {frame.label}</span>
       <small>{formatTime(frame.timeSec)}</small>
     </button>)}

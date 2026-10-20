@@ -95,6 +95,7 @@ export const RosterManagementModal = ({
   canUndo,
   onUndo,
   memberVisibility,
+  viewerPerspective,
   project,
   canEditObjects = false,
   objectReadOnlyMessage = "閲覧のみのため道具を編集できません。",
@@ -556,7 +557,7 @@ export const RosterManagementModal = ({
 
         {mode === "objects" && objectView === "assignments" ? (
           <Suspense fallback={<p role="status">割当を読み込み中…</p>}>
-            <RosterAssignmentView frames={frames} currentFrame={currentFrame}
+            <RosterAssignmentView viewerPerspective={viewerPerspective} frames={frames} currentFrame={currentFrame}
               objectStates={objectStates} previousFrame={previousFrame} previousObjectStates={previousObjectStates}
               members={members} memberGroups={memberGroups} objects={objects} objectGroups={objectGroups}
               canEditAssignments={canEditAssignments} readOnlyMessage={readOnlyMessage}

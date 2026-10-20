@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-it("keeps the editor rail on the live canvas perspective after Undo/Redo and the roster strip on audience", async () => {
+it("keeps the editor rail and roster previews on the live canvas perspective after Undo/Redo", async () => {
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "サムネイル視点検証を開く" }));
   await screen.findByRole("button", { name: "検証用の視点切替" });
@@ -58,12 +58,15 @@ it("keeps the editor rail on the live canvas perspective after Undo/Redo and the
   fireEvent.click(screen.getByRole("button", { name: "検証用のRedo" }));
   expect(observed.canvas!.project.viewerPerspective).toBe("performer");
   expect(transform()).toBe("rotate(180 4.5 2.75)");
-  // The real roster modal/strip must remain audience-facing even with a stored performer view.
+  fireEvent.click(screen.getByRole("button", { name: "検証用のUndo" }));
+  expect(observed.canvas!.project.viewerPerspective).toBe("audience");
+  expect(observed.canvas!.viewerPerspective).toBe("performer");
+  // The real roster uses the live view even when Undo restores different metadata.
   fireEvent.click(screen.getByRole("button", { name: "全体名簿を開く" }));
   const roster = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
   fireEvent.click(within(roster).getByRole("button", { name: "道具管理" }));
   fireEvent.click(within(roster).getByRole("button", { name: "道具割当" }));
   const strip = await within(roster).findByRole("group", { name: "シーン" });
   expect(strip.querySelector("svg > g")).not.toBeNull();
-  expect(strip.querySelector("svg > g")!.getAttribute("transform")).toBeNull();
+  expect(strip.querySelector("svg > g")!.getAttribute("transform")).toBe("rotate(180 4.5 2.75)");
 }, 20_000);

@@ -266,19 +266,6 @@ const MEMBER_OVERLAP_KEY_SCALE = 100;
 const STAGE_ZOOM_MIN = 1;
 const STAGE_ZOOM_MAX = 4;
 
-const oppositeDirection: Record<FrontDirection, FrontDirection> = {
-  bottom: "top",
-  top: "bottom",
-  left: "right",
-  right: "left",
-};
-
-const directionClass = (
-  direction: FrontDirection,
-  viewerPerspective: ViewerPerspective,
-): string =>
-  `pos-${viewerPerspective === "performer" ? oppositeDirection[direction] : direction}`;
-
 const formatMeter = (value: number): string => {
   const rounded = Math.abs(value) < 0.001 ? 0 : value;
   return `${rounded > 0 ? "+" : ""}${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}m`;
@@ -2196,44 +2183,6 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     />
                   ))}
                 </div>
-              )}
-              {stage.showStageLabels && (
-                <>
-                  <span
-                    className={`stage-label audience ${directionClass(
-                      frontDirection,
-                      viewerPerspective,
-                    )}`}
-                  >
-                    客席側
-                  </span>
-                  <span
-                    className={`stage-label upstage ${directionClass(
-                      oppositeDirection[frontDirection],
-                      viewerPerspective,
-                    )}`}
-                  >
-                    奥
-                  </span>
-                  <span
-                    className={`stage-label stage-left ${
-                      frontDirection === "left" || frontDirection === "right"
-                        ? directionClass("top", viewerPerspective)
-                        : directionClass("left", viewerPerspective)
-                    }`}
-                  >
-                    上手
-                  </span>
-                  <span
-                    className={`stage-label stage-right ${
-                      frontDirection === "left" || frontDirection === "right"
-                        ? directionClass("bottom", viewerPerspective)
-                        : directionClass("right", viewerPerspective)
-                    }`}
-                  >
-                    下手
-                  </span>
-                </>
               )}
               {stage.showCenterLine && <span className="center-line" />}
               {(stage.showCenterMarker ?? true) && (

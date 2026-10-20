@@ -1,8 +1,9 @@
+import { createStageExportView, readablePropLabelRotation } from "../utils/stageExportView";
 import { useId } from "react";
 import { objectRenderShape } from "../project/objectAppearance";
 import { boundedTicks } from "../utils/boundedTicks";
 import { AnnotationLines } from "./AnnotationLines";
-import { horizontalEmphasizedLines, verticalEmphasizedLines, stageVerticalRulerPositions } from "../utils/gridEmphasis";
+import { horizontalEmphasizedLines, verticalEmphasizedLines } from "../utils/gridEmphasis";
 import { EmphasizedGrid } from "./EmphasizedGrid";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../utils/horizontalRuler";
 import type { CSSProperties, Ref } from "react";
@@ -770,7 +771,8 @@ const PrintStagePreview = ({
       : "meters"
     : project.stage.horizontalGuideMode ?? "meters";
   const sceneWidthMeters = getEffectiveSize(project, frame).widthMeters;
-  const horizontalLabels = createHorizontalRulerLabels(sceneWidthMeters, toHorizontalCountingMode(horizontalGuideMode));
+  const view = createStageExportView(getEffectiveSize(project, frame), project.stage, options.viewerPerspective, isParade);
+  const horizontalLabels = (isParade ? createHorizontalRulerLabels(sceneWidthMeters, toHorizontalCountingMode(horizontalGuideMode)) : view.horizontalLabels);
 
   const gapMeters = gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
   const totalDepthMeters = verticalRange.depthMeters + gapMeters;
@@ -855,27 +857,17 @@ const PrintStagePreview = ({
         }
         return labels;
       })()
-    : stageVerticalRulerPositions(getEffectiveSize(project, frame).depthMeters, (options.verticalOrigin ?? "top") === "top",
-        verticalRange.topMeters, verticalRange.bottomMeters).map((internalY) => {
-        const tick = internalY - verticalRange.topMeters;
-        const actualTick = Number(((options.verticalOrigin ?? "top") === "top" ? internalY : getEffectiveSize(project, frame).depthMeters - internalY).toFixed(2));
-        return {
-          className: undefined,
-          key: tick,
-          label: `${actualTick}m`,
-          top: metersToPrintCenteredMm(
-            tick,
-            metrics,
-            PRINT_RULER_Y_LABEL_HEIGHT_MM,
-          ),
-        };
-      });
-  const horizontalGridLines = horizontalEmphasizedLines(sceneWidthMeters,
+    : view.verticalLabels.filter(item => item.positionMeters >= verticalRange.topMeters - 1e-7 && item.positionMeters <= verticalRange.bottomMeters + 1e-7).map(item => ({
+        className: undefined, key: item.positionMeters, label: item.label,
+        top: metersToPrintCenteredMm(item.positionMeters - verticalRange.topMeters, metrics, PRINT_RULER_Y_LABEL_HEIGHT_MM),
+      }));
+  const horizontalGridLines = (isParade ? horizontalEmphasizedLines(sceneWidthMeters,
     toHorizontalCountingMode(horizontalGuideMode), metrics.gridSizeMeters,
-    isParade ? project.paradeSettings ?? project.stage : project.stage, options.includeGrid);
-  const verticalGridLines = verticalEmphasizedLines(isParade ? totalDistance + backwardDistanceMeters : getEffectiveSize(project, frame).depthMeters,
-    metrics.gridSizeMeters, project.stage, isParade ? project.paradeSettings : undefined,
-    options.includeGrid, verticalRange.topMeters, verticalRange.bottomMeters, options.verticalOrigin ?? "top");
+    project.paradeSettings ?? project.stage, options.includeGrid) : view.horizontalGrid(metrics.gridSizeMeters, options.includeGrid));
+  const verticalGridLines = isParade ? verticalEmphasizedLines(totalDistance + backwardDistanceMeters,
+    metrics.gridSizeMeters, project.stage, project.paradeSettings,
+    options.includeGrid, verticalRange.topMeters, verticalRange.bottomMeters)
+    : view.verticalGrid(metrics.gridSizeMeters, options.includeGrid).filter(line => line.positionMeters >= verticalRange.topMeters - 1e-7 && line.positionMeters <= verticalRange.bottomMeters + 1e-7);
   const previewStyle = {
     gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
     gridTemplateRows: `${rulerTopMm}mm ${stageHeightMm}mm`,
@@ -1038,7 +1030,6 @@ const PrintStagePreview = ({
                       backgroundColor: `${entry.object.color}24`,
                       borderColor: entry.object.color,
                       height: `${objectSize.heightMm}mm`,
-                      transform: `rotate(${entry.state.rotation}deg)`,
                       width: `${objectSize.widthMm}mm`,
                     }}
                   >
@@ -1141,7 +1132,7 @@ const PrintStagePreview = ({
             y2={totalDepthMeters}
           />
           {Object.keys(frame.annotationLines ?? {}).length > 0 && <><defs><clipPath id={annotationClipId}><rect x={0} y="0" width={commonWidthMeters} height={totalDepthMeters} /></clipPath></defs>
-          <g clipPath={"url(#" + annotationClipId + ")"}><AnnotationLines lines={frame.annotationLines} top={verticalRange.topMeters} /></g></>}
+          <g clipPath={"url(#" + annotationClipId + ")"}><AnnotationLines lines={view.annotations(frame.annotationLines)} top={verticalRange.topMeters} /></g></>}
         </svg>
         {gapAfter && (
           <span
@@ -1155,8 +1146,9 @@ const PrintStagePreview = ({
           if (!((state.visible ?? object.visible) !== false)) {
             return null;
           }
-          const objectLeftMeters = state.x;
-          const objectTopMeters = state.y - verticalRange.topMeters;
+          const displayedState = view.object(state);
+          const objectLeftMeters = displayedState.x;
+          const objectTopMeters = displayedState.y - verticalRange.topMeters;
           return (
             <div
               className={`print-object shape-${objectRenderShape(object)}`}
@@ -1172,13 +1164,14 @@ const PrintStagePreview = ({
                 zIndex: 2 + state.zIndex,
               }}
             >
-              {object.name}
+              <span style={{ transform: `rotate(${readablePropLabelRotation(state.rotation)}deg)` }}>{object.name}</span>
             </div>
           );
         })}
 
         {project.members.map((member) => {
-          const position = frame.positions[member.id];
+          const storedPosition = frame.positions[member.id];
+          const position = storedPosition && view.point(storedPosition);
           if (!position || !isMemberVisible(frame, member)) {
             return null;
           }

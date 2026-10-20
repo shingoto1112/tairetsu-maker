@@ -4326,75 +4326,6 @@ h2 {
   z-index: 2;
 }
 
-.stage-label {
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: #334155;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 8px;
-  pointer-events: none;
-  position: absolute;
-  z-index: 4;
-}
-
-.stage-label.upstage {
-  left: 50%;
-  top: 8px;
-  transform: translateX(-50%);
-}
-
-.stage-label.audience {
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.stage-label.stage-left {
-  left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.stage-label.stage-right {
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.stage-label.pos-top {
-  left: 50%;
-  right: auto;
-  top: 8px;
-  bottom: auto;
-  transform: translateX(-50%);
-}
-
-.stage-label.pos-bottom {
-  bottom: 8px;
-  left: 50%;
-  right: auto;
-  top: auto;
-  transform: translateX(-50%);
-}
-
-.stage-label.pos-left {
-  bottom: auto;
-  left: 8px;
-  right: auto;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.stage-label.pos-right {
-  bottom: auto;
-  left: auto;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
 .center-marker {
   border: 1px solid rgba(15, 118, 110, 0.65);
   border-radius: 999px;
@@ -8063,3 +7994,11 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 }
 .selected-position-card .detail-edit-grid { margin-top: 8px; }
 .selected-position-card:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }
+
+/* Export orientation shares the counting cards; compact follows the available dialog width. */
+.export-orientation { container-type: inline-size; }
+.counting-diagram text.export-orientation__zero { font-weight: 800; fill: var(--ink); }
+@container (max-width: 480px) {
+  .export-orientation .horizontal-counting__cards { grid-template-columns: minmax(0, 1fr); }
+  .export-orientation .counting-diagram { max-height: 75px; }
+}

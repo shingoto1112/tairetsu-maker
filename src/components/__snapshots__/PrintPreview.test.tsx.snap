@@ -1,9 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`unchanged default A4 structure > parade document 1`] = `"69b250c0baf0be7814181c693ec24b913f36ed0bd8e48078b79c42fabef5702e"`;
+exports[`default A4 layout and drawing > parade document 1`] = `"084efe1449faddbbfba49c6f690aa8585487972f0a46731511dec1cadb40542d"`;
 
-exports[`unchanged default A4 structure > parade stage-only 1`] = `"3724000303adf8c90790adbb46af5e8e4e7a6f9561e6e7f22cc50a4027e81d07"`;
+exports[`default A4 layout and drawing > parade stage-only 1`] = `"7bc95de324eb9703c8ae574084aec32f5a5ce38b505e161b7497968edfc963a4"`;
 
-exports[`unchanged default A4 structure > stage document 1`] = `"3d361cbf95fe7a14e412271e794f6e242cc669c48c4b8a4a590d012e5e0b5d5f"`;
+exports[`default A4 layout and drawing > stage document 1`] = `"d082e3d5130536fa8a058da8532487973ab2fef21d1d5ba0deabb200e1b122b8"`;
 
-exports[`unchanged default A4 structure > stage stage-only 1`] = `"826df88a01d2edea86d31d39e74eec1b7bc4121bbb34b7f811dfd95a5824db20"`;
+exports[`default A4 layout and drawing > stage stage-only 1`] = `"375be1561e96d1b5f3d6fbf267c38b80b3300d0c54bc821cbec6ff1e0be64848"`;

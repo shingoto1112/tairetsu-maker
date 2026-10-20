@@ -30,12 +30,17 @@ it.each(["meters", "centerSplit"] as const)("preserves signed stage coordinates 
   change(/^縦（/, "1.5"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 6.5 });
   change(/^縦（/, "99"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 0 });
 });
-it("uses the internal y directly when the front is at the top", () => {
+it("preserves the distance from 最前 for legacy top data with labels enabled", () => {
   const p = props(); p.stage.frontDirection = "top";
+  p.stage.showStageLabels = true;
+  p.stage.originMode = "topLeft";
   p.snapshot.positions.m_anna.y = 2;
+  const before = JSON.stringify(p.stage);
   render(<SelectedPositionCard {...p} />);
-  expect((input(/^縦（/) as HTMLInputElement).value).toBe("2");
+  expect((input(/^縦（最前から）/) as HTMLInputElement).value).toBe("2");
+  expect(p.onMoveMember).not.toHaveBeenCalled();
   change(/^縦（/, "3"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 3 });
+  expect(JSON.stringify(p.stage)).toBe(before);
 });
 it.each(["normalMeter", "centerSplit"] as const)("converts parade distance, backward range and horizontal side; %s", mode => {
   const p = props(); p.projectMode = "parade";

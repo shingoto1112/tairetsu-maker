@@ -5739,6 +5739,7 @@ function App() {
   const cleanupPrintExportElement = () => {
     printExportRef.current?.classList.remove("is-exporting");
     setPrintVariant("document");
+    setPrintOptions(null);
     setIsPrintPreviewMounted(false);
   };
 
@@ -5789,7 +5790,7 @@ function App() {
     sceneGapRows: 0,
   };
 
-  const generateStageScreenshotBlob = async (): Promise<Blob> => {
+  const generateStageScreenshotBlob = async (perspective: ViewerPerspective): Promise<Blob> => {
     const captureOptions = {
       backgroundColor: "#ffffff",
       pixelRatio: Math.max(2, window.devicePixelRatio || 1),
@@ -5797,7 +5798,7 @@ function App() {
 
     const element = await preparePrintExportElement(
       "current",
-      stageScreenshotOptions,
+      { ...stageScreenshotOptions, viewerPerspective: perspective },
       "stage-only",
     );
     try {
@@ -5807,7 +5808,7 @@ function App() {
     }
   };
 
-  const captureStageImage = async (format: "image" | "pdf") => {
+  const captureStageImage = async (format: "image" | "pdf", perspective: ViewerPerspective) => {
     setIsCameraExportOpen(false);
     if (exportGenerationPending.current) return;
     exportGenerationPending.current = true;
@@ -5817,7 +5818,7 @@ function App() {
     );
     setExportProgress({ title: format === "image" ? "ステージ画像を作成中" : "ステージPDFを作成中", detail: frameLabel });
     try {
-      const blob = await generateStageScreenshotBlob();
+      const blob = await generateStageScreenshotBlob(perspective);
       if (!blob.size) throw new Error("画像を作成できませんでした。");
       const output = format === "pdf" ? await (await import("./utils/pdfExport")).cameraImageToPdfBlob(blob, frameLabel) : blob;
       setCanCopyExport(format === "image");
@@ -7589,7 +7590,7 @@ function App() {
           onDeleteProject={deleteStoredProject}
         />
         {helpPage}
-        {isCameraExportOpen && <CameraExportDialog onClose={() => setIsCameraExportOpen(false)} onExport={format => void captureStageImage(format)} />}
+        {isCameraExportOpen && <CameraExportDialog stage={project.stage} viewerPerspective={viewerPerspective} isParade={project.mode === "parade"} onClose={() => setIsCameraExportOpen(false)} onExport={(format, perspective) => void captureStageImage(format, perspective)} />}
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
         {isCloudPasswordRecoveryOpen && (
           <Suspense fallback={<div role="status">画面を読み込み中…</div>}>
@@ -8202,11 +8203,13 @@ function App() {
           );
         })()}
     </div>
-    {isCameraExportOpen && <CameraExportDialog onClose={() => setIsCameraExportOpen(false)} onExport={format => void captureStageImage(format)} />}
+    {isCameraExportOpen && <CameraExportDialog stage={project.stage} viewerPerspective={viewerPerspective} isParade={project.mode === "parade"} onClose={() => setIsCameraExportOpen(false)} onExport={(format, perspective) => void captureStageImage(format, perspective)} />}
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
     {helpPage}
     {isShareExportOpen && <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}><ShareExportModal
       isOpen={isShareExportOpen}
+      stage={project.stage}
+      viewerPerspective={viewerPerspective}
       projectTitle={project.title}
       currentSceneLabel={displayFrame?.label ?? selectedFrame?.label ?? "現在シーン"}
       hasAudio={Boolean(project.audio?.id)}
@@ -8332,6 +8335,7 @@ function App() {
       previousFrame={selectedPreviousFrame}
       previousObjectStates={selectedPreviousFrameSnapshot?.objectStates ?? {}}
       memberVisibility={selectedFrameSnapshot.memberVisibility}
+      viewerPerspective={viewerPerspective}
       project={project}
       canEditAssignments={(true)}
       canEditObjects={canEditRosterObjects}

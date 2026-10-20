@@ -11,6 +11,22 @@ import { StaticStagePreview } from "./StaticStagePreview";
 afterEach(cleanup);
 
 describe("roster assignment scene strip and preview", () => {
+  it("follows the explicit live view in both previews even when the saved view differs", () => {
+    const project=formationExportFixture(); project.viewerPerspective="audience";
+    const frame=project.frames[0];
+    const view=(perspective:"performer"|"audience")=><>
+      <RosterAssignmentSceneStrip project={project} frames={project.frames} selectedFrameId={frame.id} onSelectFrame={vi.fn()} viewerPerspective={perspective}/>
+      <RosterAssignmentStagePreview project={project} frame={frame} maxWidth={800} viewerPerspective={perspective}/>
+    </>;
+    const {container,rerender}=render(view("performer"));
+    const member=()=>container.querySelector<HTMLElement>(".print-member")!;
+    const performerLeft=member().style.left;
+    expect(container.querySelector(".roster-scene-strip svg > g")?.getAttribute("transform")).toBe("rotate(180 6 4)");
+    rerender(view("audience"));
+    expect(member().style.left).not.toBe(performerLeft);
+    expect(container.querySelector(".roster-scene-strip svg > g")?.getAttribute("transform")).toBeNull();
+    expect(project.viewerPerspective).toBe("audience");
+  });
   it("lists every scene in time order and switches scenes without editing", async () => {
     const project = formationExportFixture();
     const onSelectFrame = vi.fn();

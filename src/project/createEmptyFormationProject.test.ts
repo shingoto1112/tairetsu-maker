@@ -8,7 +8,7 @@ const stageSettings = {
 };
 
 describe("createEmptyFormationProject", () => {
-  it("starts new stage formations without 上手/下手 labels and keeps the other display defaults", () => {
+  it("keeps the saved showStageLabels default and other display defaults for new stages", () => {
     const project = createEmptyFormationProject("新規", stageSettings, null);
     expect(project.stage.showStageLabels).toBe(false);
     expect(project.stage.showGrid).toBe(true);
@@ -25,7 +25,7 @@ describe("createEmptyFormationProject", () => {
     expect(normalizeProject(existing).viewerPerspective).toBe("audience");
   });
 
-  it("does not turn labels off for existing formations that had them on", () => {
+  it("preserves the legacy showStageLabels value during normalization", () => {
     const existing = createEmptyFormationProject("既存", stageSettings, null);
     existing.stage.showStageLabels = true;
     expect(normalizeProject(existing).stage.showStageLabels).toBe(true);

@@ -1,5 +1,5 @@
-import type { VerticalOrigin } from "../utils/gridEmphasis";
-import { VerticalOriginOptions } from "./VerticalOriginOptions";
+import type { StageConfig, ViewerPerspective } from "../types";
+import { ExportPerspectiveOptions } from "./ExportPerspectiveOptions";
 import { Download, FileText, Users, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "../hooks/useModalFocus";
@@ -13,7 +13,7 @@ export type ShareExportScope = "current" | "all";
 export type ShareExportFormat = "pdf" | "image";
 
 export type ShareExportOptions = {
-  verticalOrigin?: VerticalOrigin;
+  viewerPerspective?: ViewerPerspective;
   includeBackground: boolean;
   includeGrid: boolean;
   includeMeterRulers: boolean;
@@ -34,11 +34,13 @@ export type ShareExportRequest = {
 };
 
 type ShareExportModalProps = {
+  stage: StageConfig;
   isOpen: boolean;
   projectTitle: string;
   currentSceneLabel: string;
   hasAudio?: boolean;
   isParade?: boolean;
+  viewerPerspective?: ViewerPerspective;
   onClose: () => void;
   onOpenCollaboration?: () => void;
   onExport: (request: ShareExportRequest) => void | Promise<void>;
@@ -63,18 +65,25 @@ const makeDefaultFileName = (projectTitle: string): string =>
   `${projectTitle.trim() || "隊列メーカー"}_隊列表_${formatExportTimestamp()}`;
 
 export const ShareExportModal = ({
+  stage,
   isOpen,
   projectTitle,
   currentSceneLabel,
   hasAudio = false,
   isParade = false,
+  viewerPerspective = "audience",
   onClose,
   onOpenCollaboration,
   onExport,
   onExportZip,
   getMobileExportSource,
 }: ShareExportModalProps) => {
-  const [verticalOrigin, setVerticalOrigin] = useState<VerticalOrigin>("top");
+  const [exportPerspective, setExportPerspective] = useState(viewerPerspective);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (isOpen && !wasOpen.current) setExportPerspective(viewerPerspective);
+    wasOpen.current = isOpen;
+  }, [isOpen, viewerPerspective]);
   const [scope, setScope] = useState<ShareExportScope | null>(null);
   const [format, setFormat] = useState<ShareExportFormat>("pdf");
   const [fileName, setFileName] = useState("");
@@ -105,7 +114,6 @@ export const ShareExportModal = ({
 
   useEffect(() => {
     if (!isOpen) {
-      setVerticalOrigin("top");
       setFormat("pdf");
       setScope(null);
       setFileName("");
@@ -141,7 +149,7 @@ export const ShareExportModal = ({
       scope,
       format,
       fileName: fileName.trim() || makeDefaultFileName(projectTitle),
-      options: { ...fixedExportOptions, includeAssignments, verticalOrigin },
+      options: { ...fixedExportOptions, includeAssignments, viewerPerspective: isParade ? "audience" : exportPerspective },
     });
     onClose();
   };
@@ -297,7 +305,7 @@ export const ShareExportModal = ({
           </div>
         ) : (
           <div className="share-export-detail">
-            {!isParade && <VerticalOriginOptions value={verticalOrigin} onChange={setVerticalOrigin} />}
+            {!isParade && <ExportPerspectiveOptions stage={stage} value={exportPerspective} onChange={setExportPerspective} />}
             <fieldset><legend>形式</legend><div className="document-export-options">
               <button type="button" aria-pressed={format === "pdf"} onClick={() => setFormat("pdf")}>PDF</button>
               <button type="button" aria-pressed={format === "image"} onClick={() => setFormat("image")}>画像</button>
