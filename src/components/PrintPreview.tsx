@@ -99,7 +99,7 @@ const PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM = 82;
 const PRINT_ASSIGNMENT_SIDE_MIN_WIDTH_MM = 54;
 const PRINT_ASSIGNMENT_SIDE_STAGE_MIN_WIDTH_MM = 105;
 
-const defaultPrintOptions: ShareExportOptions = {
+export const defaultPrintOptions: ShareExportOptions = {
   includeAssignments: false,
   includeBackground: true,
   includeGrid: true,
@@ -137,7 +137,7 @@ const getPrintMeterRulerClassName = (meter: number) => {
   return "minor";
 };
 
-const getEffectiveSize = (
+export const getEffectiveSize = (
   project: Project,
   frame: FormationFrame,
 ): EffectiveStageSize => {
@@ -183,7 +183,7 @@ const getObjectState = (
   object: StageObject,
 ): ObjectState => frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
 
-const getPrintMemberLabelFontSizeMm = (
+export const getPrintMemberLabelFontSizeMm = (
   diameterMm: number,
   labelLines: string[],
 ): number =>
@@ -438,10 +438,12 @@ const isMemberAssigned = (
     memberIds.includes(memberId),
   );
 
-const isMemberVisible = (frame: FormationFrame, member: Member): boolean =>
+export const isPrintMemberVisible = (frame: FormationFrame, member: Member): boolean =>
   (member.visible ?? true) &&
   frame.memberVisibility?.[member.id] !== false &&
   !isMemberAssigned(frame, member.id);
+
+const isMemberVisible = isPrintMemberVisible;
 
 export const getPrintOrientation = (project: Project): PrintOrientation =>
   project.mode === "parade" ? "portrait" : "landscape";
@@ -459,7 +461,7 @@ const getPrintPageUsableSize = (
         width: PRINT_A4_LONG_USABLE_MM,
       };
 
-const getPrintMetrics = (
+export const getPrintMetrics = (
   project: Project,
   frames: FormationFrame[],
   options: ShareExportOptions,
@@ -632,7 +634,7 @@ const getPrintMemberDiameterMm = (
   metrics: PrintMetrics,
 ): number => (project.stage.memberDiameterMeters ?? 0.5) * metrics.mmPerMeter;
 
-const getPrintRulerTopMm = (
+export const getPrintRulerTopMm = (
   project: Project,
   metrics: PrintMetrics,
   options: ShareExportOptions,
@@ -647,7 +649,7 @@ const getPrintRulerTopMm = (
   );
 };
 
-const getPrintRulerBottomMm = (
+export const getPrintRulerBottomMm = (
   project: Project,
   metrics: PrintMetrics,
   options: ShareExportOptions,
