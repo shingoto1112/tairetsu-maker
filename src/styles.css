@@ -1439,14 +1439,37 @@ h2 {
   width: min(480px, calc(100vw - 48px));
 }
 
+/* Track along the straight part of the card's top edge (inside the 18px corner radius). */
 .export-progress-card__bar {
-  animation: export-progress-sweep 1.2s ease-in-out infinite;
-  background: linear-gradient(90deg, #60a5fa, #a7f3d0);
   height: 4px;
+  left: 18px;
+  overflow: hidden;
+  position: absolute;
+  right: 18px;
+  top: 0;
+}
+
+/* Only transform is animated, so the sweep stays on the compositor and keeps moving
+   while page rasterizing for PDF/image export blocks the main thread. */
+.export-progress-card__bar::before {
+  animation: export-progress-sweep 1.4s linear infinite;
+  background: linear-gradient(90deg, #60a5fa, #a7f3d0);
+  border-radius: 2px;
+  content: "";
+  height: 100%;
   left: 0;
   position: absolute;
   top: 0;
   width: 30%;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-progress-card__bar::before {
+    animation: none;
+    transform: none;
+    width: 100%;
+  }
 }
 
 .export-progress-card h2 {
@@ -1462,18 +1485,14 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+/* translateX is relative to the 30%-wide bar: enter fully left of the track, leave fully right
+   (100% / 30% = 333.3%), so the loop restarts off-screen without a visible jump. */
 @keyframes export-progress-sweep {
-  0% {
-    left: 0;
-    width: 18%;
+  from {
+    transform: translateX(-100%);
   }
-  50% {
-    left: 34%;
-    width: 48%;
-  }
-  100% {
-    left: 82%;
-    width: 18%;
+  to {
+    transform: translateX(333.34%);
   }
 }
 
