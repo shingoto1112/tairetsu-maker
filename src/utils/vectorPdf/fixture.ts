@@ -64,3 +64,37 @@ export function vectorCurtainFixture(width = 9, depth = 5.5, count = 7): Project
   });
   return p;
 }
+
+/** Fictional emoji acceptance data. No real project or personal data is used. */
+export function vectorEmojiFixture(large = false): Project {
+  const p = vectorStage2Fixture(large ? 18 : 9, large ? 10 : 5.5, large ? 18 : 2);
+  p.title = "架空・絵文字PDF🔥";
+  if (!large) {
+    const names = ["🔥", "あお🔥", "👩🏽‍🎤みどり", "𠮷田", "❤️", "葛\u{e0100}", "か\u3099", "김민지"];
+    names.forEach((name, i) => { p.members[i].name = name; p.members[24 + i].name = name; });
+    p.stageObjects[0].name = "あお🔥👩🏽‍🎤𠮷田❤️葛\u{e0100}か\u3099김민지道具";
+    p.stageObjects[1].name = "円🔥";
+    p.frames.forEach((f, i) => {
+      f.label = (`折り返すシーン名 あお🔥👩🏽‍🎤❤️𠮷田 葛\u{e0100}か\u3099 김민지 ${i + 1} `).repeat(3);
+      f.objectAssignments = { panel: ["m24", "m25", "m26", "m27"], circle: ["m28", "m29", "m30"] };
+      f.objectAssignments.circle.push("m31"); f.memberVisibility = { ...f.memberVisibility, m31: true };
+      f.objectStates.panel.rotation = i ? 137 : 45;
+      f.objectStates.panel.widthMeters = 1.2; f.objectStates.panel.heightMeters = .42;
+    });
+    return p;
+  }
+  p.members = Array.from({ length: 146 }, (_, i) => ({ id: `m${i}`, name: i === 0 ? "あお🔥" : `架空${i + 1}`, color: ["#38bdf8", "#86efac", "#fde047"][i % 3] }));
+  p.stageObjects = Array.from({ length: 18 }, (_, i) => ({ ...p.stageObjects[0], id: `o${i}`, name: `道具${i + 1}`,
+    shape: i < 8 ? "rectangle" : i < 17 ? "circle" : "line", widthMeters: 1, heightMeters: .6,
+    defaultX: .5 + i % 9 * 1.9, defaultY: 3 + Math.floor(i / 9) * 4, defaultRotation: 0 }));
+  p.objectGroups = [];
+  p.frames.forEach((f, i) => {
+    f.label = `架空の公演・第${i + 1}シーン`; f.memberVisibility = {}; f.memberAppearanceOverrides = {};
+    f.positions = Object.fromEntries(p.members.map((member, j) => [member.id, { x: .5 + j % 15 * 1.15, y: .5 + Math.floor(j / 15) * .95 }]));
+    f.objectStates = Object.fromEntries(p.stageObjects.map(o => [o.id, { objectId: o.id, x: o.defaultX, y: o.defaultY,
+      widthMeters: o.widthMeters, heightMeters: o.heightMeters, rotation: 0, visible: true, zIndex: 0 }]));
+    // Keep the sole emoji name on stage in all 18 scenes to measure reuse.
+    f.objectAssignments = Object.fromEntries(p.stageObjects.map((o, j) => [o.id, [`m${128 + j}`]]));
+  });
+  return p;
+}

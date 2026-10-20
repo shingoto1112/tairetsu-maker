@@ -58,3 +58,22 @@ export function compare(referenceData, actualData, regions) {
   }
   return { result, diff: PNG.sync.write(diff), pass: Object.values(result).every(r => r.pass) };
 }
+
+/** A local check is per grapheme, so a missing small emoji cannot be diluted by
+ * the rest of a page. Allow up to 5% of its tight box for OS glyph hinting versus
+ * high-resolution PNG downsampling; retain the same 2px/32-color AA support.
+ * The existing whole-region 0.3% threshold above is deliberately unchanged. */
+export function compareGraphemes(referenceData, actualData, boxes) {
+  const compared = compare(referenceData, actualData, { graphemes: boxes });
+  const diff = PNG.sync.read(compared.diff);
+  const glyphs = boxes.map(box => {
+    let pixels = 0, bad = 0;
+    for (let y = Math.max(0, Math.floor(box.y)); y < Math.min(diff.height, Math.ceil(box.y + box.height)); y++)
+      for (let x = Math.max(0, Math.floor(box.x)); x < Math.min(diff.width, Math.ceil(box.x + box.width)); x++) {
+        pixels++; const i = (y * diff.width + x) * 4;
+        if (diff.data[i] === 255 && diff.data[i + 1] === 0 && diff.data[i + 2] === 80) bad++;
+      }
+    return { pixels, bad, ratio: pixels ? bad / pixels : 0, pass: pixels > 0 && bad / pixels < .05 };
+  });
+  return { ...compared, glyphs, pass: glyphs.length > 0 && glyphs.every(g => g.pass) };
+}

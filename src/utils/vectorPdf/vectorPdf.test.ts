@@ -87,6 +87,10 @@ it("matches CSS four-character line gap, border inset, opacity and measured page
     expect(shape.opacity).toBe(0x24 / 255);
     expect(shape.lineWidth).toBeCloseTo(25.4 / 96);
   }
+  const clip = find(page.drawings, "panel-clip").clip!;
+  const m = getPrintMetrics(p, [p.frames[0]], defaultPrintOptions).mmPerMeter;
+  expect(clip.width).toBeCloseTo(p.frames[0].objectStates.panel.widthMeters * m - 2 * 25.4 / 96);
+  expect(clip.height).toBeCloseTo(p.frames[0].objectStates.panel.heightMeters * m - 2 * 25.4 / 96);
   expect(() => buildScenePage(p, "s0", {}, propText, { width: NaN, height: 10 })).toThrow();
 });
 

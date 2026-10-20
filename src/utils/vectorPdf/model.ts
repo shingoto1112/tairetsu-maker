@@ -15,7 +15,10 @@ export type Rect = { x: number; y: number; width: number; height: number; radius
 export type TextLine = { kind: "text"; text: string; x: number; y: number; size: number;
   weight: number; color: string; align?: "left" | "center" | "right";
   /** CSS inline baseline rounding, when supplied by the browser layout adapter. */
-  baselineOffset?: number };
+  baselineOffset?: number;
+  /** Browser-only, lazy: ordinary names never need extra glyph/baseline probes. */
+  measureMixed?: () => GraphemePlacement[] };
+export type GraphemePlacement = { text: string; x: number; baseline: number; advance: number };
 export type Drawing = TextLine
   | ({ kind: "image"; dataUrl: string; cacheKey?: string } & Rect)
   | ({ kind: "shape"; fill?: string; stroke?: string; lineWidth?: number; opacity?: number; strokeOpacity?: number } & Rect)
@@ -112,7 +115,12 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
           height: oh - 2 * inset, radius: Math.max(0, (rect.radius ?? 0) - inset),
           fill: object.color, stroke: object.color, lineWidth: CSS_PX_MM, opacity: 0x24 / 255 },
         ...(shape === "curtain" ? curtainStripes(object.id, rect, CSS_PX_MM) : []),
-        { kind: "group", id: `${object.id}-clip`, x: 0, y: 0, rotation: 0, clip: rect, children: [
+        // CSS overflow:hidden clips descendants at the inner border edge.
+        { kind: "group", id: `${object.id}-clip`, x: 0, y: 0, rotation: 0, clip: {
+          x: rect.x + CSS_PX_MM, y: rect.y + CSS_PX_MM,
+          width: Math.max(0, ow - 2 * CSS_PX_MM), height: Math.max(0, oh - 2 * CSS_PX_MM),
+          radius: Math.max(0, (rect.radius ?? 0) - CSS_PX_MM),
+        }, children: [
           { kind: "group", id: `${object.id}-label`, x: 0, y: 0, rotation: correction,
             children: propText?.(object.name, ow, oh, correction, rect.radius) ?? [] },
         ] },

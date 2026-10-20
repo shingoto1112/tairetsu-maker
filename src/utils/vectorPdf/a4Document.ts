@@ -7,6 +7,7 @@ import { measurePrintPageExtent, measurePropText } from "./browserTextLayout";
 import { ensureBrowserFonts, measureAssignmentLayout, measureBaseline, measureTextLines, relativeRect } from "./browserDocumentLayout";
 import { buildAssignmentDrawings } from "./assignmentModel";
 import { checkAbort } from "./fonts";
+import { measureMixedGraphemes } from "./browserMixedText";
 import { renderScenePages } from "./renderer";
 
 type Diagnostic = { timestamp: string; reason: string };
@@ -48,7 +49,17 @@ export function buildA4Document(project: Project, frameIds: string[], element: H
         const node = stage.children.find(d => d.kind === "group" && d.id === member.id);
         if (node?.kind !== "group") throw new UnsupportedVectorLayout("メンバー文字が見つかりません。");
         const baseline = measureBaseline(getComputedStyle(icons[k])).line;
-        visibleTextLines(node.children).forEach(line => { line.baselineOffset = baseline; });
+        const domLines = [...icons[k].querySelectorAll<HTMLElement>(".print-member__label-line")];
+        visibleTextLines(node.children).forEach((line, index) => {
+          line.baselineOffset = baseline;
+          // Lazy measurement is only invoked if cmap/shaping checks choose a bitmap.
+          // Member icon coordinates are unrotated; stored stage positions stay authoritative.
+          line.measureMixed = () => {
+            const r = icons[k].getBoundingClientRect();
+            return measureMixedGraphemes(domLines[index], icons[k]).map(p => ({ ...p, x: p.x - r.width * 25.4 / 96 / 2,
+              baseline: p.baseline - r.height * 25.4 / 96 / 2 }));
+          };
+        });
       });
       // CSS owns scene block stacking/title wrapping and assignment grid/flex layout.
       // Stage/member/rotated prop geometry is entirely from the model, never DOM bboxes.

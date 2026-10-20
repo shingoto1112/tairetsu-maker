@@ -37,6 +37,12 @@ it("uses CSS-assigned columns/rows, includes hidden assigned members and keeps a
   expect(names).toEqual(["大道具Ａ", "あお", "紅", "みどり"]);
   const prop = nodes.find(n => n.kind === "group" && n.id === "assignment-panel");
   expect(prop).toMatchObject({ rotation: 0 });
+  if (prop?.kind === "group") {
+    const label = prop.children.find(n => n.kind === "group" && n.id === "assignment-panel-label");
+    const border = 1.4 * 25.4 / 96;
+    expect(label).toMatchObject({ clip: { x: rect.x + border, y: rect.y + border,
+      width: rect.width - 2 * border, height: rect.height - 2 * border } });
+  }
   expect(nodes.find(n => n.kind === "group" && n.id === "assignment-panel-m2")).toMatchObject({ children: expect.arrayContaining([
     expect.objectContaining({ kind: "shape", x: 220, y: 47, width: 10 }), expect.objectContaining({ kind: "image" }),
   ]) });

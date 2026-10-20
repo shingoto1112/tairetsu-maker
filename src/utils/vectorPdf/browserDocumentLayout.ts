@@ -2,6 +2,9 @@ import { cachedFontBytes, checkAbort, fetchFontBytes, FONT_FAMILY, fontFileName,
 import { CSS_PX_MM, UnsupportedVectorLayout, type Drawing, type Rect, type TextLine } from "./model";
 import type { AssignmentLayout } from "./assignmentModel";
 import type { AssignmentPrintEntry } from "../printLayout";
+import { measureMixedGraphemes, slicePlacements } from "./browserMixedText";
+import { layoutGraphemes } from "./textRuns";
+import type { GraphemePlacement } from "./model";
 
 const browserFaces = new Map<FontWeight, FontFace>();
 const baselines = new Map<string, { line: number; range: number }>();
@@ -50,27 +53,32 @@ export function measureTextLines(el: HTMLElement, root: HTMLElement, clip?: Rect
   const origin = root.getBoundingClientRect();
   const style = getComputedStyle(el);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  const groups: { text: string; x: number; y: number; width: number }[] = [];
+  const groups: { text: string; x: number; y: number; width: number; start: number; end: number }[] = [];
   let node: Node | null;
+  let total = 0;
   while ((node = walker.nextNode())) {
     const value = node.textContent ?? "";
     let offset = 0;
-    for (const ch of value) {
+    for (const ch of layoutGraphemes(value)) {
+      const start = total + offset;
       const range = document.createRange(); range.setStart(node, offset); offset += ch.length; range.setEnd(node, offset);
       const r = range.getBoundingClientRect();
       const x = (r.x - origin.x) * CSS_PX_MM, y = (r.y + r.height / 2 - origin.y) * CSS_PX_MM;
       const width = r.width * CSS_PX_MM, hh = r.height * CSS_PX_MM / 2;
       if (clip && (x + width <= clip.x || x >= clip.x + clip.width || y + hh <= clip.y || y - hh >= clip.y + clip.height)) continue;
       const last = groups[groups.length - 1];
-      if (last && Math.abs(last.y - y) < .01 && Math.abs(last.x + last.width - x) < .05) { last.text += ch; last.width += width; }
-      else groups.push({ text: ch, x, y, width });
+      if (last && last.end === start && Math.abs(last.y - y) < .01 && Math.abs(last.x + last.width - x) < .05) { last.text += ch; last.width += width; last.end = total + offset; }
+      else groups.push({ text: ch, x, y, width, start, end: total + offset });
     }
+    total += value.length;
   }
   const rgb = style.color.match(/^rgb\((\d+),?\s+(\d+),?\s+(\d+)\)$/);
   if (!rgb) throw new UnsupportedVectorLayout(`文字色の形式が未対応です: ${style.color}`);
   const color = "#" + rgb.slice(1).map(n => Number(n).toString(16).padStart(2, "0")).join("");
+  let mixed: GraphemePlacement[] | undefined;
   return groups.map(g => ({ kind: "text", text: g.text, x: g.x + g.width / 2, y: g.y, size: parseFloat(style.fontSize) * CSS_PX_MM,
-    weight: Number(style.fontWeight), color, baselineOffset: measureBaseline(style).range }));
+    weight: Number(style.fontWeight), color, baselineOffset: measureBaseline(style).range,
+    measureMixed: () => slicePlacements(mixed ??= measureMixedGraphemes(el, root), g.start, g.end) }));
 }
 
 const shadows = new Map<string, string>();

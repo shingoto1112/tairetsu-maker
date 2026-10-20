@@ -2,6 +2,48 @@ import { jsPDF } from "jspdf";
 import { fitPdfImage, a4PageSize } from "../pdfPageLayout";
 import { checkAbort, FONT_FAMILY, fontWeight, parsedFont, registerFonts, requiredFontWeights, unsupportedCharacters, type FontBytesReader } from "./fonts";
 import { CSS_PX_MM, visibleTextLines, type Drawing, type Rect, type ScenePage } from "./model";
+import { planTextRuns } from "./textRuns";
+import { createGraphemeImageCache, type GlyphRasterizer } from "./graphemeImages";
+
+export async function prepareTextDrawings(pdf: jsPDF, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer } = {}) {
+  const cache = createGraphemeImageCache(options.rasterize);
+  let visited = 0;
+  async function prepare(nodes: Drawing[], scale: number): Promise<Drawing[]> {
+    const result: Drawing[] = [];
+    for (const node of nodes) {
+      checkAbort(options.signal);
+      if (++visited % 64 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
+      if (node.kind === "group") result.push({ ...node, children: await prepare(node.children, scale) });
+      else if (node.kind !== "text" || !node.text) result.push(node);
+      else {
+        const runs = planTextRuns(pdf, node);
+        if (!runs.some(r => r.raster)) { result.push(node); continue; }
+        const placements = node.measureMixed?.();
+        if (!placements || placements.map(p => p.text).join("") !== node.text)
+          throw new Error("代替文字のDOM配置を安全に計測できません。");
+        let offset = 0;
+        const positions = placements.map(p => { const start = offset; offset += p.text.length; return { ...p, start }; });
+        for (const run of runs) {
+          const first = positions.find(p => p.start === run.start);
+          if (!first || !Number.isFinite(first.x + first.baseline + first.advance)) throw new Error("代替文字の配置が不正です。");
+          if (run.raster) {
+            result.push(cache.image(run.text, node, scale, first.x, first.baseline, options.signal));
+            await new Promise<void>(resolve => setTimeout(resolve, 0));
+          } else result.push({ ...node, text: run.text, x: first.x, y: first.baseline, align: "left", baselineOffset: 0, measureMixed: undefined });
+        }
+      }
+    }
+    return result;
+  }
+  const prepared: ScenePage[] = [];
+  for (const page of pages) {
+    const width = Math.ceil(page.width / CSS_PX_MM - 1e-7) * CSS_PX_MM;
+    const height = Math.ceil(page.height / CSS_PX_MM - 1e-7) * CSS_PX_MM;
+    const a4 = a4PageSize("landscape"), fit = fitPdfImage(width, height, a4.width, a4.height);
+    prepared.push({ ...page, drawings: await prepare(page.drawings, fit.width / width * 25.4 / 72) });
+  }
+  return { pages: prepared, metrics: cache.metrics };
+}
 
 function path(pdf: jsPDF, r: Rect, style: "F" | "S" | null) {
   const radius = r.radius ?? 0;
@@ -60,16 +102,20 @@ export class UnsupportedPdfCharacters extends Error {
 
 /** A4 pages already composed by the shared PrintPreview pagination/layout. */
 export async function renderScenePages(pages: ScenePage[], options: { readFontBytes?: FontBytesReader; signal?: AbortSignal; title?: string;
-  onProgress?: (message: string) => void } = {}) {
+  onProgress?: (message: string) => void; rasterize?: GlyphRasterizer } = {}) {
   checkAbort(options.signal);
   if (!pages.length) throw new Error("PDFのページがありません。");
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
-  const lines = pages.flatMap(p => visibleTextLines(p.drawings));
+  const sourceLines = pages.flatMap(p => visibleTextLines(p.drawings));
   options.onProgress?.("共通フォントを準備中");
-  const fonts = await registerFonts(pdf, options.readFontBytes, options.signal, requiredFontWeights(lines));
+  const fonts = await registerFonts(pdf, options.readFontBytes, options.signal, requiredFontWeights(sourceLines));
+  const start = performance.now();
+  const prepared = await prepareTextDrawings(pdf, pages, options);
+  pages = prepared.pages;
+  // Only actual vector runs reach font subsets, ToUnicode and post-draw validation.
+  const lines = pages.flatMap(p => visibleTextLines(p.drawings));
   const missing = unsupportedCharacters(pdf, lines);
   if (missing.length) throw new UnsupportedPdfCharacters(missing);
-  const start = performance.now();
   pdf.setProperties({ title: options.title ?? "隊列メーカー 隊列表", creator: "隊列メーカー" });
   for (const [i, page] of pages.entries()) {
     options.onProgress?.(`${i + 1} / ${pages.length}ページを作成中`);
@@ -105,12 +151,14 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
     return { compressedBytes: length, uncompressedBytes: uncompressed };
   });
   if (!raw.startsWith("%PDF-") || !raw.includes("%%EOF") || embeddedFonts.length !== usedWeights.length ||
-    (raw.match(/\/ToUnicode /g)?.length ?? 0) !== usedWeights.length || !raw.includes("/CIDFontType2"))
+    (raw.match(/\/ToUnicode /g)?.length ?? 0) !== usedWeights.length || (usedWeights.length > 0 && !raw.includes("/CIDFontType2")))
     throw new Error("PDFのフォント埋込・Unicode情報の検証に失敗しました。");
   for (const line of lines) for (const ch of line.text) {
     const font = parsedFont(pdf, fontWeight(line.weight)), code = ch.charCodeAt(0), glyph = font.characterToGlyph(code);
     if (!glyph || font.toUnicode[glyph] !== code) throw new Error("PDFに文字を完全に埋め込めませんでした。");
   }
   return { blob: new Blob([bytes], { type: "application/pdf" }), metrics: { ...fonts,
-    generationMs: performance.now() - start, embeddedFonts, pages: pages.length, bytes: bytes.byteLength } };
+    generationMs: performance.now() - start, embeddedFonts, pages: pages.length, bytes: bytes.byteLength,
+    graphemeImages: prepared.metrics },
+    vectorText: pages.map(p => visibleTextLines(p.drawings).map(l => l.text)) };
 }
