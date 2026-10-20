@@ -128,6 +128,7 @@ export const jpegDataUrlsToPdfBlob = async (
   dataUrls: string[],
   title?: string,
   orientation: PdfOrientation = "landscape",
+  controls: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void } = {},
 ): Promise<Blob> => {
   const pages = await Promise.all(
     dataUrls.map(async (dataUrl) => ({
@@ -136,7 +137,7 @@ export const jpegDataUrlsToPdfBlob = async (
       ...(await getImageSize(dataUrl)),
     })),
   );
-  const pdfBlob = await imagePagesToPdfBlob(pages, { title, orientation, compression: "FAST" });
+  const pdfBlob = await imagePagesToPdfBlob(pages, { title, orientation, compression: "FAST", ...controls });
   if (pdfBlob.size <= 0) {
     throw new Error("PDFデータを作成できませんでした。");
   }

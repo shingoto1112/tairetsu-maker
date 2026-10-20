@@ -1,7 +1,7 @@
 import type { Project } from "../../types";
 import type { ShareExportOptions } from "../../components/ShareExportModal";
 import { defaultPrintOptions, getEffectiveSize, getPrintMetrics, getPrintRulerTopMm,
-  getPrintRulerBottomMm, getPrintMemberLabelFontSizeMm, isPrintMemberVisible } from "../../components/PrintPreview";
+  getPrintRulerBottomMm, getPrintMemberLabelFontSizeMm, isPrintMemberVisible, type PrintMetrics } from "../printLayout";
 import { createStageExportView, readablePropLabelRotation } from "../stageExportView";
 import { createDefaultObjectState, sortFrames } from "../interpolation";
 import { GRID_LINE_TOKENS } from "../gridEmphasis";
@@ -13,9 +13,12 @@ import { objectRenderShape } from "../../project/objectAppearance";
  * A group rotates clockwise about (x,y); children have local coordinates. No global stage clip. */
 export type Rect = { x: number; y: number; width: number; height: number; radius?: number };
 export type TextLine = { kind: "text"; text: string; x: number; y: number; size: number;
-  weight: number; color: string; align?: "left" | "center" | "right" };
+  weight: number; color: string; align?: "left" | "center" | "right";
+  /** CSS inline baseline rounding, when supplied by the browser layout adapter. */
+  baselineOffset?: number };
 export type Drawing = TextLine
-  | ({ kind: "shape"; fill?: string; stroke?: string; lineWidth?: number; opacity?: number } & Rect)
+  | ({ kind: "image"; dataUrl: string; cacheKey?: string } & Rect)
+  | ({ kind: "shape"; fill?: string; stroke?: string; lineWidth?: number; opacity?: number; strokeOpacity?: number } & Rect)
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; color: string; width: number;
       opacity?: number; dash?: number[]; square?: boolean }
   | { kind: "group"; id: string; x: number; y: number; rotation: number; clip?: Rect; children: Drawing[] };
@@ -28,16 +31,40 @@ const text = (value: string, x: number, y: number, size: number, color: string, 
   align: TextLine["align"] = "center"): TextLine => ({ kind: "text", text: value, x, y, size, color, weight, align });
 const annotationColors = { black: "#17212b", red: "#c62828", blue: "#1565c0", green: "#237a34" };
 
+/** Print CSS gives line/custom the default rectangle; never accept unknown shapes. */
+export function printObjectShape(shape: string): "rectangle" | "circle" | "curtain" {
+  if (shape === "line" || shape === "custom") return "rectangle";
+  if (shape === "rectangle" || shape === "circle" || shape === "curtain") return shape;
+  throw new UnsupportedVectorLayout(`道具の形 ${shape} はベクター描画未対応です。`);
+}
+
+/** CSS background-origin: padding-box, with opaque borders covering the background.
+ * Local mm keep the 8px/16px pattern independent of stage metres and rotate/fit
+ * exactly once with the parent object/page. Both print surfaces use this pattern. */
+export function curtainStripes(id: string, rect: Rect, border: number): Drawing[] {
+  const clip = { x: rect.x + border, y: rect.y + border,
+    width: rect.width - 2 * border, height: rect.height - 2 * border,
+    radius: Math.max(0, (rect.radius ?? 0) - border) };
+  if (clip.width <= 0 || clip.height <= 0) return [];
+  const children: Drawing[] = [], stripe = 8 * CSS_PX_MM;
+  for (let offset = 0; offset < clip.width; offset += 2 * stripe)
+    children.push({ kind: "shape", x: clip.x + offset, y: clip.y, width: stripe, height: clip.height,
+      fill: "#ffffff", opacity: .28 });
+  return [{ kind: "group", id: `${id}-stripes`, x: 0, y: 0, rotation: 0, clip, children }];
+}
+
 export function buildScenePage(project: Project, frameId: string, supplied: Partial<ShareExportOptions> = {},
-  propText?: PropTextLayout, pageExtent?: Pick<ScenePage, "width" | "height">): ScenePage {
+  propText?: PropTextLayout, pageExtent?: Pick<ScenePage, "width" | "height">,
+  layout?: { metrics: PrintMetrics; gapAfter: boolean }): ScenePage {
   const options = { ...defaultPrintOptions, ...supplied };
-  if (project.mode === "parade" || options.includeAssignments || options.includeHiddenMembers || options.includeNotes || options.includeSceneTime || options.layout !== "auto")
-    throw new UnsupportedVectorLayout("段階①はステージ1シーン・割当欄なしのA4のみ対応しています。");
+  if (project.mode === "parade" || options.includeHiddenMembers || options.includeNotes || options.includeSceneTime)
+    throw new UnsupportedVectorLayout("パレード・非表示メンバー・メモ・時刻付きのベクター描画は未対応です。");
   const frame = project.frames.find(f => f.id === frameId);
   if (!frame) throw new UnsupportedVectorLayout("対象シーンがありません。");
   const size = getEffectiveSize(project, frame);
-  const metrics = getPrintMetrics(project, [frame], options);
-  const m = metrics.mmPerMeter, w = metrics.stageWidthMm, h = size.depthMeters * m;
+  const metrics = layout?.metrics ?? getPrintMetrics(project, [frame], options);
+  const gapMeters = layout?.gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
+  const m = metrics.mmPerMeter, w = metrics.stageWidthMm, h = (size.depthMeters + gapMeters) * m;
   const left = options.includeMeterRulers ? 10 : 0;
   const top = getPrintRulerTopMm(project, metrics, options);
   const bottom = options.includeMeterRulers ? getPrintRulerBottomMm(project, metrics, options) : 0;
@@ -69,10 +96,9 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     clip: { x: 0, y: 0, width: w, height: h }, children: annotations });
   const layers: { z: number; node: Drawing }[] = [];
   for (const object of project.stageObjects) {
-    const state = frame.objectStates[object.id] ?? createDefaultObjectState(object);
+    const state = frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
     if ((state.visible ?? object.visible) === false) continue;
-    const shape = objectRenderShape(object);
-    if (shape !== "rectangle" && shape !== "circle") throw new UnsupportedVectorLayout("幕などの装飾は段階②以降です。");
+    const shape = printObjectShape(objectRenderShape(object));
     if (!/^#[0-9a-f]{6}$/i.test(object.color)) throw new UnsupportedVectorLayout("道具色の形式が未対応です。");
     if (!propText && object.name) throw new UnsupportedVectorLayout("道具名のCSS文字配置計測が必要です。");
     const pos = view.object(state), ow = state.widthMeters * m, oh = state.heightMeters * m;
@@ -85,6 +111,7 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
         { kind: "shape", ...rect, x: rect.x + inset, y: rect.y + inset, width: ow - 2 * inset,
           height: oh - 2 * inset, radius: Math.max(0, (rect.radius ?? 0) - inset),
           fill: object.color, stroke: object.color, lineWidth: CSS_PX_MM, opacity: 0x24 / 255 },
+        ...(shape === "curtain" ? curtainStripes(object.id, rect, CSS_PX_MM) : []),
         { kind: "group", id: `${object.id}-clip`, x: 0, y: 0, rotation: 0, clip: rect, children: [
           { kind: "group", id: `${object.id}-label`, x: 0, y: 0, rotation: correction,
             children: propText?.(object.name, ow, oh, correction, rect.radius) ?? [] },
@@ -108,6 +135,8 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     ] } });
   }
   stage.push(...layers.sort((a, b) => a.z - b.z).map(l => l.node));
+  if (gapMeters) stage.push({ kind: "line", x1: 0, x2: w, y1: size.depthMeters * m, y2: size.depthMeters * m,
+    color: "#0f766e", opacity: .35, width: CSS_PX_MM, dash: [3 * CSS_PX_MM, 3 * CSS_PX_MM] });
   drawings.push({ kind: "group", id: "stage", x: left, y: 9 + top, rotation: 0, children: stage });
   if (options.includeMeterRulers) {
     for (const label of view.horizontalLabels) drawings.push(text(label.label, left + label.positionMeters * m, 9 + 1.2 + 1.5, pt(7), "#111827", 700));

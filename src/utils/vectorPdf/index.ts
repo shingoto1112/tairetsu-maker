@@ -15,6 +15,7 @@ export async function createVectorPdfPrototype(request: {
 }) {
   checkAbort(request.signal);
   try {
+    if (request.options?.includeAssignments) throw new Error("試作APIは割当欄に対応していません。A4本実装を使用してください。");
     if (request.frameIds.length !== 1) throw new Error("複数シーンの改ページは段階②以降です。");
     const page = buildScenePage(request.project, request.frameIds[0], request.options, request.propText, request.pageExtent);
     const result = await renderScenePages([page], request);
@@ -28,3 +29,5 @@ export async function createVectorPdfPrototype(request: {
     return { blob, mode: "image" as const, reason: error instanceof Error ? error.message : String(error) };
   }
 }
+
+export { createA4VectorPdf, vectorPdfDiagnostics } from "./a4Document";

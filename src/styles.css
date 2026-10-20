@@ -1485,6 +1485,13 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.export-progress-card__cancel {
+  font-size: 15px;
+  margin-top: 16px;
+  min-height: 44px;
+  min-width: 88px;
+}
+
 /* translateX is relative to the 30%-wide bar: enter fully left of the track, leave fully right
    (100% / 30% = 333.3%), so the loop restarts off-screen without a visible jump. */
 @keyframes export-progress-sweep {

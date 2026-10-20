@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { fitPdfImage, a4PageSize } from "../pdfPageLayout";
-import { checkAbort, FONT_FAMILY, fontWeight, parsedFont, registerFonts, unsupportedCharacters, type FontBytesReader } from "./fonts";
+import { checkAbort, FONT_FAMILY, fontWeight, parsedFont, registerFonts, requiredFontWeights, unsupportedCharacters, type FontBytesReader } from "./fonts";
 import { CSS_PX_MM, visibleTextLines, type Drawing, type Rect, type ScenePage } from "./model";
 
 function path(pdf: jsPDF, r: Rect, style: "F" | "S" | null) {
@@ -19,6 +19,8 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
         pdf.setCurrentTransformationMatrix(pdf.Matrix(Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad), d.x, d.y));
         if (d.clip) { path(pdf, d.clip, null); pdf.clip(); pdf.discardPath(); }
         draw(pdf, d.children, signal);
+      } else if (d.kind === "image") {
+        pdf.addImage(d.dataUrl, "PNG", d.x, d.y, d.width, d.height, d.cacheKey);
       } else if (d.kind === "text") {
         if (!d.text) continue;
         const weight = fontWeight(d.weight), font = parsedFont(pdf, weight);
@@ -26,7 +28,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
         // jsPDF sizes are points even inside a millimetre-coordinate document.
         pdf.setFontSize(d.size * 72 / 25.4);
         pdf.setTextColor(d.color);
-        const baselineOffset = (font.ascender + font.decender) / 2000 * d.size;
+        const baselineOffset = d.baselineOffset ?? (font.ascender + font.decender) / 2000 * d.size;
         // jsPDF 4.2.1's built-in alignment divides the advance by scaleFactor again
         // in advanced mode. Compute the anchor in model millimetres ourselves.
         const advance = pdf.getStringUnitWidth(d.text, { doKerning: false }) * d.size;
@@ -44,7 +46,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
           pdf.setFillColor(d.fill); path(pdf, d, "F");
         }
         if (d.stroke) {
-          pdf.setGState(pdf.GState({ opacity: 1, "stroke-opacity": 1 }));
+          pdf.setGState(pdf.GState({ opacity: 1, "stroke-opacity": d.strokeOpacity ?? 1 }));
           pdf.setDrawColor(d.stroke); pdf.setLineWidth(d.lineWidth ?? CSS_PX_MM); path(pdf, d, "S");
         }
       }
@@ -56,18 +58,21 @@ export class UnsupportedPdfCharacters extends Error {
   constructor(public readonly characters: string[]) { super(`共通フォントで安全に描けない文字: ${characters.join(" ")}`); }
 }
 
-/** Prototype-only: repeated independent scene pages, NOT the future multi-scene paginator. */
-export async function renderScenePages(pages: ScenePage[], options: { readFontBytes?: FontBytesReader; signal?: AbortSignal; title?: string } = {}) {
+/** A4 pages already composed by the shared PrintPreview pagination/layout. */
+export async function renderScenePages(pages: ScenePage[], options: { readFontBytes?: FontBytesReader; signal?: AbortSignal; title?: string;
+  onProgress?: (message: string) => void } = {}) {
   checkAbort(options.signal);
   if (!pages.length) throw new Error("PDFのページがありません。");
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
-  const fonts = await registerFonts(pdf, options.readFontBytes, options.signal);
   const lines = pages.flatMap(p => visibleTextLines(p.drawings));
+  options.onProgress?.("共通フォントを準備中");
+  const fonts = await registerFonts(pdf, options.readFontBytes, options.signal, requiredFontWeights(lines));
   const missing = unsupportedCharacters(pdf, lines);
   if (missing.length) throw new UnsupportedPdfCharacters(missing);
   const start = performance.now();
-  pdf.setProperties({ title: options.title ?? "隊列メーカー ベクターPDF試作", creator: "隊列メーカー" });
+  pdf.setProperties({ title: options.title ?? "隊列メーカー 隊列表", creator: "隊列メーカー" });
   for (const [i, page] of pages.entries()) {
+    options.onProgress?.(`${i + 1} / ${pages.length}ページを作成中`);
     checkAbort(options.signal);
     if (i) pdf.addPage("a4", "landscape");
     const a4 = a4PageSize("landscape");

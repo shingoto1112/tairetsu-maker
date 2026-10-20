@@ -25,3 +25,42 @@ export function vectorPdfFixture(width = 9, depth = 5.5, count = 1): Project {
     })),
   };
 }
+
+/** Stage② acceptance fixtures; the prototype fixture stays unchanged for regression tests. */
+export function vectorStage2Fixture(width = 9, depth = 5.5, count = 7): Project {
+  const p = vectorPdfFixture(width, depth, count);
+  p.objectGroups = [{ id: "fixtures", name: "検証用道具", objectIds: ["circle", "edge", "panel"] }];
+  p.frames.forEach((frame, i) => {
+    frame.objectAssignments = { panel: ["m24", "m25", "m26", "m27", "m28"], circle: ["m29", "m30"], edge: ["m23"] };
+    frame.memberVisibility = { m31: false };
+    frame.memberAppearanceOverrides = { m2: { color: "#0d8b78" } };
+    frame.objectStates.panel.rotation = [0, 45, 90, -90, 137, 180, 270][i % 7];
+  });
+  return p;
+}
+
+/** Addendum fixtures leave the original stage② regression inputs intact. */
+export function vectorCurtainFixture(width = 9, depth = 5.5, count = 7): Project {
+  const p = vectorStage2Fixture(width, depth, count);
+  // Modern curtain preset and legacy saved curtain shapes must both stay striped.
+  Object.assign(p.stageObjects[0], { type: "curtain", shape: "rectangle", name: "大ラス幕" });
+  p.stageObjects[2].shape = "line";
+  p.stageObjects[2].name = "線";
+  const extras = [
+    { id: "curtain90", name: "花街幕", shape: "curtain" as const, rotation: 90, x: 6, y: .9 },
+    { id: "curtain137", name: "斜め幕", shape: "curtain" as const, rotation: 137, x: 4, y: 3.5 },
+    { id: "custom", name: "カスタム", shape: "custom" as const, rotation: 35, x: .7, y: .8 },
+  ];
+  p.stageObjects.push(...extras.map(e => ({ ...p.stageObjects[2], id: e.id, name: e.name, shape: e.shape,
+    widthMeters: 1.4, heightMeters: .5, defaultX: e.x, defaultY: e.y, defaultRotation: e.rotation })));
+  p.objectGroups![0].objectIds = p.stageObjects.map(o => o.id);
+  p.frames.forEach(f => {
+    f.objectStates.panel.rotation = 0;
+    for (const [i, e] of extras.entries()) {
+      f.objectStates[e.id] = { objectId: e.id, x: e.x, y: e.y, widthMeters: 1.4, heightMeters: .5,
+        rotation: e.rotation, visible: true, zIndex: 0 };
+      f.objectAssignments![e.id] = [`m${20 + i}`];
+    }
+  });
+  return p;
+}

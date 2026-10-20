@@ -6,6 +6,20 @@ export const FONT_FAMILY = "BIZUDPGothic";
 export const FONT_VERSION = "20261021";
 export type FontWeight = "normal" | "bold";
 export type FontBytesReader = (fileName: string, signal?: AbortSignal) => Promise<Uint8Array>;
+// Cache only immutable successful source bytes, never jsPDF's mutable glyph subsets.
+// Reader identity isolates tests/custom asset sources; an aborted/failed read is retryable.
+const byteCaches = new WeakMap<FontBytesReader, Map<string, Uint8Array>>();
+export async function cachedFontBytes(read: FontBytesReader, name: string, signal?: AbortSignal) {
+  checkAbort(signal);
+  let cache = byteCaches.get(read);
+  if (!cache) { cache = new Map(); byteCaches.set(read, cache); }
+  const cached = cache.get(name);
+  if (cached) return { bytes: cached, fetchedBytes: 0 };
+  const bytes = await read(name, signal);
+  checkAbort(signal);
+  cache.set(name, bytes);
+  return { bytes, fetchedBytes: bytes.byteLength };
+}
 export const checkAbort = (signal?: AbortSignal) => {
   if (signal?.aborted) throw new DOMException("書き出しを取り消しました。", "AbortError");
 };
@@ -27,13 +41,16 @@ export const parsedFont = (pdf: jsPDF, weight: FontWeight): ParsedFont => {
     throw new Error("PDF共通フォントの解析に失敗しました。");
   return metadata;
 };
-export async function registerFonts(pdf: jsPDF, read: FontBytesReader = fetchFontBytes, signal?: AbortSignal) {
+export async function registerFonts(pdf: jsPDF, read: FontBytesReader = fetchFontBytes, signal?: AbortSignal,
+  weights: readonly FontWeight[] = ["normal", "bold"]) {
   checkAbort(signal);
   const start = performance.now();
-  const bytes = await Promise.all(["Regular", "Bold"].map(w => read(`BIZUDPGothic-${w}.ttf`, signal)));
+  const required = [...new Set(weights)];
+  const loadedBytes = await Promise.all(required.map(w => cachedFontBytes(read, fontFileName(w), signal)));
+  const bytes = loadedBytes.map(r => r.bytes);
   checkAbort(signal);
   const loaded = performance.now();
-  for (const [index, weight] of (["normal", "bold"] as const).entries()) {
+  for (const [index, weight] of required.entries()) {
     checkAbort(signal);
     // A binary string avoids a second base64-sized copy of each 4.6MB font.
     const data = bytes[index];
@@ -45,19 +62,22 @@ export async function registerFonts(pdf: jsPDF, read: FontBytesReader = fetchFon
     parsedFont(pdf, weight); // addFont's event bus can log and swallow parser errors.
   }
   checkAbort(signal);
-  return { loadMs: loaded - start, parseMs: performance.now() - loaded, sourceBytes: bytes.map(b => b.byteLength) };
+  return { loadMs: loaded - start, parseMs: performance.now() - loaded, sourceBytes: bytes.map(b => b.byteLength),
+    fetchedBytes: loadedBytes.reduce((n, r) => n + r.fetchedBytes, 0), weights: required };
 }
 
+export const fontFileName = (weight: FontWeight) => `BIZUDPGothic-${weight === "bold" ? "Bold" : "Regular"}.ttf`;
 export const fontWeight = (weight: number): FontWeight => weight >= 700 ? "bold" : "normal";
+export const requiredFontWeights = (lines: TextLine[]): FontWeight[] => [...new Set(lines.filter(l => l.text).map(l => fontWeight(l.weight)))];
 export function unsupportedCharacters(pdf: jsPDF, lines: TextLine[]): string[] {
-  const fonts = { normal: parsedFont(pdf, "normal"), bold: parsedFont(pdf, "bold") };
+  const fonts = new Map(requiredFontWeights(lines).map(w => [w, parsedFont(pdf, w)]));
   const unsupported = new Set<string>();
   for (const line of lines) for (const ch of line.text) {
     const code = ch.codePointAt(0)!;
     // jsPDF is UTF-16-code-unit based, without shaping. cmap coverage alone cannot make
     // supplementary characters, combining marks, or variation sequences safe.
     if (code > 0xffff || /[\p{Mark}\p{Cf}\p{Cs}\p{Cc}]/u.test(ch) ||
-      !fonts[fontWeight(line.weight)].cmap.unicode.codeMap[code]) unsupported.add(ch);
+      !fonts.get(fontWeight(line.weight))!.cmap.unicode.codeMap[code]) unsupported.add(ch);
   }
   return [...unsupported];
 }

@@ -105,7 +105,6 @@ import {
   roundMeters,
 } from "./utils/coordinates";
 import {
-  elementToJpegDataUrl,
   elementToPngBlob,
 } from "./utils/exportImage";
 import type { CompletedExport } from "./utils/mobileExportTypes";
@@ -884,6 +883,7 @@ function App() {
   const [completedExport, setCompletedExport] = useState<CompletedExport | null>(null);
   const [canCopyExport, setCanCopyExport] = useState(false);
   const exportGenerationPending = useRef(false);
+  const a4PdfAbortController = useRef<AbortController | null>(null);
   const [isRosterManagerOpen, setIsRosterManagerOpen] = useState(false);
   const [rosterInitialMode, setRosterInitialMode] = useState<
     "members" | "objects" | undefined
@@ -5756,22 +5756,14 @@ function App() {
     scope: "all" | "current",
     options: ShareExportOptions,
     title: string,
+    signal: AbortSignal,
   ): Promise<{ blob: Blob; preview: Blob; pageCount: number }> => {
     const element = await preparePrintExportElement(scope, options, "document");
     try {
-      const pages = Array.from(
-        element.querySelectorAll<HTMLElement>(".print-page"),
-      );
-      if (pages.length === 0) {
-        throw new Error("PDF用ページが見つかりません。");
-      }
-      // The A4 sheets keep the original rendering: one JPEG (q0.95, 2x) per page, as users rely on it.
-      const { jpegDataUrlsToPdfBlob } = await import("./utils/pdfExport");
-      const pageDataUrls: string[] = [];
-      for (const page of pages) pageDataUrls.push(await elementToJpegDataUrl(page));
-      const blob = await jpegDataUrlsToPdfBlob(pageDataUrls, title, getPrintOrientation(project));
-      const preview = await (await fetch(pageDataUrls[0])).blob();
-      return { blob, preview, pageCount: pageDataUrls.length };
+      const { generateA4Pdf } = await import("./utils/a4PdfExport");
+      const frameIds = (scope === "current" ? project.frames.filter(f => f.id === selectedFrame?.id) : project.frames).map(f => f.id);
+      return await generateA4Pdf({ element, project, frameIds, options, title, signal,
+        onProgress: detail => setExportProgress({ title: "PDFを作成中", detail }) });
     } finally {
       cleanupPrintExportElement();
     }
@@ -5871,20 +5863,24 @@ function App() {
     const filenameBase = request.fileName || (request.scope === "current"
       ? `${project.title || "隊列メーカー"}_${selectedFrame?.label ?? "現在シーン"}` : project.title || "隊列メーカー");
     const image = request.format === "image";
+    const pdfController = image ? null : new AbortController();
+    a4PdfAbortController.current = pdfController;
     const fileName = withFileExtension(filenameBase, image ? "png" : "pdf");
     setExportProgress({ title: image ? "画像を作成中" : "PDFを作成中", detail: fileName });
     try {
       const generated = image
         ? await generatePrintImages(request.scope, request.options, filenameBase)
-        : await generatePrintPdfBlob(request.scope, request.options, filenameBase).then(result => ({ ...result, files: [new File([result.blob], fileName, { type: "application/pdf" })] }));
+        : await generatePrintPdfBlob(request.scope, request.options, filenameBase, pdfController!.signal).then(result => ({ ...result, files: [new File([result.blob], fileName, { type: "application/pdf" })] }));
+      if (pdfController?.signal.aborted) return;
       if (!generated.files.length || generated.files.some(file => !file.size)) throw new Error("ファイルを作成できませんでした。");
       setCanCopyExport(false);
       setCompletedExport({ files: generated.files,
         preview: generated.preview, pageCount: generated.pageCount, targetLabel: "隊列表（A4）",
         scopeLabel: request.scope === "current" ? selectedFrame?.label ?? "現在シーン" : "全シーン" });
     } catch (error) {
+      if (pdfController?.signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
       setNotice(error instanceof Error ? `書き出しに失敗しました: ${error.message}` : "書き出しに失敗しました。");
-    } finally { exportGenerationPending.current = false; setExportProgress(null); }
+    } finally { a4PdfAbortController.current = null; exportGenerationPending.current = false; setExportProgress(null); }
   };
 
   const handleShareExportZip = async (includeAudio: boolean) => {
@@ -8229,13 +8225,24 @@ function App() {
       <div className="export-progress-backdrop" role="presentation">
         <section
           className="export-progress-card"
-          role="status"
+          role={a4PdfAbortController.current ? "dialog" : "status"}
+          aria-modal={a4PdfAbortController.current ? true : undefined}
           aria-live="polite"
           aria-label={exportProgress.title}
+          onKeyDown={event => {
+            if (!a4PdfAbortController.current) return;
+            event.stopPropagation();
+            if (event.key === "Escape") { event.preventDefault(); a4PdfAbortController.current.abort(); }
+            if (event.key === "Tab") {
+              event.preventDefault(); event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
+            }
+          }}
         >
           <div className="export-progress-card__bar" />
           <h2>{exportProgress.title}</h2>
           {exportProgress.detail && <p>{exportProgress.detail}</p>}
+          {a4PdfAbortController.current && <button type="button" className="mini-button export-progress-card__cancel" autoFocus
+            onClick={() => a4PdfAbortController.current?.abort()}>取消</button>}
         </section>
       </div>
     )}
