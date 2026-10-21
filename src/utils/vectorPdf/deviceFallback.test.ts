@@ -9,6 +9,7 @@ import type { ScenePage } from "./model";
 // with embedded fonts, never delivered with an undefined /DJ0 font.
 vi.mock("./deviceFontPdf", async original => ({ ...await original<typeof import("./deviceFontPdf")>(),
   attachDeviceFont: vi.fn(async () => { throw new Error("injected attach failure"); }) }));
+import { attachDeviceFont } from "./deviceFontPdf";
 
 const readFonts = async (name: string) => new Uint8Array(await readFile(`public/fonts/biz-udp-gothic/${name}`));
 const { instance } = await WebAssembly.instantiate(new Uint8Array(await readFile("node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm")));
@@ -29,4 +30,20 @@ it("rebuilds with embedded fonts when the viewer font cannot be attached", async
     .map(m => { try { return inflateSync(Buffer.from(m[1], "latin1")).toString("latin1"); } catch { return ""; } }).join("\n");
   expect(content).not.toContain("/DJ0");
   expect(result.metrics.embeddedFonts).toHaveLength(1);
+}, 30000);
+
+it("falls through device → subset → original when the subsetter fails too", async () => {
+  const result = await renderScenePages(pages, { readFontBytes: readFonts, fontMode: "device",
+    subsetFont: async () => { throw new Error("subset down"); } });
+  expect(result.metrics.fontAttempts).toEqual(["device", "subset", "original"]);
+  // ASCII ("2") is still embedded in device mode, so the device attempt already needs the subsetter.
+  expect(result.metrics.retryReason).toBe("subset down / subset down");
+}, 60000);
+
+it("stops without retrying when cancellation arrives while the viewer font is attached", async () => {
+  vi.mocked(attachDeviceFont).mockImplementationOnce(async () => { throw new DOMException("取り消し", "AbortError"); });
+  const progress: string[] = [];
+  await expect(renderScenePages(pages, { readFontBytes: readFonts, subsetFont, fontMode: "device", onProgress: m => progress.push(m) }))
+    .rejects.toMatchObject({ name: "AbortError" });
+  expect(progress.some(m => m.includes("再作成"))).toBe(false);
 }, 30000);

@@ -3,8 +3,13 @@
 //   node scripts/generate-device-font-table.mjs          (writes the file)
 //   node scripts/generate-device-font-table.mjs --check  (fails if the committed file is stale)
 // Source: pdfjs-dist/cmaps/UniJIS-UTF16-H.bcmap (Adobe cmap-resources, BSD-3-Clause; notice in
-// public/licenses/adobe-cmap-resources.txt). The bcmap reader below is a port of pdf.js
-// src/core/binary_cmap.js (Apache-2.0); it runs only at development time.
+// public/licenses/adobe-cmap-resources.txt).
+//
+// decodeBcmap() is adapted from pdf.js src/core/binary_cmap.js (BinaryCMapReader / BinaryCMapStream).
+//   Copyright 2012 Mozilla Foundation. Licensed under the Apache License, Version 2.0
+//   (https://www.apache.org/licenses/LICENSE-2.0); source: https://github.com/mozilla/pdf.js
+//   Changes: condensed into one function that returns a code→CID map, rejects conflicting mappings and
+//   usecmap, and skips code-space/notdef ranges. Runs only at development time; not shipped in the app.
 //
 // Classes (conservative; anything else stays embedded or image-drawn as before):
 //   W  East Asian wide blocks mapped to full-width CIDs (ideographs: any CID; others: CID 633–8717).

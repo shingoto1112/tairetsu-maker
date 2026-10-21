@@ -30,9 +30,9 @@ const LINES: TextLine[] = [text("佐藤ひかる", 10, 800, "center"), text("Aik
   text("「みかん箱」（大）、旗。", 30, 700, "right", 190), text("トーマス・ジェファーソン", 40, 600, "center"),
   text("ｶﾀｶﾅ ①→★ 髙﨑", 50, 800, "left", 10), text("0m 5m 10m", 60, 800, "right", 190)];
 const pages = (): ScenePage[] => [{ frameId: "device", width: 200, height: 100,
-  drawings: [{ kind: "group", id: "rotated", x: 0, y: 0, rotation: 0, children: LINES.map(l => ({ ...l })) }] }];
+  drawings: [{ kind: "group", id: "lines", x: 0, y: 0, rotation: 0, children: LINES.map(l => ({ ...l })) }] }];
 
-type Glyph = { ch: string; x: number; width: number; font: string };
+type Glyph = { ch: string; x: number; y: number; width: number; font: string };
 /** Replays the page's operator list (pdf.js, with the CMaps) into per-glyph pen positions in page units. */
 async function glyphs(blob: Blob) {
   const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()), cMapUrl, cMapPacked: true, useSystemFonts: false, fontExtraProperties: true });
@@ -53,7 +53,7 @@ async function glyphs(blob: Blob) {
         const run: Glyph[] = []; let pen = 0; const m = mul(ctm, tm);
         for (const g of a[0] as ({ unicode: string; width: number } | number)[]) {
           if (typeof g === "number") { pen -= g / 1000 * size; continue; }
-          run.push({ ch: g.unicode, x: m[0] * pen + m[4], width: m[0] * g.width / 1000 * size, font }); pen += g.width / 1000 * size;
+          run.push({ ch: g.unicode, x: m[0] * pen + m[4], y: m[1] * pen + m[5], width: m[0] * g.width / 1000 * size, font }); pen += g.width / 1000 * size;
         }
         out.push(run);
       }
@@ -84,6 +84,7 @@ describe("viewer-font PDFs", () => {
     let deviceGlyphs = 0;
     ea.forEach((e, i) => {
       const d = db[i], line = LINES.find(l => l.text.includes(e.ch))!, code = e.ch.charCodeAt(0);
+      expect(Math.abs(d.y - e.y), `baseline of ${e.ch}`).toBeLessThan(TOLERANCE);
       const bizWidth = (line.weight >= 700 ? advances.Bold : advances.Regular)(code);
       const glyph = deviceGlyph(table, code, bizWidth);
       expect(d.font.includes("NotoSansCJKjp"), e.ch).toBe(!!glyph);
@@ -136,6 +137,24 @@ describe("viewer-font PDFs", () => {
     await expect(renderScenePages(pages(), { readFontBytes: readFonts, subsetFont, fontMode: "device", signal: controller.signal,
       onProgress: message => { progress.push(message); if (message.includes("ページを作成中")) controller.abort(); } })).rejects.toMatchObject({ name: "AbortError" });
     expect(progress.some(m => m.includes("再作成"))).toBe(false);
+  }, 30000);
+});
+
+describe("viewer-font dictionaries", () => {
+  it("adds one shared Adobe-Japan1 font to every page and refuses clashes and page-count mismatches", async () => {
+    const { attachDeviceFont } = await import("./deviceFontPdf");
+    const { PDFDocument, PDFName, PDFDict } = await import("pdf-lib");
+    const two = await renderScenePages([...pages(), { ...pages()[0], frameId: "second" }], { readFontBytes: readFonts, subsetFont, fontMode: "device" });
+    const doc = await PDFDocument.load(await two.blob.arrayBuffer());
+    const fonts = doc.getPages().map(p => p.node.Resources()!.lookup(PDFName.of("Font"), PDFDict));
+    expect(fonts[0]).toBe(fonts[1]);
+    const font = fonts[0].lookup(PDFName.of("DJ0"), PDFDict);
+    expect(font.get(PDFName.of("BaseFont"))?.toString()).toBe("/NotoSansCJKjp-Regular");
+    expect(font.get(PDFName.of("Encoding"))?.toString()).toBe("/UniJIS-UTF16-H");
+    // An existing DJ0 or a different page count is refused (the caller then embeds fonts instead).
+    const bytes = await two.blob.arrayBuffer();
+    await expect(attachDeviceFont(bytes, { codes: [0x3042], pageCount: 2, objectStreams: false })).rejects.toThrow("重なります");
+    await expect(attachDeviceFont(bytes, { codes: [0x3042], pageCount: 3, objectStreams: false })).rejects.toThrow("ページ数");
   }, 30000);
 });
 

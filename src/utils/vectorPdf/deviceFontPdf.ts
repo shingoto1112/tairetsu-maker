@@ -1,5 +1,5 @@
 import { checkAbort } from "./fonts";
-import { DEVICE_FONT_RESOURCE } from "./deviceFont";
+import { DEVICE_FONT_RESOURCE, DEVICE_SPACE_WIDTH } from "./deviceFont";
 
 /** Font name hint for viewers. Android's PDFium-based viewers pick a gothic only for this name (others
  * fall back to Mincho); iOS and desktop viewers use their default Japanese gothic for any name. */
@@ -36,7 +36,7 @@ export function deviceToUnicodeCMap(codes: Iterable<number>) {
 export async function attachDeviceFont(bytes: ArrayBuffer, options: { codes: Iterable<number>; pageCount: number;
   objectStreams: boolean; signal?: AbortSignal }): Promise<Uint8Array> {
   checkAbort(options.signal);
-  const { PDFArray, PDFDocument, PDFDict, PDFName, PDFString } = await import("pdf-lib");
+  const { PDFArray, PDFDocument, PDFDict, PDFName, PDFNumber, PDFRawStream, PDFString } = await import("pdf-lib");
   checkAbort(options.signal);
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
   if (doc.getPageCount() !== options.pageCount) throw new Error("端末字体の追加前にページ数が一致しません。");
@@ -46,8 +46,8 @@ export async function attachDeviceFont(bytes: ArrayBuffer, options: { codes: Ite
     FontBBox: [-1000, -1050, 2930, 1810], ItalicAngle: 0, Ascent: 880, Descent: -120, CapHeight: 733, StemV: 80 }));
   const cidFont = context.register(context.obj({ Type: "Font", Subtype: "CIDFontType0", BaseFont: DEVICE_FONT_BASE_NAME,
     CIDSystemInfo: { Registry: PDFString.of("Adobe"), Ordering: PDFString.of("Japan1"), Supplement: 6 },
-    // Full-width CIDs use DW; the half-width class (231–632) is one half em.
-    FontDescriptor: descriptor, DW: 1000, W: [231, 632, 500] }));
+    // Full-width CIDs use DW; the space (CID 1) keeps BIZ's advance; the half-width class (231–632) is one half em.
+    FontDescriptor: descriptor, DW: 1000, W: [1, [DEVICE_SPACE_WIDTH], 231, 632, 500] }));
   const font = context.register(context.obj({ Type: "Font", Subtype: "Type0", BaseFont: DEVICE_FONT_BASE_NAME,
     Encoding: "UniJIS-UTF16-H", DescendantFonts: [cidFont], ToUnicode: toUnicode }));
   const name = PDFName.of(DEVICE_FONT_RESOURCE), done = new Set<unknown>();
@@ -70,8 +70,14 @@ export async function attachDeviceFont(bytes: ArrayBuffer, options: { codes: Ite
     const type0 = page.node.Resources()?.lookupMaybe(PDFName.of("Font"), PDFDict)?.lookupMaybe(name, PDFDict);
     const descendant = type0?.lookupMaybe(PDFName.of("DescendantFonts"), PDFArray)?.lookupMaybe(0, PDFDict);
     const fontDescriptor = descendant?.lookupMaybe(PDFName.of("FontDescriptor"), PDFDict);
-    if (type0?.get(PDFName.of("Encoding"))?.toString() !== "/UniJIS-UTF16-H" || !type0.get(PDFName.of("ToUnicode")) ||
+    const system = descendant?.lookupMaybe(PDFName.of("CIDSystemInfo"), PDFDict);
+    const widths = descendant?.lookupMaybe(PDFName.of("W"), PDFArray);
+    if (type0?.get(PDFName.of("Subtype"))?.toString() !== "/Type0" || type0.get(PDFName.of("Encoding"))?.toString() !== "/UniJIS-UTF16-H" ||
+      !(type0.lookup(PDFName.of("ToUnicode")) instanceof PDFRawStream) ||
       descendant?.get(PDFName.of("Subtype"))?.toString() !== "/CIDFontType0" || !fontDescriptor ||
+      system?.lookupMaybe(PDFName.of("Registry"), PDFString)?.decodeText() !== "Adobe" ||
+      system.lookupMaybe(PDFName.of("Ordering"), PDFString)?.decodeText() !== "Japan1" ||
+      descendant.lookupMaybe(PDFName.of("DW"), PDFNumber)?.asNumber() !== 1000 || widths?.size() !== 5 ||
       ["FontFile", "FontFile2", "FontFile3"].some(key => fontDescriptor.get(PDFName.of(key))))
       throw new Error("端末字体の辞書を検証できませんでした。");
   }

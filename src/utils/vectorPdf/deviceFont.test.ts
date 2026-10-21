@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { decodeRanges, deviceGlyph, deviceTjArray, loadDeviceGlyphTable, planDeviceRuns } from "./deviceFont";
+import { decodeRanges, DEVICE_SPACE_WIDTH, deviceGlyph, deviceTjArray, loadDeviceGlyphTable, pdfNumber, planDeviceRuns } from "./deviceFont";
 import { DEVICE_GLYPH_SOURCE } from "./deviceGlyphs.generated";
 import { inspectTrueType } from "./trueType";
 
@@ -45,28 +45,40 @@ describe("device runs and placement", () => {
     let position = 0;
     for (const r of runs) { expect(r.start).toBeCloseTo(position, 9); position += [...r.text].reduce((n, ch) => n + regular(ch.charCodeAt(0)), 0); }
     expect(() => planDeviceRuns(table, "𠮷", regular)).toThrow();
+    // An ASCII space joins the run before it.
+    expect(planDeviceRuns(table, "高橋 あかね", regular).map(r => [r.text, r.device])).toEqual([["高橋 あかね", true]]);
+    expect(planDeviceRuns(table, "Aiko Sato", regular).map(r => [r.text, r.device])).toEqual([["Aiko Sato", false]]);
+    expect(planDeviceRuns(table, "2列目 No.3", regular).map(r => [r.text, r.device])).toEqual([["2", false], ["列目 ", true], ["No.3", false]]);
   });
 
   it("places every substitute em box inside its BIZ advance (centre / opening / closing)", async () => {
     const table = await loadDeviceGlyphTable();
-    for (const [text, advance] of [["トーマス・ジェファーソン", regular], ["「みかん箱」（大）、旗。", bold], ["ｶﾀｶﾅﾃｽﾄｼｮｯﾌﾟ", regular], ["漢字だけ", bold]] as const) {
+    for (const [text, advance] of [["トーマス・ジェファーソン", regular], ["「みかん箱」（大）、旗。", bold], ["ｶﾀｶﾅﾃｽﾄｼｮｯﾌﾟ", regular], ["漢字だけ", bold], ["高橋 あかね", bold]] as const) {
       const { lead, operand } = deviceTjArray(table, text, advance);
       // Replay the TJ operand: strings advance by each glyph's em, numbers move the pen left.
       const tokens = operand.slice(1, -1).match(/<[0-9A-F]+>|-?\d+(?:\.\d+)?/g)!;
       const boxes: number[] = []; let pen = -lead;
       for (const t of tokens) {
         if (t.startsWith("<")) for (let i = 1; i < t.length - 1; i += 4) {
-          const code = parseInt(t.slice(i, i + 4), 16); boxes.push(pen); pen += deviceGlyph(table, code, advance(code))!.em;
+          const code = parseInt(t.slice(i, i + 4), 16); boxes.push(pen); pen += code === 0x20 ? DEVICE_SPACE_WIDTH : deviceGlyph(table, code, advance(code))!.em;
         } else pen -= Number(t);
       }
       let start = 0;
       [...text].forEach((ch, i) => {
-        const code = ch.charCodeAt(0), w = advance(code), glyph = deviceGlyph(table, code, w)!;
+        const code = ch.charCodeAt(0), w = advance(code), glyph = code === 0x20 ? { em: DEVICE_SPACE_WIDTH, align: "center" } : deviceGlyph(table, code, w)!;
         const extra = glyph.em - w, expected = start - (glyph.align === "end" ? extra : glyph.align === "start" ? 0 : extra / 2);
-        expect(Math.abs(boxes[i] - expected)).toBeLessThanOrEqual(0.06); // 0.1/1000 em rounding, no drift
+        expect(Math.abs(boxes[i] - expected)).toBeLessThanOrEqual(0.51); // whole thousandths of an em, no drift
         start += w;
       });
     }
+  });
+
+  it("writes only finite fixed-point numbers", () => {
+    expect(pdfNumber(1e-7, 5)).toBe("0");
+    expect(pdfNumber(-0.000001, 5)).toBe("0");
+    expect(pdfNumber(12.3456789, 5)).toBe("12.34568");
+    expect(pdfNumber(4.2, 5)).toBe("4.2");
+    for (const bad of [NaN, Infinity, -Infinity, 1e12]) expect(() => pdfNumber(bad, 5)).toThrow();
   });
 
   it("writes plain strings when no correction is needed", async () => {

@@ -13,6 +13,9 @@ import type { DEVICE_GLYPH_COUNTS } from "./deviceGlyphs.generated";
 
 /** Resource name of the viewer font in every page's /Font dictionary (jsPDF uses F1, F2, …). */
 export const DEVICE_FONT_RESOURCE = "DJ0";
+/** ASCII space (CID 1) inside a viewer-font run: no ink, so it is simply given BIZ UDPGothic's own space
+ * advance (333.496/1000 em in both weights) as its /W width — no placement correction needed. */
+export const DEVICE_SPACE_WIDTH = 333.5;
 /** Pseudo-bold: fill + stroke (Tr 2) with this line width per em. Viewers do not pick a bold face by name. */
 export const DEVICE_BOLD_STROKE_EM = 0.03;
 
@@ -54,7 +57,7 @@ const contains = (ranges: Uint32Array, code: number) => {
 const OPENING = new Set([..."「『（【〔〈《｛［〘〖〝｟"].map(c => c.charCodeAt(0)));
 const CLOSING = new Set([..."」』）】〕〉》｝］〙〗〟｠、。，．"].map(c => c.charCodeAt(0)));
 /** em: the substitute glyph's width (1000 = one em). align: where its em box sits in the BIZ advance. */
-export type DeviceGlyph = { em: 1000 | 500; align: "start" | "center" | "end" };
+export type DeviceGlyph = { em: number; align: "start" | "center" | "end" };
 /** advance: the BIZ UDPGothic advance of this character in thousandths of an em (same weight). */
 export function deviceGlyph(table: DeviceGlyphTable, code: number, advance: number): DeviceGlyph | undefined {
   if (!Number.isFinite(advance) || advance <= 0) return undefined;
@@ -67,14 +70,15 @@ export function deviceGlyph(table: DeviceGlyphTable, code: number, advance: numb
 }
 
 export type DeviceRun = { text: string; device: boolean; start: number; advance: number };
-/** Splits one vector text line into consecutive device / embedded runs. start/advance in thousandths of an em. */
+/** Splits one vector text line into consecutive device / embedded runs. start/advance in thousandths of an em.
+ * An ASCII space joins the run before it ("高橋 あかね" stays one viewer-font run, "Aiko Sato" one embedded run). */
 export function planDeviceRuns(table: DeviceGlyphTable, text: string, advanceOf: (code: number) => number): DeviceRun[] {
   const runs: DeviceRun[] = [];
   let position = 0;
   for (const ch of text) {
     const code = ch.codePointAt(0)!, advance = advanceOf(code);
-    if (code > 0xffff || !(advance >= 0)) throw new Error("端末字体の文字列に未対応の文字があります。");
-    const device = !!deviceGlyph(table, code, advance), last = runs[runs.length - 1];
+    if (code > 0xffff || !Number.isFinite(advance) || advance < 0) throw new Error("端末字体の文字列に未対応の文字があります。");
+    const last = runs[runs.length - 1], device = code === 0x20 && last ? last.device : !!deviceGlyph(table, code, advance);
     if (last && last.device === device) { last.text += ch; last.advance += advance; }
     else runs.push({ text: ch, device, start: position, advance });
     position += advance;
@@ -82,17 +86,26 @@ export function planDeviceRuns(table: DeviceGlyphTable, text: string, advanceOf:
   return runs;
 }
 
+/** A PDF number operand: finite, fixed-point (PDF has no exponent syntax), trailing zeros trimmed. */
+export function pdfNumber(value: number, digits: number) {
+  if (!Number.isFinite(value) || Math.abs(value) > 1e9) throw new Error("PDFに書けない数値です。");
+  let text = value.toFixed(digits);
+  if (text.includes(".")) text = text.replace(/0+$/, "").replace(/\.$/, "");
+  return text === "-0" ? "0" : text;
+}
+
 const hex = (code: number) => code.toString(16).toUpperCase().padStart(4, "0");
-const tenth = (n: number) => { const text = (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, ""); return text === "-0" ? "0" : text; };
 /** TJ operand that places each substitute glyph's em box inside its BIZ advance.
  * lead: how far (thousandths of an em) the first em box starts LEFT of the run's start.
- * Adjustments are rounded to 0.1/1000 em against the exact cumulative position (no drift). */
+ * Adjustments are whole thousandths of an em, rounded against the exact cumulative position (no drift):
+ * every glyph is within 0.5/1000 em of its exact place (0.002mm for 4mm text). */
 export function deviceTjArray(table: DeviceGlyphTable, text: string, advanceOf: (code: number) => number) {
   let lead = 0, exact = 0, written = 0, hexRun = "";
   const items: string[] = [];
   let pendingAfter = 0;
   [...text].forEach((ch, i) => {
-    const code = ch.codePointAt(0)!, advance = advanceOf(code), glyph = deviceGlyph(table, code, advance);
+    const code = ch.codePointAt(0)!, advance = advanceOf(code);
+    const glyph = code === 0x20 ? { em: DEVICE_SPACE_WIDTH, align: "center" as const } : deviceGlyph(table, code, advance);
     if (!glyph || code > 0xffff) throw new Error("端末字体で描けない文字が混ざっています。");
     const extra = glyph.em - advance;
     const before = glyph.align === "end" ? extra : glyph.align === "start" ? 0 : extra / 2;
@@ -100,8 +113,8 @@ export function deviceTjArray(table: DeviceGlyphTable, text: string, advanceOf: 
     else {
       // TJ numbers are subtracted from the pen position: positive moves left.
       exact += pendingAfter + before;
-      const step = Number(tenth(exact - written));
-      if (step !== 0) { items.push(`<${hexRun}>`, tenth(step)); written += step; hexRun = ""; }
+      const step = Math.round(exact - written);
+      if (step !== 0) { items.push(`<${hexRun}>`, String(step)); written += step; hexRun = ""; }
     }
     hexRun += hex(code);
     pendingAfter = extra - before;

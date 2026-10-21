@@ -8,7 +8,7 @@ import type { PrintOrientation } from "../printLayout";
 import { sourceTrueType, validateSubset } from "./trueType";
 import { tidyPdfContent } from "./contentTidy";
 import { packObjectStreams } from "./objectStreams";
-import { DEVICE_BOLD_STROKE_EM, DEVICE_FONT_RESOURCE, deviceTjArray, loadDeviceGlyphTable, planDeviceRuns, type DeviceGlyphTable } from "./deviceFont";
+import { DEVICE_BOLD_STROKE_EM, DEVICE_FONT_RESOURCE, deviceTjArray, loadDeviceGlyphTable, pdfNumber, planDeviceRuns, type DeviceGlyphTable } from "./deviceFont";
 import { attachDeviceFont } from "./deviceFontPdf";
 
 export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer; orientation?: PrintOrientation } = {}) {
@@ -180,12 +180,15 @@ function drawDeviceText(pdf: jsPDF, d: Extract<Drawing, { kind: "text" }>, devic
       continue;
     }
     const { lead, operand } = deviceTjArray(device.table, run.text, advance);
+    if (!(d.size > 0)) throw new Error("端末字体の文字の大きさが不正です。");
+    // Written straight into the content stream: finite fixed-point numbers at contentTidy's own precision
+    // (sizes and widths 0.001, text positions 0.01mm), so no value is rounded twice.
     for (const ch of run.text) device.codes.add(ch.charCodeAt(0));
     // Viewers do not choose a bold face by name: bold is fill + a thin outline of the same colour.
     const bold = weight === "bold";
-    (pdf.internal as unknown as { write: (content: string) => void }).write(["q", fill, ...(bold ? [stroke, `${d.size * DEVICE_BOLD_STROKE_EM} w`, "1 j"] : []),
-      "BT", `/${DEVICE_FONT_RESOURCE} ${d.size} Tf`, ...(bold ? ["2 Tr"] : []),
-      `1 0 0 -1 ${x - lead / 1000 * d.size} ${y} Tm`, `${operand} TJ`, "ET", "Q"].join("\n"));
+    (pdf.internal as unknown as { write: (content: string) => void }).write(["q", fill, ...(bold ? [stroke, `${pdfNumber(d.size * DEVICE_BOLD_STROKE_EM, 3)} w`, "1 j"] : []),
+      "BT", `/${DEVICE_FONT_RESOURCE} ${pdfNumber(d.size, 3)} Tf`, ...(bold ? ["2 Tr"] : []),
+      `1 0 0 -1 ${pdfNumber(x - lead / 1000 * d.size, 2)} ${pdfNumber(y, 2)} Tm`, `${operand} TJ`, "ET", "Q"].join("\n"));
   }
 }
 
@@ -407,6 +410,7 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
       const result = options.objectStreams ? await packObjectStreams(bytes, pages.length, options.signal) : null;
       finalBytes = result ?? new Uint8Array(bytes); packed = !!result;
     }
+    // unpackedBytes: jsPDF's own output before packing — in device mode also before the viewer-font dictionaries are added.
     return { blob: new Blob([finalBytes], { type: "application/pdf" }), metrics: { ...fonts, loadMs: sourceLoadMs, objectStreams: packed, unpackedBytes: bytes.byteLength,
       deviceFont: !!device?.codes.size, deviceCharacters: device?.codes.size ?? 0,
       sourceBytes: weights.map(w => sources.get(w)!.bytes.byteLength),
