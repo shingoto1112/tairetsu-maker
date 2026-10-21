@@ -6219,7 +6219,7 @@ h2 {
   left: 2%;
   line-height: 0.88;
   min-height: 76%;
-  overflow: hidden;
+  overflow: visible;
   right: 2%;
 }
 
@@ -6227,6 +6227,9 @@ h2 {
 .print-member--label-two .print-member__label-line,
 .print-member--label-three .print-member__label-line,
 .print-member--label-four .print-member__label-line {
+  /* Intrinsic line width lets flex centring distribute readable-floor overflow
+     equally on both sides. A 100% cap starts overflowing text at the left edge. */
+  max-width: none;
   overflow: visible;
 }
 

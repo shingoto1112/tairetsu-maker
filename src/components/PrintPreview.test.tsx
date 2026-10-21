@@ -21,7 +21,10 @@ describe("default A4 layout and drawing", () => {
       const html = renderToStaticMarkup(<PrintPreview project={project} variant={variant} />);
       // Audit against the old exact hash: only the readable prop-name wrapper (the 45° 旗 needs no
       // flip, so 0deg inside the shape) and the stage's old top-origin override may differ.
-      // Parade geometry is unchanged.
+      // Parade geometry is unchanged. Assignment-fix (build31) only removes the
+      // short label-line CSS width cap: oversized readable-floor text is centred
+      // instead of overflowing to the right. Markup and these hashes stay intact;
+      // browser regression checks cover centred overflow and unchanged fitting text.
       const baselineProject = { ...project, stage: { ...project.stage, frontDirection: "top" as const } };
       const baseline = drawingMarkup(renderToStaticMarkup(<PrintPreview project={baselineProject} variant={variant} />))
         .replace(/<span style="transform:rotate\(0deg\)">旗<\/span>/g, "旗");

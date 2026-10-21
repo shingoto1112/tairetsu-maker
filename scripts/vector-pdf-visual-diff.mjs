@@ -25,6 +25,12 @@ export function compare(referenceData, actualData, regions) {
   const diff = new PNG({ width: a.width, height: a.height });
   const result = {};
   const unmatched = (p, q, x, y, radius = 1) => {
+    const i = (y * p.width + x) * 4;
+    // The center pixel is always in the search window. If it already meets the
+    // SAME 32-level tolerance, the full min/max envelope cannot reject it. Avoid
+    // allocating/searching neighborhoods for matching backgrounds and fills.
+    if (Math.abs(p.data[i] - q.data[i]) <= 32 && Math.abs(p.data[i + 1] - q.data[i + 1]) <= 32
+      && Math.abs(p.data[i + 2] - q.data[i + 2]) <= 32) return false;
     const min = [255, 255, 255], max = [0, 0, 0];
     for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
       const xx = x + dx, yy = y + dy;
@@ -35,7 +41,6 @@ export function compare(referenceData, actualData, regions) {
     // Different AA kernels need not emit the same intermediate RGB values. Accept
     // colors within the neighboring foreground/background envelope, still confined
     // to 2px including normalization. Missing glyphs also fail exact text checks.
-    const i = (y * p.width + x) * 4;
     return [0, 1, 2].some(c => p.data[i + c] < min[c] - 32 || p.data[i + c] > max[c] + 32);
   };
   for (const [name, boxes] of Object.entries(regions)) {

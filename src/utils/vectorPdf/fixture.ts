@@ -98,3 +98,29 @@ export function vectorEmojiFixture(large = false): Project {
   });
   return p;
 }
+
+/** Reproduces the reported dimensions/counts only; all names/positions are fictional.
+ * One assigned scene and 17 empty panels exercise both sides of the layout bug. */
+export function vectorAssignmentFixture(width = 19, depth = 18, count = 18): Project {
+  const p = vectorEmojiFixture(true);
+  p.title = "架空・割当欄の回帰検証";
+  Object.assign(p.stage, { widthMeters: width, depthMeters: depth, frontDirection: "top", horizontalGuideMode: "centerSplit" });
+  p.useGlobalStageSize = true;
+  p.stageObjects.forEach((o, i) => {
+    o.widthMeters = 1.2; o.heightMeters = .8;
+    o.defaultX = .5 + i % 6 * (width - 2.2) / 5;
+    o.defaultY = 1 + Math.floor(i / 6) * (depth - 3) / 2;
+  });
+  p.frames = p.frames.slice(0, count);
+  p.frames.forEach((f, i) => {
+    delete f.stageWidthMeters; delete f.stageDepthMeters;
+    f.annotationLines = {};
+    f.positions = Object.fromEntries(p.members.map((member, j) => [member.id, {
+      x: .5 + j % 15 * (width - 1) / 14, y: .5 + Math.floor(j / 15) * (depth - 1) / 9,
+    }]));
+    f.objectStates = Object.fromEntries(p.stageObjects.map(o => [o.id, { objectId: o.id, x: o.defaultX, y: o.defaultY,
+      widthMeters: o.widthMeters, heightMeters: o.heightMeters, rotation: 0, visible: true, zIndex: 0 }]));
+    f.objectAssignments = i === 0 ? { o0: ["m1", "m2"] } : {};
+  });
+  return p;
+}

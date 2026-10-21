@@ -2,13 +2,14 @@ import type { Project } from "../../types";
 import type { ShareExportOptions } from "../../components/ShareExportModal";
 import { defaultPrintOptions, getAssignmentPrintEntries, getPrintMetrics, isPrintMemberVisible, paginateFrames } from "../printLayout";
 import { sortFrames } from "../interpolation";
-import { buildScenePage, UnsupportedVectorLayout, visibleTextLines, type ScenePage } from "./model";
+import { buildScenePage, CSS_PX_MM, UnsupportedVectorLayout, visibleTextLines, type ScenePage } from "./model";
 import { measurePrintPageExtent, measurePropText } from "./browserTextLayout";
 import { ensureBrowserFonts, measureAssignmentLayout, measureBaseline, measureTextLines, relativeRect } from "./browserDocumentLayout";
 import { buildAssignmentDrawings } from "./assignmentModel";
 import { checkAbort } from "./fonts";
 import { measureMixedGraphemes } from "./browserMixedText";
 import { renderScenePages } from "./renderer";
+import { withExportClone } from "../exportImage";
 
 type Diagnostic = { timestamp: string; reason: string };
 const diagnostics: Diagnostic[] = [];
@@ -27,6 +28,8 @@ export async function withVectorFallback<T>(vector: () => Promise<T>, fallback: 
   }
 }
 
+/** The caller must keep an isolated export clone mounted through rendering.
+ * Live UI zoom would mix visual DOMRects with model/layout millimetres. */
 export function buildA4Document(project: Project, frameIds: string[], element: HTMLElement, supplied: ShareExportOptions): ScenePage[] {
   const options = { ...defaultPrintOptions, ...supplied };
   const frames = sortFrames(project.frames).filter(f => frameIds.includes(f.id));
@@ -40,6 +43,9 @@ export function buildA4Document(project: Project, frameIds: string[], element: H
     if (blocks.length !== pageFrames.length) throw new UnsupportedVectorLayout("シーン配置の計測が一致しません。");
     return { ...measurePrintPageExtent(sheet), frameId: pageFrames.map(f => f.id).join(","), drawings: pageFrames.map((frame, j) => {
       const block = blocks[j];
+      const stageElement = block.querySelector<HTMLElement>(".print-stage");
+      if (!stageElement || Math.abs(stageElement.getBoundingClientRect().width * CSS_PX_MM - metrics.stageWidthMm) > .025)
+        throw new UnsupportedVectorLayout("印刷用の複製DOMとステージ寸法が一致しません。");
       const model = buildScenePage(project, frame.id, options, measurePropText, undefined, { metrics, gapAfter: j < pageFrames.length - 1 });
       const stage = model.drawings.find(d => d.kind === "group" && d.id === "stage");
       const members = project.members.filter(m => frame.positions[m.id] && isPrintMemberVisible(frame, m));
@@ -48,16 +54,21 @@ export function buildA4Document(project: Project, frameIds: string[], element: H
       members.forEach((member, k) => {
         const node = stage.children.find(d => d.kind === "group" && d.id === member.id);
         if (node?.kind !== "group") throw new UnsupportedVectorLayout("メンバー文字が見つかりません。");
-        const baseline = measureBaseline(getComputedStyle(icons[k])).line;
         const domLines = [...icons[k].querySelectorAll<HTMLElement>(".print-member__label-line")];
         visibleTextLines(node.children).forEach((line, index) => {
-          line.baselineOffset = baseline;
-          // Lazy measurement is only invoked if cmap/shaping checks choose a bitmap.
-          // Member icon coordinates are unrotated; stored stage positions stay authoritative.
+          const range = document.createRange(); range.selectNodeContents(domLines[index]);
+          const glyphs = range.getBoundingClientRect(), icon = icons[k].getBoundingClientRect();
+          // CSS rounds individual line boxes/baselines to layout pixels, which
+          // matters at the readable-size floor. Only y comes from font layout;
+          // the horizontal anchor remains the model's circle centre (x = 0).
+          line.y = (glyphs.y + glyphs.height / 2 - icon.y - icon.height / 2) * CSS_PX_MM;
+          line.baselineOffset = measureBaseline(getComputedStyle(domLines[index])).range;
+          // Ordinary vector names stay centred on the data-driven circle.
+          // Only fallback glyphs need browser measurements, in the same clone.
           line.measureMixed = () => {
             const r = icons[k].getBoundingClientRect();
-            return measureMixedGraphemes(domLines[index], icons[k]).map(p => ({ ...p, x: p.x - r.width * 25.4 / 96 / 2,
-              baseline: p.baseline - r.height * 25.4 / 96 / 2 }));
+            return measureMixedGraphemes(domLines[index], icons[k]).map(p => ({ ...p, x: p.x - r.width * CSS_PX_MM / 2,
+              baseline: p.baseline - r.height * CSS_PX_MM / 2 }));
           };
         });
       });
@@ -81,13 +92,17 @@ export async function createA4VectorPdf(request: {
     if (request.project.mode === "parade") throw new UnsupportedVectorLayout("パレードは段階③まで画像PDFを使用します。");
     request.onProgress?.("文字とレイアウトを準備中");
     await ensureBrowserFonts(["bold"], request.signal);
-    const previous = request.element.style.fontFamily;
-    try {
-      request.element.style.fontFamily = '"BIZUDPGothic"';
+    // Match the legacy image writer's layout context. The live PrintPreview can
+    // inherit #root's desktop zoom:0.8: DOMRects then contain zoomed coordinates,
+    // while model mm, computed font sizes and scroll extents remain unzoomed.
+    // Measuring the same isolated clone avoids both mixed units and zoom-induced
+    // glyph/line-box rounding. Keep it mounted through lazy mixed-glyph rendering.
+    return withExportClone(request.element, async clone => {
+      clone.style.fontFamily = '"BIZUDPGothic"';
       checkAbort(request.signal);
-      const pages = buildA4Document(request.project, request.frameIds, request.element, request.options);
+      const pages = buildA4Document(request.project, request.frameIds, clone, request.options);
       const result = await renderScenePages(pages, request);
       return result.blob;
-    } finally { request.element.style.fontFamily = previous; }
+    });
   }, request.fallback, request.signal);
 }

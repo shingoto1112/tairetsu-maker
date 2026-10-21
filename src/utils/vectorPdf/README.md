@@ -27,6 +27,31 @@
 
 ## 検証
 
+### 割当欄の重なり修正（build31）
+
+`createA4VectorPdf` は画像PDFと同じ `withExportClone` 内で計測・描画する。
+編集画面の `#root { zoom: 0.8 }` のDOMRectと、未縮小のステージmm・文字サイズ・影を
+混ぜると、右列がステージへ侵入し、改行間隔と影の寸法も崩れるため。
+`buildA4Document` を直接使う検証側も、ズームを継承しない印刷DOMを渡すこと。
+文字の横位置は丸の中心、縦ベースラインは同じ複製DOMの行レイアウトを使う。
+PrintPreviewの短い名前は行の幅制限を解除し、可読下限で丸を超える文字を左右均等に置く。
+4文字・2行のラベルも切り抜かない。通常サイズの画像ハッシュは旧CSSと一致する。
+
+```powershell
+node scripts/verify-vector-pdf-assignment-fix.mjs
+node scripts/inspect-vector-pdf-assignment-layout.mjs
+node scripts/verify-print-label-centering.mjs
+```
+
+5397/5398番のローカルサーバーと外部通信を遮断したChromiumを使用する。
+19×18m・146人・道具18・18シーン（1シーンのみ2人割当）、10×20m、30×12mの両視点、
+既存の段階②・幕・絵文字fixtureを比較する。画像比較の0.3%閾値は維持する。
+参照は計測時のDPR/CSS zoomを変えずに撮影し、scrollWidth/scrollHeightでA4へfitする。
+実PDFの変換行列を解析し、全44ページでステージと右列の外枠（線幅込み）が重ならないことも検査する。
+旧CSSとの画像比較は通常サイズ・可読下限、ステージ・パレード、旧フォント・BIZで実施し、
+許可した短い名前の文字範囲以外に画素差がないことを確認する。
+成果物は `output/build31/vector-pdf-assignment-fix/`。
+
 ```powershell
 node scripts/verify-vector-pdf-stage2.mjs
 node scripts/verify-vector-pdf-stage2.mjs --curtains --no-ui
