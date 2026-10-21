@@ -37,13 +37,24 @@ export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: S
     }
     return result;
   }
-  const prepared: ScenePage[] = [];
-  for (const page of pages) {
+  const finalScale = (page: ScenePage) => {
     const width = Math.ceil(page.width / CSS_PX_MM - 1e-7) * CSS_PX_MM;
     const height = Math.ceil(page.height / CSS_PX_MM - 1e-7) * CSS_PX_MM;
     const a4 = a4PageSize(options.orientation ?? "landscape"), fit = fitPdfImage(width, height, a4.width, a4.height);
-    prepared.push({ ...page, drawings: await prepare(page.drawings, fit.width / width * 25.4 / 72) });
-  }
+    return fit.width / width * 25.4 / 72;
+  };
+  // First pass: register every image-drawn grapheme with its page scale, so one bitmap per
+  // grapheme/style serves all pages (previously one per distinct page scale).
+  const plan = (nodes: Drawing[], scale: number) => {
+    for (const node of nodes) {
+      if (node.kind === "group") plan(node.children, scale);
+      else if (node.kind === "text" && node.text)
+        for (const run of planTextRuns(source, node)) if (run.raster) cache.plan(run.text, node, scale);
+    }
+  };
+  for (const page of pages) plan(page.drawings, finalScale(page));
+  const prepared: ScenePage[] = [];
+  for (const page of pages) prepared.push({ ...page, drawings: await prepare(page.drawings, finalScale(page)) });
   return { pages: prepared, metrics: cache.metrics };
 }
 

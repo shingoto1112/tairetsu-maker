@@ -54,6 +54,18 @@ it("keys images by grapheme/font/weight/size/color/resolution and isolates docum
   expect(first).toMatchObject({ x: 4.9, y: 3.5 });
   expect(createGraphemeImageCache(draw).image("❤️", base, 1, 0, 0)).toMatchObject({ cacheKey: "vector-grapheme-1" });
 });
+it("planned uses share one bitmap per grapheme/style at the largest page resolution", () => {
+  const draw = vi.fn(raster), cache = createGraphemeImageCache(draw), base = line("🔥");
+  cache.plan("🔥", base, 1); cache.plan("🔥", base, 2); cache.plan("🔥", { ...base, size: 4 }, 1);
+  const small = cache.image("🔥", base, 1, 5, 6), large = cache.image("🔥", base, 2, 15, 16);
+  expect(small.kind === "image" && large.kind === "image" && small.cacheKey === large.cacheKey).toBe(true);
+  expect(draw).toHaveBeenCalledTimes(1);
+  expect(draw.mock.calls[0][2]).toBe(30.25); // ceil(2 * 384 / 25.4 * 4) / 4, not the page-1 unit
+  cache.image("🔥", { ...base, size: 4 }, 2, 0, 0); // another style keeps its own planned unit
+  expect(draw).toHaveBeenCalledTimes(2);
+  expect(draw.mock.calls[1][2]).toBe(15.25);
+  expect(cache.metrics).toMatchObject({ imageTypes: 2, imageUses: 3, cacheHits: 1 });
+});
 it("enforces image type, side and aggregate pixel limits", () => {
   const cache = createGraphemeImageCache(raster);
   for (let i = 0; i < GRAPHEME_IMAGE_LIMITS.types; i++) cache.image(String(i), line("🔥"), 1, 0, 0);

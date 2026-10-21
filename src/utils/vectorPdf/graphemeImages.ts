@@ -6,6 +6,10 @@ export type GlyphBitmap = { dataUrl: string; width: number; height: number; left
 export type GlyphRasterizer = (text: string, line: TextLine, pixelsPerMm: number) => GlyphBitmap;
 export const glyphImageKey = (text: string, line: TextLine, resolution: number) =>
   JSON.stringify([text, FONT_FAMILY, line.weight, line.size, line.color, resolution]);
+/** Same grapheme and style, independent of the page it is drawn on. */
+const glyphStyleKey = (text: string, line: TextLine) => JSON.stringify([text, FONT_FAMILY, line.weight, line.size, line.color]);
+/** Pixels per layout millimetre needed on a page whose final A4 fit is `finalScale`. */
+const rasterUnit = (finalScale: number) => Math.ceil(finalScale * GRAPHEME_IMAGE_LIMITS.dpi / 25.4 * 4) / 4;
 
 /** Canvas metrics describe ink/overhang only. DOM owns advance and alignment. */
 export const rasterizeGrapheme: GlyphRasterizer = (text, line, unit) => {
@@ -46,11 +50,19 @@ export const rasterizeGrapheme: GlyphRasterizer = (text, line, unit) => {
 
 export function createGraphemeImageCache(rasterize: GlyphRasterizer = rasterizeGrapheme) {
   const cache = new Map<string, GlyphBitmap & { alias: string }>();
+  // Pages are fitted to A4 with different scales (parade crops especially). Without a plan the
+  // same emoji was rasterised once per page scale; planned uses share the largest resolution.
+  const planned = new Map<string, number>();
   const metrics = { imageTypes: 0, imageUses: 0, cacheHits: 0, pixels: 0 };
   return { metrics,
+    /** Record a future use so every page reuses one bitmap at the highest resolution it needs. */
+    plan(text: string, line: TextLine, finalScale: number) {
+      const key = glyphStyleKey(text, line);
+      planned.set(key, Math.max(planned.get(key) ?? 0, rasterUnit(finalScale)));
+    },
     image(text: string, line: TextLine, finalScale: number, x: number, baseline: number, signal?: AbortSignal): Drawing {
       checkAbort(signal);
-      const unit = Math.ceil(finalScale * GRAPHEME_IMAGE_LIMITS.dpi / 25.4 * 4) / 4;
+      const unit = planned.get(glyphStyleKey(text, line)) ?? rasterUnit(finalScale);
       const key = glyphImageKey(text, line, unit);
       let bitmap = cache.get(key);
       if (bitmap) metrics.cacheHits++;
