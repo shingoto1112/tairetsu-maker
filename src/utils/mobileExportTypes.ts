@@ -2,7 +2,9 @@ import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Pro
 import type { RosterExportSnapshot } from "./rosterExportSnapshot";
 
 export type ExportTarget = "members";
-export type ExportRequest = { target: ExportTarget; scope: "current" | "all"; purpose: "mobile" | "a4"; format: "png" | "pdf"; memberOverflow?: "single" | "readable" };
+export type ExportRequest = { target: ExportTarget; scope: "current" | "all"; purpose: "mobile" | "a4"; format: "png" | "pdf"; memberOverflow?: "single" | "readable";
+  /** PDF only: embed fonts instead of leaving kana/kanji to the viewer's font. */
+  embedPdfFonts?: boolean };
 export type ExportSource = {
   projectTitle: string; members: Member[]; memberGroups: MemberGroup[];
   objects: StageObject[]; objectGroups: ObjectGroup[]; frames: FormationFrame[];

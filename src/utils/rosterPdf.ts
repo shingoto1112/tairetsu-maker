@@ -220,7 +220,7 @@ export function measureRosterPdfPage(sheet: HTMLElement, id: string, coverage: P
   return { frameId:id, width:parseFloat(sheet.style.width), height:parseFloat(sheet.style.height), drawings };
 }
 
-export async function generateRosterPdf(snapshot: RosterExportSnapshot, options: GenerationOptions) {
+export async function generateRosterPdf(snapshot: RosterExportSnapshot, options: GenerationOptions & { embedFonts?: boolean }) {
   const columns = await measureRosterPdf(snapshot, options), plan = chooseRosterTablePlan(columns);
   let raster = false;
   // Only known text-classification failures select document rasterization. Limits,
@@ -259,7 +259,8 @@ export async function generateRosterPdf(snapshot: RosterExportSnapshot, options:
     checkAbort(options.signal);
     if (raster) return { blob:await imagePagesToPdfBlob(images, {orientation:plan.orientation, title:"メンバー名簿", signal:options.signal}), preview:preview!, pageCount:plan.pages.length, orientation:plan.orientation, mode:"raster" as const };
     const result = await renderScenePages(pages, { orientation:plan.orientation, title:"メンバー名簿", signal:options.signal,
-      onProgress:options.onProgress, fillStrokes:false, clipPage:true, rasterize:rasterizeRosterGrapheme, objectStreams:true });
+      onProgress:options.onProgress, fillStrokes:false, clipPage:true, rasterize:rasterizeRosterGrapheme, objectStreams:true,
+      fontMode:options.embedFonts ? "subset" : "device" });
     checkAbort(options.signal);
     return { blob:result.blob, preview:preview!, pageCount:plan.pages.length, orientation:plan.orientation, mode:"vector" as const, metrics:result.metrics };
   } finally { host.remove(); }

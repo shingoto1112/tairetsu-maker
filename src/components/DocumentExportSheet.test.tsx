@@ -75,6 +75,16 @@ describe("DocumentExportSheet", () => {
     fireEvent.click(screen.getByRole("button",{name:"PDF"}));expect(create.hasAttribute("disabled")).toBe(false);
     expect(screen.queryByText("用途")).toBeNull();
   });
+  it("shows the small embed-fonts option for PDF only and passes it with the request", async () => {
+    render(<DocumentExportSheet initialTarget="members" initialFormat="pdf" getSource={() => source} onClose={vi.fn()} />);
+    const option = () => screen.queryByRole("checkbox", { name: /フォントを入れて作る/ }) as HTMLInputElement | null;
+    expect(option()?.checked).toBe(false);
+    fireEvent.click(option()!);
+    fireEvent.click(screen.getByRole("button", { name: "メンバー名簿のPDFを作成" })); await screen.findByRole("button", { name: "共有する" });
+    expect(generateDocumentExport).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ format: "pdf", embedPdfFonts: true }), expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: "画像" }));
+    expect(option()).toBeNull();
+  });
   it("preflights member mobile output and presents the below-24px choice before creation, defaulting to one page", async () => {
     vi.mocked(prepareMemberMobilePlan).mockResolvedValue(null);
     render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);

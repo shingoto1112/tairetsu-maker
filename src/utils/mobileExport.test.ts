@@ -59,6 +59,11 @@ describe("mobile export pipeline", () => {
     expect(generateRosterPdf).toHaveBeenCalledOnce(); expect(prepareMemberMobilePlan).not.toHaveBeenCalled();
     expect(elementToCanvas).not.toHaveBeenCalled(); expect(result.files).toHaveLength(1); expect(result.pageCount).toBe(2);
     expect(result.files[0].name.endsWith(".pdf")).toBe(true);
+    expect(vi.mocked(generateRosterPdf).mock.calls[0][1]).toMatchObject({ embedFonts: false });
+  });
+  it("passes the embed-fonts choice to the roster PDF", async () => {
+    await generateDocumentExport(snapshot(), { ...request, format: "pdf", embedPdfFonts: true }, { signal: new AbortController().signal, onProgress: vi.fn() });
+    expect(vi.mocked(generateRosterPdf).mock.calls[0][1]).toMatchObject({ embedFonts: true });
   });
   it("cleans up and rejects the whole output if a later page fails or generation is cancelled", async () => {
     vi.mocked(prepareMemberMobilePlan).mockResolvedValueOnce(null);

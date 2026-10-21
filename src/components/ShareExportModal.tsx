@@ -24,6 +24,8 @@ export type ShareExportOptions = {
   includeSceneName: boolean;
   layout: "auto" | "two" | "three" | "four";
   sceneGapRows: number;
+  /** PDF only. Off (default): kana/kanji use the viewer's own Japanese font (much lighter). On: embed fonts. */
+  embedPdfFonts?: boolean;
 };
 
 export type ShareExportRequest = {
@@ -89,6 +91,8 @@ export const ShareExportModal = ({
   const [fileName, setFileName] = useState("");
   const [includeAssignments, setIncludeAssignments] = useState(false);
   const [includeAudioInZip, setIncludeAudioInZip] = useState(false);
+  // Deliberately not remembered: the lighter viewer-font PDF is the normal choice.
+  const [embedPdfFonts, setEmbedPdfFonts] = useState(false);
   const [rosterTarget, setRosterTarget] = useState<"members" | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const handleModalTab = useModalFocus(dialogRef, isOpen && !rosterTarget);
@@ -119,6 +123,7 @@ export const ShareExportModal = ({
       setFileName("");
       setIncludeAssignments(false);
       setIncludeAudioInZip(false);
+      setEmbedPdfFonts(false);
       setRosterTarget(null);
     }
   }, [isOpen]);
@@ -149,7 +154,8 @@ export const ShareExportModal = ({
       scope,
       format,
       fileName: fileName.trim() || makeDefaultFileName(projectTitle),
-      options: { ...fixedExportOptions, includeAssignments, viewerPerspective: isParade ? "audience" : exportPerspective },
+      options: { ...fixedExportOptions, includeAssignments, viewerPerspective: isParade ? "audience" : exportPerspective,
+        ...(format === "pdf" && embedPdfFonts ? { embedPdfFonts: true } : {}) },
     });
     onClose();
   };
@@ -337,6 +343,11 @@ export const ShareExportModal = ({
             <p className="notice muted">
               シーン名とステージ画像を並べた、印刷しやすい固定レイアウトで書き出します。
             </p>
+
+            {format === "pdf" && <label className="export-font-option">
+              <input type="checkbox" checked={embedPdfFonts} onChange={(event) => setEmbedPdfFonts(event.target.checked)} />
+              フォントを入れて作る（相手の画面で文字が正しく出ないときだけ・重くなります）
+            </label>}
 
             <button
               className="share-export-submit"

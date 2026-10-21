@@ -87,7 +87,7 @@ export const generateDocumentExport = async (
   check();
   if (request.format === "pdf") {
     const { generateRosterPdf } = await import("./rosterPdf");
-    const result = await generateRosterPdf(snapshot.data, options);
+    const result = await generateRosterPdf(snapshot.data, { ...options, embedFonts: !!request.embedPdfFonts });
     check();
     return { files: [new File([result.blob], withFileExtension(base, "pdf"), { type: "application/pdf" })],
       preview: result.preview, targetLabel: label, scopeLabel, pageCount: result.pageCount };

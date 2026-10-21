@@ -121,7 +121,9 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", hasO
       <fieldset disabled={locked}><legend>形式</legend><div className="document-export-options">
         <button type="button" aria-pressed={request.format === "png"} onClick={() => update({ format: "png" })}>画像</button>
         <button type="button" aria-pressed={request.format === "pdf"} onClick={() => update({ format: "pdf" })}>PDF</button>
-      </div></fieldset></>}
+      </div></fieldset>
+      {request.format === "pdf" && <label className="export-font-option"><input type="checkbox" disabled={locked} checked={!!request.embedPdfFonts}
+        onChange={event => update({ embedPdfFonts: event.target.checked })} />フォントを入れて作る（相手の画面で文字が正しく出ないときだけ・重くなります）</label>}</>}
       <button type="button" className="primary document-export-create" disabled={locked || (!excel && request.format === "png" && request.target === "members" && request.purpose === "mobile" && (memberFit === "checking" || memberFit === "error"))} onClick={() => void create()}>{excel ? "名簿のExcelを作成" : `${EXPORT_TARGET_LABELS[request.target]}の${request.format === "png" ? "画像" : "PDF"}を作成`}</button>
       {busy && <div className="document-export-progress"><p role="status">{progress}</p><button type="button" onClick={() => { controller.current?.abort(); setProgress("作成を取り消しています…"); }}>作成を取り消す</button></div>}
       {result && <div ref={resultRef}><ExportCompletionPanel result={result} disabled={busy} onBusyChange={handleDeliveryBusy} /></div>}

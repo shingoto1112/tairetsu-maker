@@ -36,6 +36,26 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen isParade />);
     expect(screen.queryByRole("radio")).toBeNull();
   });
+  it("offers embedding fonts only as a small PDF option that starts off on every open", () => {
+    const onExport = vi.fn(), props = { projectTitle: "演目", currentSceneLabel: "1", onClose: vi.fn(), onExport };
+    const { rerender } = render(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
+    const option = () => screen.queryByRole("checkbox", { name: /フォントを入れて作る/ }) as HTMLInputElement | null;
+    expect(option()?.checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
+    expect(onExport.mock.calls[0][0].options.embedPdfFonts).toBeUndefined();
+    fireEvent.click(option()!);
+    fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
+    expect(onExport.mock.calls[1][0].options.embedPdfFonts).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "画像" }));
+    expect(option()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "画像を作成" }));
+    expect(onExport.mock.calls[2][0].options.embedPdfFonts).toBeUndefined();
+    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen={false} />);
+    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen />);
+    fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
+    expect(option()?.checked).toBe(false);
+  });
   it("focuses on open, cycles Tab, permits input/Escape and restores the opener", () => {
     const onClose = vi.fn();
     const props = { projectTitle: "練習用", currentSceneLabel: "1", onClose, onExport: vi.fn() };

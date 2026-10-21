@@ -18,6 +18,12 @@
 
 `scripts/verify-vector-pdf-parade-runtime.mjs` は4fixtureを各々新しいブラウザーコンテキストで計測し、初回／2回目、公開生成経路、プレビュー寸法、取消、全体fallback、ステージ→パレード→ステージを検証する。`scripts/verify-vector-pdf-parade-stage.mjs` は既存23fixtureをHEADのモデル／rendererと比較し、描画モデル・抽出文字の位置／幅、作成日時・ランダムID以外のPDF全バイトの完全一致と既存画像比較を要求する。`--audit-saved` は保存済みの全新旧PDFを同じ基準で検査する。内容が同じPDFのpdfjs描画でも3〜4画素・最大RGB差8の微小差が出る場合があるため、画素完全一致とPDF内容一致は分けて記録する。閾値は変更しない。出力は `output/build31/vector-pdf-parade/`。外部通信を遮断し、5395〜5399だけを使用する。実機Safari／WKWebView・LINEは未確認。
 
+## 端末の字体（①、2026-10-21）
+
+- `renderScenePages` の `fontMode: "device"`（隊列表・名簿の既定。「フォントを入れて作る」で `"subset"`）。`deviceFont.ts` が文字の分類・区間分け・TJ の配置、`deviceFontPdf.ts` が pdf-lib でのフォント辞書・ToUnicode の追加と検証、`deviceGlyphs.generated.ts` が文字の表（`node scripts/generate-device-font-table.mjs --check` で再生成ずれを検出）。
+- 端末の字体にするのは BIZ で描ける文字のうち表にある文字だけ。画像になる文字・名簿の配置計測は従来と同じ。英数字は埋め込みのまま（PC の Chrome・Android で等幅の代替字形になり間延びするため）。
+- 失敗時は device → subset → original の順に新しい jsPDF で作り直す。取消は作り直さない。
+
 ## PDF用フォントの事前サブセット（build31）
 
 - `trueType.ts` は元TTFのWindows Unicode BMP cmap format 4を読み、ベクター／画像runを先に確定する。jsPDFで元TTFを二重解析しない。確定したベクター文字だけを文書全体・ウェイト別に収集する。切り詰めたcmapで画像化を決め直さない。
