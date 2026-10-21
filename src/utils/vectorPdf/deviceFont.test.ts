@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { decodeRanges, deviceGlyph, deviceTjArray, loadDeviceGlyphTable, pdfRgb, planDeviceRuns } from "./deviceFont";
+import { decodeRanges, deviceGlyph, deviceTjArray, loadDeviceGlyphTable, planDeviceRuns } from "./deviceFont";
 import { DEVICE_GLYPH_SOURCE } from "./deviceGlyphs.generated";
 import { inspectTrueType } from "./trueType";
 
@@ -76,12 +76,5 @@ describe("device runs and placement", () => {
     expect(kana.operand).toBe("[<30C8>]");
     expect(kana.lead).toBeCloseTo((1000 - regular(0x30c8)) / 2, 9);
     expect(() => deviceTjArray(table, "AB", regular)).toThrow();
-  });
-
-  it("formats colours like jsPDF's text colour", () => {
-    expect(pdfRgb("#0f766e")).toBe("0.059 0.463 0.431");
-    expect(pdfRgb("#000000")).toBe("0 0 0");
-    expect(pdfRgb("#ffffff")).toBe("1 1 1");
-    expect(() => pdfRgb("rgb(0,0,0)")).toThrow();
   });
 });

@@ -109,10 +109,3 @@ export function deviceTjArray(table: DeviceGlyphTable, text: string, advanceOf: 
   items.push(`<${hexRun}>`);
   return { lead, operand: `[${items.join(" ")}]` };
 }
-
-/** "#rrggbb" (jsPDF's decoded colour) → PDF operands with jsPDF's 3-decimal text colour precision. */
-export function pdfRgb(hexColour: string) {
-  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hexColour);
-  if (!m) throw new Error(`端末字体の文字色が不正です: ${hexColour}`);
-  return m.slice(1).map(v => { const t = (parseInt(v, 16) / 255).toFixed(3).replace(/0+$/, "").replace(/\.$/, ""); return t || "0"; }).join(" ");
-}

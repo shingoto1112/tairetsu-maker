@@ -8,6 +8,8 @@ import type { PrintOrientation } from "../printLayout";
 import { sourceTrueType, validateSubset } from "./trueType";
 import { tidyPdfContent } from "./contentTidy";
 import { packObjectStreams } from "./objectStreams";
+import { DEVICE_BOLD_STROKE_EM, DEVICE_FONT_RESOURCE, deviceTjArray, loadDeviceGlyphTable, planDeviceRuns, type DeviceGlyphTable } from "./deviceFont";
+import { attachDeviceFont } from "./deviceFontPdf";
 
 export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer; orientation?: PrintOrientation } = {}) {
   const cache = createGraphemeImageCache(options.rasterize);
@@ -153,7 +155,41 @@ function drawingBounds(nodes: Drawing[]) {
   return { x: left - 1, y: top - 1, width: right - left + 2, height: bottom - top + 2 };
 }
 
-function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = false, shared?: SharedDrawings, inForm = false) {
+/** Viewer-font mode state for one document attempt. Advances are BIZ UDPGothic's (thousandths of an em),
+ * baselines follow jsPDF's rounding of the same font's hhea metrics. */
+type DeviceText = { table: DeviceGlyphTable; advance: (weight: FontWeight) => (code: number) => number;
+  baseline: (weight: FontWeight) => number; codes: Set<number> };
+/** Draws one text line at exactly the embedded layout: ASCII/Latin runs with the embedded BIZ subset,
+ * kana/kanji/full-width runs with the viewer font, each glyph placed inside its BIZ advance. */
+function drawDeviceText(pdf: jsPDF, d: Extract<Drawing, { kind: "text" }>, device: DeviceText) {
+  const weight = fontWeight(d.weight), advance = device.advance(weight);
+  const runs = planDeviceRuns(device.table, d.text, advance);
+  const total = runs.reduce((n, r) => n + r.advance, 0) / 1000 * d.size;
+  const anchor = d.align === "left" ? 0 : d.align === "right" ? total : total / 2;
+  const left = d.x - anchor, y = d.y + (d.baselineOffset ?? device.baseline(weight) * d.size);
+  // jsPDF's own encoder: the same operands its embedded text gets for this colour (hex or CSS rgb()).
+  const encode = (pdf as unknown as { __private__: { encodeColorString(o: { ch1: string; pdfColorType: "text" | "draw"; precision: 3 }): string } }).__private__.encodeColorString;
+  const fill = encode({ ch1: d.color, pdfColorType: "text", precision: 3 }), stroke = encode({ ch1: d.color, pdfColorType: "draw", precision: 3 });
+  for (const run of runs) {
+    const x = left + run.start / 1000 * d.size;
+    if (!run.device) {
+      pdf.setFont(FONT_FAMILY, weight);
+      pdf.setFontSize(d.size * 72 / 25.4);
+      pdf.setTextColor(d.color);
+      pdf.text(run.text, x, y);
+      continue;
+    }
+    const { lead, operand } = deviceTjArray(device.table, run.text, advance);
+    for (const ch of run.text) device.codes.add(ch.charCodeAt(0));
+    // Viewers do not choose a bold face by name: bold is fill + a thin outline of the same colour.
+    const bold = weight === "bold";
+    (pdf.internal as unknown as { write: (content: string) => void }).write(["q", fill, ...(bold ? [stroke, `${d.size * DEVICE_BOLD_STROKE_EM} w`, "1 j"] : []),
+      "BT", `/${DEVICE_FONT_RESOURCE} ${d.size} Tf`, ...(bold ? ["2 Tr"] : []),
+      `1 0 0 -1 ${x - lead / 1000 * d.size} ${y} Tm`, `${operand} TJ`, "ET", "Q"].join("\n"));
+  }
+}
+
+function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = false, shared?: SharedDrawings, inForm = false, device?: DeviceText) {
   for (const d of nodes) {
     checkAbort(signal);
     pdf.saveGraphicsState();
@@ -177,11 +213,12 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
         const rad = d.rotation * Math.PI / 180;
         pdf.setCurrentTransformationMatrix(pdf.Matrix(Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad), d.x, d.y));
         if (d.clip) { path(pdf, d.clip, null); pdf.clip(); pdf.discardPath(); }
-        draw(pdf, d.children, signal, fillStrokes, shared, inForm);
+        draw(pdf, d.children, signal, fillStrokes, shared, inForm, device);
       } else if (d.kind === "image") {
         pdf.addImage(d.dataUrl, "PNG", d.x, d.y, d.width, d.height, d.cacheKey);
       } else if (d.kind === "text") {
         if (!d.text) continue;
+        if (device) { drawDeviceText(pdf, d, device); continue; }
         const weight = fontWeight(d.weight), font = parsedFont(pdf, weight);
         pdf.setFont(FONT_FAMILY, weight);
         // jsPDF sizes are points even inside a millimetre-coordinate document.
@@ -245,7 +282,9 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
   onProgress?: (message: string) => void; rasterize?: GlyphRasterizer;
   /** Original-font reference path for regression/size measurements. */
   orientation?: PrintOrientation; fillStrokes?: boolean; clipPage?: boolean;
-  fontMode?: "subset" | "original"; subsetFont?: FontSubsetter;
+  /** "device": kana/kanji/full-width text uses the viewer's Japanese font (not embedded); retried with
+   * "subset" and then "original" on any failure. Default "subset" (everything embedded). */
+  fontMode?: "device" | "subset" | "original"; subsetFont?: FontSubsetter;
   /** Pack object dictionaries into PDF 1.5 object streams after all checks passed (export paths). */
   objectStreams?: boolean } = {}) {
   checkAbort(options.signal);
@@ -264,14 +303,32 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
   const prepared = await prepareTextDrawings((weight, code) => !!sources.get(weight)?.info.glyph(code), pages, options);
   pages = prepared.pages;
   const lines = pages.flatMap(p => visibleTextLines(p.drawings));
-  const weights = requiredFontWeights(lines);
-  const codes = new Map(weights.map(weight => [weight, [...new Set(lines.filter(l => fontWeight(l.weight) === weight)
-    .flatMap(l => [...l.text].map(ch => ch.charCodeAt(0))))].sort((a, b) => a - b)]));
+  const advanceOf = (weight: FontWeight) => {
+    const info = sources.get(weight)!.info;
+    return (code: number) => info.advance(code) * 1000 / info.unitsPerEm;
+  };
+  // jsPDF's own baseline metric for the same font: hhea ascender/descender rounded to 1/1000 em.
+  const baselineOf = (weight: FontWeight) => {
+    const info = sources.get(weight)!.info;
+    return (Math.round(info.ascender * 1000 / info.unitsPerEm) + Math.round(info.descender * 1000 / info.unitsPerEm)) / 2000;
+  };
   let subsetMs = 0;
-  const attempts: ("subset" | "original")[] = [];
-  async function attempt(mode: "subset" | "original") {
+  let deviceTable: DeviceGlyphTable | undefined;
+  const attempts: ("device" | "subset" | "original")[] = [];
+  async function attempt(mode: "device" | "subset" | "original") {
     attempts.push(mode);
     checkAbort(options.signal);
+    const device: DeviceText | undefined = mode === "device"
+      ? { table: deviceTable ??= await loadDeviceGlyphTable(), advance: advanceOf, baseline: baselineOf, codes: new Set() } : undefined;
+    checkAbort(options.signal);
+    // Text drawn with the EMBEDDED font in this mode (device mode: only the runs the viewer font cannot take).
+    const embeddedLines = !device ? lines : lines.flatMap(line => {
+      const text = planDeviceRuns(device.table, line.text, advanceOf(fontWeight(line.weight))).filter(r => !r.device).map(r => r.text).join("");
+      return text ? [{ ...line, text }] : [];
+    });
+    const weights = requiredFontWeights(embeddedLines);
+    const codes = new Map(weights.map(weight => [weight, [...new Set(embeddedLines.filter(l => fontWeight(l.weight) === weight)
+      .flatMap(l => [...l.text].map(ch => ch.charCodeAt(0))))].sort((a, b) => a - b)]));
     // A failed addFont/draw/output attempt is NEVER reused.
     const pdf = new jsPDF({ orientation: options.orientation ?? "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
     const fontBytes = new Map<FontWeight, Uint8Array>();
@@ -290,7 +347,7 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
       }
     }
     const fonts = await registerFonts(pdf, async name => fontBytes.get(name.includes("Bold") ? "bold" : "normal")!, options.signal, weights);
-    const missing = unsupportedCharacters(pdf, lines);
+    const missing = unsupportedCharacters(pdf, embeddedLines);
     if (missing.length) throw new UnsupportedPdfCharacters(missing);
     pdf.setProperties({ title: options.title ?? "隊列メーカー 隊列表", creator: "隊列メーカー" });
     // Per attempt: a rebuilt document (original-font retry) must define its own shared drawings.
@@ -309,7 +366,7 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
         pdf.saveGraphicsState();
         pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale, fit.x * 25.4 / 72, fit.y * 25.4 / 72));
         if (options.clipPage) { pdf.rect(0, 0, width, height, null); pdf.clip(); pdf.discardPath(); }
-        draw(pdf, page.drawings, options.signal, options.fillStrokes, shared);
+        draw(pdf, page.drawings, options.signal, options.fillStrokes, shared, false, device);
         pdf.restoreGraphicsState();
       });
       // Permit browser cancellation between pages and before serialization.
@@ -334,15 +391,24 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
     if (!raw.startsWith("%PDF-") || !raw.includes("%%EOF") || embeddedFonts.length !== usedWeights.length ||
       (raw.match(/\/ToUnicode /g)?.length ?? 0) !== usedWeights.length || (usedWeights.length > 0 && !raw.includes("/CIDFontType2")))
       throw new Error("PDFのフォント埋込・Unicode情報の検証に失敗しました。");
-    for (const line of lines) for (const ch of line.text) {
+    for (const line of embeddedLines) for (const ch of line.text) {
       const font = parsedFont(pdf, fontWeight(line.weight)), code = ch.charCodeAt(0), glyph = font.characterToGlyph(code);
       if (!glyph || font.toUnicode[glyph] !== code) throw new Error("PDFに文字を完全に埋め込めませんでした。");
     }
-    // Checks above ran on the plain jsPDF output; packing only rewrites dictionaries/xref and is
-    // verified again inside packObjectStreams (falls back to the checked bytes on any doubt).
-    const packed = options.objectStreams ? await packObjectStreams(bytes, pages.length, options.signal) : null;
-    const finalBytes = packed ?? new Uint8Array(bytes);
-    return { blob: new Blob([finalBytes], { type: "application/pdf" }), metrics: { ...fonts, loadMs: sourceLoadMs, objectStreams: !!packed, unpackedBytes: bytes.byteLength,
+    let finalBytes: Uint8Array, packed = false;
+    if (device?.codes.size) {
+      // Mandatory: the content already uses the viewer font. attachDeviceFont verifies its own output and
+      // throws instead of returning the incomplete input; this attempt then fails and embedded fonts are used.
+      finalBytes = await attachDeviceFont(bytes, { codes: device.codes, pageCount: pages.length, objectStreams: !!options.objectStreams, signal: options.signal });
+      packed = !!options.objectStreams;
+    } else {
+      // Checks above ran on the plain jsPDF output; packing only rewrites dictionaries/xref and is
+      // verified again inside packObjectStreams (falls back to the checked bytes on any doubt).
+      const result = options.objectStreams ? await packObjectStreams(bytes, pages.length, options.signal) : null;
+      finalBytes = result ?? new Uint8Array(bytes); packed = !!result;
+    }
+    return { blob: new Blob([finalBytes], { type: "application/pdf" }), metrics: { ...fonts, loadMs: sourceLoadMs, objectStreams: packed, unpackedBytes: bytes.byteLength,
+      deviceFont: !!device?.codes.size, deviceCharacters: device?.codes.size ?? 0,
       sourceBytes: weights.map(w => sources.get(w)!.bytes.byteLength),
       fetchedBytes: [...sources.values()].reduce((n, s) => n + s.fetchedBytes, 0),
       fontInputBytes: weights.map(w => fontBytes.get(w)!.byteLength), characterCounts: weights.map(w => codes.get(w)!.length),
@@ -350,17 +416,21 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
       graphemeImages: prepared.metrics },
       vectorText: pages.map(p => visibleTextLines(p.drawings).map(l => l.text)) };
   }
-  let retryReason: string | undefined;
-  let result: Awaited<ReturnType<typeof attempt>>;
-  if (options.fontMode === "original") result = await attempt("original");
-  else try { result = await attempt("subset"); }
-  catch (error) {
-    checkAbort(options.signal);
-    if (error && typeof error === "object" && "name" in error && error.name === "AbortError") throw error;
-    retryReason = error instanceof Error ? error.message : String(error);
-    options.onProgress?.("元の共通フォントでPDFを再作成中");
-    result = await attempt("original");
+  // Each failed attempt is rebuilt from scratch with the next, more conservative font mode.
+  const modes = options.fontMode === "original" ? ["original"] as const
+    : options.fontMode === "device" ? ["device", "subset", "original"] as const : ["subset", "original"] as const;
+  const reasons: string[] = [];
+  let result: Awaited<ReturnType<typeof attempt>> | undefined;
+  for (const [i, mode] of modes.entries()) {
+    try { result = await attempt(mode); break; }
+    catch (error) {
+      checkAbort(options.signal);
+      if ((error && typeof error === "object" && "name" in error && error.name === "AbortError") || i === modes.length - 1) throw error;
+      reasons.push(error instanceof Error ? error.message : String(error));
+      options.onProgress?.(mode === "device" ? "フォントを入れてPDFを再作成中" : "元の共通フォントでPDFを再作成中");
+    }
   }
   checkAbort(options.signal);
-  return { ...result, metrics: { ...result.metrics, subsetMs, fontAttempts: attempts, retryReason, totalMs: performance.now() - totalStart } };
+  return { ...result!, metrics: { ...result!.metrics, subsetMs, fontAttempts: attempts, retryReason: reasons.length ? reasons.join(" / ") : undefined,
+    totalMs: performance.now() - totalStart } };
 }
