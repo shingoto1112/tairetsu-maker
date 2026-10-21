@@ -6,6 +6,7 @@ import { planTextRuns, type FontCoverage } from "./textRuns";
 import { createGraphemeImageCache, type GlyphRasterizer } from "./graphemeImages";
 import type { PrintOrientation } from "../printLayout";
 import { sourceTrueType, validateSubset } from "./trueType";
+import { tidyPdfContent } from "./contentTidy";
 
 export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer; orientation?: PrintOrientation } = {}) {
   const cache = createGraphemeImageCache(options.rasterize);
@@ -231,6 +232,8 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
       await new Promise<void>(resolve => setTimeout(resolve, 0));
     }
     checkAbort(options.signal);
+    // Per-operator precision (geometry 0.001mm, text 0.01mm, matrices unchanged) before Flate.
+    tidyPdfContent((pdf.internal as unknown as { pages: unknown[] }).pages);
     const bytes = pdf.output("arraybuffer");
     checkAbort(options.signal);
     const raw = new TextDecoder("latin1").decode(bytes);

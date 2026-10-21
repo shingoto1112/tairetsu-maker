@@ -121,9 +121,10 @@ it("serializes correctly anchored text in advanced mode with actual embedded gly
     .flatMap(match => { try { return [inflateSync(Buffer.from(match[2], "latin1")).toString("latin1")]; } catch { return []; } });
   const content = streams.find(s => s.includes(" Tm\n"))!;
   expect(content).toBeDefined();
-  const anchors = [...content.matchAll(/1\. 0\. 0\. -1\. ([\d.-]+) [\d.-]+ Tm/g)].map(m => Number(m[1]));
+  // contentTidy writes text positions to 0.01mm (matrix part exact); anchors stay within that.
+  const anchors = [...content.matchAll(/1 0 0 -1 ([\d.-]+) [\d.-]+ Tm/g)].map(m => Number(m[1]));
   expect(anchors).toHaveLength(3);
-  [40, 40 - advance / 2, 40 - advance].forEach((x, i) => expect(anchors[i]).toBeCloseTo(x, 4));
+  [40, 40 - advance / 2, 40 - advance].forEach((x, i) => expect(Math.abs(anchors[i] - x)).toBeLessThanOrEqual(.005 + 1e-9));
 }, 15000);
 
 it("falls back for the whole document on unsupported layouts, glyphs and font failure", async () => {
