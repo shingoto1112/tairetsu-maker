@@ -73,7 +73,21 @@ function path(pdf: jsPDF, r: Rect, style: "F" | "S" | null) {
 
 /** PDF viewers may widen thin strokes to one device pixel. Filled outlines keep
  * the CSS width when a long parade is shrunk onto one A4 page. */
-function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>, inForm = false) {
+/** Sets fill/stroke alpha only when it differs from the node's current state. Every node is drawn
+ * inside its own q/Q and no group ever changes alpha, so each node starts fully opaque; writing
+ * "opacity 1" again (most fills and lines) is redundant. Inside shared forms no state is written. */
+type AlphaSetter = (state: { opacity?: number; "stroke-opacity"?: number }) => void;
+function alphaSetter(pdf: jsPDF, inForm: boolean): AlphaSetter {
+  let fill = 1, stroke = 1;
+  return state => {
+    if (inForm) return;
+    const nextFill = state.opacity ?? fill, nextStroke = state["stroke-opacity"] ?? stroke;
+    if (nextFill === fill && nextStroke === stroke) return;
+    pdf.setGState(pdf.GState(state)); fill = nextFill; stroke = nextStroke;
+  };
+}
+
+function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>, setAlpha: AlphaSetter) {
   const dx = d.x2 - d.x1, dy = d.y2 - d.y1, length = Math.hypot(dx, dy);
   if (!length) return;
   const ux = dx / length, uy = dy / length, half = d.width / 2;
@@ -86,7 +100,7 @@ function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>, inForm = 
       { op: "l", c: [ex + uy * half, ey - ux * half] },
       { op: "l", c: [x + uy * half, y - ux * half] }, { op: "h", c: [] }]).fill();
   };
-  pdf.setFillColor(d.color); if (!inForm) pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1 }));
+  pdf.setFillColor(d.color); setAlpha({ opacity: d.opacity ?? 1 });
   if (!d.dash?.length) segment(0, length);
   else {
     const cycle = d.dash.reduce((n, v) => n + v, 0);
@@ -143,6 +157,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
   for (const d of nodes) {
     checkAbort(signal);
     pdf.saveGraphicsState();
+    const setAlpha = alphaSetter(pdf, inForm);
     try {
       if (d.kind === "group") {
         const key = shared && !inForm && shareable(d) ? sharedKey(d, fillStrokes) : undefined;
@@ -179,15 +194,15 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
         const anchor = d.align === "left" ? 0 : d.align === "right" ? advance : advance / 2;
         pdf.text(d.text, d.x - anchor, d.y + baselineOffset);
       } else if (d.kind === "line") {
-        if (fillStrokes) { filledLine(pdf, d, inForm); continue; }
+        if (fillStrokes) { filledLine(pdf, d, setAlpha); continue; }
         pdf.setDrawColor(d.color); pdf.setLineWidth(d.width);
         pdf.setLineCap(d.square ? "square" : "butt");
         pdf.setLineDashPattern(d.dash ?? [], 0);
-        if (!inForm) pdf.setGState(pdf.GState({ "stroke-opacity": d.opacity ?? 1, opacity: 1 }));
+        setAlpha({ "stroke-opacity": d.opacity ?? 1, opacity: 1 });
         pdf.line(d.x1, d.y1, d.x2, d.y2);
       } else {
         if (d.fill) {
-          if (!inForm) pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1, "stroke-opacity": 1 }));
+          setAlpha({ opacity: d.opacity ?? 1, "stroke-opacity": 1 });
           pdf.setFillColor(d.fill);
           const key = shared && !inForm ? circleKey(d) : undefined;
           if (key && (shared!.counts.get(key) ?? 0) >= CIRCLE_FORM_MIN_USES) {
@@ -204,7 +219,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
         }
         if (d.stroke) {
           if (fillStrokes) {
-            if (!inForm) pdf.setGState(pdf.GState({ opacity: d.strokeOpacity ?? 1 })); pdf.setFillColor(d.stroke);
+            setAlpha({ opacity: d.strokeOpacity ?? 1 }); pdf.setFillColor(d.stroke);
             const half = (d.lineWidth ?? CSS_PX_MM) / 2;
             path(pdf, { ...d, x: d.x - half, y: d.y - half, width: d.width + half * 2, height: d.height + half * 2,
               radius: d.radius ? d.radius + half : 0 }, null);
@@ -212,7 +227,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
               width: d.width - half * 2, height: d.height - half * 2, radius: Math.max(0, (d.radius ?? 0) - half) }, null);
             pdf.fillEvenOdd(); continue;
           }
-          if (!inForm) pdf.setGState(pdf.GState({ opacity: 1, "stroke-opacity": d.strokeOpacity ?? 1 }));
+          setAlpha({ opacity: 1, "stroke-opacity": d.strokeOpacity ?? 1 });
           pdf.setDrawColor(d.stroke); pdf.setLineWidth(d.lineWidth ?? CSS_PX_MM); path(pdf, d, "S");
         }
       }
