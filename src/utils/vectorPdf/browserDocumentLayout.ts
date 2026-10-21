@@ -117,7 +117,8 @@ export function measureAssignmentLayout(scene: HTMLElement, entries: AssignmentP
       if (!entries[i]) throw new UnsupportedVectorLayout("割当カード数が一致しません。");
       const object = card.querySelector<HTMLElement>(".print-assignment-sheet__object")!;
       const r = relativeRect(object, scene);
-      return { objectId: entries[i].object.id, object: r, name: measureTextLines(object, scene, r),
+      return { objectId: entries[i].object.id, object: r,
+        name: [...object.querySelectorAll<HTMLElement>(".print-object-label__line")].flatMap(row => measureTextLines(row, scene)),
         members: [...card.querySelectorAll<HTMLElement>(".print-assignment-sheet__member")].map((member, j) => {
           if (!entries[i].assignedMembers[j]) throw new UnsupportedVectorLayout("割当メンバー数が一致しません。");
           const rect = relativeRect(member, scene);

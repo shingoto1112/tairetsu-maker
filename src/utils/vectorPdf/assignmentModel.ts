@@ -41,8 +41,7 @@ export function buildAssignmentDrawings(project: Project, frame: FormationFrame,
         radius: Math.max(0, radius - b / 2), fill: entry.object.color, opacity: 0x24 / 255, stroke: entry.object.color, lineWidth: b },
       ...(shape === "curtain" ? curtainStripes(`assignment-${entry.object.id}`, r, b) : []),
       { kind: "group", id: `assignment-${entry.object.id}-label`, x: 0, y: 0, rotation: 0,
-        clip: { x: r.x + b, y: r.y + b, width: Math.max(0, r.width - 2 * b), height: Math.max(0, r.height - 2 * b),
-          radius: Math.max(0, radius - b) }, children: measured.name },
+        children: measured.name },
     ] });
     for (const [j, member] of entry.assignedMembers.entries()) {
       const m = measured.members[j];

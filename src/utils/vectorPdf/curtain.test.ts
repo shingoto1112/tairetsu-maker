@@ -27,7 +27,8 @@ it.each(["audience", "performer"] as const)("keeps curtain stripes in the object
     if (first.kind !== "shape" || second.kind !== "shape") throw new Error("Missing stripes");
     expect(second.x - first.x).toBeCloseTo(16 * CSS_PX_MM);
     // Name counter-rotation must never rotate the curtain pattern.
-    expect(object.children.indexOf(stripes)).toBeLessThan(object.children.findIndex(n => n.kind === "group" && n.id === `${id}-clip`));
+    expect(object.children.indexOf(stripes)).toBeLessThan(object.children.findIndex(n => n.kind === "group" && n.id === `${id}-label`));
+    expect(group(object.children, `${id}-label`).clip).toBeUndefined();
   }
   expect(JSON.stringify(p)).toBe(before);
 });

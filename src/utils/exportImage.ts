@@ -1,3 +1,5 @@
+import { applyPrintObjectLabels } from "./printObjectLabelBrowser";
+
 let htmlToImagePromise: Promise<typeof import("html-to-image")> | null = null;
 
 export const loadHtmlToImage = () =>
@@ -15,11 +17,23 @@ const waitForFonts = async (): Promise<void> => {
   }
 };
 
-const getElementPixelSize = (element: HTMLElement): { height: number; width: number } => {
-  const rect = element.getBoundingClientRect();
-  const width = Math.ceil(element.scrollWidth || element.offsetWidth || rect.width);
-  const height = Math.ceil(element.scrollHeight || element.offsetHeight || rect.height);
-  return { height, width };
+export const getElementPixelSize = (element: HTMLElement): { height: number; width: number } => {
+  // Prop text may bleed, but must never enlarge the paper/camera fitting extent.
+  // The legacy writer clipped this text inside the prop. Measure the same shape
+  // extent, including rotated props, and restore all inline styles immediately.
+  const labels = [...element.querySelectorAll<HTMLElement>("[data-print-object-label]")];
+  const displays = labels.map(label => [label.style.getPropertyValue("display"), label.style.getPropertyPriority("display")] as const);
+  labels.forEach(label => label.style.setProperty("display", "none", "important"));
+  try {
+    const rect = element.getBoundingClientRect();
+    return { width: Math.ceil(element.scrollWidth || element.offsetWidth || rect.width),
+      height: Math.ceil(element.scrollHeight || element.offsetHeight || rect.height) };
+  } finally {
+    labels.forEach((label, i) => {
+      if (displays[i][0]) label.style.setProperty("display", displays[i][0], displays[i][1]);
+      else label.style.removeProperty("display");
+    });
+  }
 };
 
 export const withExportClone = async <T>(
@@ -61,6 +75,7 @@ export const withExportClone = async <T>(
 
   try {
     await waitForFonts();
+    applyPrintObjectLabels(clone);
     return await callback(clone, size);
   } finally {
     host.remove();

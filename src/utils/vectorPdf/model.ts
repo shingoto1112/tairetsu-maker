@@ -130,15 +130,10 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
           height: oh - 2 * inset, radius: Math.max(0, (rect.radius ?? 0) - inset),
           fill: object.color, stroke: object.color, lineWidth: CSS_PX_MM, opacity: 0x24 / 255 },
         ...(shape === "curtain" ? curtainStripes(object.id, rect, CSS_PX_MM) : []),
-        // CSS overflow:hidden clips descendants at the inner border edge.
-        { kind: "group", id: `${object.id}-clip`, x: 0, y: 0, rotation: 0, clip: {
-          x: rect.x + CSS_PX_MM, y: rect.y + CSS_PX_MM,
-          width: Math.max(0, ow - 2 * CSS_PX_MM), height: Math.max(0, oh - 2 * CSS_PX_MM),
-          radius: Math.max(0, (rect.radius ?? 0) - CSS_PX_MM),
-        }, children: [
-          { kind: "group", id: `${object.id}-label`, x: 0, y: 0, rotation: correction,
-            children: propText?.(object.name, ow, oh, correction, rect.radius) ?? [] },
-        ] },
+        // Text alone may overflow at the readable floor. Curtain paint keeps
+        // its independent clip above; local rotation and stacking stay intact.
+        { kind: "group", id: `${object.id}-label`, x: 0, y: 0, rotation: correction,
+          children: propText?.(object.name, ow, oh, correction, rect.radius) ?? [] },
       ] } });
   }
   for (const member of project.members) {

@@ -4,7 +4,8 @@ import { defaultPrintOptions, getAssignmentPrintEntries, getPrintMetrics, getPri
 import { validateParadeA4Export } from "../paradeA4Limits";
 import { sortFrames } from "../interpolation";
 import { buildScenePage, CSS_PX_MM, UnsupportedVectorLayout, visibleTextLines, type ScenePage } from "./model";
-import { measurePrintPageExtent, measurePropText } from "./browserTextLayout";
+import { measurePrintPageExtent, propTextFromPrintDom } from "./browserTextLayout";
+import { applyPrintObjectLabels } from "../printObjectLabelBrowser";
 import { ensureBrowserFonts, measureAssignmentLayout, measureBaseline, measureTextLines, relativeRect } from "./browserDocumentLayout";
 import { buildAssignmentDrawings } from "./assignmentModel";
 import { checkAbort } from "./fonts";
@@ -32,6 +33,7 @@ export async function withVectorFallback<T>(vector: () => Promise<T>, fallback: 
 /** The caller must keep an isolated export clone mounted through rendering.
  * Live UI zoom would mix visual DOMRects with model/layout millimetres. */
 export function buildA4Document(project: Project, frameIds: string[], element: HTMLElement, supplied: ShareExportOptions): ScenePage[] {
+  applyPrintObjectLabels(element);
   const options = { ...defaultPrintOptions, ...supplied };
   validateParadeA4Export(project, frameIds, options);
   const frames = sortFrames(project.frames).filter(f => frameIds.includes(f.id));
@@ -48,7 +50,7 @@ export function buildA4Document(project: Project, frameIds: string[], element: H
       const stageElement = block.querySelector<HTMLElement>(".print-stage");
       if (!stageElement || Math.abs(stageElement.getBoundingClientRect().width * CSS_PX_MM - metrics.stageWidthMm) > .025)
         throw new UnsupportedVectorLayout("印刷用の複製DOMとステージ寸法が一致しません。");
-      const model = buildScenePage(project, frame.id, options, measurePropText, undefined, { metrics, gapAfter: j < pageFrames.length - 1 });
+      const model = buildScenePage(project, frame.id, options, propTextFromPrintDom(block), undefined, { metrics, gapAfter: j < pageFrames.length - 1 });
       const stage = model.drawings.find(d => d.kind === "group" && d.id === "stage");
       const members = project.members.filter(m => frame.positions[m.id] && isPrintMemberVisible(frame, m));
       const icons = [...block.querySelectorAll<HTMLElement>(".print-stage .print-member")];

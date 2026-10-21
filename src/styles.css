@@ -6268,13 +6268,13 @@ h2 {
   font-weight: 800;
   justify-content: center;
   line-height: 1.15;
-  overflow: hidden;
-  overflow-wrap: anywhere;
+  overflow: visible;
+  overflow-wrap: normal;
   padding: 2px;
   position: absolute;
   text-align: center;
   transform-origin: center center;
-  word-break: break-word;
+  word-break: normal;
   z-index: 2;
 }
 
@@ -6340,12 +6340,14 @@ h2 {
   justify-content: center;
   line-height: 1.15;
   max-width: 100%;
-  overflow: hidden;
-  overflow-wrap: anywhere;
+  overflow: visible;
+  overflow-wrap: normal;
   padding: 1.2mm 2mm;
   text-align: center;
   transform-origin: center center;
-  word-break: break-word;
+  word-break: normal;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .print-assignment-sheet__object.shape-circle {
@@ -8032,4 +8034,28 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
 @container (max-width: 480px) {
   .export-orientation .horizontal-counting__cards { grid-template-columns: minmax(0, 1fr); }
   .export-orientation .counting-diagram { max-height: 75px; }
+}
+
+/* Only the text may leave a prop. Background painting/curtain stripes retain
+   the existing border box and rounded shape; the label cannot affect flow. */
+.print-object-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  padding: 0;
+  line-height: 1.15;
+  transform-origin: 0 0;
+  white-space: pre;
+}
+.print-object-label__line {
+  display: block;
+  position: absolute;
+  width: max-content;
+  max-width: none;
+  line-height: 1.15;
+  white-space: pre;
+  transform: translate(-50%, -50%);
 }

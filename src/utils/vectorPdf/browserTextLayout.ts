@@ -1,64 +1,62 @@
-import { CSS_PX_MM, type GraphemePlacement, type PropTextLayout, type TextLine } from "./model";
-import { measureMixedGraphemes, slicePlacements } from "./browserMixedText";
-import { layoutGraphemes } from "./textRuns";
+import { CSS_PX_MM, UnsupportedVectorLayout, type PropTextLayout, type TextLine } from "./model";
+import { measureTextLines } from "./browserDocumentLayout";
+import { applyPrintObjectLabels } from "../printObjectLabelBrowser";
+import { getElementPixelSize } from "../exportImage";
 
-/** CSS overflow and fractional-pixel rounding affect legacy A4 fitting. Measure only
- * the existing print page's scroll extent; never derive shape positions/angles from it. */
-export const measurePrintPageExtent = (element: HTMLElement) => ({
-  width: element.scrollWidth * CSS_PX_MM, height: element.scrollHeight * CSS_PX_MM,
-});
+/** Preserve the existing A4 fitting; never derive shape positions from DOM bboxes. */
+export const measurePrintPageExtent = (element: HTMLElement) => {
+  const size = getElementPixelSize(element);
+  return { width: size.width * CSS_PX_MM, height: size.height * CSS_PX_MM };
+};
 
-/** Only CSS-owned prop wrapping is measured. Shape centres/angles never come from a DOM bbox.
- * Call after the two FontFaces have loaded; the prototype generator owns their lifetime. */
-export const measurePropText: PropTextLayout = (value, width, height, correction, clipRadius = 0) => {
-  const host = document.createElement("div");
-  host.className = "print-object";
+/** Read final DOM rows in their local coordinates, with rotation removed.
+ * Both writers use the very same chosen lines and font sizes. */
+function localLabelLines(original: HTMLElement, width: number, height: number): TextLine[] {
+  const host = original.cloneNode(true) as HTMLElement;
   Object.assign(host.style, { position: "fixed", left: "0", top: "0", visibility: "hidden",
-    width: `${width}mm`, height: `${height}mm`, fontFamily: '"BIZUDPGothic"' });
-  const span = document.createElement("span");
-  span.textContent = value;
-  host.append(span); document.body.append(host);
+    transform: "none", width: width + "mm", height: height + "mm",
+    fontFamily: getComputedStyle(original).fontFamily });
+  const label = host.querySelector<HTMLElement>("[data-print-object-label]");
+  if (!label) throw new UnsupportedVectorLayout("道具名の配置が見つかりません。");
+  // The model already anchors the saved shape centre. Remove the DOM-only
+  // compensation for CSS's minimum box, along with its readable rotation.
+  Object.assign(label.style, { transform: "none", left: "50%", top: "50%" });
+  document.body.append(host);
   try {
-    const centre = host.getBoundingClientRect();
-    const source = span.firstChild;
-    if (!source) return [];
-    const groups: { value: string; x: number; y: number; width: number; height: number; start: number; end: number }[] = [];
-    let offset = 0;
-    for (const ch of layoutGraphemes(value)) {
-      const start = offset;
-      const range = document.createRange();
-      range.setStart(source, offset); offset += ch.length; range.setEnd(source, offset);
-      const r = range.getBoundingClientRect();
-      const x = (r.x + r.width / 2 - centre.x - centre.width / 2) * CSS_PX_MM;
-      const y = (r.y + r.height / 2 - centre.y - centre.height / 2) * CSS_PX_MM;
-      const rad = correction * Math.PI / 180;
-      const rx = x * Math.cos(rad) - y * Math.sin(rad), ry = x * Math.sin(rad) + y * Math.cos(rad);
-      // Exclude fully clipped glyphs BEFORE cmap checks/subsetting. Keep partially visible
-      // ones and their original endpoints/positions; the PDF shape clip handles the edge.
-      const hw = r.width * CSS_PX_MM / 2, hh = r.height * CSS_PX_MM / 2;
-      if (rx + hw <= -width / 2 || rx - hw >= width / 2 || ry + hh <= -height / 2 || ry - hh >= height / 2) continue;
-      if (clipRadius > 0) {
-        const dx = Math.max(0, Math.abs(rx) - hw - (width / 2 - clipRadius));
-        const dy = Math.max(0, Math.abs(ry) - hh - (height / 2 - clipRadius));
-        if (dx * dx + dy * dy >= clipRadius * clipRadius) continue;
-      }
-      const previous = groups[groups.length - 1];
-      const gx = (r.x - centre.x - centre.width / 2) * CSS_PX_MM;
-      if (previous && previous.end === start && Math.abs(previous.y - y) < .01 && Math.abs(previous.x + previous.width - gx) < .05) {
-        previous.value += ch; previous.width += r.width * CSS_PX_MM; previous.end = offset;
-      } else groups.push({ value: ch, x: gx, y, width: r.width * CSS_PX_MM, height: r.height * CSS_PX_MM, start, end: offset });
-    }
-    let mixed: GraphemePlacement[] | undefined;
-    return groups.map((g): TextLine => ({ kind: "text", text: g.value, x: g.x + g.width / 2, y: g.y,
-      color: "#172033", weight: 800, size: 13 * CSS_PX_MM,
-      measureMixed: () => {
-        document.body.append(host);
-        try {
-          const r = host.getBoundingClientRect();
-          mixed ??= measureMixedGraphemes(span, host);
-          return slicePlacements(mixed, g.start, g.end).map(p => ({ ...p,
-            x: p.x - r.width * CSS_PX_MM / 2, baseline: p.baseline - r.height * CSS_PX_MM / 2 }));
-        } finally { host.remove(); }
-      } }));
+    const bounds = host.getBoundingClientRect(), cx = bounds.width * CSS_PX_MM / 2, cy = bounds.height * CSS_PX_MM / 2;
+    return [...label.querySelectorAll<HTMLElement>(".print-object-label__line")].flatMap(row => {
+      const lines = measureTextLines(row, host);
+      return lines.map(line => ({ ...line, x: line.x - cx, y: line.y - cy,
+        measureMixed: () => {
+          document.body.append(host);
+          try { return line.measureMixed!().map(p => ({ ...p, x: p.x - cx, baseline: p.baseline - cy })); }
+          finally { host.remove(); }
+        } }));
+    });
   } finally { host.remove(); }
+}
+
+export function propTextFromPrintDom(root: HTMLElement): PropTextLayout {
+  const objects = [...root.querySelectorAll<HTMLElement>(".print-stage .print-object")];
+  let index = 0;
+  return (value, width, height) => {
+    const object = objects[index++], label = object?.querySelector<HTMLElement>("[data-print-object-label]");
+    if (!label || label.dataset.labelText !== value || Math.abs(Number(label.dataset.labelWidth) - width) > .001 ||
+      Math.abs(Number(label.dataset.labelHeight) - height) > .001)
+      throw new UnsupportedVectorLayout("道具名のDOMとモデルが一致しません。");
+    return localLabelLines(object, width, height);
+  };
+}
+
+/** Prototype API uses the same adapter as the public DOM writer. */
+export const measurePropText: PropTextLayout = (value, width, height, _correction, radius = 0) => {
+  const host = document.createElement("div"), label = document.createElement("span");
+  host.className = "print-object" + (radius ? " shape-circle" : "");
+  Object.assign(host.style, { position: "fixed", left: "0", top: "0", visibility: "hidden",
+    width: width + "mm", height: height + "mm", fontFamily: '"BIZUDPGothic"' });
+  label.className = "print-object-label"; label.dataset.printObjectLabel = "";
+  Object.assign(label.dataset, { labelText: value, labelWidth: String(width), labelHeight: String(height) });
+  host.append(label); document.body.append(host);
+  try { applyPrintObjectLabels(host); return localLabelLines(host, width, height); }
+  finally { host.remove(); }
 };

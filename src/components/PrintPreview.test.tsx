@@ -41,15 +41,11 @@ describe("default A4 layout and drawing", () => {
       if (mode === "parade") project.paradeSettings = { totalDistance: 100, width: 6, cellSizeMeters: 1,
         direction: "up", rulerPosition: "both", emphasizeEvery5m: true, emphasizeEvery10m: true };
       const html = renderToStaticMarkup(<PrintPreview project={project} variant={variant} />);
-      // Audit against the old exact hash: only the readable prop-name wrapper (the 45° 旗 needs no
-      // flip, so 0deg inside the shape) and the stage's old top-origin override may differ.
-      // Parade geometry is unchanged. Assignment-fix (build31) only removes the
-      // short label-line CSS width cap: oversized readable-floor text is centred
-      // instead of overflowing to the right. Markup and these hashes stay intact;
-      // browser regression checks cover centred overflow and unchanged fitting text.
+      // Keep the original exact geometry/page/member hash by normalizing ONLY
+      // this change's prop label wrapper. A separate snapshot records the new HTML.
       const baselineProject = { ...project, stage: { ...project.stage, frontDirection: "top" as const } };
       const baseline = drawingMarkup(renderToStaticMarkup(<PrintPreview project={baselineProject} variant={variant} />))
-        .replace(/<span style="transform:rotate\(0deg\)">旗<\/span>/g, "旗");
+        .replace(/<span class="print-object-label"[^>]*>旗<\/span>/g, "旗");
       expect(createHash("sha256").update(baseline).digest("hex")).toBe(legacyHashes[mode][variant]);
       const drawing = drawingMarkup(html);
       expect(createHash("sha256").update(drawing).digest("hex")).toMatchSnapshot();

@@ -1,3 +1,4 @@
+import { PrintObjectLabel } from "./PrintObjectLabel";
 import { createStageExportView, readablePropLabelRotation } from "../utils/stageExportView";
 import { useId } from "react";
 import { AnnotationLines } from "./AnnotationLines";
@@ -1029,7 +1030,7 @@ export const PrintStagePreview = ({
                       width: `${objectSize.widthMm}mm`,
                     }}
                   >
-                    {entry.object.name}
+                    <PrintObjectLabel text={entry.object.name} width={objectSize.widthMm} height={objectSize.heightMm} />
                   </div>
                   <div
                     className="print-assignment-sheet__members"
@@ -1173,7 +1174,8 @@ export const PrintStagePreview = ({
                 zIndex: 2 + state.zIndex,
               }}
             >
-              {!hideLabels && <span style={{ transform: `rotate(${readablePropLabelRotation(state.rotation)}deg)` }}>{object.name}</span>}
+              {!hideLabels && <PrintObjectLabel text={object.name} width={state.widthMeters * metrics.mmPerMeter}
+                height={state.heightMeters * metrics.mmPerMeter} rotation={state.rotation} correction={readablePropLabelRotation(state.rotation)} />}
             </div>
           );
         })}
