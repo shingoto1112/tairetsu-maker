@@ -310,7 +310,7 @@ const PrintStagePreview = ({
       >
         {assignmentEntries.length === 0 ? (
           <p className="print-assignment-sheet__empty">
-            このシーンの道具割当はありません
+            {isParade ? "道具割当なし" : "このシーンの道具割当はありません"}
           </p>
         ) : (
           <div className="print-assignment-sheet__items">

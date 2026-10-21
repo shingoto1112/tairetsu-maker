@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { PrintPreview } from "./PrintPreview";
+import { PrintStagePreview } from "./PrintStagePreview";
+import { defaultPrintOptions, getPrintMetrics, getFramePrintVerticalRange, getEffectiveSize } from "../utils/printLayout";
 import { formationExportFixture } from "../utils/formationExportFixture";
 
 const legacyHashes = {
@@ -13,6 +15,26 @@ const drawingMarkup = (html: string) => html.replace(/ title="[^"]*" role="img" 
   .replace(/(<div class="print-ruler print-ruler-x">)[\s\S]*?<\/div>/g, "$1</div>");
 
 describe("default A4 layout and drawing", () => {
+  for (const mode of [undefined, "stage", "parade"] as const) {
+    it(`keeps the empty assignment label complete in both renderers (${mode ?? "legacy stage"})`, () => {
+      const project = formationExportFixture(); project.mode = mode;
+      project.frames.forEach(frame => { frame.objectAssignments = {}; });
+      const options = { ...defaultPrintOptions, includeAssignments: true };
+      const frame = project.frames[0], metrics = getPrintMetrics(project, [frame], options);
+      const label = mode === "parade" ? "道具割当なし" : "このシーンの道具割当はありません";
+      const previews = [
+        <PrintPreview project={project} scope="current" selectedFrameId={frame.id} options={options} />,
+        <PrintStagePreview project={project} frame={frame} options={options} metrics={metrics}
+          commonWidthMeters={metrics.commonWidthMeters} gapAfter={false}
+          verticalRange={getFramePrintVerticalRange(project, frame, getEffectiveSize(project, frame), metrics)} />,
+      ];
+      for (const preview of previews) {
+        const container = document.createElement("div"); container.innerHTML = renderToStaticMarkup(preview);
+        expect(container.querySelectorAll(".print-assignment-sheet__empty")).toHaveLength(1);
+        expect(container.querySelector(".print-assignment-sheet__empty")?.textContent).toBe(label);
+      }
+    });
+  }
   for (const mode of ["stage", "parade"] as const) for (const variant of ["document", "stage-only"] as const) {
     it(`${mode} ${variant}`, () => {
       const project = formationExportFixture(); project.mode = mode;

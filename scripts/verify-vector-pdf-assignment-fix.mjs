@@ -9,7 +9,8 @@ import { compare, compareGraphemes } from './vector-pdf-visual-diff.mjs';
 
 const unzoomed = process.argv.includes('--unzoomed');
 const quick = process.argv.includes('--quick');
-const directory = `output/build31/vector-pdf-assignment-fix${unzoomed ? '/unzoomed' : ''}${quick ? '/quick' : ''}`;
+const directory = process.argv.find(a => a.startsWith('--output='))?.slice(9)
+  ?? `output/build31/vector-pdf-assignment-fix${unzoomed ? '/unzoomed' : ''}${quick ? '/quick' : ''}`;
 const origin = 'http://127.0.0.1:5397', dpi = 144;
 const only = process.argv.find(a => a.startsWith('--case='))?.slice(7);
 const regressionOnly = process.argv.includes('--regressions');
@@ -126,8 +127,8 @@ try {
       const hash = async text => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
       doc.style.fontFamily = '';
       const markup = doc.innerHTML, legacyImages = [], legacyHashes = [];
-      if (spec.assignment) for (const sheet of sourceSheets) { const img = await h.elementToJpegDataUrl(sheet); legacyImages.push(img); legacyHashes.push(await hash(img)); }
-      const legacy = spec.assignment ? await h.jpegDataUrlsToPdfBlob(legacyImages, project.title, 'landscape') : null;
+      if (spec.assignment || spec.empty) for (const sheet of sourceSheets) { const img = await h.elementToJpegDataUrl(sheet); legacyImages.push(img); legacyHashes.push(await hash(img)); }
+      const legacy = legacyImages.length ? await h.jpegDataUrlsToPdfBlob(legacyImages, project.title, 'landscape') : null;
       console.log('[assignment] legacy ready', spec.name);
       doc.style.fontFamily = 'BIZUDPGothic';
       const frameIds = project.frames.map(f => f.id);
@@ -185,16 +186,24 @@ try {
           const emptyInside = emptyRanges.every(r => r.x >= panel.x && r.x+r.width <= panel.x+panel.width+.025 && r.y >= panel.y && r.y+r.height <= panel.y+panel.height+.025);
           const lineYs = [...new Set(emptyLines.map(l=>l.y))];
           const linesSeparated = lineYs.every((y,k) => !k || y-lineYs[k-1] >= emptyLines[0].size*.9);
+          const contentInset = empty ? getComputedStyle(panelEl) : null;
+          const leftInset = contentInset ? (parseFloat(contentInset.paddingLeft) + parseFloat(contentInset.borderLeftWidth))*unit : 0;
+          const rightInset = contentInset ? (parseFloat(contentInset.paddingRight) + parseFloat(contentInset.borderRightWidth))*unit : 0;
+          const emptyLabelPass = !empty || (empty.textContent === 'このシーンの道具割当はありません'
+            && emptyLines.length > 0 && lineYs.length === 1 && emptyLines.map(l => l.text).join('') === empty.textContent && emptyRanges.length === 1
+            && Math.abs(emptyRanges[0].x + emptyRanges[0].width/2 - panel.x - panel.width/2) <= .5
+            && emptyRanges[0].x >= panel.x + leftInset - .025
+            && emptyRanges[0].x + emptyRanges[0].width <= panel.x + panel.width - rightInset + .025);
           geometry.push({ page:i+1, frameId:scene.id, stageRightMm:right, panelLeftMm:panel?.x, gapMm:panel ? panel.x-right : null,
             oldPanelLeftMm:oldPanel?.x, oldOverlapMm:oldPanel ? right-oldPanel.x : null, coordinateError, emptyLines:emptyLines.map(({text,x,y,size})=>({text,x,y,size})),
-            emptyInside, linesSeparated, pass:coordinateError<.025 && (!panel || right<panel.x) && emptyInside && linesSeparated });
+            emptyInside, linesSeparated, emptyLabelPass, pass:coordinateError<.025 && (!panel || right<panel.x) && emptyInside && linesSeparated && emptyLabelPass });
         }
       }
       await pdf.loadingTask.destroy(); await oldPdf?.loadingTask.destroy();
       // Verify public path, DOM restoration, and the actual legacy image bytes.
       doc.style.fontFamily = '';
       const afterHashes = [];
-      if (spec.assignment) for (const sheet of sourceSheets) afterHashes.push(await hash(await h.elementToJpegDataUrl(sheet)));
+      if (spec.assignment || spec.empty) for (const sheet of sourceSheets) afterHashes.push(await hash(await h.elementToJpegDataUrl(sheet)));
       console.log('[assignment] hash verification ready', spec.name);
       if (markup !== doc.innerHTML || original !== JSON.stringify(project)) throw new Error('Print DOM or saved data changed');
       doc.style.fontFamily = 'BIZUDPGothic';
