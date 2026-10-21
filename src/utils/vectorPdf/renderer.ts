@@ -1,11 +1,12 @@
 import { jsPDF } from "jspdf";
 import { fitPdfImage, a4PageSize } from "../pdfPageLayout";
-import { checkAbort, FONT_FAMILY, fontWeight, parsedFont, registerFonts, requiredFontWeights, unsupportedCharacters, type FontBytesReader } from "./fonts";
+import { cachedFontBytes, checkAbort, fetchFontBytes, fontFileName, FONT_FAMILY, fontWeight, parsedFont, registerFonts, requiredFontWeights, unsupportedCharacters, type FontBytesReader, type FontWeight } from "./fonts";
 import { CSS_PX_MM, visibleTextLines, type Drawing, type Rect, type ScenePage } from "./model";
-import { planTextRuns } from "./textRuns";
+import { planTextRuns, type FontCoverage } from "./textRuns";
 import { createGraphemeImageCache, type GlyphRasterizer } from "./graphemeImages";
+import { sourceTrueType, validateSubset } from "./trueType";
 
-export async function prepareTextDrawings(pdf: jsPDF, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer } = {}) {
+export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer } = {}) {
   const cache = createGraphemeImageCache(options.rasterize);
   let visited = 0;
   async function prepare(nodes: Drawing[], scale: number): Promise<Drawing[]> {
@@ -16,7 +17,7 @@ export async function prepareTextDrawings(pdf: jsPDF, pages: ScenePage[], option
       if (node.kind === "group") result.push({ ...node, children: await prepare(node.children, scale) });
       else if (node.kind !== "text" || !node.text) result.push(node);
       else {
-        const runs = planTextRuns(pdf, node);
+        const runs = planTextRuns(source, node);
         if (!runs.some(r => r.raster)) { result.push(node); continue; }
         const placements = node.measureMixed?.();
         if (!placements || placements.map(p => p.text).join("") !== node.text)
@@ -101,64 +102,115 @@ export class UnsupportedPdfCharacters extends Error {
 }
 
 /** A4 pages already composed by the shared PrintPreview pagination/layout. */
+export type FontSubsetter = (source: Uint8Array, codes: readonly number[], signal?: AbortSignal) => Promise<Uint8Array>;
 export async function renderScenePages(pages: ScenePage[], options: { readFontBytes?: FontBytesReader; signal?: AbortSignal; title?: string;
-  onProgress?: (message: string) => void; rasterize?: GlyphRasterizer } = {}) {
+  onProgress?: (message: string) => void; rasterize?: GlyphRasterizer;
+  /** Original-font reference path for regression/size measurements. */
+  fontMode?: "subset" | "original"; subsetFont?: FontSubsetter } = {}) {
   checkAbort(options.signal);
   if (!pages.length) throw new Error("PDFのページがありません。");
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
+  const totalStart = performance.now();
   const sourceLines = pages.flatMap(p => visibleTextLines(p.drawings));
   options.onProgress?.("共通フォントを準備中");
-  const fonts = await registerFonts(pdf, options.readFontBytes, options.signal, requiredFontWeights(sourceLines));
+  const read = options.readFontBytes ?? fetchFontBytes;
+  const sources = new Map(await Promise.all(requiredFontWeights(sourceLines).map(async weight => {
+    const loaded = await cachedFontBytes(read, fontFileName(weight), options.signal);
+    return [weight, { ...loaded, info: sourceTrueType(loaded.bytes) }] as const;
+  })));
+  const sourceLoadMs = performance.now() - totalStart;
   const start = performance.now();
-  const prepared = await prepareTextDrawings(pdf, pages, options);
+  // Freeze vector/raster decisions using ORIGINAL coverage BEFORE collecting text.
+  const prepared = await prepareTextDrawings((weight, code) => !!sources.get(weight)?.info.glyph(code), pages, options);
   pages = prepared.pages;
-  // Only actual vector runs reach font subsets, ToUnicode and post-draw validation.
   const lines = pages.flatMap(p => visibleTextLines(p.drawings));
-  const missing = unsupportedCharacters(pdf, lines);
-  if (missing.length) throw new UnsupportedPdfCharacters(missing);
-  pdf.setProperties({ title: options.title ?? "隊列メーカー 隊列表", creator: "隊列メーカー" });
-  for (const [i, page] of pages.entries()) {
-    options.onProgress?.(`${i + 1} / ${pages.length}ページを作成中`);
+  const weights = requiredFontWeights(lines);
+  const codes = new Map(weights.map(weight => [weight, [...new Set(lines.filter(l => fontWeight(l.weight) === weight)
+    .flatMap(l => [...l.text].map(ch => ch.charCodeAt(0))))].sort((a, b) => a - b)]));
+  let subsetMs = 0;
+  const attempts: ("subset" | "original")[] = [];
+  async function attempt(mode: "subset" | "original") {
+    attempts.push(mode);
     checkAbort(options.signal);
-    if (i) pdf.addPage("a4", "landscape");
-    const a4 = a4PageSize("landscape");
-    // Legacy image export rounds DOM scroll size upwards to CSS pixels before fitting.
-    const width = Math.ceil(page.width / CSS_PX_MM - 1e-7) * CSS_PX_MM;
-    const height = Math.ceil(page.height / CSS_PX_MM - 1e-7) * CSS_PX_MM;
-    const fit = fitPdfImage(width, height, a4.width, a4.height);
-    const scale = fit.width / width * 25.4 / 72;
-    pdf.advancedAPI(() => {
-      pdf.saveGraphicsState();
-      pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale, fit.x * 25.4 / 72, fit.y * 25.4 / 72));
-      draw(pdf, page.drawings, options.signal);
-      pdf.restoreGraphicsState();
+    // A failed addFont/draw/output attempt is NEVER reused.
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
+    const fontBytes = new Map<FontWeight, Uint8Array>();
+    for (const weight of weights) {
+      checkAbort(options.signal);
+      const source = sources.get(weight)!;
+      if (mode === "original") fontBytes.set(weight, source.bytes);
+      else {
+        const subsetStart = performance.now();
+        const subset = options.subsetFont ?? (await import("./hbSubsetBrowser")).subsetTrueType;
+        const bytes = await subset(source.bytes, codes.get(weight)!, options.signal);
+        checkAbort(options.signal);
+        validateSubset(source.info, bytes, codes.get(weight)!);
+        subsetMs += performance.now() - subsetStart;
+        fontBytes.set(weight, bytes);
+      }
+    }
+    const fonts = await registerFonts(pdf, async name => fontBytes.get(name.includes("Bold") ? "bold" : "normal")!, options.signal, weights);
+    const missing = unsupportedCharacters(pdf, lines);
+    if (missing.length) throw new UnsupportedPdfCharacters(missing);
+    pdf.setProperties({ title: options.title ?? "隊列メーカー 隊列表", creator: "隊列メーカー" });
+    for (const [i, page] of pages.entries()) {
+      options.onProgress?.(`${i + 1} / ${pages.length}ページを作成中`);
+      checkAbort(options.signal);
+      if (i) pdf.addPage("a4", "landscape");
+      const a4 = a4PageSize("landscape");
+      // Legacy image export rounds DOM scroll size upwards to CSS pixels before fitting.
+      const width = Math.ceil(page.width / CSS_PX_MM - 1e-7) * CSS_PX_MM;
+      const height = Math.ceil(page.height / CSS_PX_MM - 1e-7) * CSS_PX_MM;
+      const fit = fitPdfImage(width, height, a4.width, a4.height);
+      const scale = fit.width / width * 25.4 / 72;
+      pdf.advancedAPI(() => {
+        pdf.saveGraphicsState();
+        pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale, fit.x * 25.4 / 72, fit.y * 25.4 / 72));
+        draw(pdf, page.drawings, options.signal);
+        pdf.restoreGraphicsState();
+      });
+      // Permit browser cancellation between pages and before serialization.
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+    checkAbort(options.signal);
+    const bytes = pdf.output("arraybuffer");
+    checkAbort(options.signal);
+    const raw = new TextDecoder("latin1").decode(bytes);
+    const usedWeights = weights;
+    // A Blob alone is insufficient: verify each used font survived jsPDF's swallowed events,
+    // has a real embedded font stream and Unicode map, and every drawn glyph was mapped.
+    const embeddedFonts = [...raw.matchAll(/\/FontFile2 (\d+) 0 R/g)].map(match => {
+      const object = raw.match(new RegExp(`(?:^|\\n)${match[1]} 0 obj\\s*<<([\\s\\S]*?)>>`));
+      const length = Number(object?.[1].match(/\/Length\s+(\d+)/)?.[1]);
+      const uncompressed = Number(object?.[1].match(/\/Length1\s+(\d+)/)?.[1]);
+      if (!(length > 0 && uncompressed > 0)) throw new Error("埋込フォントのストリームが不正です。");
+      return { compressedBytes: length, uncompressedBytes: uncompressed };
     });
-    // Permit browser cancellation between pages and before serialization.
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    if (!raw.startsWith("%PDF-") || !raw.includes("%%EOF") || embeddedFonts.length !== usedWeights.length ||
+      (raw.match(/\/ToUnicode /g)?.length ?? 0) !== usedWeights.length || (usedWeights.length > 0 && !raw.includes("/CIDFontType2")))
+      throw new Error("PDFのフォント埋込・Unicode情報の検証に失敗しました。");
+    for (const line of lines) for (const ch of line.text) {
+      const font = parsedFont(pdf, fontWeight(line.weight)), code = ch.charCodeAt(0), glyph = font.characterToGlyph(code);
+      if (!glyph || font.toUnicode[glyph] !== code) throw new Error("PDFに文字を完全に埋め込めませんでした。");
+    }
+    return { blob: new Blob([bytes], { type: "application/pdf" }), metrics: { ...fonts, loadMs: sourceLoadMs,
+      sourceBytes: weights.map(w => sources.get(w)!.bytes.byteLength),
+      fetchedBytes: [...sources.values()].reduce((n, s) => n + s.fetchedBytes, 0),
+      fontInputBytes: weights.map(w => fontBytes.get(w)!.byteLength), characterCounts: weights.map(w => codes.get(w)!.length),
+      generationMs: performance.now() - start, embeddedFonts, pages: pages.length, bytes: bytes.byteLength,
+      graphemeImages: prepared.metrics },
+      vectorText: pages.map(p => visibleTextLines(p.drawings).map(l => l.text)) };
+  }
+  let retryReason: string | undefined;
+  let result: Awaited<ReturnType<typeof attempt>>;
+  if (options.fontMode === "original") result = await attempt("original");
+  else try { result = await attempt("subset"); }
+  catch (error) {
+    checkAbort(options.signal);
+    if (error && typeof error === "object" && "name" in error && error.name === "AbortError") throw error;
+    retryReason = error instanceof Error ? error.message : String(error);
+    options.onProgress?.("元の共通フォントでPDFを再作成中");
+    result = await attempt("original");
   }
   checkAbort(options.signal);
-  const bytes = pdf.output("arraybuffer");
-  checkAbort(options.signal);
-  const raw = new TextDecoder("latin1").decode(bytes);
-  const usedWeights = [...new Set(lines.filter(l => l.text).map(l => fontWeight(l.weight)))];
-  // A Blob alone is insufficient: verify each used font survived jsPDF's swallowed events,
-  // has a real embedded font stream and Unicode map, and every drawn glyph was mapped.
-  const embeddedFonts = [...raw.matchAll(/\/FontFile2 (\d+) 0 R/g)].map(match => {
-    const object = raw.match(new RegExp(`(?:^|\\n)${match[1]} 0 obj\\s*<<([\\s\\S]*?)>>`));
-    const length = Number(object?.[1].match(/\/Length\s+(\d+)/)?.[1]);
-    const uncompressed = Number(object?.[1].match(/\/Length1\s+(\d+)/)?.[1]);
-    if (!(length > 0 && uncompressed > 0)) throw new Error("埋込フォントのストリームが不正です。");
-    return { compressedBytes: length, uncompressedBytes: uncompressed };
-  });
-  if (!raw.startsWith("%PDF-") || !raw.includes("%%EOF") || embeddedFonts.length !== usedWeights.length ||
-    (raw.match(/\/ToUnicode /g)?.length ?? 0) !== usedWeights.length || (usedWeights.length > 0 && !raw.includes("/CIDFontType2")))
-    throw new Error("PDFのフォント埋込・Unicode情報の検証に失敗しました。");
-  for (const line of lines) for (const ch of line.text) {
-    const font = parsedFont(pdf, fontWeight(line.weight)), code = ch.charCodeAt(0), glyph = font.characterToGlyph(code);
-    if (!glyph || font.toUnicode[glyph] !== code) throw new Error("PDFに文字を完全に埋め込めませんでした。");
-  }
-  return { blob: new Blob([bytes], { type: "application/pdf" }), metrics: { ...fonts,
-    generationMs: performance.now() - start, embeddedFonts, pages: pages.length, bytes: bytes.byteLength,
-    graphemeImages: prepared.metrics },
-    vectorText: pages.map(p => visibleTextLines(p.drawings).map(l => l.text)) };
+  return { ...result, metrics: { ...result.metrics, subsetMs, fontAttempts: attempts, retryReason, totalMs: performance.now() - totalStart } };
 }

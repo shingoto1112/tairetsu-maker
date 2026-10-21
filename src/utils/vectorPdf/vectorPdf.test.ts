@@ -160,13 +160,13 @@ it("propagates AbortError from a reader even across realms without image fallbac
   expect(fallback).not.toHaveBeenCalled();
 });
 
-it("detects addFont parser errors swallowed by jsPDF and falls back", async () => {
+it("rejects corrupt source TTF before jsPDF can swallow a parser error", async () => {
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   try {
     const result = await createVectorPdfPrototype({ project: vectorPdfFixture(), frameIds: ["s0"], propText,
       fallback: async () => new Blob(["legacy"]), readFontBytes: async () => new Uint8Array([0, 1, 2]),
     });
     expect(result.mode).toBe("image");
-    expect(logged).toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalled();
   } finally { logged.mockRestore(); }
 });

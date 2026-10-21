@@ -1,5 +1,5 @@
 import type { jsPDF } from "jspdf";
-import { fontWeight, parsedFont } from "./fonts";
+import { fontWeight, parsedFont, type FontWeight } from "./fonts";
 import type { TextLine } from "./model";
 
 export class UnsafePdfText extends Error {}
@@ -32,11 +32,12 @@ export function assertIndependentText(text: string) {
   }
 }
 export type TextRun = { text: string; raster: boolean; start: number; end: number };
-export function planTextRuns(pdf: jsPDF, line: TextLine): TextRun[] {
+export type FontCoverage = (weight: FontWeight, code: number) => boolean;
+export function planTextRuns(source: jsPDF | FontCoverage, line: TextLine): TextRun[] {
   assertIndependentText(line.text);
-  const font = parsedFont(pdf, fontWeight(line.weight));
+  const covered = typeof source === "function" ? source : (weight: FontWeight, code: number) => !!parsedFont(source, weight).cmap.unicode.codeMap[code];
   const unsafe = (value: string) => [...value].some(ch => ch.codePointAt(0)! > 0xffff ||
-    /[\p{Mark}\p{Cf}]/u.test(ch) || !font.cmap.unicode.codeMap[ch.charCodeAt(0)]);
+    /[\p{Mark}\p{Cf}]/u.test(ch) || !covered(fontWeight(line.weight), ch.charCodeAt(0)));
   if (!unsafe(line.text)) return [{ text: line.text, raster: false, start: 0, end: line.text.length }];
   const runs: TextRun[] = [];
   let offset = 0;

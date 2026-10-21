@@ -32,6 +32,7 @@
     "@capacitor/ios": "^8.5.1",
     "@capacitor/share": "^8.0.1",
     "@supabase/supabase-js": "^2.105.4",
+    "harfbuzzjs": "1.6.3",
     "html-to-image": "^1.11.11",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",

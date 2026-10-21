@@ -2,6 +2,19 @@
 
 通常のA4 PDFは `a4PdfExport.ts` → `createA4VectorPdf` → `buildA4Document` → `renderScenePages` を使用する。保存形式・PNG・名簿・カメラは既存経路のまま。完成画面は既存の先頭ページ画像と合計サイズ表示を維持する。
 
+## PDF用フォントの事前サブセット（build31）
+
+- `trueType.ts` は元TTFのWindows Unicode BMP cmap format 4を読み、ベクター／画像runを先に確定する。jsPDFで元TTFを二重解析しない。確定したベクター文字だけを文書全体・ウェイト別に収集する。切り詰めたcmapで画像化を決め直さない。
+- `hbSubsetBrowser.ts` は書き出し時だけ動的importされ、Viteが追跡する `harfbuzz-subset.wasm?url` を同一オリジンから読み込む。初回の初期化だけを共有し、失敗したロードは再試行可能。MIMEによるinstantiateStreaming失敗時はArrayBufferで初期化する。キャッシュ済み元バッファをtransferしない。
+- `hbSubset.ts` にsubset-font 2.9.0のTrueType用呼び出し手順を移植した。subset-fontは **BSD-3-Clause**（MITではない）、harfbuzzjs 1.6.3はMIT。配布用の全文を `public/licenses/` に置く。追加npm依存はない。
+- NO_HINTING・NO_LAYOUT_CLOSUREを指定し、GSUB/GPOS/vhea/vmtx/gasp/DSIGとレイアウト機能を除く。.notdef・複合グリフはHarfBuzzに保持させ、GIDは詰め直す。nameテーブルの著作権・OFLライセンス情報も保持する。`public/fonts/` はDOM計測にも使うので変更しない。
+- 登録前にformat 4・要求文字すべての存在・advance・基本メトリクス・loca／複合グリフ参照を検査する。addFont・描画・シリアライズ・ToUnicode検証までの失敗は **新しいjsPDFと元TTF** で再生成する。既存の文書全体画像fallbackは、未対応レイアウト等や元フォントでも生成できない場合の境界として残る。取消では再生成しない。
+- 同期WASMの前後でイベントループへ制御を戻してAbortSignalを確認する。WASM実行中そのものは中断できない。現在はmain threadで実行する。
+- `fontSubset.test.ts` が実WASM・両ウェイト・cmap／字幅／抽出・版ずれ・障害注入・取消を契約として検査する。`renderScenePages` の `fontMode: "original"` は新旧比較用。`metrics` は文字数、入力／埋込フォント容量、時間、試行経路を返す。
+- `scripts/verify-vector-pdf-font-subset.mjs --pc` と引数なしで、1440×900 DPR1／1180×820 DPR2の既存23fixtureを検査する。計測条件のDOMは維持し、参照撮影だけ144dpiへ合わせる（DPR1スクリーンショットの拡大を避ける）。既存0.3%／絵文字5%の閾値を変えず、元TTF版との抽出文字・位置・幅は完全一致を要求する。ヒント除去による微小なラスタ差には同じ画像比較器を使う。
+
+Safari／WKWebView・LINEのプレビューは実機未確認。CSPを追加する際は対象エンジンでwasm-unsafe-evalの必要性を検査する（現行CSPなし、unsafe-evalは追加しない）。
+
 ## A4本実装
 
 - `../printLayout.ts` がPrintPreviewとベクター版の改ページ・レイアウト定数・寸法・表示判定を共通提供する。シーンごとの寸法差も、全対象シーンで計算した共通倍率を使う。
