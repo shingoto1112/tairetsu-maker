@@ -4,10 +4,10 @@ import type { ReactNode } from "react";
 import { RosterExportSheet } from "../components/RosterExportSheet";
 import { elementToPngBlob } from "./exportImage";
 import { elementToPngPage, waitForExportFonts } from "./exportRaster";
-import { imagePagesToPdfBlob, type PdfOrientation } from "./pdfExport";
+import type { PdfOrientation } from "./pdfExport";
 import {
   chooseRosterPdfLayout, paginateRosterPages, rosterPageSize, rosterPngPixelRatio,
-  rosterTitle, splitRosterColumns, ROSTER_COLUMN_WIDTH, ROSTER_NUMBER_WIDTH,
+  splitRosterColumns, ROSTER_COLUMN_WIDTH, ROSTER_NUMBER_WIDTH,
   ROSTER_SHEET_PADDING,
   type RosterBatchMeasurement, type RosterExportSnapshot, type RosterPage, type RosterPdfLayout,
 } from "./rosterExportLayout";
@@ -72,13 +72,13 @@ const measureLayout = async (
 
 export const generateRosterExport = async (
   snapshot: RosterExportSnapshot,
-  kind: "png" | "pdf",
+  kind: "png",
   options?: { signal: AbortSignal; onProgress: (message: string) => void; paginatedImages?: boolean },
 ): Promise<{ blob: Blob; reducedResolution: boolean; preview?: Blob; pageCount?: number; images?: Blob[] }> => {
   const check = () => { if (options?.signal.aborted) throw new DOMException("書き出しを取り消しました。", "AbortError"); };
   const waitFonts = () => options ? waitForExportFonts(options.signal) : document.fonts?.ready ?? Promise.resolve();
   check();
-  if (kind === "png" && !options?.paginatedImages) {
+  if (!options?.paginatedImages) {
     const width = Math.max(740, ROSTER_SHEET_PADDING * 2 + ROSTER_NUMBER_WIDTH + snapshot.columns.length * ROSTER_COLUMN_WIDTH);
     const page: RosterPage = {
       columns: snapshot.columns, rowStart: 0,
@@ -104,7 +104,6 @@ export const generateRosterExport = async (
   if (candidates.length === 0 && layoutError) throw layoutError;
   const layout = chooseRosterPdfLayout(candidates);
   const size = rosterPageSize(layout.orientation);
-  const imagePages = [];
   const images: Blob[] = [];
   let preview: Blob | undefined;
   // Each page is independently mounted, captured, and removed before the next.
@@ -120,19 +119,15 @@ export const generateRosterExport = async (
       return elementToPngPage(element);
     });
     check();
-    if (options && (kind === "png" || page.pageNumber === 1)) {
+    if (options) {
       const blob = await (await fetch(image.dataUrl)).blob();
       if (!blob.size) throw new Error("画像を作成できませんでした。");
       preview ??= blob;
-      if (kind === "png") images.push(blob);
+      images.push(blob);
     }
-    if (kind === "pdf") imagePages.push(image);
   }
   check();
-  const blob = kind === "png" ? images[0] : await imagePagesToPdfBlob(imagePages, {
-    title: `${snapshot.title} ${rosterTitle(snapshot.mode)}`, orientation: layout.orientation,
-    ...(options ? { signal: options.signal, onProgress: (completed: number, total: number) => options.onProgress(`PDFを作成中… ${completed}/${total}ページ`) } : {}),
-  });
+  const blob = images[0];
   check();
-  return { blob, reducedResolution: false, preview, images: kind === "png" ? images : undefined, pageCount: layout.pages.length };
+  return { blob, reducedResolution: false, preview, images, pageCount: layout.pages.length };
 };

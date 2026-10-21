@@ -47,7 +47,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", hasO
     setRequest((previous) => ({ ...previous, target: initialTarget, scope: "current", purpose: "mobile", format: initialFormat === "xlsx" ? "png" : initialFormat }));
   }, [initialTarget, initialFormat]);
   useEffect(() => {
-    if (excel || request.target !== "members" || request.purpose !== "mobile") return;
+    if (excel || request.format !== "png" || request.target !== "members" || request.purpose !== "mobile") return;
     const abort = new AbortController();
     setMemberFit("checking"); setMemberEstimate("全員が入る配置を確認中…");
     void (async () => {
@@ -67,7 +67,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", hasO
       }
     })();
     return () => abort.abort();
-  }, [excel, request.target, request.purpose, getSource]);
+  }, [excel, request.format, request.target, request.purpose, getSource]);
   const create = async () => {
     if (controller.current || deliveryPending.current) return;
     const abort = new AbortController(); controller.current = abort;
@@ -107,10 +107,10 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", hasO
       {excel ? <>
         <p>Excel（.xlsx）で名簿を書き出します。</p>
         {hasObjects && <fieldset disabled={locked}><label className="document-export-check"><input type="checkbox" checked={includeObjects} onChange={event => setIncludeObjects(event.target.checked)} />道具も含める</label></fieldset>}
-      </> : <><fieldset disabled={locked}><legend>用途</legend><div className="document-export-options">
+      </> : <>{request.format === "png" && <fieldset disabled={locked}><legend>用途</legend><div className="document-export-options">
         {(["mobile", "a4"] as const).map(purpose => <button key={purpose} type="button" aria-pressed={request.purpose === purpose} onClick={() => update({ purpose })}>{purpose === "mobile" ? "スマホで見る（LINE向け）" : "印刷向け（A4）"}</button>)}
-      </div></fieldset>
-      {request.target === "members" && request.purpose === "mobile" && <fieldset disabled={locked}><legend>1枚の名簿</legend>
+      </div></fieldset>}
+      {request.format === "png" && request.target === "members" && request.purpose === "mobile" && <fieldset disabled={locked}><legend>1枚の名簿</legend>
         <p className="muted-text">全員を1枚にまとめます。名前は拡大して確認できます</p>
         <p role="status">{memberEstimate}</p>
         {memberFit === "small" && <div className="document-export-options">
@@ -122,7 +122,7 @@ export const DocumentExportSheet = ({ initialTarget, initialFormat = "png", hasO
         <button type="button" aria-pressed={request.format === "png"} onClick={() => update({ format: "png" })}>画像</button>
         <button type="button" aria-pressed={request.format === "pdf"} onClick={() => update({ format: "pdf" })}>PDF</button>
       </div></fieldset></>}
-      <button type="button" className="primary document-export-create" disabled={locked || (!excel && request.target === "members" && request.purpose === "mobile" && (memberFit === "checking" || memberFit === "error"))} onClick={() => void create()}>{excel ? "名簿のExcelを作成" : `${EXPORT_TARGET_LABELS[request.target]}の${request.format === "png" ? "画像" : "PDF"}を作成`}</button>
+      <button type="button" className="primary document-export-create" disabled={locked || (!excel && request.format === "png" && request.target === "members" && request.purpose === "mobile" && (memberFit === "checking" || memberFit === "error"))} onClick={() => void create()}>{excel ? "名簿のExcelを作成" : `${EXPORT_TARGET_LABELS[request.target]}の${request.format === "png" ? "画像" : "PDF"}を作成`}</button>
       {busy && <div className="document-export-progress"><p role="status">{progress}</p><button type="button" onClick={() => { controller.current?.abort(); setProgress("作成を取り消しています…"); }}>作成を取り消す</button></div>}
       {result && <div ref={resultRef}><ExportCompletionPanel result={result} disabled={busy} onBusyChange={handleDeliveryBusy} /></div>}
       {notice && <p role="status">{notice}</p>}

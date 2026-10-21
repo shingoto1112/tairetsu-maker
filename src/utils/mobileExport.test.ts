@@ -3,10 +3,10 @@ import { prepareMemberMobilePlan } from "./memberMobileExport";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./exportRaster", () => ({ elementToCanvas: vi.fn(), waitForExportFonts: vi.fn().mockResolvedValue(undefined) }));
-const writer = vi.hoisted(() => ({ add: vi.fn(), finish: vi.fn(), dispose: vi.fn() }));
-vi.mock("./pdfExport", () => ({ createMobilePdfWriter: vi.fn(async () => writer) }));
+
+vi.mock("./rosterPdf", () => ({ generateRosterPdf: vi.fn() }));
 import { elementToCanvas } from "./exportRaster";
-import { createMobilePdfWriter } from "./pdfExport";
+import { generateRosterPdf } from "./rosterPdf";
 import { exportTargets, generateDocumentExport } from "./mobileExport";
 import { createRosterExportSnapshot } from "./rosterExportSnapshot";
 import type { ExportRequest, ExportSnapshot } from "./mobileExportTypes";
@@ -19,7 +19,7 @@ const hosts = () => document.querySelectorAll("[data-mobile-export-host]");
 describe("mobile export pipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    writer.finish.mockReturnValue(new Blob(["pdf"], { type: "application/pdf" }));
+    vi.mocked(generateRosterPdf).mockResolvedValue({ blob: new Blob(["pdf"], { type: "application/pdf" }), preview: new Blob(["png"], { type: "image/png" }), pageCount: 2, orientation: "portrait", mode: "raster" });
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function(this: HTMLElement) {
       const line = Number.parseFloat(this.style.lineHeight) || 34;
       const font = Number.parseFloat(this.style.fontSize) || 24;
@@ -54,16 +54,11 @@ describe("mobile export pipeline", () => {
     expect(result.files[0].name).toMatch(/^演目_メンバー名簿_.*_1.png$/);
     expect(result.files[0].name).not.toContain("名前"); expect(hosts()).toHaveLength(0);
   });
-  it("encodes a PDF with identical mobile page dimensions and no extra margin", async () => {
-    vi.mocked(prepareMemberMobilePlan).mockResolvedValueOnce(null);
-    const dimensions: number[][] = [];
-    writer.add.mockImplementation((canvas: HTMLCanvasElement) => dimensions.push([canvas.width * 0.375, canvas.height * 0.375]));
-    const result = await generateDocumentExport(snapshot(), { ...request, format: "pdf" }, { signal: new AbortController().signal, onProgress: vi.fn() });
-    expect(dimensions[0]).toEqual([405, 720]);
-    expect(dimensions[dimensions.length - 1][1]).toBeLessThan(720);
-    expect(writer.add).toHaveBeenCalledTimes(result.pageCount);
-    expect(writer.finish).toHaveBeenCalledTimes(1); expect(writer.dispose).toHaveBeenCalledTimes(1);
-    expect(result.files).toHaveLength(1); expect(result.preview.type).toBe("image/png"); expect(hosts()).toHaveLength(0);
+  it.each(["mobile", "a4"] as const)("routes %s PDF before mobile planning and A4 PNG", async purpose => {
+    const result = await generateDocumentExport(snapshot(), { ...request, purpose, format: "pdf" }, { signal: new AbortController().signal, onProgress: vi.fn() });
+    expect(generateRosterPdf).toHaveBeenCalledOnce(); expect(prepareMemberMobilePlan).not.toHaveBeenCalled();
+    expect(elementToCanvas).not.toHaveBeenCalled(); expect(result.files).toHaveLength(1); expect(result.pageCount).toBe(2);
+    expect(result.files[0].name.endsWith(".pdf")).toBe(true);
   });
   it("cleans up and rejects the whole output if a later page fails or generation is cancelled", async () => {
     vi.mocked(prepareMemberMobilePlan).mockResolvedValueOnce(null);
@@ -73,9 +68,9 @@ describe("mobile export pipeline", () => {
     vi.mocked(prepareMemberMobilePlan).mockResolvedValueOnce(null);
     const controller = new AbortController();
     await expect(generateDocumentExport(snapshot(), request, { signal: controller.signal, onProgress: (message) => { if (message.includes("2/")) controller.abort(); } })).rejects.toMatchObject({ name: "AbortError" });
-    expect(hosts()).toHaveLength(0); expect(createMobilePdfWriter).not.toHaveBeenCalled();
+    expect(hosts()).toHaveLength(0); expect(generateRosterPdf).not.toHaveBeenCalled();
   });
-  it.each(["png", "pdf"] as const)("exports every registered member in one final-pixel %s page", async format => {
+  it.each(["png"] as const)("exports every registered member in one final-pixel %s page", async format => {
     const items = Array.from({ length: 146 }, (_, i) => ({ id: `person-${i}`, name: i%2 ? "同じ名前" : "匿名👨‍👩‍👧‍👦" }));
     const data = createRosterExportSnapshot("演目", "members", items, []);
     vi.mocked(elementToCanvas).mockImplementation(async (element, ratio) => {
@@ -88,7 +83,6 @@ describe("mobile export pipeline", () => {
     expect(result.pageCount).toBe(1); expect(result.files).toHaveLength(1);
     expect(elementToCanvas).toHaveBeenCalledTimes(1); expect(hosts()).toHaveLength(0);
     expect(document.querySelectorAll("[data-member-mobile-measure]")).toHaveLength(0);
-    if (format === "pdf") expect(writer.add).toHaveBeenCalledTimes(1);
   });
   it("includes scene-hidden and globally hidden people in the member snapshot", () => {
     const project = formationExportFixture(); project.members[0].visible = false;

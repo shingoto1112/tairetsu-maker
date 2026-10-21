@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const pdf = vi.hoisted(() => ({ addPage: vi.fn(), addImage: vi.fn(), output: vi.fn(() => new Blob(["pdf"])), setProperties: vi.fn(), ctor: vi.fn(),
   internal: { pageSize: { getWidth: () => 405, getHeight: () => 720 } } }));
 vi.mock("jspdf", () => ({ jsPDF: class { constructor(options: unknown) { pdf.ctor(options); return pdf; } } }));
-import { cameraImageToPdfBlob, createMobilePdfWriter, imagePagesToPdfBlob, jpegDataUrlsToPdfBlob } from "./pdfExport";
+import { cameraImageToPdfBlob, imagePagesToPdfBlob, jpegDataUrlsToPdfBlob } from "./pdfExport";
 
 describe("generalized PDF pages", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -46,15 +46,5 @@ describe("generalized PDF pages", () => {
     await expect(imagePagesToPdfBlob([page, page], { signal: controller.signal, onProgress: () => controller.abort() })).rejects.toMatchObject({ name: "AbortError" });
     expect(pdf.addImage).toHaveBeenCalledTimes(1); expect(pdf.output).not.toHaveBeenCalled();
   });
-  it("embeds mobile pages as they arrive and releases the writer on cancellation", async () => {
-    const abort = new AbortController(), writer = await createMobilePdfWriter("スマホ", abort.signal);
-    const canvas = { width: 1080, height: 1920, toDataURL: () => "png" } as HTMLCanvasElement;
-    writer.add(canvas);
-    expect(pdf.addImage).toHaveBeenCalledWith("png", "PNG", 0, 0, 405, 720, undefined, "SLOW");
-    expect(pdf.output).not.toHaveBeenCalled();
-    writer.add({ ...canvas, height: 1000 } as HTMLCanvasElement);
-    expect(pdf.addPage).toHaveBeenCalledWith([405, 375], "landscape");
-    abort.abort(); expect(() => writer.finish()).toThrow(); writer.dispose();
-    expect(pdf.output).not.toHaveBeenCalled();
-  });
+
 });

@@ -15,35 +15,6 @@ export type ImagePdfPage = {
 export type PdfOrientation = "landscape" | "portrait";
 
 
-/** Mobile pages are embedded immediately; no array of full-resolution base64 images is retained. */
-export const createMobilePdfWriter = async (title: string, signal: AbortSignal) => {
-  const { jsPDF } = await loadJsPdf();
-  let pdf: InstanceType<typeof jsPDF> | undefined;
-  const check = () => { if (signal.aborted) throw new DOMException("書き出しを取り消しました。", "AbortError"); };
-  check();
-  return {
-    add: (canvas: HTMLCanvasElement) => {
-      check();
-      const size: [number, number] = [canvas.width * 0.375, canvas.height * 0.375];
-      const orientation = size[0] > size[1] ? "landscape" : "portrait";
-      if (!pdf) {
-        pdf = new jsPDF({ compress: true, format: size, orientation, unit: "pt" });
-        pdf.setProperties({ creator: "隊列メーカー", title });
-      } else pdf.addPage(size, orientation);
-      pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, size[0], size[1], undefined, "SLOW");
-      check();
-    },
-    finish: () => {
-      check();
-      if (!pdf) throw new Error("PDFのページがありません。");
-      const blob = pdf.output("blob"); pdf = undefined;
-      if (!blob.size) throw new Error("PDFデータを作成できませんでした。");
-      return blob;
-    },
-    dispose: () => { pdf = undefined; },
-  };
-};
-
 const getImageSize = (dataUrl: string): Promise<{ width: number; height: number }> =>
   new Promise((resolve, reject) => {
     const image = new Image();

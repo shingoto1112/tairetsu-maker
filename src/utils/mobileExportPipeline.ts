@@ -1,5 +1,4 @@
 import { elementToCanvas } from "./exportRaster";
-import { createMobilePdfWriter } from "./pdfExport";
 import { withFileExtension } from "./exportFileName";
 import { MOBILE_WIDTH } from "./mobileExportLayout";
 import type { GeneratedExport, GenerationOptions } from "./mobileExportTypes";
@@ -11,12 +10,11 @@ export const checkExportCancelled = (signal: AbortSignal) => {
 
 export const encodeMobilePages = async <P extends { height: number; pageNumber: number }>(
   pages: readonly P[], draw: (page: P) => HTMLElement, release: () => void,
-  format: "png" | "pdf", base: string, targetLabel: string, scopeLabel: string, options: GenerationOptions,
+  format: "png", base: string, targetLabel: string, scopeLabel: string, options: GenerationOptions,
   raster: { width: number; pixelRatio: number } = { width: MOBILE_WIDTH, pixelRatio: 2 },
 ): Promise<GeneratedExport> => {
   const check = () => checkExportCancelled(options.signal);
   check();
-  const writer = format === "pdf" ? await createMobilePdfWriter(`${base} ${targetLabel}`, options.signal) : undefined;
   const files: File[] = [];
   let preview: Blob | undefined;
   try {
@@ -27,22 +25,14 @@ export const encodeMobilePages = async <P extends { height: number; pageNumber: 
       const canvas = await elementToCanvas(element, raster.pixelRatio);
       try {
         check();
-        if (format === "png" || !preview) {
-          const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("画像を作成できませんでした。")), "image/png"));
-          check(); if (!blob.size) throw new Error("画像を作成できませんでした。");
-          preview ??= blob;
-          if (format === "png") files.push(new File([blob], withFileExtension(`${base}_${page.pageNumber}`, "png"), { type: "image/png" }));
-        }
-        writer?.add(canvas);
+        const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("画像を作成できませんでした。")), "image/png"));
+        check(); if (!blob.size) throw new Error("画像を作成できませんでした。");
+        preview ??= blob;
+        files.push(new File([blob], withFileExtension(`${base}_${page.pageNumber}`, format), { type: "image/png" }));
       } finally { canvas.width = 0; canvas.height = 0; release(); }
-    }
-    check();
-    if (writer) {
-      options.onProgress("PDFをまとめています…"); await yieldExportUI(); check();
-      files.push(new File([writer.finish()], withFileExtension(base, "pdf"), { type: "application/pdf" }));
     }
     check();
     if (!preview || !files.length) throw new Error("書き出し結果を作成できませんでした。");
     return { files, preview, targetLabel, scopeLabel, pageCount: pages.length };
-  } finally { writer?.dispose(); release(); }
+  } finally { release(); }
 };

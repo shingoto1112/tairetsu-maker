@@ -44,6 +44,14 @@ export const collectGroupedItems = <T extends { id: string }>(
   }];
 };
 
+/** Excel/PDF table columns. PNG deliberately keeps collectGroupedItems's empty ungrouped column. */
+export const collectRosterTableColumns = <T extends { id: string }>(
+  items: readonly T[], groups: readonly RosterGroup[], key: "memberIds" | "objectIds",
+): RosterColumn<T>[] => selectRosterTableColumns(collectGroupedItems(items, groups, key));
+
+export const selectRosterTableColumns = <T,>(columns: readonly RosterColumn<T>[]): RosterColumn<T>[] =>
+  columns.filter(column => column.groupId !== null || column.items.length > 0 || columns.length === 1);
+
 export const nextRosterItemName = <T extends { id: string; name: string }>(
   items: readonly T[],
   groups: readonly RosterGroup[],

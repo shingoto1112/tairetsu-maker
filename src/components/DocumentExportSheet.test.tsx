@@ -63,6 +63,18 @@ describe("DocumentExportSheet", () => {
     expect(screen.queryByRole("button", { name: "道具割当表" })).toBeNull();
     expect(screen.queryByRole("button", { name: "隊列表" })).toBeNull();
   });
+  it("skips all mobile preflight for PDF, even if the mobile plan fails or is pending", async () => {
+    vi.mocked(prepareMemberMobilePlan).mockRejectedValue(new Error("mobile failure"));
+    render(<DocumentExportSheet initialTarget="members" initialFormat="pdf" getSource={() => source} onClose={vi.fn()} />);
+    expect(screen.queryByText("用途")).toBeNull(); expect(screen.queryByText("1枚の名簿")).toBeNull();
+    expect(prepareMemberMobilePlan).not.toHaveBeenCalled();
+    const create = screen.getByRole("button",{name:"メンバー名簿のPDFを作成"});expect(create.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(create); await screen.findByRole("button",{name:"共有する"});
+    expect(generateDocumentExport).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({format:"pdf"}),expect.anything());
+    fireEvent.click(screen.getByRole("button",{name:"画像"})); await screen.findByText("mobile failure");
+    fireEvent.click(screen.getByRole("button",{name:"PDF"}));expect(create.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByText("用途")).toBeNull();
+  });
   it("preflights member mobile output and presents the below-24px choice before creation, defaulting to one page", async () => {
     vi.mocked(prepareMemberMobilePlan).mockResolvedValue(null);
     render(<DocumentExportSheet initialTarget="members" getSource={() => source} onClose={vi.fn()} />);

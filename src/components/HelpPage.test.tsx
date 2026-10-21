@@ -44,6 +44,10 @@ describe("HelpPage", () => {
     expect(helpSections.find(section => section.title === "座標の見方")?.items.join("")).toContain("後方はマイナス");
     expect(helpSections.find(section => section.title === "ショートカット")?.items.join("")).toContain("Ctrl/Cmd＋1");
     const sceneHelp = helpSections.find(section => section.title === "シーンを効率よく作る")?.items.join("");
+    const rosterHelp = helpSections.find(section => section.title === "メンバー名簿をLINEで配る")?.items.join("");
+    expect(rosterHelp).toContain("PDF は、Excel の名簿と同じ");
+    expect(rosterHelp).toContain("長い行はさらに折り返します");
+    expect(rosterHelp).toContain("画像は「スマホで見る」「印刷向け（A4）」");
     expect(sceneHelp).toContain("分と秒のダイヤル");
     expect(sceneHelp).toContain("元の小数秒もそのまま残り");
     expect(sceneHelp).toContain("再生で別のシーンへ移ったときは取消");

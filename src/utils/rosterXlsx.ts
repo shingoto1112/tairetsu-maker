@@ -1,4 +1,4 @@
-import { collectGroupedItems, type RosterColumn, type RosterGroup } from "./rosterColumns";
+import { collectRosterTableColumns, type RosterColumn, type RosterGroup } from "./rosterColumns";
 import { formatExportTimestamp, sanitizeExportFileName, withFileExtension } from "./exportFileName";
 import type { CompletedExport, ExportSource } from "./mobileExportTypes";
 
@@ -74,8 +74,7 @@ const textXml = (value: string): string => {
 };
 
 const createSheet = (name: string, items: { id: string; name: string }[], groups: RosterGroup[], key: "memberIds" | "objectIds"): Sheet => {
-  const grouped = collectGroupedItems(items, groups, key);
-  const columns = grouped.filter(column => column.groupId !== null || column.items.length > 0 || grouped.length === 1);
+  const columns = collectRosterTableColumns(items, groups, key);
   const rowCount = columns.reduce((max, column) => Math.max(max, column.items.length + 1), 1);
   validateRosterXlsxSize(columns.length + 1, rowCount);
   return { name, columns, rowCount };

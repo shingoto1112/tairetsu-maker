@@ -85,6 +85,13 @@ export const generateDocumentExport = async (
   const base = `${snapshot.data.title}_${label}_${formatExportTimestamp(new Date(snapshot.data.exportedAt))}`;
   const check = () => checkCancelled(options.signal);
   check();
+  if (request.format === "pdf") {
+    const { generateRosterPdf } = await import("./rosterPdf");
+    const result = await generateRosterPdf(snapshot.data, options);
+    check();
+    return { files: [new File([result.blob], withFileExtension(base, "pdf"), { type: "application/pdf" })],
+      preview: result.preview, targetLabel: label, scopeLabel, pageCount: result.pageCount };
+  }
   if (request.purpose === "a4") {
     options.onProgress("印刷用ページを準備中…"); await yieldToUI(); check();
     const { generateRosterExport } = await import("./rosterExport");

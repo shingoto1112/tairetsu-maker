@@ -3,13 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { elementToPngBlob } from "./exportImage";
 import { elementToPngPage } from "./exportRaster";
-import { imagePagesToPdfBlob } from "./pdfExport";
+
 import { generateRosterExport } from "./rosterExport";
 import { createRosterExportSnapshot } from "./rosterExportLayout";
 
 vi.mock("./exportImage", () => ({ elementToPngBlob: vi.fn() }));
 vi.mock("./exportRaster", () => ({ elementToPngPage: vi.fn(), waitForExportFonts: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("./pdfExport", () => ({ imagePagesToPdfBlob: vi.fn() }));
 
 const data = (count = 1) => createRosterExportSnapshot("演目", "members",
   Array.from({ length: count }, (_, index) => ({ id: `${index}`, name: `名前${index + 1}` })), [],
@@ -21,7 +20,6 @@ describe("rosterExport DOM lifecycle", () => {
   beforeEach(() => {
     vi.mocked(elementToPngBlob).mockResolvedValue(new Blob(["png"], { type: "image/png" }));
     vi.mocked(elementToPngPage).mockResolvedValue({ dataUrl: "data:image/png;base64,mock", width: 1480, height: 2000, format: "PNG" });
-    vi.mocked(imagePagesToPdfBlob).mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       const height = this.hasAttribute("data-roster-export-heading") ? 80
         : this.hasAttribute("data-roster-export-columns") ? 36
@@ -55,7 +53,7 @@ describe("rosterExport DOM lifecycle", () => {
     expect(hosts()).toHaveLength(0);
   });
 
-  it("captures PDF pages sequentially with repeated headings, page numbers and continuation No.", async () => {
+  it("captures A4 PNG pages sequentially with repeated headings, page numbers and continuation No.", async () => {
     const pageTexts: string[] = [];
     const numbers: string[] = [];
     vi.mocked(elementToPngPage).mockImplementation(async (element) => {
@@ -67,11 +65,10 @@ describe("rosterExport DOM lifecycle", () => {
       pageTexts.push(element.querySelector("[data-roster-export-footer]")?.textContent ?? "");
       return { dataUrl: "data:image/png;base64,mock", width: 1480, height: 2000, format: "PNG" };
     });
-    await generateRosterExport(data(40), "pdf");
+    await generateRosterExport(data(40), "png", { signal: new AbortController().signal, onProgress: () => {}, paginatedImages: true });
     expect(pageTexts).toEqual(["1 / 2", "2 / 2"]);
     expect(numbers[0]).toBe("1");
     expect(Number(numbers[1])).toBeGreaterThan(1);
-    expect(imagePagesToPdfBlob).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ format: "PNG" })]), { title: "演目 メンバー名簿", orientation: "portrait" });
     expect(hosts()).toHaveLength(0);
   });
 
@@ -82,12 +79,12 @@ describe("rosterExport DOM lifecycle", () => {
       expect(element.textContent).toContain("1 / 1");
       return { dataUrl: "data:image/png;base64,mock", width: 1480, height: 2000, format: "PNG" };
     });
-    await generateRosterExport(data(0), "pdf");
+    await generateRosterExport(data(0), "png", { signal: new AbortController().signal, onProgress: () => {}, paginatedImages: true });
     expect(elementToPngPage).toHaveBeenCalledTimes(1);
     expect(hosts()).toHaveLength(0);
   });
 
-  it.each(["png", "pdf"] as const)("removes the temporary DOM after %s capture fails", async (kind) => {
+  it.each(["png"] as const)("removes the temporary DOM after %s capture fails", async (kind) => {
     vi.mocked(elementToPngBlob).mockRejectedValue(new Error("capture failed"));
     vi.mocked(elementToPngPage).mockRejectedValue(new Error("capture failed"));
     const snapshot = data();
@@ -104,12 +101,5 @@ describe("rosterExport DOM lifecycle", () => {
     expect(hosts()).toHaveLength(0);
   });
 
-  it("removes page DOM before PDF encoding, including an encoder failure", async () => {
-    vi.mocked(imagePagesToPdfBlob).mockImplementation(async () => {
-      expect(hosts()).toHaveLength(0);
-      throw new Error("encoding failed");
-    });
-    await expect(generateRosterExport(data(), "pdf")).rejects.toThrow("encoding failed");
-    expect(hosts()).toHaveLength(0);
-  });
+
 });

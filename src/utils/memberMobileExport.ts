@@ -114,7 +114,7 @@ export const drawMemberMobilePage = (snapshot: RosterExportSnapshot, plan: Membe
 };
 
 export const generateMemberMobileExport = async (
-  snapshot: RosterExportSnapshot, format: "png" | "pdf", base: string, options: GenerationOptions,
+  snapshot: RosterExportSnapshot, format: "png", base: string, options: GenerationOptions,
   plan: MemberMobilePlan,
 ): Promise<GeneratedExport> => {
   const host = node(undefined, { position: "fixed", left: "-100000px", top: "0", pointerEvents: "none" });
