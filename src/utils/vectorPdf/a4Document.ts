@@ -109,7 +109,7 @@ export async function createA4VectorPdf(request: {
       const pages = buildA4Document(request.project, request.frameIds, clone, request.options);
       const parade = request.project.mode === "parade";
       const result = await renderScenePages(pages, { ...request, orientation: getPrintOrientation(request.project),
-        fillStrokes: parade, clipPage: parade });
+        fillStrokes: parade, clipPage: parade, objectStreams: true });
       return result.blob;
     });
   }, request.fallback, request.signal);

@@ -7,6 +7,7 @@ import { createGraphemeImageCache, type GlyphRasterizer } from "./graphemeImages
 import type { PrintOrientation } from "../printLayout";
 import { sourceTrueType, validateSubset } from "./trueType";
 import { tidyPdfContent } from "./contentTidy";
+import { packObjectStreams } from "./objectStreams";
 
 export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer; orientation?: PrintOrientation } = {}) {
   const cache = createGraphemeImageCache(options.rasterize);
@@ -229,7 +230,9 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
   onProgress?: (message: string) => void; rasterize?: GlyphRasterizer;
   /** Original-font reference path for regression/size measurements. */
   orientation?: PrintOrientation; fillStrokes?: boolean; clipPage?: boolean;
-  fontMode?: "subset" | "original"; subsetFont?: FontSubsetter } = {}) {
+  fontMode?: "subset" | "original"; subsetFont?: FontSubsetter;
+  /** Pack object dictionaries into PDF 1.5 object streams after all checks passed (export paths). */
+  objectStreams?: boolean } = {}) {
   checkAbort(options.signal);
   if (!pages.length) throw new Error("PDFのページがありません。");
   const totalStart = performance.now();
@@ -320,11 +323,15 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
       const font = parsedFont(pdf, fontWeight(line.weight)), code = ch.charCodeAt(0), glyph = font.characterToGlyph(code);
       if (!glyph || font.toUnicode[glyph] !== code) throw new Error("PDFに文字を完全に埋め込めませんでした。");
     }
-    return { blob: new Blob([bytes], { type: "application/pdf" }), metrics: { ...fonts, loadMs: sourceLoadMs,
+    // Checks above ran on the plain jsPDF output; packing only rewrites dictionaries/xref and is
+    // verified again inside packObjectStreams (falls back to the checked bytes on any doubt).
+    const packed = options.objectStreams ? await packObjectStreams(bytes, pages.length, options.signal) : null;
+    const finalBytes = packed ?? new Uint8Array(bytes);
+    return { blob: new Blob([finalBytes], { type: "application/pdf" }), metrics: { ...fonts, loadMs: sourceLoadMs, objectStreams: !!packed, unpackedBytes: bytes.byteLength,
       sourceBytes: weights.map(w => sources.get(w)!.bytes.byteLength),
       fetchedBytes: [...sources.values()].reduce((n, s) => n + s.fetchedBytes, 0),
       fontInputBytes: weights.map(w => fontBytes.get(w)!.byteLength), characterCounts: weights.map(w => codes.get(w)!.length),
-      generationMs: performance.now() - start, embeddedFonts, pages: pages.length, bytes: bytes.byteLength,
+      generationMs: performance.now() - start, embeddedFonts, pages: pages.length, bytes: finalBytes.byteLength,
       graphemeImages: prepared.metrics },
       vectorText: pages.map(p => visibleTextLines(p.drawings).map(l => l.text)) };
   }

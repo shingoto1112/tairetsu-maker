@@ -259,7 +259,7 @@ export async function generateRosterPdf(snapshot: RosterExportSnapshot, options:
     checkAbort(options.signal);
     if (raster) return { blob:await imagePagesToPdfBlob(images, {orientation:plan.orientation, title:"メンバー名簿", signal:options.signal}), preview:preview!, pageCount:plan.pages.length, orientation:plan.orientation, mode:"raster" as const };
     const result = await renderScenePages(pages, { orientation:plan.orientation, title:"メンバー名簿", signal:options.signal,
-      onProgress:options.onProgress, fillStrokes:false, clipPage:true, rasterize:rasterizeRosterGrapheme });
+      onProgress:options.onProgress, fillStrokes:false, clipPage:true, rasterize:rasterizeRosterGrapheme, objectStreams:true });
     checkAbort(options.signal);
     return { blob:result.blob, preview:preview!, pageCount:plan.pages.length, orientation:plan.orientation, mode:"vector" as const, metrics:result.metrics };
   } finally { host.remove(); }
