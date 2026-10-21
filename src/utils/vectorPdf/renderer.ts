@@ -60,7 +60,12 @@ export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: S
 
 function path(pdf: jsPDF, r: Rect, style: "F" | "S" | null) {
   const radius = r.radius ?? 0;
-  if (radius > 0) pdf.roundedRect(r.x, r.y, r.width, r.height, radius, radius, style);
+  // A rounded square whose radius reaches half its side IS a circle. roundedRect emits the same four
+  // Béziers plus four zero-length lines; circle() omits them (members are most of the drawing).
+  // Capsules (unequal sides) keep roundedRect so their shape is unchanged.
+  if (radius > 0 && Math.abs(r.width - r.height) < 1e-9 && radius >= r.width / 2)
+    pdf.circle(r.x + r.width / 2, r.y + r.height / 2, r.width / 2, style);
+  else if (radius > 0) pdf.roundedRect(r.x, r.y, r.width, r.height, radius, radius, style);
   else pdf.rect(r.x, r.y, r.width, r.height, style);
 }
 
