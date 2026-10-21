@@ -34,6 +34,15 @@ it("writes a background used twice once as a Form XObject and draws single uses 
   expect(raw).toMatch(/\/XObject <<\s*\/Xo1 \d+ 0 R/);
 }, 15000);
 
+it("shares a member circle path only when one radius is used often enough", async () => {
+  const members = (count: number): ScenePage => ({ frameId: `m${count}`, width: 120, height: 80, drawings: Array.from({ length: count }, (_, i): Drawing => ({
+    kind: "group", id: `m${i}`, x: 5 + i % 20 * 5, y: 5 + Math.floor(i / 20) * 5, rotation: 0,
+    children: [{ kind: "shape", x: -2, y: -2, width: 4, height: 4, radius: 2, fill: i % 2 ? "#38bdf8" : "#f43f5e" }] })) });
+  const forms = async (pages: ScenePage[]) => (Buffer.from(await (await renderScenePages(pages)).blob.arrayBuffer()).toString("latin1").match(/\/Subtype \/Form/g) ?? []).length;
+  expect(await forms([members(30)])).toBe(0);
+  expect(await forms([members(120), members(120)])).toBe(1);
+}, 20000);
+
 it("rebuilds the same document without forms when nothing repeats", async () => {
   const raw = Buffer.from(await (await renderScenePages([page(80)])).blob.arrayBuffer()).toString("latin1");
   expect(raw).not.toContain("/Subtype /Form");

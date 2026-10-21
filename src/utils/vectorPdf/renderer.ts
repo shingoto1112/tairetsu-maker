@@ -108,11 +108,19 @@ type Group = Extract<Drawing, { kind: "group" }>;
 const shareable = (d: Group) => !!d.reuse && d.x === 0 && d.y === 0 && d.rotation === 0 && !d.clip && d.children.every(c =>
   (c.kind === "line" && (c.opacity ?? 1) === 1) || (c.kind === "shape" && (c.opacity ?? 1) === 1 && (c.strokeOpacity ?? 1) === 1));
 const sharedKey = (d: Group, fillStrokes: boolean) => JSON.stringify([fillStrokes, d.children]);
+type Shape = Extract<Drawing, { kind: "shape" }>;
+/** Fill-only circles (members, assignment chips) share one path per radius; colour/opacity stay at the call.
+ * A form costs an object plus q/Do/Q per use; measured break-even is ~200 uses of one radius
+ * (1 scene × 30 members grew 9.0→9.2KB, 8 scenes × 32 shrank). Below that, draw paths inline. */
+export const CIRCLE_FORM_MIN_USES = 200;
+const circleKey = (d: Shape) => d.fill && !d.stroke && (d.radius ?? 0) > 0 && Math.abs(d.width - d.height) < 1e-9 && (d.radius ?? 0) >= d.width / 2
+  ? `circle:${(d.width / 2).toFixed(5)}` : undefined;
 export function countSharedDrawings(pages: ScenePage[], fillStrokes: boolean): SharedDrawings {
   const counts = new Map<string, number>();
-  const scan = (nodes: Drawing[]) => { for (const n of nodes) if (n.kind === "group") {
-    if (shareable(n)) { const key = sharedKey(n, fillStrokes); counts.set(key, (counts.get(key) ?? 0) + 1); }
-    scan(n.children);
+  const count = (key: string) => counts.set(key, (counts.get(key) ?? 0) + 1);
+  const scan = (nodes: Drawing[]) => { for (const n of nodes) {
+    if (n.kind === "group") { if (shareable(n)) count(sharedKey(n, fillStrokes)); scan(n.children); }
+    else if (n.kind === "shape") { const key = circleKey(n); if (key) count(key); }
   } };
   for (const page of pages) scan(page.drawings);
   return { counts, defined: new Set() };
@@ -179,7 +187,19 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
       } else {
         if (d.fill) {
           if (!inForm) pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1, "stroke-opacity": 1 }));
-          pdf.setFillColor(d.fill); path(pdf, d, "F");
+          pdf.setFillColor(d.fill);
+          const key = shared && !inForm ? circleKey(d) : undefined;
+          if (key && (shared!.counts.get(key) ?? 0) >= CIRCLE_FORM_MIN_USES) {
+            const r = d.width / 2;
+            if (!shared!.defined.has(key)) {
+              pdf.beginFormObject(-r - .5, -r - .5, 2 * r + 1, 2 * r + 1, pdf.Matrix(1, 0, 0, 1, 0, 0));
+              pdf.circle(0, 0, r, "F"); // no colour inside: the caller's fill colour and opacity apply
+              tidyPdfContent((pdf.internal as unknown as { pages: unknown[] }).pages);
+              pdf.endFormObject(key);
+              shared!.defined.add(key);
+            }
+            pdf.doFormObject(key, pdf.Matrix(1, 0, 0, 1, d.x + r, d.y + r));
+          } else path(pdf, d, "F");
         }
         if (d.stroke) {
           if (fillStrokes) {
