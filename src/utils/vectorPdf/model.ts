@@ -1,10 +1,13 @@
 import type { Project } from "../../types";
 import type { ShareExportOptions } from "../../components/ShareExportModal";
 import { defaultPrintOptions, getEffectiveSize, getPrintMetrics, getPrintRulerTopMm,
-  getPrintRulerBottomMm, getPrintMemberLabelFontSizeMm, isPrintMemberVisible, type PrintMetrics } from "../printLayout";
+  getPrintRulerBottomMm, getPrintMemberLabelFontSizeMm, isPrintMemberVisible, getFramePrintVerticalRange,
+  getParadePrintRulerLabels, getPrintSideRulerWidthMm, PRINT_STAGE_RIGHT_SAFETY_MM, type PrintMetrics } from "../printLayout";
 import { createStageExportView, readablePropLabelRotation } from "../stageExportView";
 import { createDefaultObjectState, sortFrames } from "../interpolation";
-import { GRID_LINE_TOKENS } from "../gridEmphasis";
+import { GRID_LINE_TOKENS, horizontalEmphasizedLines, verticalEmphasizedLines } from "../gridEmphasis";
+import { getSafeParadeBackwardDistance, normalizeParadeHorizontalMeasureMode } from "../parade";
+import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../horizontalRuler";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../memberAppearance";
 import { getMemberLabelVariant, splitMemberLabel } from "../memberLabel";
 import { objectRenderShape } from "../../project/objectAppearance";
@@ -60,38 +63,50 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
   propText?: PropTextLayout, pageExtent?: Pick<ScenePage, "width" | "height">,
   layout?: { metrics: PrintMetrics; gapAfter: boolean }): ScenePage {
   const options = { ...defaultPrintOptions, ...supplied };
-  if (project.mode === "parade" || options.includeHiddenMembers || options.includeNotes || options.includeSceneTime)
-    throw new UnsupportedVectorLayout("パレード・非表示メンバー・メモ・時刻付きのベクター描画は未対応です。");
+  if (options.includeHiddenMembers || options.includeNotes || options.includeSceneTime)
+    throw new UnsupportedVectorLayout("非表示メンバー・メモ・時刻付きのベクター描画は未対応です。");
   const frame = project.frames.find(f => f.id === frameId);
   if (!frame) throw new UnsupportedVectorLayout("対象シーンがありません。");
   const size = getEffectiveSize(project, frame);
   const metrics = layout?.metrics ?? getPrintMetrics(project, [frame], options);
   const gapMeters = layout?.gapAfter ? metrics.gapRows * metrics.gridSizeMeters : 0;
-  const m = metrics.mmPerMeter, w = metrics.stageWidthMm, h = (size.depthMeters + gapMeters) * m;
-  const left = options.includeMeterRulers ? 10 : 0;
+  const isParade = project.mode === "parade";
+  if (isParade && project.paradeSettings?.direction && project.paradeSettings.direction !== "up")
+    throw new UnsupportedVectorLayout("パレードの進行方向はupのみ対応しています。");
+  const range = getFramePrintVerticalRange(project, frame, size, metrics);
+  const m = metrics.mmPerMeter, w = metrics.stageWidthMm, h = (range.depthMeters + gapMeters) * m;
+  const left = getPrintSideRulerWidthMm(isParade, options.includeMeterRulers);
   const top = getPrintRulerTopMm(project, metrics, options);
   const bottom = options.includeMeterRulers ? getPrintRulerBottomMm(project, metrics, options) : 0;
-  const view = createStageExportView(size, project.stage, options.viewerPerspective);
+  const view = createStageExportView(size, project.stage, options.viewerPerspective, isParade);
+  const totalDistance = project.paradeSettings?.totalDistance ?? project.stage.depthMeters;
+  const backward = getSafeParadeBackwardDistance(project.paradeSettings?.backwardDistanceMeters);
+  const horizontalMode = toHorizontalCountingMode(normalizeParadeHorizontalMeasureMode(project.paradeSettings?.horizontalMeasureMode));
+  const horizontalGrid = isParade ? horizontalEmphasizedLines(size.widthMeters, horizontalMode, metrics.gridSizeMeters,
+    project.paradeSettings ?? project.stage, options.includeGrid) : view.horizontalGrid(metrics.gridSizeMeters, options.includeGrid);
+  const verticalGrid = isParade ? verticalEmphasizedLines(totalDistance + backward, metrics.gridSizeMeters,
+    project.stage, project.paradeSettings, options.includeGrid, range.topMeters, range.bottomMeters)
+    : view.verticalGrid(metrics.gridSizeMeters, options.includeGrid);
   const drawings: Drawing[] = [text(options.includeSceneName ? frame.label : `シーン${sortFrames(project.frames).findIndex(f => f.id === frameId) + 1}`,
     10, 9 - 1.5 - pt(12) * 1.55 / 2, pt(12), "#0f766e", 900, "left")];
   const stage: Drawing[] = [{ kind: "shape", x: CSS_PX_MM / 2, y: CSS_PX_MM / 2, width: w - CSS_PX_MM, height: h - CSS_PX_MM,
     fill: options.includeBackground ? "#ffffff" : undefined, stroke: "#94a3b8", lineWidth: CSS_PX_MM }];
   // CSS inset shadow occupies the inside of the stage; inset geometry preserves the outer bounds.
-  for (const line of view.horizontalGrid(metrics.gridSizeMeters, options.includeGrid)) {
+  for (const line of horizontalGrid) {
     const token = GRID_LINE_TOKENS[line.emphasis];
     stage.push({ kind: "line", x1: line.positionMeters * m, x2: line.positionMeters * m,
       y1: 0, y2: h, color: token.color, width: token.width * CSS_PX_MM });
   }
-  for (const line of view.verticalGrid(metrics.gridSizeMeters, options.includeGrid)) {
+  for (const line of verticalGrid) {
     const token = GRID_LINE_TOKENS[line.emphasis];
     stage.push({ kind: "line", x1: 0, x2: metrics.commonWidthMeters * m,
-      y1: line.positionMeters * m, y2: line.positionMeters * m, color: token.color, width: token.width * CSS_PX_MM });
+      y1: (line.positionMeters - range.topMeters) * m, y2: (line.positionMeters - range.topMeters) * m, color: token.color, width: token.width * CSS_PX_MM });
   }
   // PrintPreview always draws this line, including when showCenterLine is false.
   stage.push({ kind: "line", x1: size.widthMeters * m / 2, x2: size.widthMeters * m / 2,
     y1: 0, y2: h, color: "#0d8b78", opacity: .45, width: 1.5 * CSS_PX_MM, square: true });
   const annotations: Drawing[] = Object.values(view.annotations(frame.annotationLines) ?? {}).map(l => ({
-    kind: "line", x1: l.x1 * m, y1: l.y1 * m, x2: l.x2 * m, y2: l.y2 * m,
+    kind: "line", x1: l.x1 * m, y1: (l.y1 - range.topMeters) * m, x2: l.x2 * m, y2: (l.y2 - range.topMeters) * m,
     color: annotationColors[l.color], width: 2.5 * CSS_PX_MM,
     dash: l.dash === "dashed" ? [8 * CSS_PX_MM, 6 * CSS_PX_MM] : undefined,
   }));
@@ -109,7 +124,7 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     const inset = CSS_PX_MM / 2;
     const correction = readablePropLabelRotation(state.rotation);
     layers.push({ z: 2 + state.zIndex, node: { kind: "group", id: object.id,
-      x: (pos.x + state.widthMeters / 2) * m, y: (pos.y + state.heightMeters / 2) * m,
+      x: (pos.x + state.widthMeters / 2) * m, y: (pos.y + state.heightMeters / 2 - range.topMeters) * m,
       rotation: state.rotation, children: [
         { kind: "shape", ...rect, x: rect.x + inset, y: rect.y + inset, width: ow - 2 * inset,
           height: oh - 2 * inset, radius: Math.max(0, (rect.radius ?? 0) - inset),
@@ -136,26 +151,34 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     const lineHeight = fontSize * (variant === "default" ? .84 : variant === "four" ? .90 : .88);
     const color = getMemberDisplayColor(member, { frame, groups: project.memberGroups });
     if (!/^#[0-9a-f]{6}$/i.test(color)) throw new UnsupportedVectorLayout("メンバー色の形式が未対応です。");
-    layers.push({ z: 20, node: { kind: "group", id: member.id, x: p.x * m, y: p.y * m, rotation: 0, children: [
+    layers.push({ z: 20, node: { kind: "group", id: member.id, x: p.x * m, y: (p.y - range.topMeters) * m, rotation: 0, children: [
       { kind: "shape", x: -diameter / 2, y: -diameter / 2, width: diameter, height: diameter, radius: diameter / 2, fill: color },
       ...lines.map((line, i) => text(line, 0, (i - (lines.length - 1) / 2) * lineHeight - (variant === "three" ? .04 * fontSize : 0),
         fontSize, getReadableMemberLabelColor(color))),
     ] } });
   }
   stage.push(...layers.sort((a, b) => a.z - b.z).map(l => l.node));
-  if (gapMeters) stage.push({ kind: "line", x1: 0, x2: w, y1: size.depthMeters * m, y2: size.depthMeters * m,
+  if (gapMeters) stage.push({ kind: "line", x1: 0, x2: w, y1: range.depthMeters * m, y2: range.depthMeters * m,
     color: "#0f766e", opacity: .35, width: CSS_PX_MM, dash: [3 * CSS_PX_MM, 3 * CSS_PX_MM] });
   drawings.push({ kind: "group", id: "stage", x: left, y: 9 + top, rotation: 0, children: stage });
   if (options.includeMeterRulers) {
-    for (const label of view.horizontalLabels) drawings.push(text(label.label, left + label.positionMeters * m, 9 + 1.2 + 1.5, pt(7), "#111827", 700));
-    for (const label of view.verticalLabels) {
-      drawings.push(text(label.label, left - 2, 9 + top + label.positionMeters * m, pt(7), "#111827", 700, "right"));
-      drawings.push(text(label.label, left + w + 3.5, 9 + top + label.positionMeters * m, pt(7), "#111827", 700, "left"));
+    const labels = isParade ? createHorizontalRulerLabels(size.widthMeters, horizontalMode) : view.horizontalLabels;
+    for (const label of labels) drawings.push(text(label.label, left + label.positionMeters * m, 9 + 1.2 + 1.5, pt(7), "#111827", 700));
+    const verticalLabels = isParade ? getParadePrintRulerLabels(totalDistance, backward, range).map(l => ({
+      ...l, positionMeters: l.internalY - range.topMeters,
+    })) : view.verticalLabels.map(l => ({ ...l, className: undefined }));
+    for (const label of verticalLabels) {
+      const style = label.className === "major" ? { size: 9, weight: 800, color: "#0f172a" }
+        : label.className === "medium" ? { size: 8, weight: 700, color: "#334155" }
+        : label.className === "minor" ? { size: 7, weight: 600, color: "#64748b" }
+        : { size: 7, weight: 700, color: "#111827" };
+      drawings.push(text(label.label, left - 2, 9 + top + label.positionMeters * m, pt(style.size), style.color, style.weight, "right"));
+      drawings.push(text(label.label, left + w + 3.5, 9 + top + label.positionMeters * m, pt(style.size), style.color, style.weight, "left"));
     }
   }
   if (pageExtent && (!(pageExtent.width > 0 && pageExtent.height > 0) || !Number.isFinite(pageExtent.width + pageExtent.height)))
     throw new UnsupportedVectorLayout("印刷ページの寸法が不正です。");
-  return { frameId, width: left + w + (options.includeMeterRulers ? 10 : 0), height: 9 + top + h + bottom, ...pageExtent, drawings };
+  return { frameId, width: left + w + (options.includeMeterRulers ? left + (isParade ? PRINT_STAGE_RIGHT_SAFETY_MM : 0) : 0), height: 9 + top + h + bottom, ...pageExtent, drawings };
 }
 
 export function visibleTextLines(drawings: Drawing[]): TextLine[] {

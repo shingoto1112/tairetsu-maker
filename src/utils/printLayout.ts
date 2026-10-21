@@ -2,7 +2,8 @@ import type { FormationFrame, Member, ObjectState, Project, StageObject } from "
 import type { ShareExportOptions } from "../components/ShareExportModal";
 import { createDefaultObjectState } from "./interpolation";
 import { getMemberLabelFontSize } from "./memberLabel";
-import { getSafeParadeBackwardDistance, getSafeParadeCanvasDistance } from "./parade";
+import { getSafeParadeBackwardDistance, getSafeParadeCanvasDistance, internalYToParadeDistance, paradeDistanceToInternalY } from "./parade";
+import { boundedTicks } from "./boundedTicks";
 
 // Single source of truth for legacy DOM and vector A4 pagination and dimensions.
 export type EffectiveStageSize = {
@@ -99,6 +100,18 @@ export const getPrintMeterRulerClassName = (meter: number) => {
     return "medium";
   }
   return "minor";
+};
+
+/** A4 uses both sides, independent of the editor's rulerPosition. Keep the
+ * legacy distance rounding, ascending order and empty-range fallback. */
+export const getParadePrintRulerLabels = (totalDistance: number, backwardDistanceMeters: number, range: SceneVerticalRange) => {
+  const minDistance = internalYToParadeDistance(range.bottomMeters, totalDistance, backwardDistanceMeters) ?? 0;
+  const maxDistance = internalYToParadeDistance(range.topMeters, totalDistance, backwardDistanceMeters) ?? totalDistance;
+  const meters = boundedTicks(Math.ceil(minDistance - .001), Math.floor(maxDistance + .001));
+  if (!meters.length) meters.push(Math.round((minDistance + maxDistance) / 2));
+  return meters.map(meter => ({ meter, label: `${meter}m`,
+    internalY: paradeDistanceToInternalY(meter, totalDistance, backwardDistanceMeters),
+    className: getPrintMeterRulerClassName(meter) }));
 };
 
 export const getEffectiveSize = (
@@ -706,4 +719,3 @@ export const paginateFrames = (
 
   return pages;
 };
-

@@ -28,7 +28,7 @@ export function measureBaseline(style: CSSStyleDeclaration) {
     baselines.set(key, result); return result;
   } finally { host.remove(); }
 }
-/** A4's draw styles (700/800/900) all map to Bold. Regular is not requested. */
+/** Load before clone measurement. Parade minor rulers (600) require Regular. */
 export async function ensureBrowserFonts(weights: readonly FontWeight[], signal?: AbortSignal) {
   for (const weight of weights) {
     checkAbort(signal);

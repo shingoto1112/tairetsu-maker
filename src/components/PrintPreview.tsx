@@ -1,7 +1,6 @@
 import { createStageExportView, readablePropLabelRotation } from "../utils/stageExportView";
 import { useId } from "react";
 import { objectRenderShape } from "../project/objectAppearance";
-import { boundedTicks } from "../utils/boundedTicks";
 import { AnnotationLines } from "./AnnotationLines";
 import { horizontalEmphasizedLines, verticalEmphasizedLines } from "../utils/gridEmphasis";
 import { EmphasizedGrid } from "./EmphasizedGrid";
@@ -20,15 +19,13 @@ import {
 } from "../utils/memberLabel";
 import {
   getSafeParadeBackwardDistance,
-  internalYToParadeDistance,
   normalizeParadeHorizontalMeasureMode,
-  paradeDistanceToInternalY,
 } from "../utils/parade";
 import type { ShareExportOptions } from "./ShareExportModal";
 import {
   type SceneVerticalRange, type PrintMetrics, PRINT_SCENE_TITLE_MM,
   PRINT_STAGE_RIGHT_SAFETY_MM, PRINT_RULER_X_LABEL_WIDTH_MM, PRINT_RULER_Y_LABEL_HEIGHT_MM,
-  defaultPrintOptions, getPrintSideRulerWidthMm, getPrintMeterRulerClassName, getEffectiveSize,
+  defaultPrintOptions, getPrintSideRulerWidthMm, getParadePrintRulerLabels, getEffectiveSize,
   metersToPrintMm, metersToPrintCenteredMm, getObjectState, getPrintMemberLabelFontSizeMm,
   getAssignmentPrintEntries, getAssignmentMemberSizeMm, shouldPrintAssignmentSide,
   shouldPrintRightRuler, getAssignmentObjectPrintSize, getAssignmentEntryPrintLayout,
@@ -109,65 +106,10 @@ const PrintStagePreview = ({
     project.paradeSettings?.backwardDistanceMeters,
   );
   const verticalRulerLabels = isParade
-    ? (() => {
-        const minDistance =
-          internalYToParadeDistance(
-            verticalRange.bottomMeters,
-            totalDistance,
-            backwardDistanceMeters,
-          ) ?? 0;
-        const maxDistance =
-          internalYToParadeDistance(
-            verticalRange.topMeters,
-            totalDistance,
-            backwardDistanceMeters,
-          ) ??
-          totalDistance;
-        const start = Math.ceil(minDistance - 0.001);
-        const end = Math.floor(maxDistance + 0.001);
-        const labels: Array<{
-          className?: string;
-          key: number;
-          label: string;
-          top: string;
-        }> = [];
-        for (const meter of boundedTicks(start, end)) {
-          const internalY = paradeDistanceToInternalY(
-            meter,
-            totalDistance,
-            backwardDistanceMeters,
-          );
-          labels.push({
-            className: getPrintMeterRulerClassName(meter),
-            key: meter,
-            label: `${meter}m`,
-            top: metersToPrintCenteredMm(
-              internalY - verticalRange.topMeters,
-              metrics,
-              PRINT_RULER_Y_LABEL_HEIGHT_MM,
-            ),
-          });
-        }
-        if (labels.length === 0) {
-          const fallbackMeter = Math.round((minDistance + maxDistance) / 2);
-          const internalY = paradeDistanceToInternalY(
-            fallbackMeter,
-            totalDistance,
-            backwardDistanceMeters,
-          );
-          labels.push({
-            className: getPrintMeterRulerClassName(fallbackMeter),
-            key: fallbackMeter,
-            label: `${fallbackMeter}m`,
-            top: metersToPrintCenteredMm(
-              internalY - verticalRange.topMeters,
-              metrics,
-              PRINT_RULER_Y_LABEL_HEIGHT_MM,
-            ),
-          });
-        }
-        return labels;
-      })()
+    ? getParadePrintRulerLabels(totalDistance, backwardDistanceMeters, verticalRange).map(item => ({
+        className: item.className, key: item.meter, label: item.label,
+        top: metersToPrintCenteredMm(item.internalY - verticalRange.topMeters, metrics, PRINT_RULER_Y_LABEL_HEIGHT_MM),
+      }))
     : view.verticalLabels.filter(item => item.positionMeters >= verticalRange.topMeters - 1e-7 && item.positionMeters <= verticalRange.bottomMeters + 1e-7).map(item => ({
         className: undefined, key: item.positionMeters, label: item.label,
         top: metersToPrintCenteredMm(item.positionMeters - verticalRange.topMeters, metrics, PRINT_RULER_Y_LABEL_HEIGHT_MM),

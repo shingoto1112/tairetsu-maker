@@ -4,9 +4,10 @@ import { cachedFontBytes, checkAbort, fetchFontBytes, fontFileName, FONT_FAMILY,
 import { CSS_PX_MM, visibleTextLines, type Drawing, type Rect, type ScenePage } from "./model";
 import { planTextRuns, type FontCoverage } from "./textRuns";
 import { createGraphemeImageCache, type GlyphRasterizer } from "./graphemeImages";
+import type { PrintOrientation } from "../printLayout";
 import { sourceTrueType, validateSubset } from "./trueType";
 
-export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer } = {}) {
+export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: ScenePage[], options: { signal?: AbortSignal; rasterize?: GlyphRasterizer; orientation?: PrintOrientation } = {}) {
   const cache = createGraphemeImageCache(options.rasterize);
   let visited = 0;
   async function prepare(nodes: Drawing[], scale: number): Promise<Drawing[]> {
@@ -40,7 +41,7 @@ export async function prepareTextDrawings(source: jsPDF | FontCoverage, pages: S
   for (const page of pages) {
     const width = Math.ceil(page.width / CSS_PX_MM - 1e-7) * CSS_PX_MM;
     const height = Math.ceil(page.height / CSS_PX_MM - 1e-7) * CSS_PX_MM;
-    const a4 = a4PageSize("landscape"), fit = fitPdfImage(width, height, a4.width, a4.height);
+    const a4 = a4PageSize(options.orientation ?? "landscape"), fit = fitPdfImage(width, height, a4.width, a4.height);
     prepared.push({ ...page, drawings: await prepare(page.drawings, fit.width / width * 25.4 / 72) });
   }
   return { pages: prepared, metrics: cache.metrics };
@@ -52,7 +53,37 @@ function path(pdf: jsPDF, r: Rect, style: "F" | "S" | null) {
   else pdf.rect(r.x, r.y, r.width, r.height, style);
 }
 
-function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
+/** PDF viewers may widen thin strokes to one device pixel. Filled outlines keep
+ * the CSS width when a long parade is shrunk onto one A4 page. */
+function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>) {
+  const dx = d.x2 - d.x1, dy = d.y2 - d.y1, length = Math.hypot(dx, dy);
+  if (!length) return;
+  const ux = dx / length, uy = dy / length, half = d.width / 2;
+  const segment = (start: number, end: number) => {
+    const cap = d.square ? half : 0;
+    const x = d.x1 + ux * (start - cap), y = d.y1 + uy * (start - cap);
+    const ex = d.x1 + ux * (end + cap), ey = d.y1 + uy * (end + cap);
+    pdf.path([{ op: "m", c: [x - uy * half, y + ux * half] },
+      { op: "l", c: [ex - uy * half, ey + ux * half] },
+      { op: "l", c: [ex + uy * half, ey - ux * half] },
+      { op: "l", c: [x + uy * half, y - ux * half] }, { op: "h", c: [] }]).fill();
+  };
+  pdf.setFillColor(d.color); pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1 }));
+  if (!d.dash?.length) segment(0, length);
+  else {
+    const cycle = d.dash.reduce((n, v) => n + v, 0);
+    if (!(cycle > 0) || length / cycle > 100_000) throw new Error("注釈の破線が安全描画量を超えています。");
+    for (let start = 0; start < length; start += cycle) {
+      let offset = start;
+      for (let i = 0; i < d.dash.length && offset < length; i++) {
+        if (i % 2 === 0) segment(offset, Math.min(offset + d.dash[i], length));
+        offset += d.dash[i];
+      }
+    }
+  }
+}
+
+function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = false) {
   for (const d of nodes) {
     checkAbort(signal);
     pdf.saveGraphicsState();
@@ -61,7 +92,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
         const rad = d.rotation * Math.PI / 180;
         pdf.setCurrentTransformationMatrix(pdf.Matrix(Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad), d.x, d.y));
         if (d.clip) { path(pdf, d.clip, null); pdf.clip(); pdf.discardPath(); }
-        draw(pdf, d.children, signal);
+        draw(pdf, d.children, signal, fillStrokes);
       } else if (d.kind === "image") {
         pdf.addImage(d.dataUrl, "PNG", d.x, d.y, d.width, d.height, d.cacheKey);
       } else if (d.kind === "text") {
@@ -78,6 +109,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
         const anchor = d.align === "left" ? 0 : d.align === "right" ? advance : advance / 2;
         pdf.text(d.text, d.x - anchor, d.y + baselineOffset);
       } else if (d.kind === "line") {
+        if (fillStrokes) { filledLine(pdf, d); continue; }
         pdf.setDrawColor(d.color); pdf.setLineWidth(d.width);
         pdf.setLineCap(d.square ? "square" : "butt");
         pdf.setLineDashPattern(d.dash ?? [], 0);
@@ -89,6 +121,15 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal) {
           pdf.setFillColor(d.fill); path(pdf, d, "F");
         }
         if (d.stroke) {
+          if (fillStrokes) {
+            pdf.setGState(pdf.GState({ opacity: d.strokeOpacity ?? 1 })); pdf.setFillColor(d.stroke);
+            const half = (d.lineWidth ?? CSS_PX_MM) / 2;
+            path(pdf, { ...d, x: d.x - half, y: d.y - half, width: d.width + half * 2, height: d.height + half * 2,
+              radius: d.radius ? d.radius + half : 0 }, null);
+            if (d.width > half * 2 && d.height > half * 2) path(pdf, { ...d, x: d.x + half, y: d.y + half,
+              width: d.width - half * 2, height: d.height - half * 2, radius: Math.max(0, (d.radius ?? 0) - half) }, null);
+            pdf.fillEvenOdd(); continue;
+          }
           pdf.setGState(pdf.GState({ opacity: 1, "stroke-opacity": d.strokeOpacity ?? 1 }));
           pdf.setDrawColor(d.stroke); pdf.setLineWidth(d.lineWidth ?? CSS_PX_MM); path(pdf, d, "S");
         }
@@ -106,6 +147,7 @@ export type FontSubsetter = (source: Uint8Array, codes: readonly number[], signa
 export async function renderScenePages(pages: ScenePage[], options: { readFontBytes?: FontBytesReader; signal?: AbortSignal; title?: string;
   onProgress?: (message: string) => void; rasterize?: GlyphRasterizer;
   /** Original-font reference path for regression/size measurements. */
+  orientation?: PrintOrientation; fillStrokes?: boolean; clipPage?: boolean;
   fontMode?: "subset" | "original"; subsetFont?: FontSubsetter } = {}) {
   checkAbort(options.signal);
   if (!pages.length) throw new Error("PDFのページがありません。");
@@ -132,7 +174,7 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
     attempts.push(mode);
     checkAbort(options.signal);
     // A failed addFont/draw/output attempt is NEVER reused.
-    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
+    const pdf = new jsPDF({ orientation: options.orientation ?? "landscape", unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true, floatPrecision: 5 });
     const fontBytes = new Map<FontWeight, Uint8Array>();
     for (const weight of weights) {
       checkAbort(options.signal);
@@ -155,8 +197,8 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
     for (const [i, page] of pages.entries()) {
       options.onProgress?.(`${i + 1} / ${pages.length}ページを作成中`);
       checkAbort(options.signal);
-      if (i) pdf.addPage("a4", "landscape");
-      const a4 = a4PageSize("landscape");
+      if (i) pdf.addPage("a4", options.orientation ?? "landscape");
+      const a4 = a4PageSize(options.orientation ?? "landscape");
       // Legacy image export rounds DOM scroll size upwards to CSS pixels before fitting.
       const width = Math.ceil(page.width / CSS_PX_MM - 1e-7) * CSS_PX_MM;
       const height = Math.ceil(page.height / CSS_PX_MM - 1e-7) * CSS_PX_MM;
@@ -165,7 +207,8 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
       pdf.advancedAPI(() => {
         pdf.saveGraphicsState();
         pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale, fit.x * 25.4 / 72, fit.y * 25.4 / 72));
-        draw(pdf, page.drawings, options.signal);
+        if (options.clipPage) { pdf.rect(0, 0, width, height, null); pdf.clip(); pdf.discardPath(); }
+        draw(pdf, page.drawings, options.signal, options.fillStrokes);
         pdf.restoreGraphicsState();
       });
       // Permit browser cancellation between pages and before serialization.

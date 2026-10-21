@@ -1,6 +1,7 @@
 import type { Project } from "../../types";
 import type { ShareExportOptions } from "../../components/ShareExportModal";
-import { defaultPrintOptions, getAssignmentPrintEntries, getPrintMetrics, isPrintMemberVisible, paginateFrames } from "../printLayout";
+import { defaultPrintOptions, getAssignmentPrintEntries, getPrintMetrics, getPrintOrientation, isPrintMemberVisible, paginateFrames } from "../printLayout";
+import { validateParadeA4Export } from "../paradeA4Limits";
 import { sortFrames } from "../interpolation";
 import { buildScenePage, CSS_PX_MM, UnsupportedVectorLayout, visibleTextLines, type ScenePage } from "./model";
 import { measurePrintPageExtent, measurePropText } from "./browserTextLayout";
@@ -32,6 +33,7 @@ export async function withVectorFallback<T>(vector: () => Promise<T>, fallback: 
  * Live UI zoom would mix visual DOMRects with model/layout millimetres. */
 export function buildA4Document(project: Project, frameIds: string[], element: HTMLElement, supplied: ShareExportOptions): ScenePage[] {
   const options = { ...defaultPrintOptions, ...supplied };
+  validateParadeA4Export(project, frameIds, options);
   const frames = sortFrames(project.frames).filter(f => frameIds.includes(f.id));
   if (frames.length !== frameIds.length || !frames.length) throw new UnsupportedVectorLayout("対象シーンが一致しません。");
   const metrics = getPrintMetrics(project, frames, options);
@@ -51,8 +53,9 @@ export function buildA4Document(project: Project, frameIds: string[], element: H
       const members = project.members.filter(m => frame.positions[m.id] && isPrintMemberVisible(frame, m));
       const icons = [...block.querySelectorAll<HTMLElement>(".print-stage .print-member")];
       if (stage?.kind !== "group" || members.length !== icons.length) throw new UnsupportedVectorLayout("メンバー文字の計測が一致しません。");
+      const memberNodes = new Map(stage.children.filter(d => d.kind === "group").map(d => [d.id, d]));
       members.forEach((member, k) => {
-        const node = stage.children.find(d => d.kind === "group" && d.id === member.id);
+        const node = memberNodes.get(member.id);
         if (node?.kind !== "group") throw new UnsupportedVectorLayout("メンバー文字が見つかりません。");
         const domLines = [...icons[k].querySelectorAll<HTMLElement>(".print-member__label-line")];
         visibleTextLines(node.children).forEach((line, index) => {
@@ -87,11 +90,12 @@ export async function createA4VectorPdf(request: {
   project: Project; frameIds: string[]; element: HTMLElement; options: ShareExportOptions; title: string;
   signal?: AbortSignal; onProgress?: (message: string) => void; fallback: () => Promise<Blob>;
 }) {
+  // Unsafe input must not enter the more expensive whole-document image fallback.
+  checkAbort(request.signal);
+  validateParadeA4Export(request.project, request.frameIds, request.options);
   return withVectorFallback(async () => {
-    // Reject before loading fonts; unsupported documents keep the untouched legacy font.
-    if (request.project.mode === "parade") throw new UnsupportedVectorLayout("パレードは段階③まで画像PDFを使用します。");
     request.onProgress?.("文字とレイアウトを準備中");
-    await ensureBrowserFonts(["bold"], request.signal);
+    await ensureBrowserFonts(request.project.mode === "parade" && request.options.includeMeterRulers ? ["normal", "bold"] : ["bold"], request.signal);
     // Match the legacy image writer's layout context. The live PrintPreview can
     // inherit #root's desktop zoom:0.8: DOMRects then contain zoomed coordinates,
     // while model mm, computed font sizes and scroll extents remain unzoomed.
@@ -101,7 +105,9 @@ export async function createA4VectorPdf(request: {
       clone.style.fontFamily = '"BIZUDPGothic"';
       checkAbort(request.signal);
       const pages = buildA4Document(request.project, request.frameIds, clone, request.options);
-      const result = await renderScenePages(pages, request);
+      const parade = request.project.mode === "parade";
+      const result = await renderScenePages(pages, { ...request, orientation: getPrintOrientation(request.project),
+        fillStrokes: parade, clipPage: parade });
       return result.blob;
     });
   }, request.fallback, request.signal);
