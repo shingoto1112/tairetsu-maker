@@ -25,7 +25,11 @@ export function tidyContentLine(line: string): string | null {
   if (/[<(]/.test(trimmed)) return line; // text strings: never rewrite bytes inside them
   const op = trimmed.slice(trimmed.lastIndexOf(" ") + 1);
   if (op === "TL") return null;
-  if (op === "cm") return line.replace(NUMBER, m => fixed(m, 5));
+  if (op === "cm") {
+    const tidied = line.replace(NUMBER, m => fixed(m, 5));
+    // An identity matrix changes nothing (untranslated groups, shared-drawing calls).
+    return /^\s*1 0 0 1 0 0 cm\s*$/.test(tidied) ? null : tidied;
+  }
   if (op === "Tm") {
     let index = 0;
     return line.replace(/-?\d+(?:\.\d*)?/g, m => fixed(m, index++ < 4 ? 5 : 2));

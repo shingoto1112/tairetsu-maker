@@ -21,7 +21,10 @@ it("preserves fractional full-length grid origin, zero crossing, ruler order/cla
   const page = buildScenePage(p, f.id, {}, () => []), stage = page.drawings.find(d => d.kind === "group" && d.id === "stage");
   if (stage?.kind !== "group") throw new Error("stage missing");
   expect(stage.clip).toBeUndefined();
-  expect(stage.children.some(d => d.kind === "line" && Math.abs(d.y1 - (100.3 - range.topMeters) * metrics.mmPerMeter) < 1e-6)).toBe(true);
+  const background = stage.children.find(d => d.kind === "group" && d.id === "stage-background");
+  if (background?.kind !== "group") throw new Error("background missing");
+  expect(background.reuse).toBe(true);
+  expect(background.children.some(d => d.kind === "line" && Math.abs(d.y1 - (100.3 - range.topMeters) * metrics.mmPerMeter) < 1e-6)).toBe(true);
   const annotation = stage.children.find(d => d.kind === "group" && d.id === "annotations");
   expect(annotation).toMatchObject({ clip: { height: range.depthMeters * metrics.mmPerMeter }, children: [
     expect.objectContaining({ y1: (f.annotationLines!.diagonal.y1 - range.topMeters) * metrics.mmPerMeter }), expect.anything(),

@@ -27,7 +27,8 @@ export type Drawing = TextLine
   | ({ kind: "shape"; fill?: string; stroke?: string; lineWidth?: number; opacity?: number; strokeOpacity?: number } & Rect)
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; color: string; width: number;
       opacity?: number; dash?: number[]; square?: boolean }
-  | { kind: "group"; id: string; x: number; y: number; rotation: number; clip?: Rect; children: Drawing[] };
+  /** reuse: identical groups may be written once as a shared PDF drawing (only shapes/lines, opaque). */
+  | { kind: "group"; id: string; x: number; y: number; rotation: number; clip?: Rect; reuse?: boolean; children: Drawing[] };
 export type ScenePage = { width: number; height: number; drawings: Drawing[]; frameId: string };
 export type PropTextLayout = (text: string, width: number, height: number, correction: number, clipRadius?: number) => TextLine[];
 export class UnsupportedVectorLayout extends Error {}
@@ -89,19 +90,23 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     : view.verticalGrid(metrics.gridSizeMeters, options.includeGrid);
   const drawings: Drawing[] = [text(options.includeSceneName ? frame.label : `シーン${sortFrames(project.frames).findIndex(f => f.id === frameId) + 1}`,
     10, 9 - 1.5 - pt(12) * 1.55 / 2, pt(12), "#0f766e", 900, "left")];
-  const stage: Drawing[] = [{ kind: "shape", x: CSS_PX_MM / 2, y: CSS_PX_MM / 2, width: w - CSS_PX_MM, height: h - CSS_PX_MM,
+  const background: Drawing[] = [{ kind: "shape", x: CSS_PX_MM / 2, y: CSS_PX_MM / 2, width: w - CSS_PX_MM, height: h - CSS_PX_MM,
     fill: options.includeBackground ? "#ffffff" : undefined, stroke: "#94a3b8", lineWidth: CSS_PX_MM }];
   // CSS inset shadow occupies the inside of the stage; inset geometry preserves the outer bounds.
   for (const line of horizontalGrid) {
     const token = GRID_LINE_TOKENS[line.emphasis];
-    stage.push({ kind: "line", x1: line.positionMeters * m, x2: line.positionMeters * m,
+    background.push({ kind: "line", x1: line.positionMeters * m, x2: line.positionMeters * m,
       y1: 0, y2: h, color: token.color, width: token.width * CSS_PX_MM });
   }
   for (const line of verticalGrid) {
     const token = GRID_LINE_TOKENS[line.emphasis];
-    stage.push({ kind: "line", x1: 0, x2: metrics.commonWidthMeters * m,
+    background.push({ kind: "line", x1: 0, x2: metrics.commonWidthMeters * m,
       y1: (line.positionMeters - range.topMeters) * m, y2: (line.positionMeters - range.topMeters) * m, color: token.color, width: token.width * CSS_PX_MM });
   }
+  // Frame and grid are identical for every scene of the same size: the renderer may store them once
+  // as a shared drawing (PDF Form XObject). Everything else (centre line, annotations, props,
+  // members) differs per scene or needs transparency, so it stays outside.
+  const stage: Drawing[] = [{ kind: "group", id: "stage-background", x: 0, y: 0, rotation: 0, reuse: true, children: background }];
   // PrintPreview always draws this line, including when showCenterLine is false.
   stage.push({ kind: "line", x1: size.widthMeters * m / 2, x2: size.widthMeters * m / 2,
     y1: 0, y2: h, color: "#0d8b78", opacity: .45, width: 1.5 * CSS_PX_MM, square: true });

@@ -61,7 +61,9 @@ it.each(["audience", "performer"] as const)("reuses PrintPreview coordinates, gr
     expect(line.x1).toBeCloseTo(view.x(-1) * m); expect(line.x2).toBeCloseTo(view.x(10.3) * m);
     expect(line.dash).toHaveLength(2);
   }
-  for (const grid of view.verticalGrid(.5, true)) expect(stage.children.some(d => d.kind === "line" && Math.abs(d.y1 - grid.positionMeters * m) < 1e-7)).toBe(true);
+  const background = find(stage.children, "stage-background");
+  expect(background.reuse).toBe(true);
+  for (const grid of view.verticalGrid(.5, true)) expect(background.children.some(d => d.kind === "line" && Math.abs(d.y1 - grid.positionMeters * m) < 1e-7)).toBe(true);
   expect(JSON.stringify(p)).toBe(before);
 });
 

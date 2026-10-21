@@ -72,7 +72,7 @@ function path(pdf: jsPDF, r: Rect, style: "F" | "S" | null) {
 
 /** PDF viewers may widen thin strokes to one device pixel. Filled outlines keep
  * the CSS width when a long parade is shrunk onto one A4 page. */
-function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>) {
+function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>, inForm = false) {
   const dx = d.x2 - d.x1, dy = d.y2 - d.y1, length = Math.hypot(dx, dy);
   if (!length) return;
   const ux = dx / length, uy = dy / length, half = d.width / 2;
@@ -85,7 +85,7 @@ function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>) {
       { op: "l", c: [ex + uy * half, ey - ux * half] },
       { op: "l", c: [x + uy * half, y - ux * half] }, { op: "h", c: [] }]).fill();
   };
-  pdf.setFillColor(d.color); pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1 }));
+  pdf.setFillColor(d.color); if (!inForm) pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1 }));
   if (!d.dash?.length) segment(0, length);
   else {
     const cycle = d.dash.reduce((n, v) => n + v, 0);
@@ -100,16 +100,60 @@ function filledLine(pdf: jsPDF, d: Extract<Drawing, { kind: "line" }>) {
   }
 }
 
-function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = false) {
+/** Groups drawn more than once with identical content are written once as a PDF Form XObject.
+ * Only opaque shapes/lines qualify: the form then needs no resources of its own (jsPDF 4.2.1 does not
+ * write /Resources for forms) and inherits colour state from the caller exactly like inline drawing. */
+export type SharedDrawings = { counts: Map<string, number>; defined: Set<string> };
+type Group = Extract<Drawing, { kind: "group" }>;
+const shareable = (d: Group) => !!d.reuse && d.x === 0 && d.y === 0 && d.rotation === 0 && !d.clip && d.children.every(c =>
+  (c.kind === "line" && (c.opacity ?? 1) === 1) || (c.kind === "shape" && (c.opacity ?? 1) === 1 && (c.strokeOpacity ?? 1) === 1));
+const sharedKey = (d: Group, fillStrokes: boolean) => JSON.stringify([fillStrokes, d.children]);
+export function countSharedDrawings(pages: ScenePage[], fillStrokes: boolean): SharedDrawings {
+  const counts = new Map<string, number>();
+  const scan = (nodes: Drawing[]) => { for (const n of nodes) if (n.kind === "group") {
+    if (shareable(n)) { const key = sharedKey(n, fillStrokes); counts.set(key, (counts.get(key) ?? 0) + 1); }
+    scan(n.children);
+  } };
+  for (const page of pages) scan(page.drawings);
+  return { counts, defined: new Set() };
+}
+/** Form BBox clips: include half line widths, square caps and a 1mm safety margin. */
+function drawingBounds(nodes: Drawing[]) {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  const add = (x: number, y: number, pad: number) => {
+    left = Math.min(left, x - pad); top = Math.min(top, y - pad); right = Math.max(right, x + pad); bottom = Math.max(bottom, y + pad);
+  };
+  for (const n of nodes) {
+    if (n.kind === "line") { const pad = n.width * (n.square ? 1 : .5); add(n.x1, n.y1, pad); add(n.x2, n.y2, pad); }
+    else if (n.kind === "shape") { const pad = (n.lineWidth ?? CSS_PX_MM) / 2; add(n.x, n.y, pad); add(n.x + n.width, n.y + n.height, pad); }
+  }
+  return { x: left - 1, y: top - 1, width: right - left + 2, height: bottom - top + 2 };
+}
+
+function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = false, shared?: SharedDrawings, inForm = false) {
   for (const d of nodes) {
     checkAbort(signal);
     pdf.saveGraphicsState();
     try {
       if (d.kind === "group") {
+        const key = shared && !inForm && shareable(d) ? sharedKey(d, fillStrokes) : undefined;
+        if (key && (shared!.counts.get(key) ?? 0) >= 2) {
+          if (!shared!.defined.has(key)) {
+            const b = drawingBounds(d.children);
+            pdf.beginFormObject(b.x, b.y, b.width, b.height, pdf.Matrix(1, 0, 0, 1, 0, 0));
+            draw(pdf, d.children, signal, fillStrokes, undefined, true);
+            // While a form is open, jsPDF's page array IS the form's content: tidy it the same way.
+            tidyPdfContent((pdf.internal as unknown as { pages: unknown[] }).pages);
+            pdf.endFormObject(key);
+            shared!.defined.add(key);
+          }
+          pdf.doFormObject(key, pdf.Matrix(1, 0, 0, 1, 0, 0));
+          continue;
+        }
         const rad = d.rotation * Math.PI / 180;
         pdf.setCurrentTransformationMatrix(pdf.Matrix(Math.cos(rad), Math.sin(rad), -Math.sin(rad), Math.cos(rad), d.x, d.y));
         if (d.clip) { path(pdf, d.clip, null); pdf.clip(); pdf.discardPath(); }
-        draw(pdf, d.children, signal, fillStrokes);
+        draw(pdf, d.children, signal, fillStrokes, shared, inForm);
       } else if (d.kind === "image") {
         pdf.addImage(d.dataUrl, "PNG", d.x, d.y, d.width, d.height, d.cacheKey);
       } else if (d.kind === "text") {
@@ -126,20 +170,20 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
         const anchor = d.align === "left" ? 0 : d.align === "right" ? advance : advance / 2;
         pdf.text(d.text, d.x - anchor, d.y + baselineOffset);
       } else if (d.kind === "line") {
-        if (fillStrokes) { filledLine(pdf, d); continue; }
+        if (fillStrokes) { filledLine(pdf, d, inForm); continue; }
         pdf.setDrawColor(d.color); pdf.setLineWidth(d.width);
         pdf.setLineCap(d.square ? "square" : "butt");
         pdf.setLineDashPattern(d.dash ?? [], 0);
-        pdf.setGState(pdf.GState({ "stroke-opacity": d.opacity ?? 1, opacity: 1 }));
+        if (!inForm) pdf.setGState(pdf.GState({ "stroke-opacity": d.opacity ?? 1, opacity: 1 }));
         pdf.line(d.x1, d.y1, d.x2, d.y2);
       } else {
         if (d.fill) {
-          pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1, "stroke-opacity": 1 }));
+          if (!inForm) pdf.setGState(pdf.GState({ opacity: d.opacity ?? 1, "stroke-opacity": 1 }));
           pdf.setFillColor(d.fill); path(pdf, d, "F");
         }
         if (d.stroke) {
           if (fillStrokes) {
-            pdf.setGState(pdf.GState({ opacity: d.strokeOpacity ?? 1 })); pdf.setFillColor(d.stroke);
+            if (!inForm) pdf.setGState(pdf.GState({ opacity: d.strokeOpacity ?? 1 })); pdf.setFillColor(d.stroke);
             const half = (d.lineWidth ?? CSS_PX_MM) / 2;
             path(pdf, { ...d, x: d.x - half, y: d.y - half, width: d.width + half * 2, height: d.height + half * 2,
               radius: d.radius ? d.radius + half : 0 }, null);
@@ -147,7 +191,7 @@ function draw(pdf: jsPDF, nodes: Drawing[], signal?: AbortSignal, fillStrokes = 
               width: d.width - half * 2, height: d.height - half * 2, radius: Math.max(0, (d.radius ?? 0) - half) }, null);
             pdf.fillEvenOdd(); continue;
           }
-          pdf.setGState(pdf.GState({ opacity: 1, "stroke-opacity": d.strokeOpacity ?? 1 }));
+          if (!inForm) pdf.setGState(pdf.GState({ opacity: 1, "stroke-opacity": d.strokeOpacity ?? 1 }));
           pdf.setDrawColor(d.stroke); pdf.setLineWidth(d.lineWidth ?? CSS_PX_MM); path(pdf, d, "S");
         }
       }
@@ -211,6 +255,8 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
     const missing = unsupportedCharacters(pdf, lines);
     if (missing.length) throw new UnsupportedPdfCharacters(missing);
     pdf.setProperties({ title: options.title ?? "隊列メーカー 隊列表", creator: "隊列メーカー" });
+    // Per attempt: a rebuilt document (original-font retry) must define its own shared drawings.
+    const shared = countSharedDrawings(pages, !!options.fillStrokes);
     for (const [i, page] of pages.entries()) {
       options.onProgress?.(`${i + 1} / ${pages.length}ページを作成中`);
       checkAbort(options.signal);
@@ -225,7 +271,7 @@ export async function renderScenePages(pages: ScenePage[], options: { readFontBy
         pdf.saveGraphicsState();
         pdf.setCurrentTransformationMatrix(pdf.Matrix(scale, 0, 0, scale, fit.x * 25.4 / 72, fit.y * 25.4 / 72));
         if (options.clipPage) { pdf.rect(0, 0, width, height, null); pdf.clip(); pdf.discardPath(); }
-        draw(pdf, page.drawings, options.signal, options.fillStrokes);
+        draw(pdf, page.drawings, options.signal, options.fillStrokes, shared);
         pdf.restoreGraphicsState();
       });
       // Permit browser cancellation between pages and before serialization.
