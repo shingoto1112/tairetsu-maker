@@ -1,8 +1,9 @@
-import type { Project } from "../types";
+import type { Project, ViewerPerspective } from "../types";
 import { placeNewMembers } from "../utils/memberPlacement";
 
 /** One recipe, using live assignments. Preserve assignment maps and all assignee fields. */
-export function setMembersFrameVisibility(project: Project, frameId: string, visible: boolean) {
+export function setMembersFrameVisibility(project: Project, frameId: string, visible: boolean,
+  perspective: ViewerPerspective | undefined = project.viewerPerspective) {
   const frame = project.frames.find(item => item.id === frameId);
   const assigned = new Set(Object.values(frame?.objectAssignments ?? {}).flat());
   const assignees = project.members.filter(member => assigned.has(member.id));
@@ -12,7 +13,7 @@ export function setMembersFrameVisibility(project: Project, frameId: string, vis
     : visible ? "すべてのメンバーを表示しました。" : "すべてのメンバーをこのシーンで非表示にしました。";
   if (!frame) return { project, notice };
   const missing = visible ? targets.filter(member => !frame.positions[member.id]) : [];
-  const placement = placeNewMembers(project, frame, missing.length);
+  const placement = placeNewMembers(project, frame, missing.length, undefined, perspective);
   let changed = false;
   const positions = { ...frame.positions };
   missing.forEach((member, index) => { positions[member.id] = placement.positions[index]; changed = true; });

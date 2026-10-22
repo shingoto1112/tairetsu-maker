@@ -44,9 +44,11 @@ it.each([ ["stage", "stage"], ["stage", "parade"], ["parade", "stage"], ["parade
     expect(Object.values(p.frames[0].memberVisibility!)).toEqual([false, false, false]);
     expect(p.members.every(m => m.visible)).toBe(true);
     // B1: preserve copy order while reserving separate circles instead of a shared center.
-    expect(p.members.map(m => p.frames[0].positions[m.id])).toEqual([
-      { x: 3.5, y: 6 }, { x: 4, y: 6 }, { x: 4.5, y: 6 },
-    ]);
+    // New stage projects open in the mirrored performer view, so roster order reads left to right on
+    // screen with descending internal x; parades are never mirrored.
+    const xs = [3.5, 4, 4.5];
+    expect(p.members.map(m => p.frames[0].positions[m.id])).toEqual(
+      (targetMode === "stage" ? xs.reverse() : xs).map(x => ({ x, y: 6 })));
     const positions = Object.values(p.frames[0].positions);
     positions.forEach((a, i) => {
       expect(a.x).toBeGreaterThanOrEqual(0); expect(a.x).toBeLessThanOrEqual(8);

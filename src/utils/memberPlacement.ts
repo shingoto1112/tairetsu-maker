@@ -1,4 +1,4 @@
-import type { FormationFrame, Position, Project } from "../types";
+import type { FormationFrame, Position, Project, ViewerPerspective } from "../types";
 import { objectSceneBounds } from "../project/objectAppearance";
 import { constrainMemberPosition } from "./coordinates";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./horizontalGrid";
@@ -9,7 +9,8 @@ export const MEMBER_PLACEMENT_OVERLAP_NOTICE = "空きがないため一部を�
 
 /** Center bounds and circle sizes match the canvases. Hidden members reserve space too.
  * Only call at placement entry points; never normalize existing scene coordinates. */
-export function placeNewMembers(project: Project, frame: FormationFrame, count: number, origin?: Position): {
+export function placeNewMembers(project: Project, frame: FormationFrame, count: number, origin?: Position,
+  perspective: ViewerPerspective | undefined = project.viewerPerspective): {
   positions: Position[]; overlapCount: number;
 } {
   const bounds = objectSceneBounds(project, frame);
@@ -56,9 +57,11 @@ export function placeNewMembers(project: Project, frame: FormationFrame, count: 
   }
   const left = snapHorizontalPositionInBounds(0, grid, gridOrigin, 0, stage.widthMeters);
   const right = snapHorizontalPositionInBounds(stage.widthMeters, grid, gridOrigin, 0, stage.widthMeters);
-  // One row's evenly spaced spots through the start point, left to right. The edges are a last
-  // resort after them, so a block never gets an uneven gap at its end.
-  const rowXs = [...axis(base.x, xStep, stage.widthMeters, base.x, base.x)].sort((a, b) => a - b);
+  // One row's evenly spaced spots through the start point, left to right as the user sees the stage
+  // (the performer view mirrors it; parades are always drawn from the audience). The edges are a
+  // last resort after them, so a block never gets an uneven gap at its end.
+  const mirrored = !parade && perspective === "performer";
+  const rowXs = [...axis(base.x, xStep, stage.widthMeters, base.x, base.x)].sort((a, b) => mirrored ? b - a : a - b);
   const edgeXs = [left, right].filter((x, i, all) => all.indexOf(x) === i && !rowXs.some(v => Math.abs(v - x) <= EPS));
   const startIndex = Math.max(0, rowXs.findIndex(x => Math.abs(x - base.x) <= EPS));
   const positions: Position[] = [];

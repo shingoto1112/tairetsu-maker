@@ -1,3 +1,6 @@
+import { getEffectiveStageSize } from "./utils/effectiveStageSize";
+import { getKeyboardNudgeDelta } from "./utils/keyboardNudge";
+import { moveMembersRelative } from "./utils/memberRelativeMove";
 import { nextSceneLabel } from "./project/nextSceneLabel";
 import { alignedObjectPosition, constrainObjectMovePatch } from "./utils/objectMovement";
 import { rotatedObjectBounds } from "./utils/formationExportLayout";
@@ -442,9 +445,6 @@ const markDraft: StageObjectDraft = {
   heightMeters: 0.4,
 };
 
-const KEYBOARD_NUDGE_SMALL = 0.01;
-const KEYBOARD_NUDGE_DEFAULT = 0.25;
-const KEYBOARD_NUDGE_LARGE_FALLBACK = 0.5;
 const PARADE_BASE_PX_PER_METER = 32;
 const PARADE_RULER_WIDTH_PX = 58;
 const PARADE_HORIZONTAL_RULER_HEIGHT_PX = 28;
@@ -467,21 +467,6 @@ const escapeSelectorValue = (value: string): string => {
     return CSS.escape(value);
   }
   return value.replace(/["\\]/g, "\\$&");
-};
-
-const getKeyboardNudgeMeters = (
-  event: KeyboardEvent,
-  gridSizeMeters?: number,
-): number => {
-  if (event.ctrlKey || event.metaKey) {
-    return KEYBOARD_NUDGE_SMALL;
-  }
-  if (event.shiftKey) {
-    return typeof gridSizeMeters === "number" && gridSizeMeters > 0
-      ? gridSizeMeters
-      : KEYBOARD_NUDGE_LARGE_FALLBACK;
-  }
-  return KEYBOARD_NUDGE_DEFAULT;
 };
 
 type AppConfirmOptions = {
@@ -548,34 +533,6 @@ const createUniqueProjectTitle = (
     index += 1;
   }
   return `${firstCopy} ${index}`;
-};
-
-const getKeyboardNudgeDelta = (
-  event: KeyboardEvent,
-  viewerPerspective: ViewerPerspective,
-  gridSizeMeters?: number,
-): Position | null => {
-  const step = getKeyboardNudgeMeters(event, gridSizeMeters);
-  const displayDelta =
-    event.key === "ArrowUp"
-      ? { x: 0, y: -step }
-      : event.key === "ArrowDown"
-        ? { x: 0, y: step }
-        : event.key === "ArrowLeft"
-          ? { x: -step, y: 0 }
-          : event.key === "ArrowRight"
-            ? { x: step, y: 0 }
-            : null;
-  if (!displayDelta) {
-    return null;
-  }
-
-  // 踊る人側視点では表示が反転しているため、画面上の矢印方向を優先して内部座標を反転する。
-  const direction = viewerPerspective === "performer" ? -1 : 1;
-  return {
-    x: roundMeters(displayDelta.x * direction),
-    y: roundMeters(displayDelta.y * direction),
-  };
 };
 
 const getParadeVisibleCenterPosition = (
@@ -723,48 +680,6 @@ const getFrameLabel = (frame: FormationFrame | undefined): string =>
 
 const getFrameTime = (frame: FormationFrame | undefined): number =>
   frame?.timeSec ?? 0;
-
-const getEffectiveStageSize = (
-  project: Project,
-  frame: FormationFrame | undefined,
-): Pick<Project["stage"], "widthMeters" | "depthMeters"> => {
-  if (project.mode === "parade") {
-    const totalDistance = positiveNumber(
-      project.paradeSettings?.totalDistance,
-      project.stage.depthMeters,
-      1,
-    );
-    return {
-      widthMeters: positiveNumber(
-        project.paradeSettings?.width,
-        project.stage.widthMeters,
-        1,
-      ),
-      depthMeters: getSafeParadeCanvasDistance(
-        totalDistance,
-        project.paradeSettings?.backwardDistanceMeters,
-      ),
-    };
-  }
-  if (project.useGlobalStageSize ?? project.useGlobalStageWidth ?? true) {
-    return {
-      widthMeters: project.stage.widthMeters,
-      depthMeters: project.stage.depthMeters,
-    };
-  }
-  return {
-    widthMeters: positiveNumber(
-      frame?.stageWidthMeters,
-      project.stage.widthMeters,
-      1,
-    ),
-    depthMeters: positiveNumber(
-      frame?.stageDepthMeters,
-      project.stage.depthMeters,
-      1,
-    ),
-  };
-};
 
 type CanvasScrollBounds = {
   heightMeters: number;
@@ -2630,7 +2545,7 @@ function App() {
                 horizontalGridOriginMeters(frameStage.widthMeters, previous.mode === "parade"
                   ? previous.paradeSettings?.horizontalMeasureMode : frameStage.horizontalGuideMode), 0, frameStage.widthMeters);
               if (!requestedPosition) {
-                const placement = placeNewMembers(previous, frame, 1, paradeDefaultPosition ?? undefined);
+                const placement = placeNewMembers(previous, frame, 1, paradeDefaultPosition ?? undefined, viewerPerspective);
                 Object.assign(basePosition, placement.positions[0]);
                 placementOverlaps ||= placement.overlapCount > 0;
               }
@@ -2852,7 +2767,7 @@ function App() {
 
     let notice = "";
     updateProject(previous => {
-      const result = applyMembersFrameVisibility(previous, activeFrameId, visible);
+      const result = applyMembersFrameVisibility(previous, activeFrameId, visible, viewerPerspective);
       notice = result.notice;
       return result.project;
     });
@@ -3585,34 +3500,59 @@ function App() {
     });
   };
 
-  const getKeyboardMoveBounds = (
+  const nudgeMembers = (
     memberIds: string[],
+    requested: Position,
+    label: string,
+    keyboard = false,
+  ) => {
+    if (!selectedFrame) return;
+    const activeFrameId = selectedFrame.id;
+    let blocked = false;
+    let scrollBounds: CanvasScrollBounds | null = null;
+    updateProject(previous => {
+      const frame = previous.frames.find(item => item.id === activeFrameId);
+      if (!frame) return previous;
+      const stage = { ...previous.stage, ...getEffectiveStageSize(previous, frame) };
+      const ids = memberIds.filter(id => previous.members.some(member => member.id === id));
+      // Preserve each entry's existing missing-position fallback, resolved from the live recipe.
+      const source = { ...frame.positions };
+      const inherited = !keyboard && ids.some(id => !source[id])
+        ? getSnapshotForFrame(previous, activeFrameId).positions : null;
+      for (const id of ids) {
+        source[id] ??= inherited?.[id] ?? { x: stage.widthMeters / 2, y: stage.depthMeters / 2 };
+      }
+      const result = moveMembersRelative(source, ids, requested, stage);
+      blocked = result.blocked.x || result.blocked.y;
+      if (result.delta.x === 0 && result.delta.y === 0) return previous;
+      if (keyboard) {
+        const diameter = previous.stage.memberDiameterMeters ?? 0.5;
+        scrollBounds = unionCanvasBounds(ids.flatMap(id => {
+          const position = result.positions[id];
+          return position ? [{
+            x: position.x - diameter / 2,
+            y: position.y - diameter / 2,
+            widthMeters: diameter,
+            heightMeters: diameter,
+          }] : [];
+        }));
+      }
+      return {
+        ...previous,
+        frames: previous.frames.map(item => item.id === activeFrameId
+          ? { ...item, positions: result.positions } : item),
+      };
+    }, label);
+    // useNotice replaces its single notice; repeated blocked moves cannot stack notifications.
+    if (blocked) setNotice("隊形がステージより大きいため、この向きには動かせません。");
+    scrollKeyboardTargetIntoView(scrollBounds);
+  };
+
+  const getKeyboardMoveBounds = (
     objectId: string | null,
     delta: Position,
   ): CanvasScrollBounds | null => {
     const boundsList: CanvasScrollBounds[] = [];
-    const memberDiameter = project.stage.memberDiameterMeters ?? 0.5;
-
-    memberIds.forEach((memberId) => {
-      const current = snapshot.positions[memberId];
-      if (!current) {
-        return;
-      }
-      const position = constrainMemberPosition(
-        {
-          x: roundMeters(current.x + delta.x),
-          y: roundMeters(current.y + delta.y),
-        },
-        effectiveStage,
-      );
-      boundsList.push({
-        heightMeters: memberDiameter,
-        widthMeters: memberDiameter,
-        x: position.x - memberDiameter / 2,
-        y: position.y - memberDiameter / 2,
-      });
-    });
-
     if (objectId) {
       const object = project.stageObjects.find((item) => item.id === objectId);
       const current =
@@ -3675,8 +3615,13 @@ function App() {
       return true;
     }
 
+    if (memberIds.length > 0) {
+      nudgeMembers(memberIds, delta, "キーボード移動", true);
+      return true;
+    }
+
     const activeFrameId = selectedFrame.id;
-    const scrollBounds = getKeyboardMoveBounds(memberIds, objectId, delta);
+    const scrollBounds = getKeyboardMoveBounds(objectId, delta);
     const applyKeyboardMove = () => {
       updateProject((previous) => {
         const targetFrame = previous.frames.find(
@@ -3696,28 +3641,6 @@ function App() {
             if (frame.id !== activeFrameId) {
               return frame;
             }
-
-            const nextPositions = { ...frame.positions };
-            memberIds.forEach((memberId) => {
-              if (!previous.members.some((member) => member.id === memberId)) {
-                return;
-              }
-              const current = nextPositions[memberId] ?? {
-                x: frameStage.widthMeters / 2,
-                y: frameStage.depthMeters / 2,
-              };
-              const constrained = constrainMemberPosition(
-                {
-                  x: roundMeters(current.x + delta.x),
-                  y: roundMeters(current.y + delta.y),
-                },
-                frameStage,
-              );
-              nextPositions[memberId] = {
-                x: roundMeters(constrained.x),
-                y: roundMeters(constrained.y),
-              };
-            });
 
             let nextObjectStates = frame.objectStates;
             if (objectId) {
@@ -3747,7 +3670,6 @@ function App() {
 
             return {
               ...frame,
-              positions: nextPositions,
               objectStates: nextObjectStates,
             };
           }),
@@ -6828,25 +6750,8 @@ function App() {
   };
 
   const nudgeSelection = (dx: number, dy: number) => {
-    if (selectedMemberIds.length === 0) {
-      return;
-    }
-    updateSelectedFramePositions((positions) => {
-      const next = { ...positions };
-      selectedMemberIds.forEach((id) => {
-        const current = snapshot.positions[id];
-        if (current) {
-          next[id] = constrainMemberPosition(
-            { x: current.x + dx, y: current.y + dy },
-            effectiveStage,
-          );
-        }
-      });
-      return next;
-    }, {
-      label: "複数メンバー移動",
-      memberIds: selectedMemberIds,
-    });
+    if (selectedMemberIds.length === 0) return;
+    nudgeMembers(selectedMemberIds, { x: dx, y: dy }, "複数メンバー移動");
   };
 
   const mirrorSelection = () => {
