@@ -2,6 +2,9 @@ import { elementToCanvas } from "./exportRaster";
 import { a4PageSize, fitPdfImage } from "./pdfPageLayout";
 import { withFileExtension } from "./exportFileName";
 import type { PdfOrientation } from "./pdfExport";
+import type { Project } from "../types";
+import type { ShareExportOptions } from "../components/ShareExportModal";
+import { validateParadeA4Export } from "./paradeA4Limits";
 
 export const numberedImageName = (base: string, page: number, total: number) =>
   withFileExtension(`${base}_${String(page).padStart(Math.max(3, String(total).length), "0")}`, "png");
@@ -11,7 +14,9 @@ export const canvasToPngBlob = (canvas: HTMLCanvasElement) => new Promise<Blob>(
 
 /** Rasterize and release each print-page before starting the next; never capture the document root. */
 export const generateA4Images = async (element: HTMLElement, orientation: PdfOrientation, base: string,
+  request: { project: Project; frameIds: string[]; options: ShareExportOptions },
   onProgress?: (message: string) => void): Promise<{ files: File[]; preview: Blob; pageCount: number }> => {
+  validateParadeA4Export(request.project, request.frameIds, request.options);
   const pages = [...element.querySelectorAll<HTMLElement>(".print-page")];
   if (!pages.length) throw new Error("画像用ページが見つかりません。");
   const size = a4PageSize(orientation), pixelsPerPoint = 192 / 72;

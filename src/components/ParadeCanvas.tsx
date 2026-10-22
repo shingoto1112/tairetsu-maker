@@ -1026,6 +1026,18 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       scheduleClearObjectDragPreview(drag.id);
     };
 
+    const cancelDrag = (drag: DragState) => {
+      drag.operation.end();
+      dragAutoScrollerRef.current?.stop();
+      dragAutoScrollerRef.current = null;
+      cancelPendingMemberDragClear();
+      cancelPendingObjectDragClear();
+      if (drag.type === "member") clearMemberDragTransforms(drag.memberIds);
+      else clearObjectDragPreview(drag.id);
+      ephemeral?.cancel();
+      setDragState(null);
+    };
+
     useLayoutEffect(() => () => {
       cancelTouchContextMenu();
       cancelPendingMemberDragClear();
@@ -1434,6 +1446,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       window.addEventListener("pointercancel", handlePointerUp);
       return () => {
         isCancelled = true;
+        if (dragState.operation.active) cancelDrag(dragState);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         window.removeEventListener("pointercancel", handlePointerUp);
@@ -1663,9 +1676,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       preview.style.willChange = "transform";
       committedPinchScrollRef.current = null;
       if (dragState) {
-        dragState.operation.end();
-        setDragState(null);
-        ephemeral?.cancel();
+        cancelDrag(dragState);
       }
       setIsPinching(true);
     };
@@ -1687,7 +1698,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (!pinchZoomRef.current) {
           beginPinchIfReady();
         }
-        if (isPinchLockedRef.current) setDragState(null);
+        if (isPinchLockedRef.current && dragState) cancelDrag(dragState);
         event.preventDefault();
         event.stopPropagation();
       } else if (!annotation.active && !(event.target as Element).closest("button, input, select, textarea, [contenteditable='true'], [role='button']") && scrollRef.current) {

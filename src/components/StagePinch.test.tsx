@@ -53,6 +53,21 @@ describe("stage view-only pinch", () => {
     const preview = view.container.querySelector<HTMLElement>(".stage-pinch-preview")!;
     return { p, view, viewport, layout, preview };
   };
+  it("closes the member batch and removes its deferred CSS preview when a second touch starts pinch", async () => {
+    const { p, view, viewport } = setup();
+    view.rerender(<StageCanvas {...p} deferMemberDragCommit />);
+    const target = view.container.querySelector<HTMLElement>(".member-token")!;
+    target.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(target, { ...touch(1, 300), button: 0 });
+    await act(async () => { fireEvent.pointerMove(target, touch(1, 360)); });
+    expect(p.onBeginProjectEdit).toHaveBeenCalledTimes(1);
+    expect(target.style.getPropertyValue("--member-drag-x")).not.toBe("");
+    fireEvent.pointerDown(viewport, touch(2, 500));
+    expect(p.onEndProjectEdit).toHaveBeenCalledTimes(1);
+    expect(target.style.getPropertyValue("--member-drag-x")).toBe("");
+    fireEvent.pointerUp(target, touch(1, 360)); fireEvent.pointerUp(viewport, touch(2, 500)); flush();
+    expect(p.onMoveMember).not.toHaveBeenCalled();
+  });
   const annotationSetup = (activate = true) => {
     const p = props(); p.compact = false; p.onAnnotationLineChange = vi.fn();
     p.viewStates!.set("one", { zoom: 2, scrollLeft: 300, scrollTop: 400, viewportWidth: 700 });

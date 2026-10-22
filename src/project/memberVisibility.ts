@@ -1,5 +1,5 @@
 import type { Project, ViewerPerspective } from "../types";
-import { placeNewMembers } from "../utils/memberPlacement";
+import { MEMBER_PLACEMENT_OVERLAP_NOTICE, placeNewMembers } from "../utils/memberPlacement";
 
 /** One recipe, using live assignments. Preserve assignment maps and all assignee fields. */
 export function setMembersFrameVisibility(project: Project, frameId: string, visible: boolean,
@@ -8,12 +8,14 @@ export function setMembersFrameVisibility(project: Project, frameId: string, vis
   const assigned = new Set(Object.values(frame?.objectAssignments ?? {}).flat());
   const assignees = project.members.filter(member => assigned.has(member.id));
   const targets = project.members.filter(member => !visible || !assigned.has(member.id));
-  const notice = visible && assignees.length
+  let notice = visible && assignees.length
     ? `${targets.length ? `${targets.length}人を表示しました。` : "表示するメンバーはいません。"}道具担当の${assignees.length}人は隊列外のままです。`
     : visible ? "すべてのメンバーを表示しました。" : "すべてのメンバーをこのシーンで非表示にしました。";
   if (!frame) return { project, notice };
   const missing = visible ? targets.filter(member => !frame.positions[member.id]) : [];
-  const placement = placeNewMembers(project, frame, missing.length, undefined, perspective);
+  const placement = placeNewMembers(project, frame, missing.length, undefined, perspective,
+    new Set(missing.map(member => member.id)));
+  if (placement.overlapCount > 0) notice += MEMBER_PLACEMENT_OVERLAP_NOTICE;
   let changed = false;
   const positions = { ...frame.positions };
   missing.forEach((member, index) => { positions[member.id] = placement.positions[index]; changed = true; });

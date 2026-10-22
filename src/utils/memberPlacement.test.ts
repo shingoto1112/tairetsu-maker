@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { createSampleProject } from "../sampleProject";
 import type { Position, Project } from "../types";
 import { placeNewMembers } from "./memberPlacement";
+import { getSnapshotForFrame } from "./interpolation";
 
 const fixture = (mode: "stage" | "parade" = "stage"): Project => {
   const p = createSampleProject();
@@ -15,6 +16,21 @@ function separated(positions: Position[], diameter: number) {
   positions.forEach((a, i) => positions.slice(i + 1).forEach(b =>
     expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(diameter - 1e-8)));
 }
+it.each(["stage", "parade"] as const)("reserves inherited, hidden and fallback %s drawing positions without writing them", mode => {
+  const p = fixture(mode), first = p.frames[0];
+  p.members = [{ id: "inherited", name: "前", color: "red", visible: false }, { id: "fallback", name: "補", color: "blue" }];
+  first.timeSec = 0; first.positions = { inherited: { x: 2.5, y: 2.15 } };
+  const current = { ...first, id: "current", timeSec: 10, positions: {} };
+  p.frames = [current, first]; // Resolve by scene time, as drawing does, not storage order.
+  const before = structuredClone(p), resolved = getSnapshotForFrame(p, current.id).positions;
+  const result = placeNewMembers(p, current, 4, resolved.inherited);
+  expect(result.overlapCount).toBe(0);
+  result.positions.forEach(pos => Object.values(resolved).forEach(other =>
+    expect(Math.hypot(pos.x - other.x, pos.y - other.y)).toBeGreaterThanOrEqual(.5 - 1e-8)));
+  expect(p).toEqual(before);
+  const excluded = placeNewMembers(p, current, 1, resolved.inherited, undefined, new Set(["inherited", "fallback"]));
+  expect(excluded.positions).toEqual([resolved.inherited]);
+});
 it.each(["stage", "parade"] as const)("places %s circles deterministically in rows without mutating existing hidden members", mode => {
   const p = fixture(mode), f = p.frames[0];
   p.members = [{ id: "old", name: "旧", color: "red", visible: false }];

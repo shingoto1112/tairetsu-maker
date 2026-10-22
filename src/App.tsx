@@ -27,6 +27,7 @@ import { validateProjectStructure } from "./project/codec";
 import { copyRosterToNewProject } from "./project/rosterCopy";
 import { setMembersFrameVisibility as applyMembersFrameVisibility } from "./project/memberVisibility";
 import { MEMBER_PLACEMENT_OVERLAP_NOTICE, placeNewMembers } from "./utils/memberPlacement";
+import { validateParadeA4Export } from "./utils/paradeA4Limits";
 import { applyObjectAppearance, objectDraftForGroup, changeObjectMembership, type ObjectAppearancePatch } from "./project/objectAppearance";
 import {
   createProjectId,
@@ -5574,11 +5575,16 @@ function App() {
       });
     });
 
+  const printExportFrameIds = (scope: "all" | "current") =>
+    (scope === "current" ? project.frames.filter(f => f.id === selectedFrame?.id) : project.frames).map(f => f.id);
+
   const preparePrintExportElement = async (
     scope: "all" | "current",
     options: ShareExportOptions,
     variant: "document" | "stage-only" = "document",
   ): Promise<HTMLDivElement> => {
+    // Resolve and check the selected scenes before mounting any print DOM/SVG.
+    validateParadeA4Export(project, printExportFrameIds(scope), options);
     setPrintScope(scope);
     setPrintOptions(options);
     setPrintVariant(variant);
@@ -5605,6 +5611,7 @@ function App() {
     try {
       const { generateA4Images } = await import("./utils/a4ImageExport");
       return await generateA4Images(element, getPrintOrientation(project), base,
+        { project, frameIds: printExportFrameIds(scope), options },
         detail => setExportProgress({ title: "画像を作成中", detail }));
     } finally { cleanupPrintExportElement(); }
   };
@@ -5618,7 +5625,7 @@ function App() {
     const element = await preparePrintExportElement(scope, options, "document");
     try {
       const { generateA4Pdf } = await import("./utils/a4PdfExport");
-      const frameIds = (scope === "current" ? project.frames.filter(f => f.id === selectedFrame?.id) : project.frames).map(f => f.id);
+      const frameIds = printExportFrameIds(scope);
       return await generateA4Pdf({ element, project, frameIds, options, title, signal,
         onProgress: detail => setExportProgress({ title: "PDFを作成中", detail }) });
     } finally {

@@ -4,6 +4,7 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ParadeCanvas } from "./ParadeCanvas";
 import { createSampleProject } from "../sampleProject";
+import type { EphemeralSession } from "../collaboration/ephemeralSession";
 
 let frames: Map<number, FrameRequestCallback>, nextFrame: number;
 const flush = () => act(() => { const batch = [...frames]; frames.clear(); batch.forEach(([id, callback]) => callback(id * 16.67)); });
@@ -82,6 +83,46 @@ describe("parade pinch lifecycle", () => {
     if (activate) fireEvent.click(view.getByRole("button", { name: "線を引く" }));
     return { p, view, viewport, svg };
   };
+  it.each(["member", "object"])("closes a locked second-touch %s drag, clears deferred previews and permits the next drag", async kind => {
+    const { p, view, viewport } = setup(kind === "object");
+    const ephemeral = { begin: vi.fn(), latestMeasured: vi.fn(), cancel: vi.fn(), finish: vi.fn() };
+    view.rerender(<ParadeCanvas {...p} deferMemberDragCommit deferObjectDragCommit ephemeral={ephemeral as unknown as EphemeralSession} />);
+    fireEvent.click(view.container.querySelector(".stage-pinch-lock-button")!);
+    const target = view.container.querySelector<HTMLElement>(`.parade-${kind}`)!;
+    const css = kind === "member" ? "--member-drag-x" : "--object-drag-x";
+    const move = kind === "member" ? p.onMoveMember : p.onUpdateObjectState;
+    fireEvent.pointerDown(target, { ...touch(1, 300), button: 0 });
+    await act(async () => { fireEvent.pointerMove(target, touch(1, 360)); });
+    expect(p.onBeginProjectEdit).toHaveBeenCalledTimes(1);
+    expect(target.style.getPropertyValue(css)).not.toBe("");
+    expect(move).not.toHaveBeenCalled();
+    fireEvent.pointerDown(viewport, touch(2, 500));
+    expect(p.onEndProjectEdit).toHaveBeenCalledTimes(1);
+    expect(ephemeral.cancel).toHaveBeenCalled();
+    expect(target.style.getPropertyValue(css)).toBe("");
+    fireEvent.pointerUp(viewport, touch(2, 500)); fireEvent.pointerUp(target, touch(1, 360)); flush();
+    expect(move).not.toHaveBeenCalled(); expect(p.onEndProjectEdit).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(target, { ...touch(3, 300), button: 0 });
+    await act(async () => { fireEvent.pointerMove(target, touch(3, 360)); });
+    fireEvent.pointerUp(target, touch(3, 360)); flush();
+    expect(p.onBeginProjectEdit).toHaveBeenCalledTimes(2); expect(p.onEndProjectEdit).toHaveBeenCalledTimes(2);
+    expect(move).toHaveBeenCalledTimes(1); expect(target.style.getPropertyValue(css)).toBe("");
+  });
+
+  it("ends a locked drag while permission is pending, ignoring a late permission reply", async () => {
+    const { p, view, viewport } = setup();
+    let allow!: (value: boolean) => void;
+    vi.mocked(p.onBeginProjectEdit).mockImplementationOnce(() => new Promise<boolean>(resolve => { allow = resolve; }));
+    fireEvent.click(view.container.querySelector(".stage-pinch-lock-button")!);
+    const target = view.container.querySelector<HTMLElement>(".parade-member")!;
+    fireEvent.pointerDown(target, { ...touch(1, 300), button: 0 });
+    fireEvent.pointerMove(target, touch(1, 360));
+    fireEvent.pointerDown(viewport, touch(2, 500));
+    expect(p.onEndProjectEdit).toHaveBeenCalledTimes(1);
+    await act(async () => { allow(true); });
+    expect(p.onMoveMember).not.toHaveBeenCalled();
+    expect(target.style.getPropertyValue("--member-drag-x")).toBe("");
+  });
   it.each([false, true])("clears ordinary pan/inertia when entering line mode (released=%s)", released => {
     const { view, viewport, svg } = annotationSetup(false);
     const send = (type: string, x: number, time: number) => {

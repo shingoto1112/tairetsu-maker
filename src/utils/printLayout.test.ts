@@ -20,6 +20,41 @@ const expected = (topMeters: number, bottomMeters: number) => ({ topMeters, bott
 const line = (y1: number, y2: number) => ({ x1: 1, x2: 11, y1, y2, color: "red" as const, dash: "dashed" as const });
 
 describe("parade print vertical range (metres, including the existing 2m padding)", () => {
+  it.each([[120, 130], [130, 120], [-30, -20], [-20, -30]])("ignores annotation-only intervals outside the route: %s -> %s", (y1, y2) => {
+    const p = fixture(); p.members = []; p.frames[0].annotationLines = { outside: line(y1, y2) };
+    expect(range(p)).toEqual(expected(0, 10));
+    p.frames[0].annotationLines!.otherSide = line(y1 < 0 ? 120 : -30, y1 < 0 ? 130 : -20);
+    expect(range(p)).toEqual(expected(0, 10));
+  });
+
+  it.each([[95, 120, 93, 110], [120, 95, 93, 110], [-20, 5, 0, 7], [5, -20, 0, 7]])(
+    "clips partially intersecting intervals, including backward distance: %s -> %s", (y1, y2, top, bottom) => {
+      const p = fixture(); p.members = []; p.paradeSettings!.backwardDistanceMeters = 10;
+      p.frames[0].annotationLines = { partial: line(y1, y2), outside: line(130, 140) };
+      expect(range(p)).toEqual(expected(top, bottom));
+    });
+
+  it.each([-100, 150])("ignores legacy rotated props wholly outside at y=%s", y => {
+    const p = fixture(); p.members = []; p.paradeSettings!.backwardDistanceMeters = 10;
+    p.stageObjects = [{ ...formationExportFixture().stageObjects[0], defaultY: y,
+      widthMeters: 20, heightMeters: 1, defaultRotation: 90 }];
+    expect(range(p)).toEqual(expected(0, 10));
+    p.frames[0].annotationLines = { inside: line(40, 50) };
+    expect(range(p)).toEqual(expected(38, 52));
+  });
+
+  it("falls back for invalid final member bounds, and always returns depth = bottom - top", () => {
+    const p = fixture(); p.frames[0].positions.m0.y = 200;
+    expect(range(p)).toEqual(expected(0, 10));
+    for (const cell of [.3, 1, 20]) for (const y of [-200, 0, 50, 110, 200]) {
+      p.paradeSettings!.cellSizeMeters = cell; p.paradeSettings!.backwardDistanceMeters = 10;
+      p.frames[0].positions.m0.y = y;
+      const r = range(p);
+      expect(r.topMeters).toBeGreaterThanOrEqual(0); expect(r.bottomMeters).toBeGreaterThan(r.topMeters);
+      expect(r.bottomMeters).toBeLessThanOrEqual(110); expect(r.depthMeters).toBe(r.bottomMeters - r.topMeters);
+    }
+  });
+
   it("keeps visible-member radius and padding", () => {
     expect(range(fixture())).toEqual(expected(47, 53));
   });

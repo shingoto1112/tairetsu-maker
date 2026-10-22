@@ -1,6 +1,7 @@
 import type { FormationFrame, Position, Project, ViewerPerspective } from "../types";
 import { objectSceneBounds } from "../project/objectAppearance";
 import { constrainMemberPosition } from "./coordinates";
+import { getSnapshotForFrame } from "./interpolation";
 import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "./horizontalGrid";
 
 const EPS = 1e-9;
@@ -10,7 +11,8 @@ export const MEMBER_PLACEMENT_OVERLAP_NOTICE = "空きがないため一部を�
 /** Center bounds and circle sizes match the canvases. Hidden members reserve space too.
  * Only call at placement entry points; never normalize existing scene coordinates. */
 export function placeNewMembers(project: Project, frame: FormationFrame, count: number, origin?: Position,
-  perspective: ViewerPerspective | undefined = project.viewerPerspective): {
+  perspective: ViewerPerspective | undefined = project.viewerPerspective,
+  excludedIds: ReadonlySet<string> = new Set()): {
   positions: Position[]; overlapCount: number;
 } {
   const bounds = objectSceneBounds(project, frame);
@@ -33,8 +35,10 @@ export function placeNewMembers(project: Project, frame: FormationFrame, count: 
     const k = key(Math.floor(p.x / diameter), Math.floor(p.y / diameter));
     const bucket = buckets.get(k) ?? []; bucket.push(p); buckets.set(k, bucket);
   };
+  const snapshot = getSnapshotForFrame(project, frame.id);
   for (const member of project.members) {
-    const p = frame.positions[member.id]; if (p) reserve(p);
+    if (excludedIds.has(member.id)) continue;
+    const p = snapshot.positions[member.id]; if (p) reserve(p);
   }
   const free = (p: Position) => {
     const bx = Math.floor(p.x / diameter), by = Math.floor(p.y / diameter);

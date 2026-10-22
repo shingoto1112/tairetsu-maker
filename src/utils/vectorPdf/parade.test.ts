@@ -8,8 +8,14 @@ import { renderScenePages, prepareTextDrawings } from "./renderer";
 import { createHbSubsetter } from "./hbSubset";
 import { validateParadeA4Export, UnsafeParadeA4Export, PARADE_A4_DRAWING_BUDGET, PARADE_A4_DOCUMENT_DRAWING_BUDGET,
   PARADE_A4_SCENE_CHARACTER_BUDGET, PARADE_A4_DOCUMENT_CHARACTER_BUDGET } from "../paradeA4Limits";
-import { createA4VectorPdf } from "./a4Document";
+import { createA4VectorPdf, withVectorFallback } from "./a4Document";
 import { boundedJpegPixelRatio } from "../exportImage";
+
+it("treats a safety error arising inside vector generation as terminal without image fallback", async () => {
+  const error = new UnsafeParadeA4Export("パレードPDFを作成できません。安全上限を超えています。"), fallback = vi.fn();
+  await expect(withVectorFallback(async () => { throw error; }, fallback)).rejects.toBe(error);
+  expect(fallback).not.toHaveBeenCalled();
+});
 
 it("preserves fractional full-length grid origin, zero crossing, ruler order/classes and fallback", () => {
   const p = vectorParadeFixture({ total: 100.3, backward: 10, crossing: true, cell: 2 });

@@ -1079,6 +1079,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       setIsMemberDragging(false);
       if (activeMemberDrag) {
         activeMemberDrag.operation.end();
+        cancelPendingMemberDragClear();
+        clearMemberDragTransforms(activeMemberDrag.memberIds);
         ephemeral?.cancel();
       }
       setActiveSnapGuides([]);

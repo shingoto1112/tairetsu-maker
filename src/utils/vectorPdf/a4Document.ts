@@ -1,7 +1,7 @@
 import type { Project } from "../../types";
 import type { ShareExportOptions } from "../../components/ShareExportModal";
 import { defaultPrintOptions, getAssignmentPrintEntries, getPrintMetrics, getPrintOrientation, isPrintMemberVisible, paginateFrames } from "../printLayout";
-import { validateParadeA4Export } from "../paradeA4Limits";
+import { UnsafeParadeA4Export, validateParadeA4Export } from "../paradeA4Limits";
 import { sortFrames } from "../interpolation";
 import { buildScenePage, CSS_PX_MM, UnsupportedVectorLayout, visibleTextLines, type ScenePage } from "./model";
 import { measurePrintPageExtent, propTextFromPrintDom } from "./browserTextLayout";
@@ -23,6 +23,7 @@ export async function withVectorFallback<T>(vector: () => Promise<T>, fallback: 
   try { const result = await vector(); checkAbort(signal); return result; }
   catch (error) {
     checkAbort(signal);
+    if (error instanceof UnsafeParadeA4Export) throw error;
     if (error && typeof error === "object" && "name" in error && error.name === "AbortError") throw error;
     diagnostics.unshift({ timestamp: new Date().toISOString(), reason: error instanceof Error ? error.message : String(error) });
     diagnostics.splice(5);

@@ -3,8 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./exportRaster", () => ({ elementToCanvas: vi.fn() }));
 import { elementToCanvas } from "./exportRaster";
 import { generateA4Images, numberedImageName } from "./a4ImageExport";
+import { createSampleProject } from "../sampleProject";
+import { defaultPrintOptions } from "./printLayout";
 import { a4PageSize, fitPdfImage } from "./pdfPageLayout";
+import { vectorLargeParadeFixture, vectorParadeFixture } from "./vectorPdf/paradeFixture";
+import { validateParadeA4Export } from "./paradeA4Limits";
 
+const request = () => { const project = createSampleProject(); return { project, frameIds: project.frames.map(f => f.id), options: defaultPrintOptions }; };
 describe("A4 PNG pages", () => {
   const context = { fillRect: vi.fn(), drawImage: vi.fn(), fillText: vi.fn() };
   let sources: HTMLCanvasElement[];
@@ -21,9 +26,25 @@ describe("A4 PNG pages", () => {
   });
   afterEach(() => vi.restoreAllMocks());
   const documentPages = (count: number) => { const root = document.createElement("div"); root.innerHTML = '<section class="print-page"></section>'.repeat(count); return root; };
+  it("rejects unsafe parade work before inspecting or rasterizing pages with the vector PDF's Japanese notice", async () => {
+    const project = vectorParadeFixture({ total: 100000, long: true });
+    const context = { project, frameIds: project.frames.map(f => f.id), options: defaultPrintOptions };
+    let message = "";
+    try { validateParadeA4Export(project, context.frameIds, context.options); } catch (e) { message = (e as Error).message; }
+    expect(message).toContain("安全上限");
+    const root = documentPages(1), query = vi.spyOn(root, "querySelectorAll");
+    await expect(generateA4Images(root, "portrait", "過大", context)).rejects.toThrow(message);
+    expect(query).not.toHaveBeenCalled(); expect(elementToCanvas).not.toHaveBeenCalled();
+  });
+  it.each([[146, 100], [300, 60], [300, 500]])("admits the existing %s-member / %s-scene parade workloads", async (members, scenes) => {
+    const project = vectorLargeParadeFixture(members, scenes);
+    const result = await generateA4Images(documentPages(1), "portrait", "見本",
+      { project, frameIds: project.frames.map(f => f.id), options: defaultPrintOptions });
+    expect(result.files).toHaveLength(1); expect(elementToCanvas).toHaveBeenCalledTimes(1);
+  });
   it.each(["portrait", "landscape"] as const)("sequentially composes 12 %s pages with matching PDF fit, numbers and ordered filenames", async orientation => {
     const root = documentPages(12), size = a4PageSize(orientation), factor = 192 / 72;
-    const result = await generateA4Images(root, orientation, "演目_隊列表_日時");
+    const result = await generateA4Images(root, orientation, "演目_隊列表_日時", request());
     expect(result.files.map(file => file.name)).toEqual(Array.from({ length: 12 }, (_, i) => `演目_隊列表_日時_${String(i + 1).padStart(3, "0")}.png`));
     expect(result.pageCount).toBe(root.children.length); expect(result.preview).toBe(result.files[0]);
     expect(context.fillText.mock.calls.map(call => call[0])).toEqual(Array.from({ length: 12 }, (_, i) => `${i + 1}/12`));
@@ -34,15 +55,15 @@ describe("A4 PNG pages", () => {
     expect(sources.every(canvas => !canvas.width && !canvas.height)).toBe(true);
   });
   it("omits the ink number for one page and expands filename padding to total digits", async () => {
-    await generateA4Images(documentPages(1), "portrait", "演目_隊列表_日時");
+    await generateA4Images(documentPages(1), "portrait", "演目_隊列表_日時", request());
     expect(context.fillText).not.toHaveBeenCalled();
     expect(numberedImageName("演目", 12, 1200)).toBe("演目_0012.png");
   });
   it("rejects failed encoding, releases canvases and allows a clean retry", async () => {
     vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementationOnce(callback => callback(null));
-    await expect(generateA4Images(documentPages(2), "portrait", "演目")).rejects.toThrow("画像を作成できませんでした。");
+    await expect(generateA4Images(documentPages(2), "portrait", "演目", request())).rejects.toThrow("画像を作成できませんでした。");
     expect(sources[0].width).toBe(0);
-    expect((await generateA4Images(documentPages(2), "portrait", "演目")).files).toHaveLength(2);
-    await expect(generateA4Images(documentPages(0), "portrait", "演目")).rejects.toThrow();
+    expect((await generateA4Images(documentPages(2), "portrait", "演目", request())).files).toHaveLength(2);
+    await expect(generateA4Images(documentPages(0), "portrait", "演目", request())).rejects.toThrow();
   });
 });

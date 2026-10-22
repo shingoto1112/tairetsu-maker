@@ -17,7 +17,7 @@ const MAX_COORDINATE = 10_000_000;
  * remain supported when their cropped drawing workload is safe. */
 export function validateParadeA4Export(project: Project, frameIds: string[], options: ShareExportOptions) {
   if (project.mode !== "parade") return;
-  const fail = (reason: string): never => { throw new UnsafeParadeA4Export(`パレードPDFを作成できません。${reason}`); };
+  const fail = (reason: string): never => { throw new UnsafeParadeA4Export(`パレードを書き出せません。${reason}`); };
   let context = "パレード設定";
   const finite = (...values: number[]) => {
     if (values.some(v => !Number.isFinite(v) || Math.abs(v) >= MAX_COORDINATE))

@@ -552,6 +552,15 @@ export const getFramePrintVerticalRange = (
   const memberRadiusMeters = memberDiameterMeters / 2;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
+  const includeRouteInterval = (lo: number, hi: number) => {
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < 0 || lo > canvasDistanceMeters) return;
+    minY = Math.min(minY, Math.max(0, lo));
+    maxY = Math.max(maxY, Math.min(canvasDistanceMeters, hi));
+  };
+  const emptyRange = (): SceneVerticalRange => {
+    const depthMeters = Math.min(canvasDistanceMeters, Math.max(10, metrics.gridSizeMeters * 10));
+    return { topMeters: 0, bottomMeters: depthMeters, depthMeters };
+  };
 
   project.members.forEach((member) => {
     const position = frame.positions[member.id];
@@ -569,25 +578,15 @@ export const getFramePrintVerticalRange = (
     }
     const bounds = rotatedObjectBounds(state);
     // Extend the legacy crop without shrinking scenes whose rotated prop is shorter.
-    minY = Math.min(minY, state.y, bounds.top);
-    maxY = Math.max(maxY, state.y + state.heightMeters, bounds.bottom);
+    includeRouteInterval(Math.min(state.y, bounds.top), Math.max(state.y + state.heightMeters, bounds.bottom));
   });
 
   Object.values(frame.annotationLines ?? {}).forEach((line) => {
-    minY = Math.min(minY, line.y1, line.y2);
-    maxY = Math.max(maxY, line.y1, line.y2);
+    includeRouteInterval(Math.min(line.y1, line.y2), Math.max(line.y1, line.y2));
   });
 
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
-    const emptyDepth = Math.min(
-      canvasDistanceMeters,
-      Math.max(10, metrics.gridSizeMeters * 10),
-    );
-    return {
-      bottomMeters: emptyDepth,
-      depthMeters: emptyDepth,
-      topMeters: 0,
-    };
+    return emptyRange();
   }
 
   const step = Math.max(metrics.gridSizeMeters, 0.01);
@@ -599,17 +598,12 @@ export const getFramePrintVerticalRange = (
     canvasDistanceMeters,
     snapUp(maxY + PRINT_PARADE_EXPORT_PADDING_METERS, step),
   );
-  const safeBottomMeters =
-    bottomMeters > topMeters
-      ? bottomMeters
-      : Math.min(
-          canvasDistanceMeters,
-          topMeters + Math.min(canvasDistanceMeters, PRINT_PARADE_EXPORT_PADDING_METERS * 2),
-        );
+  if (!(Number.isFinite(topMeters) && Number.isFinite(bottomMeters) &&
+      0 <= topMeters && topMeters < bottomMeters && bottomMeters <= canvasDistanceMeters)) return emptyRange();
 
   return {
-    bottomMeters: safeBottomMeters,
-    depthMeters: Math.max(safeBottomMeters - topMeters, step),
+    bottomMeters,
+    depthMeters: bottomMeters - topMeters,
     topMeters,
   };
 };

@@ -5,6 +5,7 @@ import { boundedJpegPixelRatio, elementToJpegDataUrl } from "./exportImage";
 import { jpegDataUrlsToPdfBlob } from "./pdfExport";
 import { createA4VectorPdf } from "./vectorPdf/a4Document";
 import { checkAbort } from "./vectorPdf/fonts";
+import { validateParadeA4Export } from "./paradeA4Limits";
 
 export const A4_PREVIEW_LIMITS = { maxSide: 2048, maxPixels: 2_000_000 };
 export const A4_FALLBACK_LIMITS = { maxSide: 4096, maxPixels: 8_000_000 };
@@ -16,12 +17,14 @@ export async function generateA4Pdf(request: {
 }) {
   const { element, project, options, signal, title, onProgress } = request;
   checkAbort(signal);
+  validateParadeA4Export(project, request.frameIds, options);
   const pages = [...element.querySelectorAll<HTMLElement>(".print-page")];
   if (!pages.length) throw new Error("PDF用ページが見つかりません。");
   const isParade = project.mode === "parade";
   if (isParade) for (const page of pages) boundedJpegPixelRatio(page.scrollWidth, page.scrollHeight, A4_PREVIEW_LIMITS);
   let firstPageImage: string | undefined;
   const blob = await createA4VectorPdf({ ...request, options, fallback: async () => {
+    validateParadeA4Export(project, request.frameIds, options);
     const pixels = !isParade ? 0 : pages.reduce((sum, page) => {
       const width = page.scrollWidth, height = page.scrollHeight;
       const ratio = boundedJpegPixelRatio(width, height, A4_FALLBACK_LIMITS);
