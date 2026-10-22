@@ -1,3 +1,4 @@
+import { useCanvasEditScope, type CanvasEditOperation } from "../hooks/useCanvasEditScope";
 import { snapObjectPosition } from "../utils/objectMovement";
 import { useAnnotationEditor } from "./useAnnotationEditor";
 import { paradeMeterTicks } from "../utils/boundedTicks";
@@ -134,7 +135,7 @@ export type ParadeScrollBounds = {
   y: number;
 };
 
-type DragState =
+type DragState = { operation: CanvasEditOperation } & (
   | {
       type: "member";
       pointerId: number;
@@ -148,8 +149,6 @@ type DragState =
       startScrollTop: number;
       startPosition: Position;
       startPositions: Record<string, Position>;
-      hasMoved: boolean;
-      isBeginPending: boolean;
     }
   | {
       type: "object";
@@ -163,8 +162,6 @@ type DragState =
       startScrollLeft: number;
       startScrollTop: number;
       startState: ObjectState;
-      hasMoved: boolean;
-      isBeginPending: boolean;
     }
   | {
       type: "object";
@@ -181,9 +178,7 @@ type DragState =
       startAngle: number;
       centerClientX: number;
       centerClientY: number;
-      hasMoved: boolean;
-      isBeginPending: boolean;
-    };
+    });
 
 type PinchTouchPoint = {
   clientX: number;
@@ -366,6 +361,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       ),
     };
     const [zoom, setZoom] = useState(currentFrame?.sceneViewState?.zoom ?? 1);
+    const editScope = useCanvasEditScope(project.id, selectedFrameId, Boolean(isPlaying) || isReadOnly, onBeginProjectEdit, onEndProjectEdit);
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [reflectGroupId, setReflectGroupId] = useState("");
     const activeReflectGroupId = (project.memberGroups ?? []).some(group => group.id === reflectGroupId)
@@ -393,6 +389,8 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     const pinchTouchPointsRef = useRef(new Map<number, PinchTouchPoint>());
     const pinchZoomRef = useRef<PinchZoomState | null>(null);
     const touchScrollerRef = useRef<ReturnType<typeof createTouchScroller> | null>(null);
+    const dragAutoScrollerRef = useRef<ReturnType<typeof createEdgeAutoScroller> | null>(null);
+    const dragPreviewElementsRef = useRef(new Set<HTMLElement>());
     const pendingTouchSelectionRef = useRef<{
       pointerId: number; point: PinchTouchPoint; selection: Selection; options?: { append?: boolean };
     } | null>(null);
@@ -898,6 +896,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         const element = memberElementRefs.current.get(id);
         element?.style.removeProperty("--member-drag-x");
         element?.style.removeProperty("--member-drag-y");
+        if (element) dragPreviewElementsRef.current.delete(element);
       });
     };
 
@@ -926,6 +925,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       element.style.removeProperty("--object-drag-width");
       element.style.removeProperty("--object-drag-height");
       element.style.removeProperty("--object-drag-rotation");
+      dragPreviewElementsRef.current.delete(element);
     };
 
     const scheduleClearObjectDragPreview = (objectId: string) => {
@@ -947,6 +947,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         if (!startPosition || !nextPosition || !element) {
           return;
         }
+        dragPreviewElementsRef.current.add(element);
         element.style.setProperty(
           "--member-drag-x",
           `${(nextPosition.x - startPosition.x) * pxPerMeter}px`,
@@ -979,6 +980,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       if (!element) {
         return;
       }
+      dragPreviewElementsRef.current.add(element);
       const nextState = {
         ...drag.startState,
         ...patch,
@@ -1023,6 +1025,28 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       onUpdateObjectState(drag.id, latestPatch);
       scheduleClearObjectDragPreview(drag.id);
     };
+
+    useLayoutEffect(() => () => {
+      cancelTouchContextMenu();
+      cancelPendingMemberDragClear();
+      cancelPendingObjectDragClear();
+      clearMemberDragTransforms([...memberElementRefs.current.keys()]);
+      [...objectElementRefs.current.keys()].forEach(clearObjectDragPreview);
+      // Inline callback refs can be detached during the mutation phase, before
+      // this layout cleanup. Retain the nodes that actually received previews.
+      dragPreviewElementsRef.current.forEach(element => {
+        for (const property of ["--member-drag-x", "--member-drag-y", "--object-drag-x", "--object-drag-y",
+          "--object-drag-width", "--object-drag-height", "--object-drag-rotation"]) element.style.removeProperty(property);
+      });
+      dragPreviewElementsRef.current.clear();
+      pendingTouchSelectionRef.current = null;
+      pinchTouchPointsRef.current.clear();
+      touchScrollerRef.current?.stop();
+      dragAutoScrollerRef.current?.stop();
+      dragAutoScrollerRef.current = null;
+      setDragState(null);
+      ephemeral?.cancel();
+    }, [editScope]);
 
     useLayoutEffect(() => {
       isPinchLockedRef.current = isPinchLocked;
@@ -1165,29 +1189,20 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
     );
 
     useEffect(() => {
-      if (isPlaying && dragState) {
-        clearMemberDragTransforms([...memberElementRefs.current.keys()]);
-        [...objectElementRefs.current.keys()].forEach(clearObjectDragPreview);
-        if (dragState.hasMoved) onEndProjectEdit();
-        ephemeral?.cancel();
-        setDragState(null);
-      }
-    }, [isPlaying]);
-
-    useEffect(() => {
-      if (!dragState || isPlaying) {
+      if (!dragState?.operation.active || isPlaying) {
         return undefined;
       }
       let currentClientX = dragState.currentClientX;
       let currentClientY = dragState.currentClientY;
-      let didMove = dragState.hasMoved;
-      let beginPending = dragState.isBeginPending;
+      let didMove = false;
+      let beginPending = false;
       let endRequested = false;
       let latestMemberPositions: Record<string, Position> | null = null;
       let latestObjectPatch: Partial<ObjectState> | null = null;
       let autoScroller: ReturnType<typeof createEdgeAutoScroller> | null = null;
       let isCancelled = false;
       const applyDrag = (clientX: number, clientY: number) => {
+        if (!dragState.operation.active) return;
         const measuredAt = ephemeral ? performance.now() : 0;
         currentClientX = clientX;
         currentClientY = clientY;
@@ -1236,16 +1251,12 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               ? editTarget[0]
               : editTarget;
           beginPending = true;
-          const beginResult = onBeginProjectEdit(editLabel, normalizedEditTarget);
+          const beginResult = dragState.operation.begin(editLabel, normalizedEditTarget);
           void Promise.resolve(beginResult).then((canEdit) => {
             beginPending = false;
-            if (isCancelled) {
-              if (canEdit !== false) {
-                onEndProjectEdit(normalizedEditTarget);
-              }
-              return;
-            }
+            if (isCancelled || !dragState.operation.active) return;
             if (canEdit === false) {
+              dragState.operation.end();
               autoScroller?.stop();
               setDragState(null);
               return;
@@ -1253,25 +1264,13 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
             didMove = true;
             if (dragState.type === 'member') ephemeral?.begin(selectedFrameId, dragState.memberIds.map(id => ['member', id, dragState.startPositions[id].x, dragState.startPositions[id].y] as EphemeralTarget));
             else if (dragState.interaction === 'move') ephemeral?.begin(selectedFrameId, [['object', dragState.id, dragState.startState.x, dragState.startState.y, dragState.startState.widthMeters, dragState.startState.heightMeters, dragState.startState.rotation]]);
-            const shouldKeepDragStateLocal =
-              (deferMemberDragCommit && dragState.type === "member") ||
-              (deferObjectDragCommit && dragState.type === "object");
-            if (!endRequested && !shouldKeepDragStateLocal) {
-              setDragState({
-                ...dragState,
-                currentClientX,
-                currentClientY,
-                hasMoved: true,
-                isBeginPending: false,
-              });
-            }
             applyDrag(currentClientX, currentClientY);
             if (endRequested) {
               commitDeferredMemberDrag(dragState, latestMemberPositions);
               commitDeferredObjectDrag(dragState, latestObjectPatch);
               autoScroller?.stop();
               setDragState(null);
-              onEndProjectEdit(normalizedEditTarget);
+              dragState.operation.end(normalizedEditTarget);
               ephemeral?.finish();
               return;
             }
@@ -1391,13 +1390,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
                 onScroll: () => applyDrag(currentClientX, currentClientY),
               })
             : null;
+      dragAutoScrollerRef.current = autoScroller;
       const handlePointerMove = (event: globalThis.PointerEvent) => {
-        if (event.pointerId !== dragState.pointerId) return;
+        if (!dragState.operation.active || event.pointerId !== dragState.pointerId) return;
         applyDrag(event.clientX, event.clientY);
         autoScroller?.update(event.clientX, event.clientY);
       };
       const handlePointerUp = (event?: globalThis.PointerEvent) => {
-        if (event && event.pointerId !== dragState.pointerId) return;
+        if (!dragState.operation.active || (event && event.pointerId !== dragState.pointerId)) return;
         if (event) {
           currentClientX = event.clientX;
           currentClientY = event.clientY;
@@ -1420,13 +1420,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
               : { id: dragState.id, type: "object-state" as const };
           commitDeferredMemberDrag(dragState, latestMemberPositions);
           commitDeferredObjectDrag(dragState, latestObjectPatch);
-          onEndProjectEdit(
+          dragState.operation.end(
             Array.isArray(editTarget) && editTarget.length === 1
               ? editTarget[0]
               : editTarget,
           );
           if (event?.type === 'pointercancel') ephemeral?.cancel(); else ephemeral?.finish();
         }
+        dragState.operation.end();
       };
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp);
@@ -1437,23 +1438,14 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         window.removeEventListener("pointerup", handlePointerUp);
         window.removeEventListener("pointercancel", handlePointerUp);
         autoScroller?.stop();
+        if (dragAutoScrollerRef.current === autoScroller) dragAutoScrollerRef.current = null;
       };
     }, [
       dragState,
-      isPlaying,
-      onEndProjectEdit,
-      onBeginProjectEdit,
-      onMoveMember,
-      onUpdateObjectState,
-      deferMemberDragCommit,
-      deferObjectDragCommit,
-      pxPerMeter,
-      settings.cellSizeMeters,
-      backwardDistanceMeters,
-      canvasDistanceMeters,
-      ephemeral,
-      settings.totalDistance,
-      settings.width,
+      editScope,
+      // One operation retains its scene callbacks and start geometry. Parent
+      // renders (including its first Undo snapshot) must not restart permission
+      // waiting or discard the deferred preview before pointer-up.
     ]);
 
     const applyZoom = (
@@ -1671,12 +1663,9 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       preview.style.willChange = "transform";
       committedPinchScrollRef.current = null;
       if (dragState) {
-        const shouldEndEdit = dragState.hasMoved;
+        dragState.operation.end();
         setDragState(null);
-        if (shouldEndEdit) {
-          onEndProjectEdit();
-          ephemeral?.cancel();
-        }
+        ephemeral?.cancel();
       }
       setIsPinching(true);
     };
@@ -1836,6 +1825,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           ),
       );
       setDragState({
+        operation: editScope.create(event.currentTarget, event.pointerId),
         type: "member",
         pointerId: event.pointerId,
         id: memberId,
@@ -1854,8 +1844,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           Object.keys(startPositions).length > 0
             ? startPositions
             : { [memberId]: position },
-        hasMoved: false,
-        isBeginPending: false,
       });
     };
 
@@ -1887,6 +1875,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       startTouchContextMenu(event, { type: "object", id: objectId });
       cancelPendingObjectDragClear();
       setDragState({
+        operation: editScope.create(event.currentTarget, event.pointerId),
         type: "object",
         interaction: "move",
         pointerId: event.pointerId,
@@ -1898,8 +1887,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
         startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
-        hasMoved: false,
-        isBeginPending: false,
       });
     };
 
@@ -1930,6 +1917,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       cancelPendingObjectDragClear();
       setDragState({
+        operation: editScope.create(event.currentTarget, event.pointerId),
         type: "object",
         interaction: "resize",
         pointerId: event.pointerId,
@@ -1941,8 +1929,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startScrollLeft: scrollRef.current?.scrollLeft ?? 0,
         startScrollTop: scrollRef.current?.scrollTop ?? 0,
         startState: state,
-        hasMoved: false,
-        isBeginPending: false,
       });
     };
 
@@ -1984,6 +1970,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       }
       cancelPendingObjectDragClear();
       setDragState({
+        operation: editScope.create(event.currentTarget, event.pointerId),
         type: "object",
         interaction: "rotate",
         pointerId: event.pointerId,
@@ -1998,8 +1985,6 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
         startAngle,
         centerClientX,
         centerClientY,
-        hasMoved: false,
-        isBeginPending: false,
       });
     };
 

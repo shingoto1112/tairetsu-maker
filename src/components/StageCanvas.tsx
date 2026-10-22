@@ -1,3 +1,4 @@
+import { useCanvasEditScope, type CanvasEditOperation } from "../hooks/useCanvasEditScope";
 import { useAnnotationEditor } from "./useAnnotationEditor";
 import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle, stageVerticalRulerPositions } from "../utils/gridEmphasis";
@@ -159,6 +160,7 @@ export type StageScrollBounds = {
 };
 
 type MemberDrag = {
+  operation: CanvasEditOperation;
   pointerId: number;
   memberId: string;
   memberIds: string[];
@@ -398,6 +400,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const stageRef = useRef<HTMLDivElement | null>(null);
     const fitAreaRef = useRef<HTMLDivElement | null>(null);
     const exportElementRef = useRef<HTMLDivElement | null>(null);
+    const editScope = useCanvasEditScope(project.id, selectedFrameId, isPlaying || isReadOnly, onBeginProjectEdit, onEndProjectEdit);
     const memberDragRef = useRef<MemberDrag | null>(null);
     const memberElementRefs = useRef(new Map<string, HTMLElement>());
     const memberDragClearFrameRef = useRef<number | null>(null);
@@ -1070,8 +1073,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       memberAutoScrollerRef.current?.stop();
       memberAutoScrollerRef.current = null;
       setIsMemberDragging(false);
-      if (activeMemberDrag?.hasMoved) {
-        onEndProjectEdit();
+      if (activeMemberDrag) {
+        activeMemberDrag.operation.end();
         ephemeral?.cancel();
       }
       setActiveSnapGuides([]);
@@ -1448,7 +1451,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const moveDraggedMember = (clientX: number, clientY: number) => {
       const measuredAt = ephemeral ? performance.now() : 0;
       const drag = memberDragRef.current;
-      if (!drag || !stageRef.current) {
+      if (!drag?.operation.active || !stageRef.current) {
         return;
       }
       drag.currentClientX = clientX;
@@ -1590,6 +1593,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         viewerPerspective,
       );
       memberDragRef.current = {
+        operation: editScope.create(event.currentTarget, event.pointerId),
         pointerId: event.pointerId,
         memberId,
         memberIds: Object.keys(startPositions).length > 0 ? Object.keys(startPositions) : [memberId],
@@ -1630,7 +1634,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         return;
       }
       const drag = memberDragRef.current;
-      if (!drag || drag.pointerId !== event.pointerId || !stageRef.current) {
+      if (!drag?.operation.active || drag.pointerId !== event.pointerId || !stageRef.current) {
         return;
       }
       drag.currentClientX = event.clientX;
@@ -1654,21 +1658,16 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         }));
         const editTarget =
           editTargets.length === 1 ? editTargets[0] : editTargets;
-        const pointerId = event.pointerId;
-        const beginResult = onBeginProjectEdit(
+        const beginResult = drag.operation.begin(
           editTargets.length > 1 ? "複数メンバー移動" : "メンバー移動",
           editTarget,
         );
         void Promise.resolve(beginResult).then((canEdit) => {
           const latestDrag = memberDragRef.current;
-          if (!latestDrag || latestDrag.pointerId !== pointerId) {
-            if (canEdit !== false) {
-              onEndProjectEdit(editTarget);
-            }
-            return;
-          }
+          if (latestDrag !== drag || !drag.operation.active) return;
           latestDrag.isBeginPending = false;
           if (canEdit === false) {
+            latestDrag.operation.end();
             memberDragRef.current = null;
             memberAutoScrollerRef.current?.stop();
             memberAutoScrollerRef.current = null;
@@ -1687,7 +1686,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             memberAutoScrollerRef.current = null;
             setActiveSnapGuides([]);
             setIsMemberDragging(false);
-            onEndProjectEdit(editTarget);
+            latestDrag.operation.end(editTarget);
             ephemeral?.finish();
             return;
           }
@@ -1721,17 +1720,29 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         memberAutoScrollerRef.current = null;
         setActiveSnapGuides([]);
         if (drag.hasMoved) {
-          const editTargets: SceneElementEditTarget[] = drag.memberIds.map((id) => ({
-            id,
-            type: "member-position",
-          }));
           commitDeferredMemberDrag(drag);
-          onEndProjectEdit(editTargets.length === 1 ? editTargets[0] : editTargets);
           if (event.type === 'pointercancel') ephemeral?.cancel(); else ephemeral?.finish();
         }
+        drag.operation.end();
         setIsMemberDragging(false);
       }
     };
+
+    useLayoutEffect(() => () => {
+      memberDragRef.current?.operation.end();
+      memberDragRef.current = null;
+      memberAutoScrollerRef.current?.stop();
+      memberAutoScrollerRef.current = null;
+      cancelTouchContextMenu();
+      cancelPendingMemberDragClear();
+      clearMemberDragTransforms([...memberElementRefs.current.keys()]);
+      pendingTouchSelectionRef.current = null;
+      stageTouchPointsRef.current.clear();
+      clearStagePan();
+      setActiveSnapGuides([]);
+      setIsMemberDragging(false);
+      ephemeral?.cancel();
+    }, [editScope]);
 
     const stageGridVerticalTicks = useMemo(() => horizontalEmphasizedLines(stage.widthMeters,
       horizontalGuideMode, stage.gridSizeMeters, stage, stage.showGrid, stage.showCenterLine), [stage, horizontalGuideMode]);
@@ -2474,6 +2485,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                 const remoteObjectLockOwner = remoteObjectLocks[object.id] ?? null;
                 return (
                   <ResizableRotatableObject
+                    editScope={editScope}
                     key={object.id}
                     object={object}
                     state={objectState}

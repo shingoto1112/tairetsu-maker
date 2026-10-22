@@ -1,3 +1,4 @@
+import { useCanvasEditScope, type CanvasEditOperation, type CanvasEditScope } from "../hooks/useCanvasEditScope";
 import { horizontalGridOriginMeters } from "../utils/horizontalGrid";
 import { snapObjectPosition } from "../utils/objectMovement";
 import { stageVerticalGridOriginMeters } from "../utils/verticalGrid";
@@ -6,7 +7,7 @@ import {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
   PointerEvent,
-  useEffect,
+  useLayoutEffect,
   useRef,
 } from "react";
 import {
@@ -32,6 +33,7 @@ type InteractionKind = "move" | "resize" | "rotate";
 import type { EphemeralSession } from '../collaboration/ephemeralSession';
 
 type DragState = {
+  operation: CanvasEditOperation;
   kind: InteractionKind;
   pointerId: number;
   startClientX: number;
@@ -49,6 +51,7 @@ type DragState = {
 };
 
 type ResizableRotatableObjectProps = {
+  editScope?: CanvasEditScope;
   ephemeral?: EphemeralSession | null;
   sceneId?: string | null;
   object: StageObject;
@@ -101,6 +104,7 @@ const getAngle = (
 };
 
 export const ResizableRotatableObject = ({
+  editScope: parentEditScope,
   object,
   state,
   stage,
@@ -122,6 +126,9 @@ export const ResizableRotatableObject = ({
   ephemeral,
   sceneId,
 }: ResizableRotatableObjectProps) => {
+  const localEditScope = useCanvasEditScope(undefined, sceneId, disabled,
+    kind => onInteractionStart?.(kind as InteractionKind), () => onInteractionEnd?.());
+  const editScope = parentEditScope ?? localEditScope;
   const objectRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const autoScrollerRef = useRef<EdgeAutoScroller | null>(null);
@@ -155,13 +162,17 @@ export const ResizableRotatableObject = ({
     });
   };
 
-  useEffect(
+  useLayoutEffect(
     () => () => {
+      dragRef.current?.operation.end();
+      dragRef.current = null;
       cancelPendingObjectDragClear();
       clearObjectDragPreview();
       autoScrollerRef.current?.stop();
+      autoScrollerRef.current = null;
+      ephemeral?.cancel();
     },
-    [],
+    [editScope],
   );
 
   const getDisplayTopLeft = (objectState: ObjectState) =>
@@ -242,7 +253,7 @@ export const ResizableRotatableObject = ({
   const applyDrag = (clientX: number, clientY: number) => {
     const measuredAt = ephemeral ? performance.now() : 0;
     const drag = dragRef.current;
-    if (!drag) {
+    if (!drag?.operation.active) {
       return;
     }
     drag.currentClientX = clientX;
@@ -252,17 +263,13 @@ export const ResizableRotatableObject = ({
     }
     if (!drag.hasMoved) {
       drag.isBeginPending = true;
-      const beginResult = onInteractionStart?.(drag.kind) ?? true;
+      const beginResult = drag.operation.begin(drag.kind);
       void Promise.resolve(beginResult).then((canEdit) => {
         const latestDrag = dragRef.current;
-        if (!latestDrag || latestDrag.pointerId !== drag.pointerId) {
-          if (canEdit !== false) {
-            onInteractionEnd?.();
-          }
-          return;
-        }
+        if (latestDrag !== drag || !drag.operation.active) return;
         latestDrag.isBeginPending = false;
         if (canEdit === false) {
+          latestDrag.operation.end();
           dragRef.current = null;
           autoScrollerRef.current?.stop();
           autoScrollerRef.current = null;
@@ -276,7 +283,7 @@ export const ResizableRotatableObject = ({
           dragRef.current = null;
           autoScrollerRef.current?.stop();
           autoScrollerRef.current = null;
-          onInteractionEnd?.();
+          latestDrag.operation.end();
           ephemeral?.finish();
           return;
         }
@@ -369,7 +376,10 @@ export const ResizableRotatableObject = ({
       stage,
       viewerPerspective,
     );
+    cancelPendingObjectDragClear();
     dragRef.current = {
+      operation: editScope.create(event.currentTarget, event.pointerId,
+        kind => onInteractionStart?.(kind as InteractionKind), () => onInteractionEnd?.()),
       kind,
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -447,9 +457,9 @@ export const ResizableRotatableObject = ({
       autoScrollerRef.current = null;
       if (drag.hasMoved) {
         commitDeferredObjectDrag(drag);
-        onInteractionEnd?.();
         if (event.type === 'pointercancel') ephemeral?.cancel(); else ephemeral?.finish();
       }
+      drag.operation.end();
     }
   };
 

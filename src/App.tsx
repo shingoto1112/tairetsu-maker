@@ -124,7 +124,6 @@ import {
   getSnapshotForFrame,
   getMovementPathType,
   getPlanTiming,
-  interpolateProjectAtTime,
   resolveMovementPlan,
   sortFrames,
 } from "./utils/interpolation";
@@ -1955,21 +1954,8 @@ function App() {
   }, []);
 
   const snapshot = useMemo<StageSnapshot>(() => {
-    if (project.mode === "parade") {
-      return getSnapshotForFrame(project, displayFrame?.id ?? selectedFrame?.id ?? null);
-    }
-    if (isPlaying || mode === "preview") {
-      return interpolateProjectAtTime(project, currentTime);
-    }
-    return getSnapshotForFrame(project, selectedFrame?.id ?? null);
-  }, [
-    currentTime,
-    displayFrame?.id,
-    isPlaying,
-    mode,
-    project,
-    selectedFrame?.id,
-  ]);
+    return getSnapshotForFrame(project, displayFrame?.id ?? null);
+  }, [displayFrame?.id, project]);
 
   const selectedFrameSnapshot = useMemo<StageSnapshot>(
     () => getSnapshotForFrame(project, selectedFrame?.id ?? null),
@@ -3805,40 +3791,32 @@ function App() {
       if (await flushPendingAutoSave()) setNotice("現在の隊形を保存しました。", "success");
       return;
     }
-    if (!selectedFrame) {
+    if (!displayFrame) {
       setNotice("保存先のフレームがありません。");
       return;
     }
-    const activeFrameId = selectedFrame.id;
-    const currentSnapshot = snapshot;
-    // 現在表示されている隊形を、選択中フレームのProjectデータとして固定する。
-    const nextProject = {
-      ...projectRef.current,
-      frames: projectRef.current.frames.map((frame) =>
-        frame.id === activeFrameId
-          ? {
-              ...frame,
-              positions: currentSnapshot.positions,
-              objectStates: currentSnapshot.objectStates,
-            }
-          : frame,
-      ),
-      updatedAt: new Date().toISOString(),
-    };
-    updateProject((previous) => ({
-      ...previous,
-      frames: previous.frames.map((frame) =>
-        frame.id === activeFrameId
-          ? {
-              ...frame,
-              positions: currentSnapshot.positions,
-              objectStates: currentSnapshot.objectStates,
-            }
-          : frame,
-      ),
-    }));
+    const activeFrameId = displayFrame.id;
+    let savedLabel: string | undefined;
+    updateProject((previous) => {
+      const target = previous.frames.find(frame => frame.id === activeFrameId);
+      if (!target) return previous;
+      const currentSnapshot = getSnapshotForFrame(previous, activeFrameId);
+      savedLabel = target.label;
+      return {
+        ...previous,
+        frames: previous.frames.map((frame) =>
+          frame.id === activeFrameId
+            ? {
+                ...frame,
+                positions: currentSnapshot.positions,
+                objectStates: currentSnapshot.objectStates,
+              }
+            : frame,
+        ),
+      };
+    });
 
-    setNotice(`「${selectedFrame.label}」に現在の隊形を保存しました。`, "success");
+    if (savedLabel !== undefined) setNotice(`「${savedLabel}」に現在の隊形を保存しました。`, "success");
   };
 
   const saveProjectManually = async (
@@ -3969,7 +3947,7 @@ function App() {
     const frame = projectRef.current.frames.find((item) => item.id === id);
     if (!frame) return;
     setSelectedFrameId(id);
-    seek(frame.timeSec);
+    moveAudioPosition(frame.timeSec);
   };
 
   const updateFrame = (id: string, patch: Partial<FormationFrame>) => {
@@ -4462,7 +4440,7 @@ function App() {
     clientY: number,
   ) => {
     setSelectedFrameId(frame.id);
-    seek(frame.timeSec);
+    moveAudioPosition(frame.timeSec);
     setContextMenu(null);
     setContextMenuPosition(null);
     setMemberColorEditor(null);
@@ -5662,7 +5640,7 @@ function App() {
     }
   };
 
-  const seek = (time: number) => {
+  const moveAudioPosition = (time: number) => {
     const safeTime = Number.isFinite(time) ? Math.max(0, time) : 0;
     const audio = audioRef.current;
     const maxDuration =
@@ -5677,7 +5655,13 @@ function App() {
       audio.currentTime = nextTime;
     }
     setCurrentTime(nextTime);
-    const activeFrame = getActiveFrameAtTime(project.frames, nextTime);
+    return nextTime;
+  };
+
+  // Only time-originated actions resolve a scene from the clamped playhead.
+  const seek = (time: number) => {
+    const nextTime = moveAudioPosition(time);
+    const activeFrame = getActiveFrameAtTime(projectRef.current.frames, nextTime);
     if (activeFrame) {
       setSelectedFrameId(activeFrame.id);
     }
@@ -6192,13 +6176,13 @@ function App() {
   const jumpToStartFrame = () => {
     if (!selectedFrame) return;
     setSelectedFrameId(selectedFrame.id);
-    seek(selectedFrame.timeSec);
+    moveAudioPosition(selectedFrame.timeSec);
   };
 
   const jumpToDestinationFrame = () => {
     if (!selectedNextFrame) return;
     setSelectedFrameId(selectedNextFrame.id);
-    seek(selectedNextFrame.timeSec);
+    moveAudioPosition(selectedNextFrame.timeSec);
   };
 
   const resetAllMemberPaths = () => {
@@ -7334,7 +7318,7 @@ function App() {
               return;
             }
             setSelectedFrameId(frame.id);
-            seek(frame.timeSec);
+            moveAudioPosition(frame.timeSec);
           }}
         />
       );
@@ -7706,7 +7690,7 @@ function App() {
               }
               onSelectFrame={(frame) => {
                 setSelectedFrameId(frame.id);
-                seek(frame.timeSec);
+                moveAudioPosition(frame.timeSec);
               }}
               onFrameContextMenu={handleSceneThumbnailContextMenu}
             />
@@ -8366,7 +8350,7 @@ function App() {
         const frame = project.frames.find((item) => item.id === id);
         if (!frame) return;
         setSelectedFrameId(frame.id);
-        seek(frame.timeSec);
+        moveAudioPosition(frame.timeSec);
       }}
       projectTitle={project.title}
       onNotice={setNotice}
