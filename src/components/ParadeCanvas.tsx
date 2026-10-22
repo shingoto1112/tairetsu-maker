@@ -1863,6 +1863,11 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       selectPointerTarget({ type: "object", id: objectId });
+      // Locked objects stay selectable and keep the long-press menu (unlock), as on the stage.
+      if (project.stageObjects.find(object => object.id === objectId)?.locked) {
+        startTouchContextMenu(event, { type: "object", id: objectId });
+        return;
+      }
       const remoteLockOwner = remoteObjectLocks[objectId];
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);
@@ -1906,6 +1911,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
       event.preventDefault();
       event.stopPropagation();
       selectPointerTarget({ type: "object", id: objectId });
+      if (project.stageObjects.find(object => object.id === objectId)?.locked) return;
       const remoteLockOwner = remoteObjectLocks[objectId];
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);
@@ -1959,6 +1965,7 @@ export const ParadeCanvas = forwardRef<HTMLDivElement, ParadeCanvasProps>(
           180) /
         Math.PI;
       selectPointerTarget({ type: "object", id: objectId });
+      if (project.stageObjects.find(object => object.id === objectId)?.locked) return;
       const remoteLockOwner = remoteObjectLocks[objectId];
       if (remoteLockOwner) {
         onLockedElementEditAttempt?.(remoteLockOwner);

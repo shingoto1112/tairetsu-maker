@@ -63,6 +63,23 @@ describe("Project codec and legacy normalization", () => {
     expect(decodeProjectJson('{"id":"../escape","title":"x"}', context)).toMatchObject({ ok: false, error: { code: "INVALID_ID" } });
     expect(decodeProjectJson(JSON.stringify({ ...fixtures.parade, audio: { ...fixtures.parade.audio, id: "a/b" } }), context)).toMatchObject({ ok: false, error: { code: "INVALID_ID" } });
   });
+  it("A10: keeps accepting missing or null optional containers but rejects malformed ones", () => {
+    // Stored projects are read through this validator too; normalization already
+    // treats null settings/maps as missing, so null must stay readable.
+    expect(validateProjectStructure({ title: "旧データ" }).ok).toBe(true);
+    for (const key of ["stage", "paradeSettings", "animationSettings", "guideSettings"]) {
+      expect(validateProjectStructure({ title: "旧データ", [key]: null }).ok).toBe(true);
+      expect(validateProjectStructure({ title: "旧データ", [key]: [] })).toMatchObject({ ok: false, error: { code: "CORRUPT" } });
+    }
+    for (const key of ["members", "stageObjects", "frames"]) {
+      expect(validateProjectStructure({ title: "旧データ", [key]: null })).toMatchObject({ ok: false, error: { code: "CORRUPT" } });
+    }
+    for (const key of ["positions", "objectStates", "objectAssignments", "memberVisibility", "groupVisibility", "memberAppearanceOverrides", "sceneViewState"]) {
+      expect(validateProjectStructure({ ...fixtures.stage, frames: [{ ...fixtures.stage.frames[0], [key]: null }] }).ok).toBe(true);
+      expect(validateProjectStructure({ ...fixtures.stage, frames: [{ ...fixtures.stage.frames[0], [key]: "x" }] }))
+        .toMatchObject({ ok: false, error: { code: "CORRUPT" } });
+    }
+  });
   it("rejects nonfinite known coordinates and cyclic JSON during serialization", () => {
     expect(validateProjectStructure({ ...fixtures.stage, frames: [{ ...fixtures.stage.frames[0], positions: { m: { x: Infinity, y: 0 } } }] })).toMatchObject({ ok: false, error: { code: "CORRUPT" } });
     const p = normalize(fixtures.stage) as Project & { unknown?: unknown };

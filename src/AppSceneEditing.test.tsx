@@ -14,6 +14,11 @@ import { getSnapshotForFrame } from "./utils/interpolation";
 import { StageCanvas as RenderStageCanvas } from "./components/StageCanvas";
 import { ParadeCanvas as RenderParadeCanvas } from "./components/ParadeCanvas";
 import * as audioStorage from "./utils/audioStorage";
+import JSZip from "jszip";
+import type { FormationLibrary } from "./components/FormationLibrary";
+import { RepositoryError } from "./repositories/types";
+import { EphemeralSession } from "./collaboration/ephemeralSession";
+import { TOUCH_LONG_PRESS_DELAY_MS } from "./utils/touchLongPress";
 
 type StageProps = ComponentProps<typeof StageCanvas>;
 type ParadeProps = ComponentProps<typeof ParadeCanvas>;
@@ -21,12 +26,17 @@ const observed = vi.hoisted(() => ({
   canvas: null as StageProps | ParadeProps | null,
   stage: null as StageProps | null,
   delayBegin: null as Promise<boolean> | null,
+  library: null as ComponentProps<typeof FormationLibrary> | null,
 }));
 let project: Project;
 let repository: MemoryProjectRepository;
 let useYjs = false;
 let raf: Map<number, FrameRequestCallback>;
 let serial: number;
+vi.mock("./components/FormationLibrary", async original => {
+  const { FormationLibrary: Library } = await original<typeof import("./components/FormationLibrary")>();
+  return { FormationLibrary: (p: ComponentProps<typeof FormationLibrary>) => { observed.library = p; return <Library {...p} />; } };
+});
 vi.mock("./storage/appRepository", async original => ({
   ...await original<typeof import("./storage/appRepository")>(),
   prepareAppRepository: async () => {
@@ -164,12 +174,13 @@ it("A1: new project, member drag, +scene, B drag, assignment preview, save and r
   const aId = current().selectedFrameId!;
   const aPositions = structuredClone(current().snapshot.positions);
   fireEvent.click(screen.getByRole("tab", { name: "道具" }));
-  fireEvent.click(await screen.findByRole("button", { name: "道具" }));
+  // Panels load lazily; allow for a busy full-suite run.
+  fireEvent.click(await screen.findByRole("button", { name: "道具" }, { timeout: 10_000 }));
   const object = () => view.container.querySelector(".stage-surface .stage-object")!;
   await dragStart(object(), 3); fireEvent.pointerUp(object(), pointer(3, 380));
   const aObjects = structuredClone(current().snapshot.objectStates);
   fireEvent.click(screen.getByRole("tab", { name: "シーン" }));
-  await screen.findByRole("heading", { name: "シーン一覧" });
+  await screen.findByRole("heading", { name: "シーン一覧" }, { timeout: 10_000 });
   fireEvent.click(document.querySelector(".scene-nav button.primary")!);
   const bId = current().selectedFrameId!; expect(bId).not.toBe(aId);
   fireEvent.click(screen.getByRole("tab", { name: "メンバー" }));
@@ -402,4 +413,237 @@ it.each(["stage", "parade"] as const)("A5: %s scene switches cancel member/objec
     view.unmount(); observed.canvas = null;
     vi.useRealTimers();
   }
+}, 25_000);
+
+it.each([["stage", false], ["stage", true], ["parade", false], ["parade", true]] as const)("A3: %s portrait=%s selecting a tool clears member multiselect before Delete", async (mode, portrait) => {
+  project.mode = mode;
+  vi.stubGlobal("matchMedia", vi.fn((query: string) => ({ matches: portrait && query.includes("orientation"), addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  await open();
+  const before = structuredClone(current().project.frames);
+  act(() => current().onSelect({ type: "member", id: "m_anna" }));
+  act(() => current().onSelect({ type: "member", id: "m_chika" }, { append: true }));
+  expect(current().selectedMemberIds).toEqual(["m_anna", "m_chika"]);
+  act(() => current().onSelect({ type: "object", id: "o_chair" }));
+  expect(current().selectedMemberIds).toEqual([]);
+  fireEvent.keyDown(window, { key: "Delete" });
+  const frames = current().project.frames;
+  expect(frames[0].objectStates.o_chair.visible).toBe(false);
+  expect(frames[0].positions).toEqual(before[0].positions);
+  expect(frames[0].memberVisibility).toEqual(before[0].memberVisibility);
+  expect(frames[0].objectStates.o_curtain).toEqual(before[0].objectStates.o_curtain);
+  expect(frames.slice(1)).toEqual(before.slice(1));
+}, 25_000);
+
+it.each(["add", "paste"] as const)("A3: selecting a tool through %s also clears member multiselect", async entrance => {
+  await open();
+  if (entrance === "paste") {
+    act(() => current().onSelect({ type: "object", id: "o_chair" }));
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+  }
+  act(() => current().onSelect({ type: "member", id: "m_anna" }));
+  act(() => current().onSelect({ type: "member", id: "m_chika" }, { append: true }));
+  expect(current().selectedMemberIds).toHaveLength(2);
+  const before = structuredClone(current().snapshot.positions);
+  if (entrance === "paste") fireEvent.keyDown(window, { key: "v", ctrlKey: true });
+  else {
+    fireEvent.click(screen.getByRole("tab", { name: "道具" }));
+    fireEvent.click(screen.getByRole("button", { name: "道具" }));
+  }
+  expect(current().selectedMemberIds).toEqual([]);
+  expect(current().selected?.type).toBe("object");
+  const id = current().selected!.id;
+  fireEvent.keyDown(window, { key: "Delete" });
+  expect(current().snapshot.objectStates[id].visible).toBe(false);
+  expect(current().snapshot.positions).toEqual(before);
+}, 25_000);
+
+it.each(["stage", "parade"] as const)("A4: %s locked tools stay selectable without drag, history or shared ephemeral; unlock restores all gestures", async mode => {
+  project.mode = mode; useYjs = true;
+  project.stageObjects.forEach(object => { object.locked = true; });
+  const view = await open();
+  fireEvent.click(screen.getByRole("tab", { name: "道具" }));
+  await act(async () => { fireEvent.click(screen.getByTitle("隊列表を保存")); });
+  const before = geometry(current().project);
+  const begin = vi.spyOn(SharedProjectEditor.prototype, "begin");
+  const edit = vi.spyOn(SharedProjectEditor.prototype, "edit");
+  const ephemeral = vi.spyOn(EphemeralSession.prototype, "begin");
+  const selector = tokenSelector(mode, "object");
+  const target = () => view.container.querySelector<HTMLElement>(selector)!;
+  await dragStart(target()); fireEvent.pointerUp(target(), pointer(1, 380));
+  expect(target().className).toContain("is-selected");
+  expect(target().hasPointerCapture(1)).toBe(false);
+  expect(target().style.getPropertyValue("--object-drag-x")).toBe("");
+  expect(target().querySelector(".resize-handle, .rotate-handle")).toBeNull();
+  expect(geometry(current().project)).toEqual(before);
+  expect(current().canUndo).toBe(false); expect(begin).not.toHaveBeenCalled(); expect(edit).not.toHaveBeenCalled();
+  expect(ephemeral).not.toHaveBeenCalled();
+  // The actual selection panel must still provide the lock toggle.
+  fireEvent.click(within(document.querySelector('article[data-object-id="o_curtain"]')!).getByRole("button", { name: "ロック" }));
+  for (const kind of ["move", "resize", "rotate"]) {
+    const element = kind === "move" ? target() : target().querySelector<HTMLElement>(`.${kind}-handle`)!;
+    expect(element).not.toBeNull();
+    const initial = geometry(current().project);
+    await dragStart(element); fireEvent.pointerUp(element, pointer(1, 380));
+    expect(geometry(current().project)).not.toEqual(initial);
+    expect(current().canUndo).toBe(true);
+  }
+}, 25_000);
+
+it.each(["stage", "parade"] as const)("A4: isolated %s locked canvas cannot begin or commit a drag", async mode => {
+  project.stageObjects.forEach(object => { object.locked = true; });
+  const { p, view, target } = await isolatedCanvas(mode, "object");
+  await dragStart(target()); fireEvent.pointerUp(target(), pointer(1, 380));
+  expect(p.onSelect).toHaveBeenCalled();
+  expect(p.onBeginProjectEdit).not.toHaveBeenCalled(); expect(p.onEndProjectEdit).not.toHaveBeenCalled();
+  expect(p.onUpdateObjectState).not.toHaveBeenCalled();
+  expect(target().hasPointerCapture(1)).toBe(false);
+  expect(target().style.getPropertyValue("--object-drag-x")).toBe("");
+  view.unmount();
+}, 25_000);
+
+it.each(["stage", "parade"] as const)("A4: %s locked tools keep the touch long-press menu", async mode => {
+  project.stageObjects.forEach(object => { object.locked = true; });
+  const { p, view, target } = await isolatedCanvas(mode, "object");
+  const objectId = project.stageObjects[0].id;
+  vi.useFakeTimers();
+  try {
+    fireEvent.pointerDown(target(), { pointerId: 7, pointerType: "touch", isPrimary: true, clientX: 300, clientY: 250, button: 0 });
+    act(() => { vi.advanceTimersByTime(TOUCH_LONG_PRESS_DELAY_MS + 50); });
+  } finally {
+    vi.useRealTimers();
+  }
+  expect(p.onContextMenuRequest).toHaveBeenCalledWith(expect.objectContaining({ target: { type: "object", id: objectId } }));
+  expect(p.onBeginProjectEdit).not.toHaveBeenCalled();
+  view.unmount();
+}, 25_000);
+
+it.each([["stage", .2], ["stage", 1], ["parade", .2], ["parade", 1]] as const)("A7: %s creation persists numeric boundaries (diameter=%s) through actual App reload", async (mode, diameter) => {
+  const view = render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /追加.*新規/ }));
+  fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
+  fireEvent.click(screen.getByRole("button", { name: mode === "stage" ? /ステージ隊列/ : /パレード隊列/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "作成境界" } });
+  const fields = mode === "stage" ? { widthMeters: 1, heightMeters: 1, gridSizeMeters: .1, memberDiameterMeters: diameter }
+    : { paradeTotalDistance: 1, paradeWidthMeters: 1, paradeCellSizeMeters: .1, memberDiameterMeters: diameter };
+  for (const [name, value] of Object.entries(fields)) {
+    fireEvent.change(document.querySelector(`[name="${name}"]`)!, { target: { value: String(value) } });
+  }
+  fireEvent.submit(screen.getByRole("dialog", { name: "新しい隊列表を作成" }));
+  await waitFor(() => expect(current()?.project.title).toBe("作成境界"));
+  const stage = { widthMeters: 1, depthMeters: 1, gridSizeMeters: .1, memberDiameterMeters: diameter };
+  expect(current().project.stage).toMatchObject(stage);
+  if (mode === "parade") expect(current().project.paradeSettings).toMatchObject({ totalDistance: 1, width: 1, cellSizeMeters: .1 });
+  const id = current().project.id!;
+  await waitFor(async () => expect((await repository.get(id))!.project.stage).toMatchObject(stage));
+  view.unmount(); observed.canvas = null;
+  render(<App />); fireEvent.click(await screen.findByRole("button", { name: "作成境界を開く" }));
+  await waitFor(() => expect(current()?.project.title).toBe("作成境界"));
+  expect(current().project.stage).toMatchObject(stage);
+  if (mode === "parade") expect(current().project.paradeSettings).toMatchObject({ totalDistance: 1, width: 1, cellSizeMeters: .1 });
+}, 25_000);
+
+it("A6: real App unmounts roster after Escape while retaining rename/add/group drafts exactly once", async () => {
+  project.memberGroups = [{ id: "g", name: "赤組", memberIds: ["m_anna"] }];
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "全体名簿を開く" }));
+  const modal = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
+  const cell = within(modal).getByRole("textbox", { name: "赤組 1行目" });
+  cell.focus();
+  fireEvent.change(cell, { target: { value: "新しい名前" } });
+  fireEvent.change(within(modal).getByRole("textbox", { name: "赤組 2行目" }), { target: { value: "追加の名前" } });
+  fireEvent.change(within(modal).getByRole("textbox", { name: "赤組のグループ名" }), { target: { value: "新しい組" } });
+  fireEvent.keyDown(cell, { key: "Escape", isComposing: true });
+  expect(screen.queryByRole("dialog", { name: "メンバー/道具の管理" })).not.toBeNull();
+  fireEvent.keyDown(cell, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "メンバー/道具の管理" })).toBeNull());
+  fireEvent.blur(cell);
+  expect(current().project.members.find(m => m.id === "m_anna")!.name).toBe("新しい名前");
+  expect(current().project.members.filter(m => m.name === "追加の名前")).toHaveLength(1);
+  expect(current().project.memberGroups![0].name).toBe("新しい組");
+  fireEvent.click(screen.getByRole("button", { name: "全体名簿を開く" }));
+  const reopened = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
+  expect((within(reopened).getByRole("textbox", { name: "新しい組 1行目" }) as HTMLInputElement).value).toBe("新しい名前");
+  expect((within(reopened).getByRole("textbox", { name: "新しい組 2行目" }) as HTMLInputElement).value).toBe("追加の名前");
+}, 25_000);
+
+const importFile = async (value: unknown, format: "json" | "wrapped" | "zip", name = "import") => {
+  let buffer: ArrayBuffer;
+  if (format === "zip") {
+    const zip = new JSZip();
+    zip.file("manifest.json", JSON.stringify({ fileType: "tairetsu-project", formatVersion: 1, includesAudio: true }));
+    zip.file("project.json", JSON.stringify(value)); zip.file("audio/audio.mp3", new Uint8Array([1]));
+    buffer = await zip.generateAsync({ type: "arraybuffer" });
+  } else buffer = new TextEncoder().encode(JSON.stringify(format === "wrapped" ? { project: value } : value)).buffer;
+  const file = new File([buffer], name + ".json", { type: "application/json" });
+  Object.defineProperty(file, "arrayBuffer", { value: async () => buffer });
+  return file;
+};
+
+it.each(["json", "wrapped", "zip"] as const)("A10/A11: %s invalid imports retain editor, selection and Undo without saving audio", async format => {
+  await open();
+  const load = observed.library!.onImportProjectFile;
+  act(() => current().onMoveMember("m_anna", { x: 4, y: 3 }));
+  act(() => current().onSelect({ type: "member", id: "m_anna" }));
+  act(() => current().onSelect({ type: "member", id: "m_chika" }, { append: true }));
+  const before = current().project;
+  const saveAudio = vi.spyOn(audioStorage, "saveAudioBlobToIndexedDb");
+  const malformed = [
+    { members: [{ ...before.members[0], name: 12 }] }, { members: [null] }, { frames: [null] },
+    { frames: [{ ...before.frames[0], positions: { m: { x: "x", y: 2 } } }] },
+    { frames: [{ ...before.frames[0], objectAssignments: { o: [1] } }] }, { id: "../bad" },
+    { audio: { id: "bad/id", name: "曲", type: "audio/mpeg", size: 1 } },
+  ];
+  for (const patch of malformed) {
+    const file = await importFile({ ...before, ...patch }, format);
+    await act(async () => { await load(file); });
+    expect(current().project).toBe(before);
+    expect(current().selectedFrameId).toBe("A"); expect(current().selectedMemberIds).toEqual(["m_anna", "m_chika"]);
+    expect(current().canUndo).toBe(true);
+    expect(screen.queryByText("画面を表示できませんでした")).toBeNull();
+    expect(screen.getByText("隊列表データが壊れている可能性があります。")).toBeTruthy();
+  }
+  expect(saveAudio).not.toHaveBeenCalled();
+  act(() => current().onUndo());
+  expect(current().project.frames[0].positions.m_anna).toEqual(project.frames[0].positions.m_anna);
+}, 25_000);
+
+it.each(["CORRUPT", "INVALID_ID", "QUOTA_EXCEEDED"] as const)("A10: repository creation error %s distinguishes corrupt import from recoverable capacity", async code => {
+  await open();
+  const load = observed.library!.onImportProjectFile;
+  const before = current().project;
+  const commit = vi.spyOn(repository, "commit").mockRejectedValue(new RepositoryError(code));
+  const file = await importFile({ title: "旧隊列表", extra: true }, "wrapped");
+  await act(async () => { await load(file); });
+  expect(commit).toHaveBeenCalled();
+  if (code === "QUOTA_EXCEEDED") {
+    expect(current().project.title).toBe("旧隊列表");
+    expect(current().project.frames.length).toBeGreaterThan(0);
+    expect(await screen.findByRole("alert", { name: "端末保存エラー" })).toBeTruthy();
+  } else {
+    expect(current().project).toBe(before);
+    expect(screen.getByText("隊列表データが壊れている可能性があります。")).toBeTruthy();
+  }
+}, 25_000);
+
+it.each(["json", "wrapped", "zip"] as const)("A10/A11: real App imports valid legacy %s with missing fields, unknown fields and over-500m distance", async format => {
+  await open();
+  const saveAudio = vi.spyOn(audioStorage, "saveAudioBlobToIndexedDb").mockResolvedValue({ id: "import-audio", name: "曲", type: "audio/mpeg", size: 1 });
+  const file = await importFile({ title: "正常な旧データ", custom: { keep: true }, mode: "parade", paradeSettings: { totalDistance: 501 } }, format);
+  await act(async () => { await observed.library!.onImportProjectFile(file); });
+  expect(current().project.title).toBe("正常な旧データ");
+  expect(current().project.paradeSettings!.totalDistance).toBe(501);
+  expect(current().project).toMatchObject({ custom: { keep: true } });
+  expect(current().project.frames.length).toBeGreaterThan(0);
+  expect(saveAudio).toHaveBeenCalledTimes(format === "zip" ? 1 : 0);
+  expect((await repository.get(current().project.id!))!.project.title).toBe("正常な旧データ");
+}, 25_000);
+
+it("A10: missing legacy title uses the existing imported-project fallback before normalization", async () => {
+  await open();
+  const file = await importFile({ stage: {}, custom: "keep" }, "wrapped");
+  await act(async () => { await observed.library!.onImportProjectFile(file); });
+  expect(current().project.title).toBe("読み込んだ隊列表");
+  expect(current().project).toMatchObject({ custom: "keep", mode: "stage" });
+  expect(current().project.members).toEqual([]);
+  expect(current().project.frames.length).toBeGreaterThan(0);
 }, 25_000);

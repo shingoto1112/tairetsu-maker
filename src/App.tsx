@@ -19,6 +19,7 @@ import { normalizeProject } from "./project/normalizeProject";
 import { prepareIndependentProjectCopy, sharingContentKey } from "./project/independentCopy";
 import type { SharingOperation } from "./collaboration/uiTypes";
 import { createEmptyFormationProject } from "./project/createEmptyFormationProject";
+import { validateProjectStructure } from "./project/codec";
 import { copyRosterToNewProject } from "./project/rosterCopy";
 import { applyObjectAppearance, objectDraftForGroup, changeObjectMembership, type ObjectAppearancePatch } from "./project/objectAppearance";
 import {
@@ -1337,6 +1338,7 @@ function App() {
     lastHistoryPushRef.current = null;
     projectRef.current = nextProject;
     setProject(nextProject);
+    setViewerPerspective(nextProject.viewerPerspective ?? "audience");
     markLocalEdit(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
@@ -1361,6 +1363,7 @@ function App() {
     lastHistoryPushRef.current = null;
     projectRef.current = nextProject;
     setProject(nextProject);
+    setViewerPerspective(nextProject.viewerPerspective ?? "audience");
     markLocalEdit(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
@@ -2305,6 +2308,7 @@ function App() {
     }
 
     setSelected(selection);
+    setSelectedMemberIds([]);
     const object = project.stageObjects.find((item) => item.id === selection.id);
     const visible =
       snapshot.objectStates[selection.id]?.visible ?? object?.visible ?? true;
@@ -2748,7 +2752,7 @@ function App() {
     }, "道具追加", { coalesceHistory: false });
     const added = (sharedEditorRef.current?.project ?? projectRef.current).stageObjects.find(object => object.id === id);
     if (!added) return undefined;
-    setSelected({ type: "object", id }); setMode("objects"); setActivePanelTab("objects");
+    setSelected({ type: "object", id }); setSelectedMemberIds([]); setMode("objects"); setActivePanelTab("objects");
     setObjectVisibilityTab(visibleInCurrentFrame ? "visible" : "hidden"); setIsPanelOpen(true);
     if (shouldScrollToNewObject) requestPanelScroll("object", id);
     setNotice(added.name + "を追加しました。", "success");
@@ -4234,6 +4238,7 @@ function App() {
         ),
       }), "道具貼り付け");
       setSelected({ type: "object", id: existingObject.id });
+      setSelectedMemberIds([]);
       setActivePanelTab("objects");
       setObjectVisibilityTab("visible");
       setIsPanelOpen(true);
@@ -4314,6 +4319,7 @@ function App() {
       }),
     }));
     setSelected({ type: "object", id });
+    setSelectedMemberIds([]);
     setActivePanelTab("objects");
     setObjectVisibilityTab(visibleInCurrentFrame ? "visible" : "hidden");
     setIsPanelOpen(true);
@@ -5015,6 +5021,9 @@ function App() {
       loadGeneration?: number;
     } = {},
   ) => {
+    // Reject malformed input before persistence or any editor-state changes.
+    const checked = validateProjectStructure(rawProject);
+    if (!checked.ok) { setNotice("隊列表データが壊れている可能性があります。"); return false; }
     // External file events can arrive before startup maintenance/migration ends.
     if (!await storagePreparationRef.current) return false;
     await (audioEditorProtectionRef.current ??= protectAudioEditor());
@@ -5034,6 +5043,9 @@ function App() {
     } catch (error) {
       if (!creation) { setNotice(repositoryError(error).message); return false; }
       creationError = repositoryError(error);
+      if (creationError.code === "CORRUPT" || creationError.code === "INVALID_ID") {
+        setNotice("隊列表データが壊れている可能性があります。"); return false;
+      }
     }
     if (generation !== editorLoadGenerationRef.current) return false;
     const now = new Date().toISOString();
@@ -5379,7 +5391,7 @@ function App() {
         createdAt: now,
         id: createProjectId(),
         lastOpenedAt: now,
-        title: createUniqueProjectTitle(imported.project.title, savedProjects),
+        title: createUniqueProjectTitle(imported.project.title ?? "", savedProjects),
         updatedAt: now,
       });
       await openProjectInEditor(

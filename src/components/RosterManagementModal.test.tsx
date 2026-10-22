@@ -72,6 +72,34 @@ describe("RosterManagementModal", () => {
   const member = { id: "m", name: "太郎", color: "#000" };
   const object = { id: "tool", name: "旗1", color: "#000", type: "prop", shape: "rectangle", widthMeters: 1, heightMeters: 1, defaultX: 0, defaultY: 0, defaultRotation: 0, visible: true, locked: false, zIndex: 1 } as const;
 
+  it.each(["members", "objects"] as const)("A6: Escape commits name, addition and group drafts once before close in %s", mode => {
+    const props = createProps();
+    render(<RosterManagementModal {...props} initialMode={mode} members={[member]} objects={[object]} />);
+    const cell = screen.getByRole("textbox", { name: "未所属 1行目" });
+    const addition = screen.getByRole("textbox", { name: "未所属 2行目" });
+    const group = screen.getByRole("textbox", { name: `${mode === "members" ? "赤組" : "旗"}のグループ名` });
+    fireEvent.change(cell, { target: { value: "改名" } });
+    fireEvent.change(addition, { target: { value: "追加" } });
+    fireEvent.change(group, { target: { value: "新グループ" } });
+    const rename = mode === "members" ? props.onRenameMember : props.onRenameObject;
+    const add = mode === "members" ? props.onAddMember : props.onAddObject;
+    const renameGroup = mode === "members" ? props.onRenameMemberGroup : props.onRenameObjectGroup;
+    (props.onClose as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      expect(rename).toHaveBeenCalledOnce(); expect(add).toHaveBeenCalledOnce(); expect(renameGroup).toHaveBeenCalledOnce();
+    });
+    fireEvent.keyDown(cell, { key: "Escape", isComposing: true });
+    fireEvent.keyDown(cell, { key: "Escape", keyCode: 229 });
+    fireEvent.compositionStart(cell); fireEvent.keyDown(cell, { key: "Escape" });
+    expect(props.onClose).not.toHaveBeenCalled(); expect(rename).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(cell);
+    fireEvent.keyDown(cell, { key: "Escape" });
+    fireEvent.blur(cell); fireEvent.blur(addition); fireEvent.blur(group);
+    expect(props.onClose).toHaveBeenCalledOnce();
+    expect(rename).toHaveBeenCalledExactlyOnceWith(mode === "members" ? "m" : "tool", "改名");
+    expect(add).toHaveBeenCalledExactlyOnceWith(null, "追加");
+    expect(renameGroup).toHaveBeenCalledExactlyOnceWith(mode === "members" ? "g" : "o", "新グループ");
+  });
+
   it.each(["members", "objects"] as const)("confirms × deletion once and restores focus and drafts on cancellation in %s", async (mode) => {
     const user = userEvent.setup();
     const props = createProps();

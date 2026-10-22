@@ -133,6 +133,17 @@ export const RosterManagementModal = ({
   const reportEditNotice = (message: string) => { setEditNotice(message); onNotice(message); };
   const latestData = useRef<ExportSource>({ projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates });
   latestData.current = { projectTitle, members, objects, memberGroups, objectGroups, frames, currentFrame, objectStates, project };
+  const commitDrafts = () => {
+    for (const draftMode of ["members", "objects"] as const) {
+      const draftColumns = draftMode === "members" ? memberColumns : objectColumns;
+      for (const column of draftColumns) {
+        for (let index = 0; index <= column.items.length; index++) commitCell(column, index, draftMode);
+        if (dirtyGroups.current.has(`${draftMode}:${column.id}`)) commitGroupName(column.id, draftMode);
+      }
+    }
+  };
+  const commitDraftsRef = useRef(commitDrafts);
+  commitDraftsRef.current = commitDrafts;
   const getExportSource = (): ExportSource => {
     if (composing.current) throw new Error("入力を確定してから書き出してください。");
     flushSync(() => {
@@ -140,13 +151,7 @@ export const RosterManagementModal = ({
       if (active instanceof HTMLElement && dialogRef.current?.contains(active)) active.blur();
     });
     flushSync(() => {
-      for (const draftMode of ["members", "objects"] as const) {
-        const draftColumns = draftMode === "members" ? memberColumns : objectColumns;
-        for (const column of draftColumns) {
-          for (let index = 0; index <= column.items.length; index++) commitCell(column, index, draftMode);
-          if (dirtyGroups.current.has(`${draftMode}:${column.id}`)) commitGroupName(column.id, draftMode);
-        }
-      }
+      commitDrafts();
     });
     return structuredClone(latestData.current);
   };
@@ -213,9 +218,13 @@ export const RosterManagementModal = ({
       return undefined;
     }
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229 || composing.current) return;
       if (event.key === "Escape" && !event.defaultPrevented && !exportOpen && !deleting.current && !isAppConfirmOpen && !document.querySelector(".app-confirm-dialog")) {
         if (exportMenuOpen) { setExportMenuOpen(false); exportButtonRef.current?.focus(); }
-        else onClose();
+        else {
+          commitDraftsRef.current();
+          onClose();
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);

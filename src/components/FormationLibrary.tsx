@@ -1,5 +1,6 @@
 import type { AudioSelection } from "../platform/audioStorage";
 import { paradeDistanceError } from "../project/paradeLimits";
+import { creationNumberError } from "../project/creationValidation";
 import { ChangeEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Cloud, CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
@@ -110,16 +111,16 @@ const formatProjectDate = (project: ProjectSummary): string => {
 };
 
 type CreationNumberFieldProps = {
-  name: string; label: string; min: number; step: string; value: number;
+  name: string; label: string; min: number; max?: number; step: string; value: number;
   onChange: (value: number) => void; error?: string;
 };
-const CreationNumberField = ({ name, label, min, step, value, onChange, error }: CreationNumberFieldProps) => (
+const CreationNumberField = ({ name, label, min, max, step, value, onChange, error }: CreationNumberFieldProps) => (
   <div className="creation-number-field">
     <label>
       {label}
       <span className="meter-input">
         <input type="number" name={name} aria-label={label} data-number-field data-field-label={label}
-          min={min} step={step} value={Number.isFinite(value) ? value : ""}
+          min={min} max={max} step={step} value={Number.isFinite(value) ? value : ""}
           aria-invalid={Boolean(error)} aria-describedby={error ? "create-" + name + "-error" : undefined}
           onChange={(event) => onChange(event.target.valueAsNumber)} />
         m
@@ -353,10 +354,9 @@ export const FormationLibrary = ({
     const errors: Record<string, string> = {};
     if (!trimmedTitle) errors.title = "隊列表名を入力してください。";
     form.querySelectorAll<HTMLInputElement>('input[data-number-field]').forEach(input => {
-      const value = input.valueAsNumber;
-      if (!Number.isFinite(value) || value < Number(input.min)) {
-        errors[input.name] = input.dataset.fieldLabel + "は" + input.min + "以上の数値にしてください。";
-      }
+      const error = creationNumberError(input.valueAsNumber, input.dataset.fieldLabel ?? "",
+        Number(input.min), input.max === "" ? undefined : Number(input.max));
+      if (error) errors[input.name] = error;
     });
     if (formationMode === "parade") {
       const distanceError = paradeDistanceError({ totalDistance: paradeTotalDistance });
@@ -850,15 +850,15 @@ export const FormationLibrary = ({
               <section className="new-formation-size">
                 <h3>ステージの大きさ</h3>
 
-                <CreationNumberField name="widthMeters" label="横幅" min={0.1} step="0.1"
+                <CreationNumberField name="widthMeters" label="横幅" min={1} step="0.1"
                   value={widthMeters} onChange={setWidthMeters} error={fieldErrors.widthMeters} />
-                <CreationNumberField name="heightMeters" label="縦幅" min={0.1} step="0.1"
+                <CreationNumberField name="heightMeters" label="縦幅" min={1} step="0.1"
                   value={heightMeters} onChange={setHeightMeters} error={fieldErrors.heightMeters} />
 
                 <HorizontalCountingCards value={horizontalGuideMode} onChange={setHorizontalGuideMode} />
                 <details className="settings-disclosure" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
                   <summary>詳しい設定（あとから変更できます）</summary>
-                <CreationNumberField name="gridSizeMeters" label="グリッド間隔" min={0.05} step="0.05"
+                <CreationNumberField name="gridSizeMeters" label="グリッド間隔" min={0.1} step="0.05"
                   value={gridSizeMeters} onChange={setGridSizeMeters} error={fieldErrors.gridSizeMeters} />
                 <label>
                   すべてのシーンで同じ大きさを使う
@@ -871,7 +871,7 @@ export const FormationLibrary = ({
                   </select>
                 </label>
 
-                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.1} step="0.05"
+                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.2} max={1} step="0.05"
                   value={memberDiameterMeters} onChange={setMemberDiameterMeters} error={fieldErrors.memberDiameterMeters} />
                 </details>
               </section>
@@ -919,7 +919,7 @@ export const FormationLibrary = ({
                   />
                   10mごとのライン強調
                 </label>
-                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.1} step="0.05"
+                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.2} max={1} step="0.05"
                   value={memberDiameterMeters} onChange={setMemberDiameterMeters} error={fieldErrors.memberDiameterMeters} />
                 </details>
                 <small>作成後の初期表示はスタート地点です。</small>

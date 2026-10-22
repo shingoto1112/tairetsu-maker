@@ -14,6 +14,48 @@ const toFile = async (
 ): Promise<File> => new File([await blob.arrayBuffer()], name, { type });
 
 describe("tairetsu file compatibility", () => {
+  it.each([
+    ["project.json", "application/json"], ["project", "application/json"], ["project", ""],
+  ])("A11: identifies ZIP bytes before name/MIME (%s, %s)", async (name, type) => {
+    const source = createSampleProject();
+    const file = await toFile(await createTairetsuArchive(source), name, type);
+    await expect(readTairetsuArchive(file)).resolves.toMatchObject({ project: { ...source, audio: null } });
+  });
+  it.each([[3, 4], [5, 6], [7, 8]])("A11: never reinterprets a broken ZIP signature as JSON (%s, %s)", async (a, b) => {
+    await expect(readTairetsuArchive(new File([new Uint8Array([80, 75, a, b])], "broken.json", { type: "application/json" })))
+      .rejects.toThrow("ZIPファイルとして展開できませんでした。");
+  });
+  it.each(["json", "wrapped", "zip"])("A10: rejects malformed nested data before audio extraction (%s)", async format => {
+    const source = createSampleProject();
+    const invalid = [
+      { members: [{ ...source.members[0], name: 123 }] }, { members: [null] }, { stageObjects: [null] }, { frames: [null] },
+      { frames: [{ ...source.frames[0], positions: { m: { x: "1", y: 2 } } }] },
+      { frames: [{ ...source.frames[0], objectAssignments: { o: [null] } }] },
+      { id: "../bad" }, { audio: { id: "bad/id", name: "曲", type: "audio/mpeg", size: 1 } },
+    ];
+    for (const patch of invalid) {
+      const value = { ...source, ...patch };
+      let file: File;
+      if (format === "zip") {
+        const zip = new JSZip();
+        zip.file("manifest.json", JSON.stringify({ fileType: "tairetsu-project", formatVersion: 1, includesAudio: true }));
+        zip.file("project.json", JSON.stringify(value)); zip.file("audio/audio.mp3", new Uint8Array([1]));
+        file = new File([await zip.generateAsync({ type: "arraybuffer" })], "bad.zip");
+      } else file = new File([JSON.stringify(format === "wrapped" ? { project: value } : value)], "bad.json");
+      await expect(readTairetsuArchive(file)).rejects.toThrow("隊列表データが壊れている可能性があります。");
+    }
+  });
+  it.each(["json", "zip"])("A10: leaves missing legacy fields and unknown fields untouched (%s)", async format => {
+    const value = { title: "旧データ", unknown: { keep: true } };
+    let file: File;
+    if (format === "zip") {
+      const zip = new JSZip();
+      zip.file("manifest.json", JSON.stringify({ fileType: "tairetsu-project", formatVersion: 1 }));
+      zip.file("project.json", JSON.stringify(value));
+      file = new File([await zip.generateAsync({ type: "arraybuffer" })], "old.zip");
+    } else file = new File([JSON.stringify({ project: value })], "old.json");
+    expect((await readTairetsuArchive(file)).project).toEqual(value);
+  });
   it.each(["zip", "json", "nested"])("accepts legacy excess parade distance on %s import without logging names or manifest", async format => {
     const project = { ...createSampleProject(), mode: "parade" as const, paradeSettings: { totalDistance: 501 } } as Project;
     const logs = [vi.spyOn(console, "info"), vi.spyOn(console, "warn"), vi.spyOn(console, "log")];

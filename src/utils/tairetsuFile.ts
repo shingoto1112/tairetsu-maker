@@ -1,4 +1,4 @@
-import { validAnnotationLines, validProjectLineCount } from "../project/annotationLines";
+import { validateProjectStructure } from "../project/codec";
 import type JSZipType from "jszip";
 import {
   MAX_AUDIO_FILE_BYTES,
@@ -130,25 +130,10 @@ const getAudioExtension = (project: Project): string => {
   return "mp3";
 };
 
-const isProjectLike = (value: unknown): value is Project => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const maybe = value as Partial<Project>;
-  const hasRecognizableProjectShape =
-    "title" in maybe ||
-    "stage" in maybe ||
-    "members" in maybe ||
-    "stageObjects" in maybe ||
-    "frames" in maybe;
-  return (
-    hasRecognizableProjectShape &&
-    (maybe.title === undefined || typeof maybe.title === "string") &&
-    (maybe.stage === undefined || typeof maybe.stage === "object") &&
-    (maybe.members === undefined || Array.isArray(maybe.members)) &&
-    (maybe.stageObjects === undefined || Array.isArray(maybe.stageObjects)) &&
-    (maybe.frames === undefined || Array.isArray(maybe.frames))
-  );
+const requireProjectStructure = (value: unknown): Project => {
+  const checked = validateProjectStructure(value);
+  if (!checked.ok) throw new Error("隊列表データが壊れている可能性があります。");
+  return checked.value;
 };
 
 const normalizeZipPath = (path: string): string =>
@@ -195,19 +180,9 @@ const readProjectFromJsonBuffer = (buffer: ArrayBuffer): Project => {
     text,
     "JSONファイルとして読み込めませんでした。",
   );
-  const checkLines = (project: Project) => { if (!validProjectLineCount(project.frames) || project.frames.some(f => !validAnnotationLines(f.annotationLines))) throw new Error("線のデータが不正か、本数の上限を超えています。"); return project; };
-  if (isProjectLike(parsed)) {
-    return checkLines(parsed);
-  }
-  if (
-    parsed &&
-    typeof parsed === "object" &&
-    "project" in parsed &&
-    isProjectLike((parsed as { project?: unknown }).project)
-  ) {
-    return checkLines((parsed as { project: Project }).project);
-  }
-  throw new Error("隊列表のJSONデータが見つかりませんでした。");
+  const value = parsed && typeof parsed === "object" && "project" in parsed
+    ? parsed.project : parsed;
+  return requireProjectStructure(value);
 };
 
 const readPayloadFromZip = async (
@@ -234,17 +209,14 @@ const readPayloadFromZip = async (
     throw new Error("この共有ファイルの形式には対応していません。");
   }
 
-  const project = safeJsonParse<unknown>(
+  const project = requireProjectStructure(safeJsonParse<unknown>(
     await readZipText(
       pair.projectFile,
       MAX_PROJECT_JSON_BYTES,
       "隊列表データが大きすぎます。24MB以下にしてください。",
     ),
     "隊列表データが壊れている可能性があります。",
-  );
-  if (!isProjectLike(project) || !validProjectLineCount(project.frames) || project.frames.some(f => !validAnnotationLines(f.annotationLines))) {
-    throw new Error("隊列表データが壊れている可能性があります。");
-  }
+  ));
 
   const audioZipFile = manifest.includesAudio
     ? Object.values(zip.files).find((entry) => {
@@ -339,9 +311,14 @@ export const readTairetsuArchive = async (
   }
   const buffer = await file.arrayBuffer();
   const lowerName = file.name.toLowerCase();
+  const signature = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength));
+  const isZip = signature[0] === 0x50 && signature[1] === 0x4b &&
+    ((signature[2] === 3 && signature[3] === 4) ||
+      (signature[2] === 5 && signature[3] === 6) ||
+      (signature[2] === 7 && signature[3] === 8));
   if (
-    lowerName.endsWith(".json") ||
-    file.type.toLowerCase().includes("json")
+    !isZip && (lowerName.endsWith(".json") ||
+    file.type.toLowerCase().includes("json"))
   ) {
     return {
       audioBlob: null,
