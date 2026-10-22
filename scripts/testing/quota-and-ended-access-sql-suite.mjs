@@ -4,7 +4,9 @@ import { quotaAccessMigration } from '../check-collab-v2.mjs';
 
 // Only the fixed disposable Linux PostgreSQL harness calls this suite.
 export async function runQuotaAndEndedAccessSqlSuite(h) {
-  const { run, service, asUser, deny, create, join, invite, uid, q, json, scalar, initial, pbytes } = h;
+  const { run, service, asUser, deny, create, join, invite, uid, q, json, scalar, identity, initial, pbytes } = h;
+  // require_service() reads the JWT role claim, so switch with the harness identity, not just SET ROLE.
+  const asService = identity(null, 'service_role');
   const migration = readFileSync(quotaAccessMigration, 'utf8');
   const tables = ['documents', 'members', 'updates', 'sync_snapshots', 'checkpoints', 'checkpoint_contents'];
   const state = () => scalar(`md5(jsonb_build_object(
@@ -47,9 +49,9 @@ export async function runQuotaAndEndedAccessSqlSuite(h) {
   assert.equal(createOne(300, 1).documentId, own[0].documentId, 'Replay at 20 active documents succeeds');
   // Lower the state budget only inside a rolled-back fixture transaction.
   const fullBudget = 'update collab_v2_private.budget_settings set state_bytes=1;';
-  const replayAtBudget = run(`begin; ${fullBudget} set local role service_role; ${createSql(300, 1)}; rollback;`);
+  const replayAtBudget = run(`begin; ${fullBudget} ${asService} ${createSql(300, 1)}; rollback;`);
   assert.equal(json(replayAtBudget).documentId, own[0].documentId, 'Replay bypasses both document count and byte budget');
-  try { run(`begin; ${fullBudget} set local role service_role; ${createSql(300, 21)}; rollback;`); assert.fail('quota precedence'); }
+  try { run(`begin; ${fullBudget} ${asService} ${createSql(300, 21)}; rollback;`); assert.fail('quota precedence'); }
   catch (error) { assert.match(error.stderr ?? error.message, /DOCUMENT_QUOTA_EXCEEDED/); }
   asUser(300, `select public.collab_v2_delete_document(${q(own[0].documentId)})`);
   deny(null, createSql(300, 1), 'DOCUMENT_DELETED', 'service_role');
@@ -60,7 +62,7 @@ export async function runQuotaAndEndedAccessSqlSuite(h) {
   assert(createOne(306, 1).documentId, 'New creator can create above 100 live documents');
   // New requests still enforce byte budgets independently of creation slots.
   try { run(`begin; update collab_v2_private.budget_settings set state_bytes=1;
-    set local role service_role; ${createSql(306, 2)}; rollback;`); assert.fail('Expected project quota'); }
+    ${asService} ${createSql(306, 2)}; rollback;`); assert.fail('Expected project quota'); }
   catch (error) { assert.match(error.stderr ?? error.message, /PROJECT_QUOTA_EXCEEDED/); }
 
   // Retain body AND history rows: an empty result must be caused by RLS.
