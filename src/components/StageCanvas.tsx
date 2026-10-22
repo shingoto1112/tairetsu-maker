@@ -440,8 +440,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
     const frontDirection =
       stage.frontDirection ?? stage.audienceSide ?? "bottom";
-    // The centre-count row follows the displayed 0m line. At the bottom, the row above the stage keeps only the
-    // member bleed (zoom-scaled) so members on the top edge stay reachable; see fittedStageSize.
+    // The centre-count row follows the displayed 0m line. At the bottom, the row above the stage keeps the 18px
+    // spare row plus the member bleed so top-edge members stay reachable; see fittedStageSize.
     const rulerAtBottom = horizontalRulerSide(stage, viewerPerspective) === "bottom";
     const originMode = stage.originMode ?? "center";
     const memberDiameterMeters = Math.min(
@@ -716,9 +716,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       : fitAreaSize.height;
 
     const fittedStageSize = useMemo(() => {
-      // The spare row opposite the counts: a fixed 18px below them, or the member bleed above them when the
-      // counts sit at the bottom (overflow above the scroll origin can never be scrolled into view).
-      const rulerBottomPadding = showMeterRulers && !rulerAtBottom ? RULER_BOTTOM_PADDING_PX : 0;
+      // The 18px spare row sits opposite the counts. With the counts at the bottom it is above the stage, where
+      // overflow can never be scrolled into view, so it also keeps the member bleed: 18px covers the overlap
+      // fan-out (at most 14px) and half of a vertical ruler label at the top edge.
+      const rulerBottomPadding = showMeterRulers ? RULER_BOTTOM_PADDING_PX : 0;
       const bleedRows = showMeterRulers && rulerAtBottom ? 2 : 1;
       const rulerLabelWidth = showMeterRulers ? RULER_LABEL_WIDTH_PX : 0;
       const rulerLabelHeight = showMeterRulers ? RULER_LABEL_HEIGHT_PX : 0;
@@ -751,7 +752,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         heightPx: safeDepthMeters * pxPerMeter,
         memberBleedPx,
         pxPerMeter,
-        rulerBottomPadding: bleedRows === 2 ? memberBleedPx : rulerBottomPadding,
+        rulerBottomPadding: rulerBottomPadding + (bleedRows === 2 ? memberBleedPx : 0),
         rulerHeight: showMeterRulers ? rulerLabelHeight + memberBleedPx : 0,
         rulerLabelOffset: memberBleedPx + 7,
         rulerWidth: showMeterRulers ? rulerLabelWidth + memberBleedPx : 0,
@@ -778,7 +779,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         heightPx: safeDepthMeters * pxPerMeter,
         memberBleedPx,
         pxPerMeter,
-        rulerBottomPadding: showMeterRulers && rulerAtBottom ? memberBleedPx : fittedStageSize.rulerBottomPadding,
+        rulerBottomPadding: showMeterRulers && rulerAtBottom ? RULER_BOTTOM_PADDING_PX + memberBleedPx : fittedStageSize.rulerBottomPadding,
         rulerHeight: showMeterRulers ? RULER_LABEL_HEIGHT_PX + memberBleedPx : 0,
         rulerLabelOffset: memberBleedPx + 7,
         rulerWidth: showMeterRulers ? RULER_LABEL_WIDTH_PX + memberBleedPx : 0,
@@ -1073,7 +1074,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         startZoom, continuousZoom: startZoom, finishing: false, lastAnchor: midpoint,
         geometry: { viewport, padding: { left: 0, right: 0, top: 0, bottom: 0 }, startZoom, pixelsPerMeter: fittedStageSize.pxPerMeter,
           fixed: { left: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, right: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0,
-            top: showMeterRulers && !rulerAtBottom ? RULER_LABEL_HEIGHT_PX : 0 },
+            top: showMeterRulers ? (rulerAtBottom ? RULER_BOTTOM_PADDING_PX : RULER_LABEL_HEIGHT_PX) : 0 },
           bleedMeters: showMeterRulers ? memberDiameterMeters / 2 : 0, bleedBelow: showMeterRulers && rulerAtBottom,
           bottom: showMeterRulers ? (rulerAtBottom ? RULER_LABEL_HEIGHT_PX : RULER_BOTTOM_PADDING_PX) : 0, centerAtFit: true,
           stageMeters: { width: stage.widthMeters, height: stage.depthMeters }, startScroll: { x: container.scrollLeft, y: container.scrollTop },

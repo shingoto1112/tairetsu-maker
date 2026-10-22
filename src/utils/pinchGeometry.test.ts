@@ -48,11 +48,11 @@ describe("member bleed below the stage (centre counts at the bottom)", () => {
     startScroll: { x: 0, y: 0 }, startOrigin: { x: 0, y: 0 }, anchorMeters: { x: 5, y: 3 }, bleedMeters: .25, bottom: 18, centerAtFit: true };
   it("keeps the bleed above (never scrollable) and adds a zoom-scaled bleed below", () => {
     const above = resolvePinchView(base, 2, { x: 300, y: 200 });
-    const below = resolvePinchView({ ...base, fixed: { ...base.fixed, top: 0 }, bottom: 20, bleedBelow: true }, 2, { x: 300, y: 200 });
+    const below = resolvePinchView({ ...base, fixed: { ...base.fixed, top: 18 }, bottom: 20, bleedBelow: true }, 2, { x: 300, y: 200 });
     expect(above.height).toBeCloseTo(6 * 80 + 20 + .25 * 80 + 18);
-    expect(below.height).toBeCloseTo(6 * 80 + .25 * 80 * 2 + 20);
+    expect(below.height).toBeCloseTo(6 * 80 + 18 + .25 * 80 * 2 + 20);
     expect(above.anchor.y).toBeCloseTo(20 + .25 * 80 + 3 * 80);
-    expect(below.anchor.y).toBeCloseTo(.25 * 80 + 3 * 80);
+    expect(below.anchor.y).toBeCloseTo(18 + .25 * 80 + 3 * 80);
     expect(below.anchor.x).toBeCloseTo(above.anchor.x);
   });
 });
