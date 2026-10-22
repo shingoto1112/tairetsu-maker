@@ -55,7 +55,7 @@ try {
    }
    results.push({id:p.id,width,height,lines});await back(page);
   }
-  await page.getByRole('button',{name:'使い方',exact:true}).click();await page.getByRole('button',{name:'ステージの詳細設定',exact:true}).click();await page.locator('.help-page-body').evaluate(el=>{const heading=[...el.querySelectorAll('h3')].find(h=>h.textContent==='ステージの詳細設定');el.scrollTop=heading.offsetTop-el.offsetTop;});await page.screenshot({path:path.join(out,`help-${width}x${height}.png`)});await expect(page.getByText('編集画面の「ステージ」→「詳しい設定」（パレードも同じ場所）',{exact:false})).toBeVisible();
+  await page.getByRole('button',{name:'使い方',exact:true}).click();await page.getByRole('button',{name:'ステージの見え方と設定',exact:true}).click();await page.locator('.help-page-body').evaluate(el=>{const heading=[...el.querySelectorAll('.help-page-section-heading')].find(h=>h.textContent==='ステージの見え方と設定');el.scrollTop=heading.offsetTop-el.offsetTop;});await page.screenshot({path:path.join(out,`help-${width}x${height}.png`)});await expect(page.getByText('「ステージ」タブ →「詳しい設定」（パレードも同じ場所）',{exact:false})).toBeVisible();
   await context.close();
  }
  assert.deepEqual(errors,[]);let prior=[];try{prior=JSON.parse(await readFile(path.join(out,'results.json'),'utf8'));}catch{}const map=new Map([...prior,...results].map(r=>[r.id+'-'+r.width+'x'+r.height,r]));await writeFile(path.join(out,'results.json'),JSON.stringify([...map.values()],null,2));console.log('EMPHASIS_BROWSER PASS '+results.length+' configurations; UI/save/restart/ZIP/A4 PNG/PDF; '+out);

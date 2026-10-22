@@ -21,7 +21,7 @@ async function capture(page, label, status = false) {
     await page.setViewportSize({width,height});
     await page.waitForTimeout(100);
     if (label === 'help-v2-collaboration') await page.locator('.help-page-body').evaluate(body => {
-      const section = [...body.querySelectorAll('.help-page-section')].find(el => el.textContent.includes('みんなで同時に編集する（共同編集）'));
+      const section = [...body.querySelectorAll('.help-page-section')].find(el => el.textContent.includes('共同編集を始める・招待する'));
       body.scrollTop += section.getBoundingClientRect().top - body.getBoundingClientRect().top;
     });
     const selector = status ? '.collab-status-pill' : '.help-page';
@@ -107,12 +107,13 @@ async function run(enabled) {
     const launcher = page.getByRole('button',{name:'使い方',exact:true});
     await launcher.click();
     const dialog = page.getByRole('dialog',{name:'使い方',exact:true}); await expect(dialog).toBeVisible();
-    const headings = dialog.locator('h3 button');
-    await expect(headings).toHaveCount(enabled ? 15 : 14);
-    await expect(dialog.getByRole('button',{name:'みんなで同時に編集する（共同編集）',exact:true})).toHaveCount(enabled ? 1 : 0);
+    const headings = dialog.locator('.help-page-section-heading button');
+    await expect(headings).toHaveCount(enabled ? 17 : 15);
+    await expect(dialog.locator('.help-page-category-title')).toHaveText(['準備（名簿）','シーンと配置','位置と表示の調整','書き出す・渡す',enabled ? 'データと共同編集' : 'データ']);
+    await expect(dialog.getByRole('button',{name:'共同編集を始める・招待する',exact:true})).toHaveCount(enabled ? 1 : 0);
     if (!enabled) {
       await capture(page,'help-list');
-      await dialog.getByRole('button',{name:'名簿をまとめて作る・直す',exact:true}).click();
+      await dialog.getByRole('button',{name:'名簿を先に作る',exact:true}).click();
       await capture(page,'help-roster-open');
     }
     for (let index=0; index<await headings.count(); index++) {
@@ -121,7 +122,10 @@ async function run(enabled) {
       await expect(heading).toHaveAttribute('aria-expanded','true');
       const body = page.locator(`[id="${await heading.getAttribute('aria-controls')}"]`);
       await expect(body).toBeVisible();
-      if ((await heading.textContent()).includes('共同編集')) { await expect(body.locator('li')).toHaveCount(11); await expect(body).toContainText('共有先への送信と確認が済んでいます'); await expect(body).not.toContainText('準備中'); }
+      const title = await heading.textContent();
+      if (title.includes('共同編集を始める')) { await expect(body.locator('li')).toHaveCount(6); await expect(body).toContainText('このコピーは以後の共同編集を受け取りません'); }
+      if (title.includes('共同編集中のしくみ')) { await expect(body.locator('li')).toHaveCount(5); await expect(body).toContainText('共有先への送信と確認が済んでいます'); }
+      await expect(body).not.toContainText('準備中');
       await heading.click(); await expect(body).toBeHidden();
     }
     await dialog.getByRole('button',{name:'困ったとき',exact:true}).click();
@@ -141,7 +145,7 @@ async function run(enabled) {
     assert.equal(await menuFooter.locator('button,a').first().textContent(),'使い方');
     await menuFooter.getByRole('button',{name:'使い方',exact:true}).click(); await expect(dialog).toBeVisible();
     if (enabled) {
-      await dialog.getByRole('button',{name:'みんなで同時に編集する（共同編集）',exact:true}).click();
+      await dialog.getByRole('button',{name:'共同編集を始める・招待する',exact:true}).click();
       await capture(page,'help-v2-collaboration');
     }
     await page.getByRole('button',{name:'使い方を閉じる',exact:true}).click(); await expect(dialog).toHaveCount(0);
