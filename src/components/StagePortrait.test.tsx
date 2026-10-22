@@ -40,6 +40,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("portrait stage controls and fit", () => {
+  it.each(["audience", "performer"] as const)("B12: passes the current %s perspective to the portrait menu", viewerPerspective => {
+    render(<StageCanvas {...props} compact viewerPerspective={viewerPerspective} />);
+    fireEvent.click(screen.getByRole("button", { name: "その他のステージ操作" }));
+    expect(screen.getByRole("menuitem", { name: `視点を切り替え（現在：${viewerPerspective === "performer" ? "踊る人側" : "観客側"}）` })).toBeTruthy();
+  });
   it.each([false, true])("B2: disables project save for saving, unavailable or read-only states (compact=%s)", compact => {
     const view = render(<StageCanvas {...props} compact={compact} />);
     const save = () => screen.getByRole<HTMLButtonElement>("button", { name: "隊列表を保存" });

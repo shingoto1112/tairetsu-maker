@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ViewerPerspective } from "../types";
 import { Maximize2, Minimize2, Pause, Play, Redo2, Save, Undo2 } from "lucide-react";
 import { StageTimeBar } from "./StageTimeBar";
 import { StageMoreMenu } from "./StageMoreMenu";
@@ -8,6 +9,7 @@ type Props = {
   currentTime: number; duration: number; audioName: string | null; sceneLabel: string;
   isPlaying: boolean; isFullscreen: boolean; isReadOnly: boolean;
   canUndo: boolean; canRedo: boolean; zoom: number; pinchLocked: boolean;
+  viewerPerspective: ViewerPerspective;
   onUndo: () => void; onRedo: () => void; onPlay: () => void; onSaveProject: () => void; saveDisabled: boolean;
   onSeek: (time: number) => void; onZoom: (zoom: number) => void;
   onCapture: () => void; onPerspective: () => void; onFullscreen: () => void; onPinchLock: () => void;
@@ -40,7 +42,7 @@ export const CompactStageControls = (props: Props) => {
           onClick: () => props.onSeek(Math.min(props.duration, Math.max(0, props.currentTime + delta))) })),
         { label: "ステージを画像保存", onClick: props.onCapture },
         { label: "ピンチ拡大縮小をロック", onClick: props.onPinchLock, pressed: props.pinchLocked },
-        { label: "観客側 / 踊る人側の視点を切り替え", onClick: props.onPerspective },
+        { label: `視点を切り替え（現在：${props.viewerPerspective === "performer" ? "踊る人側" : "観客側"}）`, onClick: props.onPerspective },
       ]} />
     </div>
   </div>;

@@ -61,12 +61,13 @@ it("opens a saved over-limit parade, rejects excess settings without changing th
   await waitFor(async () => expect((await repository.get("build26"))?.project).toMatchObject({ paradeSettings: { totalDistance: 501, backwardDistanceMeters: 501 } }));
   await waitFor(async () => expect((await repository.get("build26"))?.project.frames.find(f => f.id === "late")!.positions[memberId]).toEqual({ x: 2, y: 2 }));
   fireEvent.click(screen.getByRole("tab", { name: "ステージ" }));
-  const distance = await screen.findByRole("spinbutton", { name: "全体距離" });
+  // B10: the settings label now includes metres; the distance limits remain unchanged.
+  const distance = await screen.findByRole("spinbutton", { name: "全体距離（m）" });
   fireEvent.change(distance, { target: { value: "502" } });
   expect(observed.canvas!.project.paradeSettings!.totalDistance).toBe(501);
   expect(await screen.findByText(/全体距離は1〜500m/)).toBeTruthy();
   fireEvent.change(distance, { target: { value: "500" } });
-  const backward = screen.getByRole("spinbutton", { name: "後方表示距離" });
+  const backward = screen.getByRole("spinbutton", { name: "後方表示距離（m）" });
   fireEvent.change(backward, { target: { value: "502" } });
   expect(observed.canvas!.project.paradeSettings!.backwardDistanceMeters).toBe(501);
   fireEvent.change(backward, { target: { value: "500" } });

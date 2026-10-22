@@ -12,7 +12,7 @@ type Props = {
 
 export const PortraitPanelHeader = (props: Props) => <div ref={props.headerRef}
   className={`portrait-panel-header ${props.low ? "is-low" : ""}`}>
-    <h2>{props.title} <small aria-label={`表示${props.visibleCount}／非表示${props.hiddenCount}`}>{props.visibleCount}/{props.hiddenCount}</small></h2>
+    <h2><span>{props.title}</span>{" "}<small>表示 {props.visibleCount}・非表示 {props.hiddenCount}</small></h2>
     <input className="portrait-panel-header__search" type="search" aria-label={`${props.title}名を検索`}
       placeholder="名前を検索" value={props.query} onChange={(event) => props.onQuery(event.target.value)}
       onCompositionStart={props.onCompositionStart} onCompositionEnd={props.onCompositionEnd} />

@@ -145,7 +145,7 @@ export const StageSettingsPanel = ({
         />
         <div className="settings-grid">
           <label>
-            全体距離
+            全体距離（m）
             <NumericInput
               min={1}
               step="1"
@@ -159,7 +159,7 @@ export const StageSettingsPanel = ({
             />
           </label>
           <label>
-            後方表示距離
+            後方表示距離（m）
             <NumericInput
               min={0}
               step="1"
@@ -173,7 +173,7 @@ export const StageSettingsPanel = ({
             />
           </label>
           <label>
-            横幅
+            横幅（m）
             <NumericInput
               min={1}
               step="0.5"
@@ -187,7 +187,7 @@ export const StageSettingsPanel = ({
             />
           </label>
           <label>
-            1マスあたりの距離
+            1マスあたりの距離（m）
             <NumericInput
               min={0.1}
               step="0.1"
@@ -238,28 +238,21 @@ export const StageSettingsPanel = ({
     <section className="panel-section stage-settings-panel">
       <PanelStickyHeader
         title="ステージ設定"
-        meta={`現在: 横${stage.widthMeters}m / 縦${stage.depthMeters}m / ${
-          useGlobalStageSize ? "全シーン固定ON" : "シーン別サイズ"
-        }`}
-        actions={
-          <label className="sticky-select-label">
-            固定
-            <select
-              value={String(useGlobalStageSize)}
-              disabled={disabled}
-              onChange={(event) =>
-                onUseGlobalStageSizeChange(event.target.value === "true")
-              }
-            >
-              <option value="true">ON</option>
-              <option value="false">OFF</option>
-            </select>
-          </label>
-        }
+        meta={useGlobalStageSize
+          ? `現在: 全シーン共通 横${stage.widthMeters}m × 縦${stage.depthMeters}m`
+          : `シーン別サイズを使用／基準：横${stage.widthMeters}m × 縦${stage.depthMeters}m`}
       />
+    <label className="stage-size-toggle">
+      <input type="checkbox" checked={useGlobalStageSize} disabled={disabled}
+        onChange={(event) => onUseGlobalStageSizeChange(event.target.checked)} />
+      <span>全シーンで<wbr />同じ<wbr />大きさにする</span>
+    </label>
+    {!useGlobalStageSize && <p className="notice muted">
+      シーンごとの大きさが未設定のシーンで使います。各シーンの大きさはシーンの詳細で変えられます。
+    </p>}
     <div className="settings-grid">
       <label>
-        デフォルトの横
+        {useGlobalStageSize ? "ステージの横幅（m）" : "基準の横幅（m）"}
         <NumericInput
           min={1}
           step="0.5"
@@ -269,7 +262,7 @@ export const StageSettingsPanel = ({
         />
       </label>
       <label>
-        デフォルトの縦
+        {useGlobalStageSize ? "ステージの縦幅（m）" : "基準の縦幅（m）"}
         <NumericInput
           min={1}
           step="0.5"
@@ -279,7 +272,7 @@ export const StageSettingsPanel = ({
         />
       </label>
       <label>
-        グリッド間隔
+        グリッド間隔（m）
         <NumericInput
           min={0.1}
           step="0.1"
@@ -291,7 +284,7 @@ export const StageSettingsPanel = ({
       <HorizontalCountingCards compact disabled={disabled} value={stage.horizontalGuideMode ?? "meters"}
         onChange={(horizontalGuideMode) => onChange({ horizontalGuideMode })} />
       <label>
-        メンバー円の直径
+        メンバー円の直径（m）
         <NumericInput
           min={0.2}
           max={1}
@@ -304,10 +297,6 @@ export const StageSettingsPanel = ({
         />
       </label>
     </div>
-    <p className="notice muted">
-      現在: {useGlobalStageSize ? `全シーン共通 横${stage.widthMeters}m × 縦${stage.depthMeters}m` : "シーンごとのサイズを使用"}
-    </p>
-
     <details className="settings-disclosure" open>
       <summary>詳しい設定</summary>
       <GridEmphasisSettings stage={stage} disabled={disabled} onStageChange={onChange} />

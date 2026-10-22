@@ -47,7 +47,8 @@ describe("scene visibility picker", () => {
     render(<SceneVisibilityPicker {...props()} items={items.map(item => ({ ...item, selected: false }))} />);
     expect(document.querySelector(".scene-visibility-picker__info")?.textContent).toBe("☑で表示切替・名前タップで選択");
     expect(document.querySelector(".portrait-panel-header")?.textContent).not.toContain("管理欄の対象");
-    expect(screen.getByRole("heading", { name: "メンバー 表示1／非表示1" })).toBeTruthy();
+    // B8: the accessible heading now matches the visible PC/landscape count wording.
+    expect(screen.getByRole("heading", { name: "メンバー 表示 1・非表示 1" })).toBeTruthy();
   });
   it.each([false, true])("separates check and name with the same DOM; portrait=%s", async (portrait) => {
     const user = userEvent.setup(); const callbacks = props();

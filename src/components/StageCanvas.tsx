@@ -1905,6 +1905,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             sceneLabel={selectedFrameLabel} isPlaying={isPlaying} isFullscreen={isFullscreen}
             isReadOnly={isReadOnly} canUndo={canUndo} canRedo={canRedo}
             zoom={stageZoom} pinchLocked={isStagePinchLocked}
+            viewerPerspective={viewerPerspective}
             onUndo={onUndo} onRedo={onRedo} onPlay={onTogglePlayback} onSaveProject={onSaveProject} saveDisabled={isSaving || !canSaveProject || isReadOnly}
             onSeek={onSeekAudio} onZoom={updateStageZoom} onCapture={onCaptureStageImage}
             onPerspective={onTogglePerspective} onFullscreen={onToggleFullscreen}
