@@ -28,6 +28,13 @@ describe("HelpPage", () => {
       const region = within(dialog).getByRole("region", { name: section.title });
       expect(within(region).getAllByRole("listitem")).toHaveLength(section.items.length);
       if (section.location) expect(within(region).getByText("場所:")).toBeTruthy();
+      if (section.id === "roster" || section.id === "assignment") {
+        expect(region.textContent).not.toContain("メンバータブの「名簿」");
+        if (section.id === "roster") {
+          expect(region.textContent).toContain("「名簿」（左の列の一番上。iPad 縦では下の列）");
+          expect(region.textContent).toContain("三本線メニュー");
+        } else expect(region.textContent).toContain("「名簿」→「道具管理」→「道具割当」");
+      }
       if (section.id === "collab-start") {
         expect(region.textContent).toContain("このコピーは以後の共同編集を受け取りません");
         expect(region.textContent).toContain("現在のパスワードを忘れた場合はサポート");

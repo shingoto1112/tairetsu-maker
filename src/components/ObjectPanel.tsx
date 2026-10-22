@@ -28,7 +28,6 @@ import { SceneVisibilityPicker } from "./SceneVisibilityPicker";
 import { PortraitManagementTarget } from "./PortraitPanelHeader";
 import type { VisibilityItem, VisibilityMemory } from "../utils/sceneVisibility";
 import { PanelStickyHeader } from "./PanelStickyHeader";
-import { RosterManagerButton } from "./RosterManagerButton";
 import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { isMemberShownInScene } from "../utils/assignmentCandidates";
@@ -43,8 +42,6 @@ type ObjectPanelProps = {
   currentFrameId?: string;
   /** Resolved visibility of the selected scene (snapshot), used to order assignment candidates. */
   memberVisibility?: Readonly<Record<string, boolean>>;
-  onOpenRosterManager?: () => void;
-  canOpenRosterManager?: boolean;
   memberGroups: MemberGroup[];
   objects: StageObject[];
   objectStates: Record<string, ObjectState>;
@@ -123,8 +120,6 @@ export const ObjectPanel = ({
   visibilityMemory,
   currentFrameId,
   memberVisibility,
-  onOpenRosterManager,
-  canOpenRosterManager = true,
   memberGroups,
   objects,
   objectStates,
@@ -301,12 +296,6 @@ export const ObjectPanel = ({
   }), [objects, objectStates, objectAssignments, selected, sceneDisabled, sceneReadOnlyMessage]);
   const headerActions = (
           <>
-            {onOpenRosterManager && (
-              <RosterManagerButton
-                onClick={onOpenRosterManager}
-                disabled={!canOpenRosterManager}
-              />
-            )}
             <button
               className="mini-button primary"
               onClick={() => onAddObject(isVisibleTab)}

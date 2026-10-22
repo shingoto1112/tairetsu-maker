@@ -1,19 +1,66 @@
 /* @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PanelTabs, type PanelTabId } from "./PanelTabs";
 
 const Harness = () => {
   const [tab, setTab] = useState<PanelTabId>("members");
   const [open, setOpen] = useState(true);
-  return <PanelTabs activeTab={tab} isOpen={open} onChange={setTab} onToggleOpen={() => setOpen(!open)}>
+  return <PanelTabs activeTab={tab} isOpen={open} onChange={setTab} onToggleOpen={() => setOpen(!open)} onOpenRosterManager={() => {}}>
     <div className="panel-section"><div>{tab}</div></div>
   </PanelTabs>;
 };
 afterEach(cleanup);
 
 describe("vertical editor tabs", () => {
+  it("places the ordinary roster action immediately before the six-tab tablist", () => {
+    render(<Harness />);
+    const list = screen.getByRole("tablist", { name: "編集パネル" });
+    const roster = screen.getByRole("button", { name: "全体名簿を開く" });
+    expect(list.children).toHaveLength(6);
+    expect(within(list).getAllByRole("tab")).toHaveLength(6);
+    expect(list.previousElementSibling).toBe(roster);
+    expect(roster.textContent).toBe("名簿");
+    expect(roster.getAttribute("type")).toBe("button");
+    expect(roster.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(roster.querySelector("svg")).not.toBeNull();
+    for (const attribute of ["role", "aria-selected", "aria-pressed"]) expect(roster.hasAttribute(attribute)).toBe(false);
+    expect(roster.classList.contains("is-active")).toBe(false);
+  });
+
+  // Access follows the roster entrance, independently of project/scene edit permissions in the content.
+  it.each(["timeline", "members", "objects", "assignments", "audio", "stage"] as const)("uses the shared access prop and only opens the roster from %s", async activeTab => {
+    const user = userEvent.setup();
+    const onOpenRosterManager = vi.fn(), onChange = vi.fn(), onToggleOpen = vi.fn();
+    const props = { activeTab, isOpen: false, onOpenRosterManager, onChange, onToggleOpen };
+    const view = render(<PanelTabs {...props}><button disabled>編集不可</button></PanelTabs>);
+    const button = screen.getByRole("button", { name: "全体名簿を開く" }) as HTMLButtonElement;
+    expect(button.title).toBe("全体名簿を開く");
+    await user.click(button);
+    expect(onOpenRosterManager).toHaveBeenCalledExactlyOnceWith();
+    expect(document.activeElement).toBe(button);
+    expect(onChange).not.toHaveBeenCalled(); expect(onToggleOpen).not.toHaveBeenCalled();
+    onOpenRosterManager.mockClear();
+    view.rerender(<PanelTabs {...props} canOpenRosterManager={false}><button disabled>編集不可</button></PanelTabs>);
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("名簿の編集はownerのみ可能です。");
+    await user.click(button);
+    expect(onOpenRosterManager).not.toHaveBeenCalled();
+  });
+
+  it.each(["{Enter}", " "])("opens the roster with %s without changing tabs or panel visibility", async key => {
+    const user = userEvent.setup();
+    const onOpenRosterManager = vi.fn(), onChange = vi.fn(), onToggleOpen = vi.fn();
+    render(<PanelTabs activeTab="objects" isOpen onOpenRosterManager={onOpenRosterManager} onChange={onChange} onToggleOpen={onToggleOpen}>道具の編集</PanelTabs>);
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "全体名簿を開く" }));
+    await user.keyboard(key);
+    expect(onOpenRosterManager).toHaveBeenCalledExactlyOnceWith();
+    expect(onChange).not.toHaveBeenCalled(); expect(onToggleOpen).not.toHaveBeenCalled();
+  });
+
   it("saves and restores an independent scrollTop for each tab", () => {
     const { container } = render(<Harness />);
     const content = () => container.querySelector<HTMLElement>(".tab-panel__content")!;

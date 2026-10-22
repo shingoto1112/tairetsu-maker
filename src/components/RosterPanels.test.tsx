@@ -29,14 +29,14 @@ const frame: FormationFrame = {
 const assignmentProps = (): ComponentProps<typeof AssignmentPanel> => ({
   members, memberGroups, objects, objectGroups: [], frames: [frame],
   currentFrame: frame, previousFrame: null, objectStates: {}, previousObjectStates: {},
-  onOpenRosterManager: vi.fn(), onAssignMember: vi.fn().mockReturnValue(true),
+  onAssignMember: vi.fn().mockReturnValue(true),
   onApplyPreviousAssignments: vi.fn(), onRemoveAssignment: vi.fn(), onSelectFrame: vi.fn(),
 });
 const objectProps = (): ComponentProps<typeof ObjectPanel> => ({
   members, memberGroups, objects, objectGroups: [], objectStates: {},
   objectAssignments: frame.objectAssignments, selected: null,
   visibilityTab: "visible", scrollTarget: null, canPasteObject: false,
-  onOpenRosterManager: vi.fn(), onVisibilityTabChange: vi.fn(), onSelect: vi.fn(),
+  onVisibilityTabChange: vi.fn(), onSelect: vi.fn(),
   onUpdateObject: vi.fn(), onUpdateObjectState: vi.fn(), onDelete: vi.fn(),
   onNudgeZ: vi.fn(), onAddObject: vi.fn(),
   onCreateObjectGroup: vi.fn(), onUpdateObjectGroup: vi.fn(), onDeleteObjectGroup: vi.fn(),
@@ -48,7 +48,7 @@ const memberProps = (): ComponentProps<typeof MemberPanel> => ({
   members: [], groups: [],
   selected: null, selectedMemberIds: [],
   objectAssignmentLabelsByMemberId: {}, visibilityTab: "visible", scrollTarget: null,
-  canPasteMember: false, onOpenRosterManager: vi.fn(), onVisibilityTabChange: vi.fn(),
+  canPasteMember: false, onVisibilityTabChange: vi.fn(),
   onSelect: vi.fn(), onToggleMemberSelection: vi.fn(), onUpdate: vi.fn(),
   onSetMembersGlobalVisibility: vi.fn(), onSetMemberFrameVisibility: vi.fn(),
   onSetAllMembersFrameVisibility: vi.fn(), onSetGroupFrameVisibility: vi.fn(),
@@ -179,30 +179,15 @@ describe("roster panel integration", () => {
     expect(props.onUpdateObjectState).not.toHaveBeenCalled();
   });
 
-  it.each(["members", "objects", "assignments"] as const)("opens the roster from %s independently of project edit permission", async (panel) => {
-    const user = userEvent.setup();
-    const onOpenRosterManager = vi.fn();
-    if (panel === "members") render(<MemberPanel {...memberProps()} canEditProject={false} onOpenRosterManager={onOpenRosterManager} />);
-    if (panel === "objects") render(<ObjectPanel {...objectProps()} canEditProject={false} onOpenRosterManager={onOpenRosterManager} />);
-    if (panel === "assignments") render(<AssignmentPanel {...assignmentProps()} canEditScene={false} onOpenRosterManager={onOpenRosterManager} />);
-    const button = screen.getByRole("button", { name: "全体名簿を開く" });
-    expect(button.title).toBe("全体名簿を開く");
-    await user.click(button);
-    expect(onOpenRosterManager).toHaveBeenCalledTimes(1);
-  });
-
-  it.each(["members", "objects", "assignments"] as const)("disables the roster button for a non-owner in %s", async (panel) => {
-    const user = userEvent.setup();
-    const onOpenRosterManager = vi.fn();
-    const access = { canOpenRosterManager: false, onOpenRosterManager };
-    if (panel === "members") render(<MemberPanel {...memberProps()} {...access} />);
-    if (panel === "objects") render(<ObjectPanel {...objectProps()} {...access} />);
-    if (panel === "assignments") render(<AssignmentPanel {...assignmentProps()} {...access} />);
-    const button = screen.getByRole("button", { name: "全体名簿を開く" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(button.title).toBe("名簿の編集はownerのみ可能です。");
-    await user.click(button);
-    expect(onOpenRosterManager).not.toHaveBeenCalled();
+  // The shared entrance and access/disabled cases now live in PanelTabs.test.tsx.
+  it.each(["members", "objects", "assignments"] as const)("removes the old roster entrance from %s in both orientations", panel => {
+    for (const portrait of [false, true]) {
+      const view = panel === "members" ? render(<MemberPanel {...memberProps()} portrait={portrait} canEditProject={false} />)
+        : panel === "objects" ? render(<ObjectPanel {...objectProps()} portrait={portrait} canEditProject={false} />)
+        : render(<AssignmentPanel {...assignmentProps()} canEditScene={false} />);
+      expect(screen.queryByRole("button", { name: "全体名簿を開く" })).toBeNull();
+      view.unmount();
+    }
   });
 
   it.each(["objects", "assignments"] as const)("selects a candidate without assigning until confirmation in %s", async (panel) => {

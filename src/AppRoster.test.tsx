@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Project, SceneViewState } from "./types";
+import type { EditingMode, Project, SceneViewState } from "./types";
 import { createSampleProject } from "./sampleProject";
 import * as audioStorage from "./utils/audioStorage";
 import { stagePointToDisplayPoint } from "./utils/coordinates";
@@ -24,7 +24,7 @@ vi.mock("./storage/appRepository", async importOriginal => ({
   },
 }));
 
-const canvas = vi.hoisted(() => ({ project: null as Project | null, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
+const canvas = vi.hoisted(() => ({ project: null as Project | null, mode: "members" as EditingMode, canUndo: false, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
 const canvasActions = vi.hoisted(() => ({ move: null as null | ((id: string, p: { x: number; y: number }) => void), view: null as null | ((id: string, view: SceneViewState) => void), playing: false }));
 vi.mock("./components/ParadeCanvas", () => ({
   ParadeCanvas: forwardRef<HTMLDivElement, { project: Project; selectedFrameId: string | null; selectedMemberIds: string[]; isPlaying: boolean; onMoveMember: (id: string, p: { x: number; y: number }) => void; onFrameViewStateChange: (id: string, view: SceneViewState) => void }>((props, ref) => {
@@ -35,8 +35,9 @@ vi.mock("./components/ParadeCanvas", () => ({
   }),
 }));
 vi.mock("./components/StageCanvas", () => ({
-  StageCanvas: forwardRef<HTMLDivElement, { project: Project; focusMode: boolean; focusMemberId?: string; movementPathMode: string; selectedFrameId: string | null; selectedMemberIds: string[] }>((props, ref) => {
+  StageCanvas: forwardRef<HTMLDivElement, { project: Project; mode: EditingMode; canUndo: boolean; focusMode: boolean; focusMemberId?: string; movementPathMode: string; selectedFrameId: string | null; selectedMemberIds: string[] }>((props, ref) => {
     canvas.project = props.project;
+    canvas.mode = props.mode; canvas.canUndo = props.canUndo;
     canvas.focusMode = props.focusMode;
     canvas.focusMemberId = props.focusMemberId ?? "";
     canvas.movementPathMode = props.movementPathMode;
@@ -52,6 +53,54 @@ import App from "./App";
 const INTEGRATION_TIMEOUT_MS = 20_000;
 
 describe("App roster confirmation integration", () => {
+  const rosterEntrances = [
+    { tab: "シーン", mode: "preview" }, { tab: "メンバー", mode: "members" },
+    { tab: "道具", mode: "objects" }, { tab: "割当", mode: "preview" },
+    { tab: "音源", mode: "preview" }, { tab: "ステージ", mode: "stage" },
+  ] as const;
+  describe.each([false, true])("roster entrance with panel closed=%s", closed => {
+    it.each(rosterEntrances)("opens from $tab and preserves the editor, focus and Undo history", async ({ tab, mode }) => {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+      const selectedTab = await screen.findByRole("tab", { name: tab });
+      fireEvent.click(selectedTab);
+      expect(canvas.mode).toBe(mode);
+      expect(canvas.canUndo).toBe(false);
+      // A real edit makes an extra, otherwise invisible Undo entry observable.
+      fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "名簿入口の履歴検証" } });
+      expect(canvas.canUndo).toBe(true);
+      if (closed) fireEvent.click(screen.getByRole("button", { name: "編集パネルを閉じる" }));
+      const projectBefore = structuredClone(canvas.project);
+      const trigger = screen.getByRole("button", { name: "全体名簿を開く" });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        fireEvent.click(trigger);
+        const roster = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
+        const objects = tab === "道具";
+        await waitFor(() => expect(within(roster).getByRole("button", { name: objects ? "道具管理" : "メンバー管理" }).classList.contains("is-active")).toBe(true));
+        if (objects) {
+          expect(within(roster).getByRole("button", { name: "名前の編集" }).getAttribute("aria-pressed")).toBe("true");
+          fireEvent.click(within(roster).getByRole("button", { name: "道具割当" }));
+        } else {
+          fireEvent.click(within(roster).getByRole("button", { name: "道具管理" }));
+          fireEvent.click(within(roster).getByRole("button", { name: "道具割当" }));
+        }
+        if (objects) fireEvent.click(within(roster).getByRole("button", { name: "メンバー管理" }));
+        fireEvent.click(within(roster).getByRole("button", { name: "隊列表へ戻る" }));
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: "メンバー/道具の管理" })).toBeNull());
+        expect(document.activeElement).toBe(trigger);
+        expect(selectedTab.getAttribute("aria-selected")).toBe("true");
+        expect(canvas.mode).toBe(mode);
+        expect(screen.getByRole("button", { name: closed ? "編集パネルを開く" : "編集パネルを閉じる" })).toBeTruthy();
+        expect(canvas.project).toEqual(projectBefore);
+      }
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+      expect(canvas.project!.title).toBe("削除検証");
+      expect(canvas.canUndo).toBe(false);
+      fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
+      expect(canvas.project!.title).toBe("名簿入口の履歴検証");
+    }, INTEGRATION_TIMEOUT_MS);
+  });
+
   it.each(["member", "object"] as const)("edits %s coordinates through the upper card, keeps Undo and focuses with Ctrl/Cmd+1", async type => {
     render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
     if (type === "object") fireEvent.click(await screen.findByRole("tab", { name: "道具" }));

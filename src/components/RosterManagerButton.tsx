@@ -8,14 +8,19 @@ export const RosterManagerButton = ({
   disabled?: boolean;
 }) => (
   <button
-    className="mini-button roster-manager-button"
+    className="panel-action roster-manager-button"
     type="button"
-    onClick={onClick}
+    onClick={(event) => {
+      // Safari does not always focus clicked buttons; useModalFocus restores this trigger.
+      event.currentTarget.focus({ preventScroll: true });
+      onClick();
+    }}
     disabled={disabled}
     aria-label="全体名簿を開く"
+    aria-haspopup="dialog"
     title={disabled ? "名簿の編集はownerのみ可能です。" : "全体名簿を開く"}
   >
-    <Table2 size={15} aria-hidden="true" />
-    名簿
+    <Table2 size={18} aria-hidden="true" />
+    <span>名簿</span>
   </button>
 );

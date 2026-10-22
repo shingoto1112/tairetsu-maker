@@ -2,16 +2,17 @@ import { chromium, webkit, expect } from '@playwright/test';
 import { createServer } from 'vite';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 
 // Local DEV only: isolated storage, synthetic data, no installs or external traffic.
 const engine = process.env.LAYOUT_ENGINE ?? 'chromium';
 if (!['chromium','webkit'].includes(engine)) throw Error('Unsupported layout engine');
-const output = path.resolve('output/build29/layout-matrix', engine === 'webkit' ? 'webkit' : '.');
+const output = await fs.mkdtemp(path.join(os.tmpdir(), `tairetsu-layout-${engine}-`));
 const port = Number(process.env.LAYOUT_PORT ?? 5392);
 if (port < 5392 || port > 5399) throw Error('Use a port in 5392–5399');
 const origin = `http://127.0.0.1:${port}`;
 const tablets = [[744,1133],[768,1024],[810,1080],[820,1180],[834,1112],[834,1194],[834,1210],[1024,1366],[1032,1376]];
-const windows = [[590,820],[400,820],[1000,700],[700,900]];
+const windows = [[590,820],[400,820],[1000,700],[700,900],[820,400],[1440,900]];
 const android = [[1280,800],[1152,720],[962,601],[1848,1155]];
 const configs = [];
 for (const [w,h] of [...tablets, ...windows]) {
@@ -67,6 +68,22 @@ async function geometry(page,{keyboard=false,expectedHeight,roster=false,home=fa
       const portrait=!!document.querySelector('[data-workspace-layout="portrait"]');
       const minimum=portrait?Math.min(250,innerHeight*.24):Math.min(120,innerHeight*.25);
       if(!sr || sr.height<minimum || sr.width<80) failures.push({rule:'stage-collapsed',rect:sr?.toJSON(),minimum});
+      const header=document.querySelector('.panel-tabs-header');
+      const tabs=header?.querySelector('[role="tablist"]');
+      const action=header?.querySelector('.panel-action');
+      if(!action || tabs?.previousElementSibling!==action || tabs.children.length!==6 || tabs.querySelectorAll('[role="tab"]').length!==6) failures.push({rule:'roster-entrance-structure'});
+      if(portrait && innerWidth>=744) {
+        const bounds=header.getBoundingClientRect();
+        if(Math.abs(bounds.height-56)>1 || tabs.scrollWidth>tabs.clientWidth+1 || header.scrollWidth>header.clientWidth+1) failures.push({rule:'panel-row-overflow',height:bounds.height,scrollWidth:tabs.scrollWidth,clientWidth:tabs.clientWidth});
+        for(const e of header.querySelectorAll('.panel-action,.panel-tab,.panel-collapse-button')) {
+          const b=e.getBoundingClientRect(),label=e.querySelector('span');
+          if(b.top<bounds.top-1 || b.bottom>bounds.bottom+1 || b.left<bounds.left-1 || b.right>bounds.right+1) failures.push({rule:'panel-button-outside-row',text:e.textContent});
+          if(!label) continue;
+          const range=document.createRange();range.selectNodeContents(label);const r=range.getBoundingClientRect();
+          if(r.left<b.left-1||r.right>b.right+1||r.top<b.top-1||r.bottom>b.bottom+1) failures.push({rule:'panel-label-outside-button',text:e.textContent});
+          if(getComputedStyle(label).whiteSpace!=='nowrap' || parseFloat(getComputedStyle(label).fontSize)<12) failures.push({rule:'panel-label-shrunk-or-wrapped',text:e.textContent});
+        }
+      }
     }
     const scope=roster?root:document;
     const scrollPositions=[...document.querySelectorAll('*')].filter(e=>e.scrollHeight>e.clientHeight||e.scrollWidth>e.clientWidth).map(e=>[e,e.scrollLeft,e.scrollTop]);
@@ -220,6 +237,26 @@ async function runConfig(browser,config) {
           await overview.press('Home');
         }
       }
+      if(count===45&&grouped) {
+        // The vertical rail must scroll to its last control even in a short landscape window.
+        const toggle=page.getByRole('button',{name:'編集パネルを閉じる',exact:true});
+        await assertReachable(page,toggle);await toggle.click();
+        await expect(page.locator('.tab-panel__content')).toHaveCount(0);
+        await record(page,meta,'panel-collapsed');
+        const trigger=page.getByRole('button',{name:'全体名簿を開く',exact:true});
+        for(const key of ['Enter','Space']) {
+          await trigger.focus();await trigger.press(key);
+          const dialog=page.getByRole('dialog',{name:'メンバー/道具の管理',exact:true});
+          await dialog.waitFor();
+          await expect(dialog.getByRole('button',{name:'メンバー管理',exact:true})).toHaveClass('is-active');
+          await dialog.getByRole('button',{name:'隊列表へ戻る',exact:true}).click();
+          await expect(trigger).toBeFocused();
+          await expect(page.getByRole('tab',{name:'ステージ',exact:true})).toHaveAttribute('aria-selected','true');
+          await expect(page.locator('.tab-panel__content')).toHaveCount(0);
+        }
+        await page.getByRole('button',{name:'編集パネルを開く',exact:true}).click();
+        await record(page,meta,'panel-reopened');
+      }
       await openRoster(page);
       const roster=page.getByRole('dialog',{name:'メンバー/道具の管理',exact:true});
       await record(page,meta,'roster-members',{roster:true});
@@ -259,7 +296,7 @@ async function runConfig(browser,config) {
 let server,browser;
 try {
   server=await createServer({envFile:false,server:{host:'127.0.0.1',port,strictPort:true},logLevel:'warn'});await server.listen();
-  console.log(`Local matrix PID ${process.pid}, port ${port}`);
+  console.log(`Local matrix PID ${process.pid}, port ${port}, results ${output}`);
   browser=await (engine === 'webkit' ? webkit : chromium).launch({headless:true,...(engine === 'chromium' ? {args:['--disable-background-networking']} : {})});
   const queue=[...selected];
   await Promise.all(Array.from({length:Number(process.env.LAYOUT_WORKERS??3)},async()=>{while(queue.length)await runConfig(browser,queue.shift());}));

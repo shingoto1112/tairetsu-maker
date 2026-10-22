@@ -13,6 +13,7 @@ import { ReactNode, useLayoutEffect, useRef } from "react";
 
 import { usePortraitPanelHeight } from "../hooks/usePortraitPanelHeight";
 import { PanelResizeHandle } from "./PanelResizeHandle";
+import { RosterManagerButton } from "./RosterManagerButton";
 
 export type PanelTabId =
   | "members"
@@ -36,6 +37,8 @@ type PanelTabsProps = {
   children: ReactNode;
   onChange: (tab: PanelTabId) => void;
   onToggleOpen: () => void;
+  onOpenRosterManager: () => void;
+  canOpenRosterManager?: boolean;
 };
 
 const tabs: PanelTab[] = [
@@ -55,6 +58,8 @@ export const PanelTabs = ({
   children,
   onChange,
   onToggleOpen,
+  onOpenRosterManager,
+  canOpenRosterManager = true,
 }: PanelTabsProps) => {
   const panelRef = useRef<HTMLElement>(null);
   const heightControl = usePortraitPanelHeight(panelRef, portrait, keyboardOpen);
@@ -76,6 +81,7 @@ export const PanelTabs = ({
     <aside ref={panelRef} className={isOpen ? "tab-panel" : "tab-panel is-collapsed"}>
       <div className="panel-tabs-header">
         {portrait && <PanelResizeHandle control={heightControl} />}
+        <RosterManagerButton onClick={onOpenRosterManager} disabled={!canOpenRosterManager} />
         <div className="panel-tabs" role="tablist" aria-label="編集パネル">
         {tabs.map((tab) => {
           const Icon = tab.icon;

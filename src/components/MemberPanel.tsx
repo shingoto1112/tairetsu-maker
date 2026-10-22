@@ -20,7 +20,6 @@ import { SceneVisibilityPicker } from "./SceneVisibilityPicker";
 import { PortraitManagementTarget } from "./PortraitPanelHeader";
 import type { VisibilityItem, VisibilityMemory } from "../utils/sceneVisibility";
 import { PanelStickyHeader } from "./PanelStickyHeader";
-import { RosterManagerButton } from "./RosterManagerButton";
 import { ColorPaletteInput } from "./ColorPaletteInput";
 import { getMemberDisplayColor } from "../utils/memberAppearance";
 import type { ReactNode } from "react";
@@ -31,8 +30,6 @@ type MemberPanelProps = {
   visibilityMemory?: VisibilityMemory;
   onRestoreMember: (id: string) => void;
   children?: ReactNode;
-  onOpenRosterManager?: () => void;
-  canOpenRosterManager?: boolean;
   members: Member[];
   selected: Selection;
   selectedMemberIds: string[];
@@ -95,8 +92,6 @@ export const MemberPanel = ({
   visibilityMemory,
   onRestoreMember,
   children,
-  onOpenRosterManager,
-  canOpenRosterManager = true,
   members,
   selected,
   selectedMemberIds,
@@ -473,12 +468,6 @@ export const MemberPanel = ({
     groupColorByMemberId, selected, selectedIds, sceneDisabled, projectDisabled, sceneReadOnlyMessage, projectReadOnlyMessage]);
   const headerActions = (
           <>
-            {onOpenRosterManager && (
-              <RosterManagerButton
-                onClick={onOpenRosterManager}
-                disabled={!canOpenRosterManager}
-              />
-            )}
             <button
               className="mini-button primary"
               onClick={() =>

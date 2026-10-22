@@ -9,7 +9,6 @@ import {
 } from "../types";
 import { formatTime } from "../utils/time";
 import { PanelStickyHeader } from "./PanelStickyHeader";
-import { RosterManagerButton } from "./RosterManagerButton";
 import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
 import { buildMemberGroupIndex, sortMembersForPicker } from "../utils/memberOrdering";
 import { isMemberShownInScene } from "../utils/assignmentCandidates";
@@ -19,8 +18,6 @@ type AssignmentView = "objects" | "members";
 type MemberSort = "total" | "assignments" | "hidden" | "group";
 
 type AssignmentPanelProps = {
-  onOpenRosterManager?: () => void;
-  canOpenRosterManager?: boolean;
   memberGroups: MemberGroup[];
   frames: FormationFrame[];
   members: Member[];
@@ -45,8 +42,6 @@ type AssignmentPanelProps = {
 };
 
 export const AssignmentPanel = ({
-  onOpenRosterManager,
-  canOpenRosterManager = true,
   memberGroups,
   frames,
   members,
@@ -375,12 +370,6 @@ export const AssignmentPanel = ({
         meta={currentFrameMeta}
         actions={
           <>
-            {onOpenRosterManager && (
-              <RosterManagerButton
-                onClick={onOpenRosterManager}
-                disabled={!canOpenRosterManager}
-              />
-            )}
             <div className="member-visibility-tabs" role="tablist" aria-label="割当表示">
               <button
                 className={view === "objects" ? "is-active" : ""}

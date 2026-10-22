@@ -7011,8 +7011,9 @@ function App() {
   const remoteLayer = ephemeral ? <Suspense fallback={null}><RemoteInteractionLayer session={ephemeral} project={project} sceneId={canvasFrameId} perspective={viewerPerspective} /></Suspense> : undefined;
   const canvasSnapshot = snapshot;
 
+  // Both roster entrances share the existing access condition.
+  const canOpenRosterManager = true;
   const openRosterManager = (mode?: "members" | "objects") => {
-
     setRosterInitialMode(mode);
     setIsRosterManagerOpen(true);
   };
@@ -7045,8 +7046,6 @@ function App() {
             portrait={workspaceLayout.isPortrait}
             visibilityMemory={visibilityMemories.members}
             onRestoreMember={(id) => setMembersFrameVisibility([id], true, true)}
-            canOpenRosterManager={true}
-            onOpenRosterManager={() => openRosterManager("members")}
             members={project.members}
             selected={selected}
             selectedMemberIds={selectedMemberIds}
@@ -7113,8 +7112,6 @@ function App() {
           visibilityMemory={visibilityMemories.objects}
           currentFrameId={selectedFrame?.id}
           memberVisibility={selectedFrameSnapshot.memberVisibility}
-          canOpenRosterManager={true}
-          onOpenRosterManager={() => openRosterManager("objects")}
           memberGroups={project.memberGroups ?? []}
           objects={project.stageObjects}
           objectGroups={project.objectGroups ?? []}
@@ -7158,8 +7155,6 @@ function App() {
     if (activePanelTab === "assignments") {
       return (
         <AssignmentPanel
-          canOpenRosterManager={true}
-          onOpenRosterManager={() => openRosterManager("members")}
           memberGroups={project.memberGroups ?? []}
           frames={displayFrames}
           members={project.members}
@@ -7473,7 +7468,7 @@ function App() {
         onBackToLibrary={() => void returnToLibrary()}
         onSaveProject={() => void saveProjectManually()}
         onOpenShareExport={() => setIsShareExportOpen(true)}
-        canOpenRosterManager={true}
+        canOpenRosterManager={canOpenRosterManager}
         onOpenRosterManager={() => openRosterManager()}
       />
       {APP_FEATURES.collaborationV2 && <Suspense fallback={null}><CollaborationSurface bridge={collaborationUi} view="editor" localId={project.id} attached={!!sharedSession.active?.attached} /></Suspense>}
@@ -7524,6 +7519,8 @@ function App() {
           portrait={workspaceLayout.isPortrait}
           keyboardOpen={workspaceLayout.keyboardOpen}
           activeTab={activePanelTab}
+          canOpenRosterManager={canOpenRosterManager}
+          onOpenRosterManager={() => openRosterManager(activePanelTab === "objects" ? "objects" : "members")}
           isOpen={isPanelOpen}
           onChange={handlePanelTabChange}
           onToggleOpen={() => setIsPanelOpen((previous) => !previous)}
