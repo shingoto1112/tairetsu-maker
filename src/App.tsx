@@ -22,6 +22,8 @@ import type { SharingOperation } from "./collaboration/uiTypes";
 import { createEmptyFormationProject } from "./project/createEmptyFormationProject";
 import { validateProjectStructure } from "./project/codec";
 import { copyRosterToNewProject } from "./project/rosterCopy";
+import { setMembersFrameVisibility as applyMembersFrameVisibility } from "./project/memberVisibility";
+import { MEMBER_PLACEMENT_OVERLAP_NOTICE, placeNewMembers } from "./utils/memberPlacement";
 import { applyObjectAppearance, objectDraftForGroup, changeObjectMembership, type ObjectAppearancePatch } from "./project/objectAppearance";
 import {
   createProjectId,
@@ -2589,6 +2591,7 @@ function App() {
       zIndex: 20 + project.members.length,
     };
 
+    let placementOverlaps = false;
     updateProject((previous) => {
       const activeFrame = previous.frames.find((frame) => frame.id === activeFrameId);
       const paradeDefaultPosition = getParadeVisibleCenterPosition(
@@ -2626,6 +2629,11 @@ function App() {
                   : frameStage.showGrid ? frameStage.gridSizeMeters : NaN,
                 horizontalGridOriginMeters(frameStage.widthMeters, previous.mode === "parade"
                   ? previous.paradeSettings?.horizontalMeasureMode : frameStage.horizontalGuideMode), 0, frameStage.widthMeters);
+              if (!requestedPosition) {
+                const placement = placeNewMembers(previous, frame, 1, paradeDefaultPosition ?? undefined);
+                Object.assign(basePosition, placement.positions[0]);
+                placementOverlaps ||= placement.overlapCount > 0;
+              }
               const isActiveFrame = frame.id === activeFrameId;
               return {
                 ...frame,
@@ -2657,7 +2665,7 @@ function App() {
       requestPanelScroll("member", id);
     }
     setNotice(
-      group
+      placementOverlaps ? MEMBER_PLACEMENT_OVERLAP_NOTICE : group
         ? `${group.name} に ${member.name} を追加しました。`
         : "メンバーを追加しました。",
       "success",
@@ -2842,51 +2850,13 @@ function App() {
     }
     const activeFrameId = selectedFrame.id;
 
-    const noticeText =
-      visible
-        ? "すべてのメンバーを表示し、道具割当を解除しました。"
-        : "すべてのメンバーをこのシーンで非表示にしました。";
-    const applyChange = () => {
-      updateProject((previous) => ({
-        ...previous,
-        members:
-          visible
-            ? previous.members.map((member) => ({ ...member, visible: true }))
-            : previous.members,
-        frames: previous.frames.map((frame) => {
-          if (frame.id !== activeFrameId) {
-            return frame;
-          }
-          const frameStage = {
-            ...previous.stage,
-            ...getEffectiveStageSize(previous, frame),
-          };
-          const memberVisibility = { ...(frame.memberVisibility ?? {}) };
-          const positions = { ...frame.positions };
-          previous.members.forEach((member, index) => {
-            memberVisibility[member.id] = visible;
-            if (visible && !positions[member.id]) {
-              positions[member.id] = constrainMemberPosition(
-                {
-                  x: frameStage.widthMeters / 2 + index * 0.18,
-                  y: frameStage.depthMeters / 2 + index * 0.18,
-                },
-                frameStage,
-              );
-            }
-          });
-          return {
-            ...frame,
-            memberVisibility,
-            objectAssignments: visible ? {} : frame.objectAssignments,
-            positions,
-          };
-        }),
-      }));
-      setNotice(noticeText, "success");
-    };
-
-    applyChange();
+    let notice = "";
+    updateProject(previous => {
+      const result = applyMembersFrameVisibility(previous, activeFrameId, visible);
+      notice = result.notice;
+      return result.project;
+    });
+    setNotice(notice, "success");
   };
 
   const setGroupsFrameVisibility = (ids: string[], visible: boolean) => {
@@ -5098,7 +5068,8 @@ function App() {
 
   const createNewFormationProject = async (input: NewFormationInput) => {
     const empty = createEmptyFormationProject(input.title, input, null);
-    const prepared = input.rosterCopy ? copyRosterToNewProject(empty, input.rosterCopy.source, input.rosterCopy, createId) : empty;
+    const copied = input.rosterCopy ? copyRosterToNewProject(empty, input.rosterCopy.source, input.rosterCopy, createId) : null;
+    const prepared = copied?.project ?? empty;
     let audio: AudioMeta | null = null;
     let audioNotice: string | null = null;
     if (input.audioFile) {
@@ -5111,8 +5082,8 @@ function App() {
     const nextProject = normalizeProject({ ...prepared, audio });
     return await openProjectInEditor(
       nextProject,
-      audioNotice ?? "新しい隊列表を作成しました。",
-      { noticeKind: audioNotice ? "persistent" : "success" },
+      [audioNotice, copied?.overlapCount ? MEMBER_PLACEMENT_OVERLAP_NOTICE : null].filter(Boolean).join(" ") || "新しい隊列表を作成しました。",
+      { noticeKind: audioNotice || copied?.overlapCount ? "persistent" : "success" },
     );
   };
 

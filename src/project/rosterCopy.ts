@@ -1,6 +1,6 @@
 import type { Project } from "../types";
 import { constrainObjectPosition } from "../utils/coordinates";
-import { horizontalGridOriginMeters, snapHorizontalPositionInBounds } from "../utils/horizontalGrid";
+import { placeNewMembers } from "../utils/memberPlacement";
 import { createDefaultObjectState } from "../utils/interpolation";
 import { objectBaseSize, objectSizeLimits } from "./objectAppearance";
 
@@ -21,7 +21,7 @@ export function oversizedRosterObjects(source: Project, destination: Project): O
  * Destination must be a newly created, empty project. No source scene or attachment is spread. */
 export function copyRosterToNewProject(
   destination: Project, source: Project, options: RosterCopyOptions, newId: (prefix: string) => string,
-): Project {
+): { project: Project; overlapCount: number } {
   if (destination.members.length || destination.stageObjects.length || destination.frames.length !== 1)
     throw new Error("名簿は空の新しい隊列表にコピーしてください。");
   const oversized = new Set(options.includeObjects ? oversizedRosterObjects(source, destination).map(object => object.id) : []);
@@ -52,16 +52,13 @@ export function copyRosterToNewProject(
     id: newId("og"), name: group.name, color: group.color, defaultType: group.defaultType, defaultShape: group.defaultShape,
     objectIds: remap(group.objectIds, objectsById),
   })) : [];
-  // Same initial placement as a normal roster addition without a saved camera.
-  const memberX = snapHorizontalPositionInBounds(limits.widthMeters / 2,
-    destination.mode === "parade" ? destination.paradeSettings?.cellSizeMeters ?? destination.stage.gridSizeMeters
-      : destination.stage.showGrid ? destination.stage.gridSizeMeters : NaN,
-    horizontalGridOriginMeters(limits.widthMeters, destination.mode === "parade"
-      ? destination.paradeSettings?.horizontalMeasureMode : destination.stage.horizontalGuideMode), 0, limits.widthMeters);
   const frame = destination.frames[0];
-  return { ...destination, members, memberGroups, stageObjects, objectGroups, frames: [{ ...frame,
-    positions: Object.fromEntries(members.map(member => [member.id, { x: memberX, y: limits.heightMeters / 2 }])),
+  // Reserve in roster order even though the initial scene hides everyone.
+  const placement = placeNewMembers(destination, frame, members.length,
+    { x: limits.widthMeters / 2, y: limits.heightMeters / 2 });
+  return { overlapCount: placement.overlapCount, project: { ...destination, members, memberGroups, stageObjects, objectGroups, frames: [{ ...frame,
+    positions: Object.fromEntries(members.map((member, index) => [member.id, placement.positions[index]])),
     memberVisibility: Object.fromEntries(members.map(member => [member.id, false])),
     objectStates: Object.fromEntries(stageObjects.map(object => [object.id, { ...createDefaultObjectState(object), visible: false }])),
-  }] };
+  }] } };
 }

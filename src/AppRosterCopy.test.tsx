@@ -61,6 +61,11 @@ it.each(["stage", "parade"])("creates an independent %s roster from a locally sa
   expect((await repository.get("source-local"))!.collaboration).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "すべて表示" }));
   expect(initial.members.every(m => observed.project!.frames[0].memberVisibility?.[m.id] !== false)).toBe(true);
+  // B1: hidden copies reserve their places, and showing them never repositions them.
+  expect(observed.project!.frames[0].positions).toEqual(initial.frames[0].positions);
+  const positions = initial.members.map(m => initial.frames[0].positions[m.id]);
+  positions.forEach((a, i) => positions.slice(i + 1).forEach(b =>
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(initial.stage.memberDiameterMeters!)));
   fireEvent.click(screen.getByRole("tab", { name: "道具" }));
   fireEvent.click(await screen.findByRole("button", { name: "すべて表示" }, { timeout: 10_000 }));
   expect(Object.values(observed.project!.frames[0].objectStates).every(object => object.visible)).toBe(true);
@@ -72,6 +77,19 @@ it.each(["stage", "parade"])("creates an independent %s roster from a locally sa
   expect(observed.project!.id).toBe(id); expect(observed.project!.members).toEqual(initial.members);
   expect(initial.members.every(m => observed.project!.frames[0].memberVisibility?.[m.id] !== false)).toBe(true);
   expect(Object.values(observed.project!.frames[0].objectStates).every(object => object.visible)).toBe(true);
+}, 20_000);
+it("B1: a full destination still copies the entire roster and notifies", async () => {
+  render(<App />); await startCopy();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "横幅" }), { target: { value: "1" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "縦幅" }), { target: { value: "1" } });
+  fireEvent.click(screen.getByText("詳しい設定（あとから変更できます）"));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "メンバー円の直径" }), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "道具もコピーする" }));
+  fireEvent.click(screen.getByRole("button", { name: "作成する" }));
+  await screen.findByTestId("copy-canvas");
+  expect(await screen.findByText("空きがないため一部を重ねて置きました。")).toBeTruthy();
+  expect(observed.project!.members).toHaveLength(3);
+  expect(Object.values(observed.project!.frames[0].memberVisibility!)).toEqual([false, false, false]);
 }, 20_000);
 it("retains a new roster after a failed initial save and retries the same project instead of duplicating it", async () => {
   render(<App />); await startCopy();

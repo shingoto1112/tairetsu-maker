@@ -27,7 +27,7 @@ it.each([ ["stage", "stage"], ["stage", "parade"], ["parade", "stage"], ["parade
     const source = fixture(); source.mode = sourceMode;
     Object.assign(source, { sync: { accountId: "secret" }, collaboration: { outbox: ["secret"] }, audio: { id: "audio-secret" } });
     const destination = empty(targetMode); const before = structuredClone(source), destBefore = structuredClone(destination);
-    const p = copyRosterToNewProject(destination, source, { includeObjects: true, oversizedPolicy: "shrink" }, ids());
+    const p = copyRosterToNewProject(destination, source, { includeObjects: true, oversizedPolicy: "shrink" }, ids()).project;
     expect(source).toEqual(before); expect(destination).toEqual(destBefore);
     expect(p.id).toBe(destination.id); expect(p.id).not.toBe(source.id);
     expect(p.stage).toEqual(destination.stage); expect(p.paradeSettings).toEqual(destination.paradeSettings);
@@ -43,7 +43,16 @@ it.each([ ["stage", "stage"], ["stage", "parade"], ["parade", "stage"], ["parade
     expect(p.frames[0].sceneViewState).toBeUndefined();
     expect(Object.values(p.frames[0].memberVisibility!)).toEqual([false, false, false]);
     expect(p.members.every(m => m.visible)).toBe(true);
-    expect(p.frames[0].positions[p.members[0].id]).toEqual({ x: 4, y: 6 });
+    // B1: preserve copy order while reserving separate circles instead of a shared center.
+    expect(p.members.map(m => p.frames[0].positions[m.id])).toEqual([
+      { x: 4, y: 6 }, { x: 4.5, y: 6 }, { x: 3.5, y: 6 },
+    ]);
+    const positions = Object.values(p.frames[0].positions);
+    positions.forEach((a, i) => {
+      expect(a.x).toBeGreaterThanOrEqual(0); expect(a.x).toBeLessThanOrEqual(8);
+      expect(a.y).toBeGreaterThanOrEqual(0); expect(a.y).toBeLessThanOrEqual(12);
+      positions.slice(i + 1).forEach(b => expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(.5));
+    });
     expect(p.stageObjects[0]).toMatchObject({ widthMeters: 8, heightMeters: 2, shape: "curtain", defaultX: 0, defaultY: 5, defaultRotation: 0, locked: false, visible: true, zIndex: 10 });
     expect(Object.values(p.frames[0].objectStates).every(s => !s.visible && s.rotation === 0)).toBe(true);
   });
@@ -52,32 +61,32 @@ it("requires an explicit choice, excludes oversized objects with intact groups, 
   const source = fixture(), dest = empty();
   expect(oversizedRosterObjects(source, dest)).toEqual([{ id: source.stageObjects[0].id, name: "移動幕", widthMeters: 10, heightMeters: 2 }]);
   expect(() => copyRosterToNewProject(dest, source, { includeObjects: true }, ids())).toThrow("扱いを選んで");
-  const excluded = copyRosterToNewProject(dest, source, { includeObjects: true, oversizedPolicy: "exclude" }, ids());
+  const excluded = copyRosterToNewProject(dest, source, { includeObjects: true, oversizedPolicy: "exclude" }, ids()).project;
   expect(excluded.stageObjects.map(o => o.name)).toEqual(["椅子"]);
   expect(excluded.objectGroups![0].objectIds).toEqual([excluded.stageObjects[0].id]);
   expect(dest.members).toEqual([]); // Returning makes no project and changes no input.
-  const resized = copyRosterToNewProject(empty("stage", 12, 12), source, { includeObjects: true }, ids());
+  const resized = copyRosterToNewProject(empty("stage", 12, 12), source, { includeObjects: true }, ids()).project;
   expect(resized.stageObjects[0].widthMeters).toBe(10);
-  const twoAxes = copyRosterToNewProject(empty("parade", 8, 1), source, { includeObjects: true, oversizedPolicy: "shrink" }, ids());
+  const twoAxes = copyRosterToNewProject(empty("parade", 8, 1), source, { includeObjects: true, oversizedPolicy: "shrink" }, ids()).project;
   expect(twoAxes.stageObjects[0]).toMatchObject({ widthMeters: 8, heightMeters: 1 });
 });
 
 it.each(["rectangle", "circle", "curtain", "custom", "line"] as const)("preserves saved %s shape and registration size on a modal-size tie", shape => {
   const source = fixture(); source.stageObjects[0].shape = shape;
   source.frames = source.frames.slice(0, 2); source.frames[0].objectStates[source.stageObjects[0].id].widthMeters = 3;
-  const p = copyRosterToNewProject(empty(), source, { includeObjects: true }, ids());
+  const p = copyRosterToNewProject(empty(), source, { includeObjects: true }, ids()).project;
   expect(p.stageObjects[0]).toMatchObject({ shape, widthMeters: 2.2, heightMeters: 5.6 });
 });
 it("can omit tools and handles an empty roster and empty groups", () => {
-  const source = fixture(); const p = copyRosterToNewProject(empty(), source, { includeObjects: false }, ids());
+  const source = fixture(); const p = copyRosterToNewProject(empty(), source, { includeObjects: false }, ids()).project;
   expect(p.stageObjects).toEqual([]); expect(p.objectGroups).toEqual([]); expect(p.frames[0].objectStates).toEqual({});
   source.members = []; source.stageObjects = [];
-  const blank = copyRosterToNewProject(empty(), source, { includeObjects: true }, ids());
+  const blank = copyRosterToNewProject(empty(), source, { includeObjects: true }, ids()).project;
   expect(blank.memberGroups![0].memberIds).toEqual([]); expect(blank.objectGroups![0].objectIds).toEqual([]);
   expect(blank.frames[0].positions).toEqual({});
 });
 it("round-trips the copied roster and hidden initial scene through ZIP", async () => {
-  const p = copyRosterToNewProject(empty(), fixture(), { includeObjects: true, oversizedPolicy: "shrink" }, ids());
+  const p = copyRosterToNewProject(empty(), fixture(), { includeObjects: true, oversizedPolicy: "shrink" }, ids()).project;
   const archive = await createTairetsuArchive(p);
   const restored = await readTairetsuArchive(new File([await archive.arrayBuffer()], "roster.zip"));
   expect(restored.project).toEqual(JSON.parse(JSON.stringify(p))); expect(restored.audioBlob).toBeNull();
