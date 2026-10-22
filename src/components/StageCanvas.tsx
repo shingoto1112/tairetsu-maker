@@ -440,7 +440,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
     const frontDirection =
       stage.frontDirection ?? stage.audienceSide ?? "bottom";
-    // The centre-count row follows the displayed 0m line; the 18px spare row moves to the other side.
+    // The centre-count row follows the displayed 0m line. At the bottom, the row above the stage keeps only the
+    // member bleed (zoom-scaled) so members on the top edge stay reachable; see fittedStageSize.
     const rulerAtBottom = horizontalRulerSide(stage, viewerPerspective) === "bottom";
     const originMode = stage.originMode ?? "center";
     const memberDiameterMeters = Math.min(
@@ -715,7 +716,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       : fitAreaSize.height;
 
     const fittedStageSize = useMemo(() => {
-      const rulerBottomPadding = showMeterRulers ? RULER_BOTTOM_PADDING_PX : 0;
+      // The spare row opposite the counts: a fixed 18px below them, or the member bleed above them when the
+      // counts sit at the bottom (overflow above the scroll origin can never be scrolled into view).
+      const rulerBottomPadding = showMeterRulers && !rulerAtBottom ? RULER_BOTTOM_PADDING_PX : 0;
+      const bleedRows = showMeterRulers && rulerAtBottom ? 2 : 1;
       const rulerLabelWidth = showMeterRulers ? RULER_LABEL_WIDTH_PX : 0;
       const rulerLabelHeight = showMeterRulers ? RULER_LABEL_HEIGHT_PX : 0;
       const rulerSideCount = showMeterRulers ? 2 : 0;
@@ -737,7 +741,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             Math.min(
               availableWidth /
                 (safeWidthMeters + memberBleedMeters * rulerSideCount),
-              availableHeight / (safeDepthMeters + memberBleedMeters),
+              availableHeight / (safeDepthMeters + memberBleedMeters * bleedRows),
             ),
           )
         : 48;
@@ -747,7 +751,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         heightPx: safeDepthMeters * pxPerMeter,
         memberBleedPx,
         pxPerMeter,
-        rulerBottomPadding,
+        rulerBottomPadding: bleedRows === 2 ? memberBleedPx : rulerBottomPadding,
         rulerHeight: showMeterRulers ? rulerLabelHeight + memberBleedPx : 0,
         rulerLabelOffset: memberBleedPx + 7,
         rulerWidth: showMeterRulers ? rulerLabelWidth + memberBleedPx : 0,
@@ -757,6 +761,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       fitHeight,
       fitWidth,
       memberDiameterMeters,
+      rulerAtBottom,
       showMeterRulers,
       stage.depthMeters,
       stage.widthMeters,
@@ -773,7 +778,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         heightPx: safeDepthMeters * pxPerMeter,
         memberBleedPx,
         pxPerMeter,
-        rulerBottomPadding: fittedStageSize.rulerBottomPadding,
+        rulerBottomPadding: showMeterRulers && rulerAtBottom ? memberBleedPx : fittedStageSize.rulerBottomPadding,
         rulerHeight: showMeterRulers ? RULER_LABEL_HEIGHT_PX + memberBleedPx : 0,
         rulerLabelOffset: memberBleedPx + 7,
         rulerWidth: showMeterRulers ? RULER_LABEL_WIDTH_PX + memberBleedPx : 0,
@@ -783,6 +788,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       fittedStageSize.pxPerMeter,
       fittedStageSize.rulerBottomPadding,
       memberDiameterMeters,
+      rulerAtBottom,
       showMeterRulers,
       stage.depthMeters,
       stage.widthMeters,
@@ -1067,7 +1073,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         startZoom, continuousZoom: startZoom, finishing: false, lastAnchor: midpoint,
         geometry: { viewport, padding: { left: 0, right: 0, top: 0, bottom: 0 }, startZoom, pixelsPerMeter: fittedStageSize.pxPerMeter,
           fixed: { left: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, right: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0,
-            top: showMeterRulers ? (rulerAtBottom ? RULER_BOTTOM_PADDING_PX : RULER_LABEL_HEIGHT_PX) : 0 },
+            top: showMeterRulers && !rulerAtBottom ? RULER_LABEL_HEIGHT_PX : 0 },
           bleedMeters: showMeterRulers ? memberDiameterMeters / 2 : 0, bleedBelow: showMeterRulers && rulerAtBottom,
           bottom: showMeterRulers ? (rulerAtBottom ? RULER_LABEL_HEIGHT_PX : RULER_BOTTOM_PADDING_PX) : 0, centerAtFit: true,
           stageMeters: { width: stage.widthMeters, height: stage.depthMeters }, startScroll: { x: container.scrollLeft, y: container.scrollTop },

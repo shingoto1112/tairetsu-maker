@@ -46,12 +46,13 @@ describe("member bleed below the stage (centre counts at the bottom)", () => {
   const base: PinchGeometry = { viewport: { left: 0, top: 0, width: 600, height: 400 }, padding: { left: 0, right: 0, top: 0, bottom: 0 },
     fixed: { left: 30, right: 30, top: 20 }, stageMeters: { width: 10, height: 6 }, startZoom: 1, pixelsPerMeter: 40,
     startScroll: { x: 0, y: 0 }, startOrigin: { x: 0, y: 0 }, anchorMeters: { x: 5, y: 3 }, bleedMeters: .25, bottom: 18, centerAtFit: true };
-  it("keeps the total height and drops the bleed from the anchor above the stage", () => {
+  it("keeps the bleed above (never scrollable) and adds a zoom-scaled bleed below", () => {
     const above = resolvePinchView(base, 2, { x: 300, y: 200 });
-    const below = resolvePinchView({ ...base, fixed: { ...base.fixed, top: 18 }, bottom: 20, bleedBelow: true }, 2, { x: 300, y: 200 });
-    expect(below.height).toBeCloseTo(above.height);
+    const below = resolvePinchView({ ...base, fixed: { ...base.fixed, top: 0 }, bottom: 20, bleedBelow: true }, 2, { x: 300, y: 200 });
+    expect(above.height).toBeCloseTo(6 * 80 + 20 + .25 * 80 + 18);
+    expect(below.height).toBeCloseTo(6 * 80 + .25 * 80 * 2 + 20);
     expect(above.anchor.y).toBeCloseTo(20 + .25 * 80 + 3 * 80);
-    expect(below.anchor.y).toBeCloseTo(18 + 3 * 80);
+    expect(below.anchor.y).toBeCloseTo(.25 * 80 + 3 * 80);
     expect(below.anchor.x).toBeCloseTo(above.anchor.x);
   });
 });
