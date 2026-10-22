@@ -1,5 +1,29 @@
 /* Scene-aware member selection for prop assignment (MemberPicker, MemberToggleList, ObjectAssignmentEditor).
    Kept out of styles.css so it can evolve independently. */
+.member-picker__panel .member-picker__multiple-candidate {
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.member-picker__panel .member-picker__multiple-candidate input[type="checkbox"] {
+  flex: 0 0 20px;
+  height: 20px;
+  min-height: 20px;
+  margin: 0;
+  padding: 0;
+  width: 20px;
+}
+
+.member-picker__multiple-candidate input:focus-visible {
+  outline: 2px solid #14b8a6;
+  outline-offset: 2px;
+}
+
+.assignment-selection-summary {
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
 .member-picker__hidden-only {
   align-items: center;
   display: flex;

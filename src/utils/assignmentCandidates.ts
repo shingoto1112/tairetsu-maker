@@ -13,3 +13,8 @@ export const isMemberShownInScene = (
 /** Assigning a member to a prop hides them in that scene (see assignMemberToObject). */
 export const shownMemberAssignmentNotice = (name: string): string =>
   `${name}さんは表示中です。割り当てると、このシーンでは非表示になります。`;
+
+export const shownMembersAssignmentNotice = (selected: Member[], shownCount: number): string =>
+  selected.length === 1 ? shownMemberAssignmentNotice(selected[0].name)
+    : shownCount === selected.length ? `選択した${selected.length}人は表示中です。割り当てると、このシーンでは非表示になります。`
+    : `選択した${selected.length}人のうち${shownCount}人は表示中です。割り当てると、このシーンでは非表示になります。`;

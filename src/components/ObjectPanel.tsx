@@ -28,7 +28,7 @@ import { SceneVisibilityPicker } from "./SceneVisibilityPicker";
 import { PortraitManagementTarget } from "./PortraitPanelHeader";
 import type { VisibilityItem, VisibilityMemory } from "../utils/sceneVisibility";
 import { PanelStickyHeader } from "./PanelStickyHeader";
-import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
+import { ObjectAssignmentEditor, type AssignMembers } from "./ObjectAssignmentEditor";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { isMemberShownInScene } from "../utils/assignmentCandidates";
 import type { MemberPickerSceneVisibility } from "./MemberPicker";
@@ -36,6 +36,8 @@ import { ColorPaletteInput } from "./ColorPaletteInput";
 import { ObjectShapeButtons } from "./ObjectShapeButtons";
 
 type ObjectPanelProps = {
+  projectId?: string;
+  canAssignMembers?: boolean;
   portrait?: boolean;
   selectedPositionSlot?: ReactNode;
   visibilityMemory?: VisibilityMemory;
@@ -79,7 +81,7 @@ type ObjectPanelProps = {
   onCopySelected: () => void;
   onPasteObject: (visibleInCurrentFrame?: boolean) => void;
   canPasteObject: boolean;
-  onAssignMember: AssignMember;
+  onAssignMembers: AssignMembers;
   onRemoveAssignment: (
     objectId: string,
     memberId: string,
@@ -115,6 +117,7 @@ const typeLabel: Record<StageObjectType, string> = {
 };
 
 export const ObjectPanel = ({
+  projectId, canAssignMembers = true,
   portrait = false,
   selectedPositionSlot,
   visibilityMemory,
@@ -149,7 +152,7 @@ export const ObjectPanel = ({
   onCopySelected,
   onPasteObject,
   canPasteObject,
-  onAssignMember,
+  onAssignMembers,
   onRemoveAssignment,
   onPlaceSelectedObject,
 }: ObjectPanelProps) => {
@@ -791,9 +794,10 @@ export const ObjectPanel = ({
                   groupIndex={memberGroupIndex}
                   isPickerOpen={openPickerObjectId === object.id}
                   onPickerOpenChange={(isOpen) => setOpenPickerObjectId(isOpen ? object.id : null)}
-                  disabled={sceneDisabled}
+                  disabled={sceneDisabled || !canAssignMembers}
+                  projectId={projectId}
                   readOnlyMessage={sceneReadOnlyMessage}
-                  onAssignMember={onAssignMember}
+                  onAssignMembers={onAssignMembers}
                   onRemoveAssignment={onRemoveAssignment}
                   sceneVisibility={assignmentSceneVisibility}
                   sceneId={currentFrameId}

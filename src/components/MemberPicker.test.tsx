@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -148,5 +148,35 @@ describe("MemberPicker", () => {
     const trigger = screen.getByRole("button", { name: "メンバーを選択" }) as HTMLButtonElement;
     expect(trigger.disabled).toBe(true);
     expect(trigger.title).toBe("閲覧のみ");
+  });
+
+  it("multiple mode uses labelled native checkboxes, stays open and keeps off-list choices", () => {
+    const onSelectionChange = vi.fn();
+    const Harness = () => {
+      const [open, setOpen] = useState(true);
+      const [ids, setIds] = useState<string[]>([]);
+      const [hiddenOnly, setHiddenOnly] = useState(false);
+      return <MemberPicker selectionMode="multiple" members={members} groupIndex={groupIndex}
+        selectedMemberIds={ids} onSelectionChange={(next) => { setIds(next); onSelectionChange(next); }}
+        isOpen={open} onOpenChange={setOpen}
+        sceneVisibility={{ isShown: (member) => member.id === "b", hiddenOnly, onHiddenOnlyChange: setHiddenOnly }} />;
+    };
+    render(<Harness />);
+    const shown = screen.getByRole("checkbox", { name: "メンバー2 赤組 表示中" }) as HTMLInputElement;
+    expect(shown.type).toBe("checkbox"); expect(shown.closest("button")).toBeNull();
+    fireEvent.click(shown.closest("label")!);
+    expect(shown.checked).toBe(true);
+    expect(screen.getByRole("button", { name: "1人を選択中" }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "メンバー1 赤組" }));
+    fireEvent.click(screen.getByRole("button", { name: "名前順" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "このシーンで非表示の人だけ" }));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(["b", "a"]);
+    expect(screen.getByRole("button", { name: "2人を選択中" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "このシーンで非表示の人だけ" }));
+    expect((screen.getByRole("checkbox", { name: "メンバー2 赤組 表示中" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "メンバー1 赤組" }));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(["b"]);
   });
 });

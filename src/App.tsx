@@ -81,6 +81,7 @@ import { PanelTabId, PanelTabs } from "./components/PanelTabs";
 import { getPrintOrientation, PrintPreview } from "./components/PrintPreview";
 import { nextNumberedName } from "./utils/numberedName";
 import { nextRosterItemName } from "./utils/rosterColumns";
+import { applyMembersToObject, membersAssignmentApplied, membersAssignmentNotice, type ObjectAssignmentResult } from "./utils/objectAssignment";
 import { confirmAssignmentUpdate } from "./utils/assignmentUpdate";
 import { isModalOpen } from "./utils/modal";
 import { formatExportTimestamp, withFileExtension } from "./utils/exportFileName";
@@ -2931,31 +2932,45 @@ function App() {
     );
   };
 
-  const assignMemberToObject = (objectId: string, memberId: string) => {
-    const object = project.stageObjects.find((item) => item.id === objectId);
-    const member = project.members.find((item) => item.id === memberId);
-    if (!object || !member) {
-      setNotice("割り当てる道具またはメンバーが見つかりません。");
+  const assignMembersToObject = (objectId: string, memberIds: string[]): boolean => {
+    const activeFrameId = selectedFrameIdRef.current;
+    const projectId = projectRef.current.id;
+    const canAssign = () => objectEditingAllowedRef.current() &&
+      projectRef.current.id === projectId && selectedFrameIdRef.current === activeFrameId;
+    if (!activeFrameId || !canAssign()) {
+      setNotice("閲覧のみ、または再生中のため割当できません。");
       return false;
     }
-    return updateMemberAssignmentsInCurrentFrame(
-      (frame) => {
-        const objectAssignments = { ...(frame.objectAssignments ?? {}) };
-        objectAssignments[objectId] = [
-          ...new Set([...(objectAssignments[objectId] ?? []), memberId]),
-        ];
-        return {
-          objectAssignments,
-          memberVisibility: {
-            ...(frame.memberVisibility ?? {}),
-            [memberId]: false,
-          },
-          positions: frame.positions,
-        };
-      },
-      `${member.name} を ${object.name} に割り当てました。`,
-    );
+    let result: ObjectAssignmentResult | undefined;
+    try {
+      updateProject((previous) => {
+        if (!canAssign()) return previous;
+        result = applyMembersToObject(previous, activeFrameId, objectId, memberIds);
+        return result.project;
+      }, "道具割当", { coalesceHistory: false });
+      if (!result) return false;
+      if (result.error) { setNotice(result.error); return false; }
+      if (!result.addedMemberIds.length) {
+        if (result.alreadyAssignedCount > 0) setNotice(membersAssignmentNotice("", 0, result.alreadyAssignedCount));
+        return false;
+      }
+      const live = sharedEditorRef.current?.project ?? projectRef.current;
+      if (!membersAssignmentApplied(live, activeFrameId, objectId, result.addedMemberIds)) {
+        setNotice("割当を反映できませんでした。内容を確認して、もう一度お試しください。");
+        return false;
+      }
+      const objectName = live.stageObjects.find((item) => item.id === objectId)?.name ?? "道具";
+      const singleName = result.addedMemberIds.length === 1 ? live.members.find((item) => item.id === result!.addedMemberIds[0])?.name : undefined;
+      setNotice(membersAssignmentNotice(objectName, result.addedMemberIds.length, result.alreadyAssignedCount, singleName), "success");
+      return true;
+    } catch {
+      setNotice("割当中にエラーが発生しました。もう一度お試しください。");
+      return false;
+    }
   };
+
+  const assignMemberToObject = (objectId: string, memberId: string) =>
+    assignMembersToObject(objectId, [memberId]);
 
   const removeObjectAssignment = (
     objectId: string,
@@ -7106,6 +7121,9 @@ function App() {
     if (activePanelTab === "objects") {
       return (
         <ObjectPanel
+          projectId={project.id}
+          canAssignMembers={canEditRosterObjects}
+          sceneReadOnlyMessage={objectReadOnlyMessage}
           selectedPositionSlot={selected?.type !== "member" && !selectedMemberIds.length ? selectedPositionCard : undefined}
           key={project.id}
           portrait={workspaceLayout.isPortrait}
@@ -7145,7 +7163,7 @@ function App() {
           onCopySelected={() => copyObjectToClipboard()}
           onPasteObject={pasteObjectFromClipboard}
           canPasteObject={clipboard?.type === "object"}
-          onAssignMember={assignMemberToObject}
+          onAssignMembers={assignMembersToObject}
           onRemoveAssignment={removeObjectAssignment}
           onPlaceSelectedObject={placeSelectedObject}
         />
@@ -7155,6 +7173,10 @@ function App() {
     if (activePanelTab === "assignments") {
       return (
         <AssignmentPanel
+          key={project.id}
+          projectId={project.id}
+          canAssignMembers={canEditRosterObjects}
+          sceneReadOnlyMessage={objectReadOnlyMessage}
           memberGroups={project.memberGroups ?? []}
           frames={displayFrames}
           members={project.members}
@@ -7167,7 +7189,7 @@ function App() {
           memberVisibility={selectedFrameSnapshot.memberVisibility}
           canEditScene={true}
 
-          onAssignMember={assignMemberToObject}
+          onAssignMembers={assignMembersToObject}
           onApplyPreviousAssignments={applyPreviousAssignmentsToCurrentFrame}
           onRemoveAssignment={removeObjectAssignment}
           onSelectFrame={(id) => {

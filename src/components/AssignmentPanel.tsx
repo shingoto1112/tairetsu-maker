@@ -9,7 +9,7 @@ import {
 } from "../types";
 import { formatTime } from "../utils/time";
 import { PanelStickyHeader } from "./PanelStickyHeader";
-import { ObjectAssignmentEditor, type AssignMember } from "./ObjectAssignmentEditor";
+import { ObjectAssignmentEditor, type AssignMembers } from "./ObjectAssignmentEditor";
 import { buildMemberGroupIndex, sortMembersForPicker } from "../utils/memberOrdering";
 import { isMemberShownInScene } from "../utils/assignmentCandidates";
 import type { MemberPickerSceneVisibility } from "./MemberPicker";
@@ -18,6 +18,8 @@ type AssignmentView = "objects" | "members";
 type MemberSort = "total" | "assignments" | "hidden" | "group";
 
 type AssignmentPanelProps = {
+  projectId?: string;
+  canAssignMembers?: boolean;
   memberGroups: MemberGroup[];
   frames: FormationFrame[];
   members: Member[];
@@ -31,7 +33,7 @@ type AssignmentPanelProps = {
   memberVisibility?: Readonly<Record<string, boolean>>;
   canEditScene?: boolean;
   sceneReadOnlyMessage?: string;
-  onAssignMember: AssignMember;
+  onAssignMembers: AssignMembers;
   onApplyPreviousAssignments: () => void;
   onRemoveAssignment: (
     objectId: string,
@@ -42,6 +44,7 @@ type AssignmentPanelProps = {
 };
 
 export const AssignmentPanel = ({
+  projectId, canAssignMembers = true,
   memberGroups,
   frames,
   members,
@@ -54,7 +57,7 @@ export const AssignmentPanel = ({
   memberVisibility,
   canEditScene = true,
   sceneReadOnlyMessage = "編集するには、このシーンの編集ロックを取得してください。",
-  onAssignMember,
+  onAssignMembers,
   onApplyPreviousAssignments,
   onRemoveAssignment,
   onSelectFrame,
@@ -276,9 +279,10 @@ export const AssignmentPanel = ({
                   groupIndex={memberGroupIndex}
                   isPickerOpen={openPickerObjectId === object.id}
                   onPickerOpenChange={(isOpen) => setOpenPickerObjectId(isOpen ? object.id : null)}
-                  disabled={sceneDisabled}
+                  disabled={sceneDisabled || !canAssignMembers}
+                  projectId={projectId}
                   readOnlyMessage={sceneReadOnlyMessage}
-                  onAssignMember={onAssignMember}
+                  onAssignMembers={onAssignMembers}
                   onRemoveAssignment={onRemoveAssignment}
                   sceneVisibility={sceneVisibility}
                   sceneId={currentFrame.id}

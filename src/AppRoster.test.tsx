@@ -26,6 +26,14 @@ vi.mock("./storage/appRepository", async importOriginal => ({
 
 const canvas = vi.hoisted(() => ({ project: null as Project | null, mode: "members" as EditingMode, canUndo: false, focusMode: true, focusMemberId: "", movementPathMode: "", selectedFrameId: null as string | null, selectedMemberIds: [] as string[] }));
 const canvasActions = vi.hoisted(() => ({ move: null as null | ((id: string, p: { x: number; y: number }) => void), view: null as null | ((id: string, view: SceneViewState) => void), playing: false }));
+const assignmentActions = vi.hoisted(() => ({ assign: null as null | ((objectId: string, memberIds: string[]) => boolean | Promise<boolean>) }));
+vi.mock("./components/ObjectAssignmentEditor", async importOriginal => {
+  const original = await importOriginal<typeof import("./components/ObjectAssignmentEditor")>();
+  return { ...original, ObjectAssignmentEditor: (props: import("react").ComponentProps<typeof original.ObjectAssignmentEditor>) => {
+    assignmentActions.assign = props.onAssignMembers;
+    return <original.ObjectAssignmentEditor {...props} />;
+  } };
+});
 vi.mock("./components/ParadeCanvas", () => ({
   ParadeCanvas: forwardRef<HTMLDivElement, { project: Project; selectedFrameId: string | null; selectedMemberIds: string[]; isPlaying: boolean; onMoveMember: (id: string, p: { x: number; y: number }) => void; onFrameViewStateChange: (id: string, view: SceneViewState) => void }>((props, ref) => {
     canvas.project = props.project; canvas.selectedFrameId = props.selectedFrameId; canvas.selectedMemberIds = props.selectedMemberIds;
@@ -530,6 +538,70 @@ describe("App roster confirmation integration", () => {
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
   });
   afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it.each(["道具", "割当"])("checks five people in %s, commits once and restores every field with one Undo/Redo", async tab => {
+    testProject.members.push(...Array.from({ length: 5 }, (_, i) => ({ id: `bulk${i}`, name: `追加${i}`, color: "#000", visible: i !== 0 })));
+    testProject.frames[0].objectAssignments = { o_chair: ["m_ben"], o_curtain: ["bulk0"] };
+    testProject.frames[0].memberVisibility = { m_ben: false, bulk1: true };
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    fireEvent.click(await screen.findByRole("tab", { name: tab }));
+    const findCard = () => Array.from(document.querySelectorAll("article")).find(card =>
+      (card.querySelector("strong")?.textContent === "椅子" || card.querySelector('input[aria-label="椅子 の名前"]')) &&
+      card.querySelector(".object-assignment-editor"))!;
+    await waitFor(() => expect(findCard()).toBeTruthy());
+    const before = structuredClone(canvas.project!);
+    const noChange = assignmentActions.assign!;
+    await act(async () => expect(await noChange("o_chair", ["m_ben", "m_ben"])).toBe(false));
+    expect(canvas.project).toEqual(before); expect(canvas.canUndo).toBe(false);
+    expect(screen.getByText("選択した人は全員、この道具の担当です。")).toBeTruthy();
+    fireEvent.click(within(findCard()).getByRole("button", { name: "人を選ぶ" }));
+    expect(within(findCard()).queryByRole("checkbox", { name: /^Ben / })).toBeNull();
+    for (let i = 0; i < 5; i++) fireEvent.click(within(findCard()).getByRole("checkbox", { name: new RegExp(`^追加${i} `) }));
+    expect(canvas.project).toEqual(before); expect(canvas.canUndo).toBe(false);
+    await act(async () => fireEvent.click(within(findCard()).getByRole("button", { name: "割当（5人）" })));
+    const after = structuredClone(canvas.project!);
+    const ids = Array.from({ length: 5 }, (_, i) => `bulk${i}`);
+    expect(after.frames[0]).toEqual({ ...before.frames[0],
+      objectAssignments: { o_chair: ["m_ben", ...ids], o_curtain: ["bulk0"] },
+      memberVisibility: { ...before.frames[0].memberVisibility, ...Object.fromEntries(ids.map(id => [id, false])) },
+    });
+    expect(after.frames.slice(1)).toEqual(before.frames.slice(1));
+    expect(after.members).toEqual(before.members); expect(after.stageObjects).toEqual(before.stageObjects);
+    expect(screen.getByText("5人を椅子に割り当てました。")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(canvas.project!.frames).toEqual(before.frames); expect(canvas.canUndo).toBe(false);
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
+    expect(canvas.project!.frames).toEqual(after.frames);
+    // All are now assigned: no new history or successful acknowledgement.
+    await act(async () => expect(await assignmentActions.assign!("o_chair", ids)).toBe(false));
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(canvas.project!.frames).toEqual(before.frames); expect(canvas.canUndo).toBe(false);
+    // A stale caller with one existing and two new members receives the partial count.
+    await act(async () => expect(await assignmentActions.assign!("o_chair", ["m_ben", "bulk0", "bulk1"])).toBe(true));
+    expect(screen.getByText("2人を椅子に割り当てました。1人は割当済みです。")).toBeTruthy();
+  }, INTEGRATION_TIMEOUT_MS);
+
+  it("blocks both assignment tabs and an old assignment callback during playback", async () => {
+    testProject.mode = "parade";
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const view = render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "割当" }));
+    await screen.findAllByRole("button", { name: "人を選ぶ" });
+    const stale = assignmentActions.assign!;
+    fireEvent.click(screen.getByRole("tab", { name: "音源" }));
+    view.container.querySelector("audio")!.src = "blob:local-test";
+    fireEvent.click(await screen.findByRole("button", { name: "再生" }, { timeout: 5000 }));
+    await waitFor(() => expect(canvasActions.playing).toBe(true));
+    const before = structuredClone(canvas.project!.frames);
+    for (const tab of ["割当", "道具"]) {
+      fireEvent.click(screen.getByRole("tab", { name: tab }));
+      const triggers = await screen.findAllByRole("button", { name: "人を選ぶ" });
+      for (const trigger of triggers) expect((trigger as HTMLButtonElement).disabled).toBe(true);
+      for (const button of screen.getAllByRole("button", { name: "割当（0人）" })) expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+    await act(async () => expect(await stale("o_chair", ["m_anna", "m_chika"])).toBe(false));
+    expect(canvas.project!.frames).toEqual(before);
+  }, INTEGRATION_TIMEOUT_MS);
 
   it.each([false, true])("opens the project with an overlay; missing audio=%s preserves the error instead of a success", async (missingAudio) => {
     vi.useFakeTimers();

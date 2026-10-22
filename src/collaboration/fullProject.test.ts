@@ -20,6 +20,7 @@ import { sortFrames, createDefaultObjectState } from "../utils/interpolation";
 import { applyObjectAppearance } from "../project/objectAppearance";
 import { assertRecipeUpdateSize, recipeUpdateBytes } from "./recipeUpdateSize";
 import { SHARED_DOCUMENT_LIMITS } from "../config/collaborationLimits";
+import { applyMembersToObject, membersAssignmentApplied } from "../utils/objectAssignment";
 
 const resources: { destroy(): void }[] = [];
 const keep = <T extends { destroy(): void }>(resource: T): T => { resources.push(resource); return resource; };
@@ -56,6 +57,16 @@ const converge = (s: ReturnType<typeof peers>, reverse = true) => {
 };
 
 describe("schema 2 full Project mapping", () => {
+  it("concurrent bulk assignment to the same object preserves both peers' added members", () => {
+    const s = peers();
+    s.edit(0, p => applyMembersToObject(p, "f_001", "o_001", ["m_001", "m_002"]).project);
+    s.edit(1, p => applyMembersToObject(p, "f_001", "o_001", ["m_003"]).project);
+    converge(s);
+    expect(new Set(s.project().frames[0].objectAssignments?.o_001)).toEqual(new Set(["m_001", "m_002", "m_003"]));
+    expect(membersAssignmentApplied(s.project(), "f_001", "o_001", ["m_001", "m_002", "m_003"])).toBe(true);
+    s.commands[0].undo(); converge(s);
+    expect(s.project().frames[0].objectAssignments?.o_001).toEqual(["m_003"]);
+  });
   it("display time ordering is stable and emits no Yjs updates or saved order changes", () => {
     const p = fixture();
     p.frames = [p.frames[2], { ...p.frames[0], timeSec: 10 }, p.frames[1]];
@@ -225,6 +236,34 @@ describe("App entry/save-session boundary", () => {
     };
     return { p, repository, coordinator, editor, commands, remote, receive, failed, latest: () => latest };
   }
+  it("bulk assignment compiles against remote additions, acknowledges projected values and undoes once", async () => {
+    const s = await setup();
+    await s.receive(() => {
+      const before = projectSharedDocument(s.remote, s.p);
+      s.commands.applyRecipe(before, applyMembersToObject(before, "f_001", "o_001", ["m_001"]).project);
+    });
+    const before = s.editor.project;
+    let added: string[] = [];
+    s.editor.edit(p => {
+      const result = applyMembersToObject(p, "f_001", "o_001", ["m_001", "m_002", "m_003", "m_003"]);
+      expect(result.alreadyAssignedCount).toBe(1); added = result.addedMemberIds; return result.project;
+    });
+    expect(added).toEqual(["m_002", "m_003"]);
+    expect(s.latest().frames[0].objectAssignments?.o_001).toEqual(["m_001", "m_002", "m_003"]);
+    expect(membersAssignmentApplied(s.latest(), "f_001", "o_001", added)).toBe(true);
+    const after = s.editor.project;
+    expect(after.frames[0].positions).toEqual(before.frames[0].positions);
+    expect(after.frames.slice(1)).toEqual(before.frames.slice(1));
+    expect(s.editor.undo().status).toBe("applied");
+    expect(s.editor.project.frames).toEqual(before.frames);
+    expect(s.editor.commands.canUndo).toBe(false);
+    expect(s.editor.redo().status).toBe("applied");
+    expect(s.editor.project.frames).toEqual(after.frames);
+    s.editor.edit(p => applyMembersToObject(p, "f_001", "o_001", ["m_001", "m_002", "m_003"]).project);
+    s.editor.undo(); expect(s.editor.project.frames).toEqual(before.frames);
+    expect(s.editor.commands.canUndo).toBe(false);
+    expect(s.failed).not.toHaveBeenCalled();
+  });
   it("fresh recipes preserve remote edits; rejects captured whole Project/frame replacement; coordinator refuses Project-only writes", async () => {
     const s = await setup(), stale = s.editor.project;
     // Remember the exact projection a React handler captured.

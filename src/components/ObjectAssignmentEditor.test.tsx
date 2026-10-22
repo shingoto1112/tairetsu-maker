@@ -1,90 +1,109 @@
 /* @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMemberGroupIndex } from "../utils/memberOrdering";
 import { ObjectAssignmentEditor } from "./ObjectAssignmentEditor";
-import { runSavedAssignmentUpdate } from "../utils/assignmentUpdate";
 
 const createProps = (): ComponentProps<typeof ObjectAssignmentEditor> => ({
-  objectId: "o", members: [{ id: "a", name: "担当", color: "#000" }, { id: "b", name: "候補", color: "#000" }],
-  assignedMemberIds: ["a"], groupIndex: buildMemberGroupIndex([{ id: "g", name: "赤組", color: "#f00", memberIds: ["a", "b"] }]),
-  isPickerOpen: false, onPickerOpenChange: vi.fn(), onAssignMember: vi.fn().mockReturnValue(true), onRemoveAssignment: vi.fn(),
+  projectId: "p1", sceneId: "s1", objectId: "o",
+  members: [{ id: "a", name: "担当", color: "#000" }, ...Array.from({ length: 5 }, (_, i) => ({ id: `b${i}`, name: `候補${i}`, color: "#000" }))],
+  assignedMemberIds: ["a"], groupIndex: buildMemberGroupIndex([]),
+  isPickerOpen: false, onPickerOpenChange: vi.fn(), onAssignMembers: vi.fn().mockReturnValue(true), onRemoveAssignment: vi.fn(),
 });
 const Harness = (props: ComponentProps<typeof ObjectAssignmentEditor>) => {
   const [open, setOpen] = useState(false);
   return <ObjectAssignmentEditor {...props} isPickerOpen={open} onPickerOpenChange={setOpen} />;
 };
+const select = (index = 0) => fireEvent.click(screen.getByRole("checkbox", { name: `候補${index} 未所属` }));
+const open = () => fireEvent.click(screen.getByRole("button", { name: "人を選ぶ" }));
+
 describe("ObjectAssignmentEditor", () => {
-  it.each(["false", "throw"])("keeps the draft and search after cloud %s, including an optimistic assignment", async (failure) => {
-    const props = createProps();
-    props.onAssignMember = () => runSavedAssignmentUpdate(
-      failure === "false" ? vi.fn().mockResolvedValue(false) : vi.fn().mockRejectedValue(new Error("save failed")), () => true);
-    const { rerender } = render(<Harness {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "メンバーを選択" }));
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "候補" } });
-    fireEvent.click(screen.getByRole("button", { name: "候補 赤組" }));
-    fireEvent.click(screen.getByRole("button", { name: "候補" }));
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "候補" } });
-    fireEvent.click(screen.getByRole("button", { name: "割当" }));
-    rerender(<Harness {...props} assignedMemberIds={["a", "b"]} />);
-    await act(async () => {});
-    expect(screen.getByRole("button", { name: "候補" })).toBeTruthy();
-    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("候補");
-    expect((screen.getByRole("button", { name: "割当" }) as HTMLButtonElement).disabled).toBe(false);
-  });
   beforeEach(() => localStorage.clear());
   afterEach(cleanup);
   it("removes a chip without restoring the member to the formation", () => {
-    const props = createProps();
-    render(<Harness {...props} />);
+    const props = createProps(); render(<Harness {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "担当 の割当を解除" }));
     expect(props.onRemoveAssignment).toHaveBeenCalledExactlyOnceWith("o", "a", false);
-    expect(screen.getByRole("button", { name: "担当 の割当を解除" }).parentElement?.querySelector<HTMLElement>(".assignment-chip__dot")?.style.backgroundColor).toBe("rgb(255, 0, 0)");
   });
-  it("selects a candidate and only assigns on confirmation, then clears the draft", async () => {
-    const user = userEvent.setup();
-    const props = createProps();
-    render(<Harness {...props} />);
-    await user.click(screen.getByRole("button", { name: "メンバーを選択" }));
-    expect(screen.queryByRole("button", { name: "担当 赤組" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "候補 赤組" }));
-    expect(props.onAssignMember).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "割当" }));
-    expect(props.onAssignMember).toHaveBeenCalledExactlyOnceWith("o", "b");
-    expect(screen.getByRole("button", { name: "メンバーを選択" })).toBeTruthy();
+  it("checks five candidates without editing, then submits all five once", async () => {
+    const props = createProps(); render(<Harness {...props} />); open();
+    expect(screen.queryByRole("checkbox", { name: "担当 未所属" })).toBeNull();
+    for (let i = 0; i < 5; i++) select(i);
+    expect(props.onAssignMembers).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "5人を選択中" })).toBeTruthy();
+    expect(screen.getByRole("searchbox")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "割当（5人）" })));
+    expect(props.onAssignMembers).toHaveBeenCalledExactlyOnceWith("o", ["b0", "b1", "b2", "b3", "b4"]);
+    expect(screen.getByRole("button", { name: "人を選ぶ" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "割当（0人）" }) as HTMLButtonElement).disabled).toBe(true);
   });
-  it("preserves a rejected draft, blocks duplicate pending requests, and permits retry", async () => {
-    const user = userEvent.setup();
+  it("preserves selection and total across searches, ordering, close and Escape", () => {
+    render(<Harness {...createProps()} />); open(); select();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "候補1" } }); select(1);
+    fireEvent.click(screen.getByRole("button", { name: "名前順" }));
+    expect(screen.getByRole("button", { name: "2人を選択中" })).toBeTruthy();
+    expect(screen.getByText(/2人を選択中（検索/)).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "2人を選択中" }));
+    expect((screen.getByRole("checkbox", { name: "候補0 未所属" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "候補1 未所属" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "2人を選択中" }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "割当（2人）" })).toBeTruthy();
+  });
+  it.each(["false", "throw"])("keeps the draft and search on %s and permits retry", async (failure) => {
     const props = createProps();
-    let finish!: (applied: boolean) => void;
-    props.onAssignMember = vi.fn().mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve; })).mockReturnValue(true);
-    render(<Harness {...props} />);
-    await user.click(screen.getByRole("button", { name: "メンバーを選択" }));
-    await user.click(screen.getByRole("button", { name: "候補 赤組" }));
-    const assign = screen.getByRole("button", { name: "割当" }) as HTMLButtonElement;
-    fireEvent.click(assign);
-    fireEvent.click(assign);
-    expect(props.onAssignMember).toHaveBeenCalledTimes(1);
-    expect(assign.disabled).toBe(true);
+    props.onAssignMembers = vi.fn().mockImplementationOnce(() => failure === "false" ? false : Promise.reject(new Error("failed"))).mockReturnValue(true);
+    render(<Harness {...props} />); open();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "候補0" } }); select();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "割当（1人）" })));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("候補0");
+    expect((screen.getByRole("checkbox", { name: "候補0 未所属" }) as HTMLInputElement).checked).toBe(true);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "割当（1人）" })));
+    expect(props.onAssignMembers).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("blocks duplicate pending requests and shows progress", async () => {
+    const props = createProps(); let finish!: (applied: boolean) => void;
+    props.onAssignMembers = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    render(<Harness {...props} />); open(); select();
+    const assign = screen.getByRole("button", { name: "割当（1人）" });
+    fireEvent.click(assign); fireEvent.click(assign);
+    expect(props.onAssignMembers).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole("button", { name: "割当中…" }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => finish(false));
-    expect(screen.getByRole("button", { name: "候補" })).toBeTruthy();
-    expect(assign.disabled).toBe(false);
-    await user.click(assign);
-    expect(props.onAssignMember).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "メンバーを選択" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "割当（1人）" }) as HTMLButtonElement).disabled).toBe(false);
   });
-  it("disables removal, picker and assignment when read-only", async () => {
-    const props = createProps();
-    render(<Harness {...props} disabled readOnlyMessage="閲覧のみ" />);
-    for (const name of ["担当 の割当を解除", "メンバーを選択", "割当"]) {
-      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
-      expect(button.disabled).toBe(true);
-      expect(button.title).toBe("閲覧のみ");
-      fireEvent.click(button);
+  it.each(["sceneId", "objectId", "projectId", "disabled"] as const)("discards drafts on %s change and ignores late completion", async (field) => {
+    const props = createProps(); let finish!: (applied: boolean) => void;
+    props.onAssignMembers = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const { rerender } = render(<Harness {...props} />); open(); select();
+    fireEvent.click(screen.getByRole("button", { name: "割当（1人）" }));
+    const next = { ...props, [field]: field === "disabled" ? true : "other" };
+    rerender(<Harness {...next} />);
+    expect(screen.getByRole("button", { name: "割当（0人）" })).toBeTruthy();
+    if (field !== "disabled") select(1);
+    await act(async () => finish(true));
+    if (field !== "disabled") {
+      expect(screen.getByRole("button", { name: "割当（1人）" })).toBeTruthy();
+      expect((screen.getByRole("checkbox", { name: "候補1 未所属" }) as HTMLInputElement).checked).toBe(true);
     }
-    expect(props.onAssignMember).not.toHaveBeenCalled();
-    expect(props.onRemoveAssignment).not.toHaveBeenCalled();
+  });
+  it("re-evaluates deleted members and newly assigned members", () => {
+    const props = createProps(); const { rerender } = render(<Harness {...props} />); open(); select(); select(1); select(2);
+    rerender(<Harness {...props} members={props.members.filter((m) => m.id !== "b0")} assignedMemberIds={["a", "b1"]} />);
+    expect(screen.getByRole("button", { name: "1人を選択中" })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "候補1 未所属" })).toBeNull();
+    expect((screen.getByRole("checkbox", { name: "候補2 未所属" }) as HTMLInputElement).checked).toBe(true);
+  });
+  it("disables removal, picker and confirmation when read-only or playing", () => {
+    const props = createProps(); render(<Harness {...props} disabled readOnlyMessage="閲覧のみ・再生中" />);
+    for (const name of ["担当 の割当を解除", "人を選ぶ", "割当（0人）"]) {
+      const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true); expect(button.title).toBe("閲覧のみ・再生中"); fireEvent.click(button);
+    }
+    expect(props.onAssignMembers).not.toHaveBeenCalled(); expect(props.onRemoveAssignment).not.toHaveBeenCalled();
   });
 });

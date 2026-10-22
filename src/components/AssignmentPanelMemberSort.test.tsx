@@ -27,7 +27,7 @@ describe("assignment tab: member view sort", () => {
   it("offers グループ順 instead of 名前順 and orders like the member tab", async () => {
     render(<AssignmentPanel memberGroups={memberGroups} frames={[frame]} members={members} objects={[]} objectGroups={[]}
       currentFrame={frame} previousFrame={null} objectStates={{}} previousObjectStates={{}}
-      onAssignMember={vi.fn()} onApplyPreviousAssignments={vi.fn()} onRemoveAssignment={vi.fn()} onSelectFrame={vi.fn()} />);
+      onAssignMembers={vi.fn()} onApplyPreviousAssignments={vi.fn()} onRemoveAssignment={vi.fn()} onSelectFrame={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: "メンバー別" }));
     const select = screen.getByRole("combobox", { name: "並び替え" }) as HTMLSelectElement;
     const options = [...select.options].map((option) => option.textContent);

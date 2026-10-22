@@ -64,32 +64,51 @@ describe("scene-aware assignment candidates", () => {
   });
 
   it("warns before assigning a member who is shown in the scene", async () => {
-    const onAssignMember = vi.fn(() => true);
+    const onAssignMembers = vi.fn(() => true);
     const Harness = () => {
       const [open, setOpen] = useState(false);
       return <ObjectAssignmentEditor objectId="flag" members={members} assignedMemberIds={[]} groupIndex={groupIndex}
-        isPickerOpen={open} onPickerOpenChange={setOpen} onAssignMember={onAssignMember} onRemoveAssignment={vi.fn()}
+        isPickerOpen={open} onPickerOpenChange={setOpen} onAssignMembers={onAssignMembers} onRemoveAssignment={vi.fn()}
         sceneVisibility={{ isShown, hiddenOnly: false, onHiddenOnlyChange: vi.fn() }} sceneId="s1" />;
     };
     render(<Harness />);
-    await userEvent.click(screen.getByRole("button", { name: "メンバーを選択" }));
-    await userEvent.click(screen.getByRole("button", { name: /たいが .* 表示中/ }));
+    await userEvent.click(screen.getByRole("button", { name: "人を選ぶ" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /たいが .* 表示中/ }));
     expect(screen.getByRole("status").textContent).toBe("たいがさんは表示中です。割り当てると、このシーンでは非表示になります。");
-    await userEvent.click(screen.getByRole("button", { name: "割当" }));
-    expect(onAssignMember).toHaveBeenCalledWith("flag", "shown1");
+    await userEvent.click(screen.getByRole("button", { name: "割当（1人）" }));
+    expect(onAssignMembers).toHaveBeenCalledWith("flag", ["shown1"]);
   });
 
   it("does not warn for members already hidden in the scene", async () => {
     const Harness = () => {
       const [open, setOpen] = useState(false);
       return <ObjectAssignmentEditor objectId="flag" members={members} assignedMemberIds={[]} groupIndex={groupIndex}
-        isPickerOpen={open} onPickerOpenChange={setOpen} onAssignMember={vi.fn(() => true)} onRemoveAssignment={vi.fn()}
+        isPickerOpen={open} onPickerOpenChange={setOpen} onAssignMembers={vi.fn(() => true)} onRemoveAssignment={vi.fn()}
         sceneVisibility={{ isShown, hiddenOnly: true, onHiddenOnlyChange: vi.fn() }} sceneId="s1" />;
     };
     render(<Harness />);
-    await userEvent.click(screen.getByRole("button", { name: "メンバーを選択" }));
-    await userEvent.click(screen.getByRole("button", { name: /てつ/ }));
+    await userEvent.click(screen.getByRole("button", { name: "人を選ぶ" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /てつ/ }));
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("counts shown people across searches and keeps them selected through hidden-only filtering", async () => {
+    const Harness = () => {
+      const [open, setOpen] = useState(true);
+      const [hiddenOnly, setHiddenOnly] = useState(false);
+      return <ObjectAssignmentEditor objectId="flag" members={members} assignedMemberIds={[]} groupIndex={groupIndex}
+        isPickerOpen={open} onPickerOpenChange={setOpen} onAssignMembers={vi.fn(() => true)} onRemoveAssignment={vi.fn()}
+        sceneVisibility={{ isShown, hiddenOnly, onHiddenOnlyChange: setHiddenOnly }} sceneId="s1" />;
+    };
+    render(<Harness />);
+    for (const name of [/^たいが /, /^すん /, /^てつ /]) await userEvent.click(screen.getByRole("checkbox", { name }));
+    expect(screen.getByRole("status").textContent).toBe("選択した3人のうち2人は表示中です。割り当てると、このシーンでは非表示になります。");
+    await userEvent.click(screen.getByRole("checkbox", { name: "このシーンで非表示の人だけ" }));
+    expect(screen.queryByRole("checkbox", { name: /^たいが / })).toBeNull();
+    expect(screen.getByRole("button", { name: "3人を選択中" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "割当（3人）" })).toBeTruthy();
+    await userEvent.type(screen.getByRole("searchbox"), "あっきー");
+    expect(screen.getByRole("button", { name: "3人を選択中" })).toBeTruthy();
   });
 
   it("roster list asks inline before assigning a shown member and toggles hidden members directly", async () => {

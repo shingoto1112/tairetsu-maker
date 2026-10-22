@@ -28,31 +28,37 @@ export type MemberPickerSceneVisibility = {
 type MemberPickerProps = {
   members: Member[];
   groupIndex: MemberGroupIndex;
-  selectedMemberId: string;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onSelect: (memberId: string) => void;
   disabled?: boolean;
   title?: string;
   sceneVisibility?: MemberPickerSceneVisibility;
-};
+} & ({
+  selectionMode?: "single";
+  selectedMemberId: string;
+  onSelect: (memberId: string) => void;
+} | {
+  selectionMode: "multiple";
+  selectedMemberIds: string[];
+  onSelectionChange: (memberIds: string[]) => void;
+});
 
-export const MemberPicker = ({
-  members,
-  groupIndex,
-  selectedMemberId,
-  isOpen,
-  onOpenChange,
-  onSelect,
-  disabled = false,
-  title,
-  sceneVisibility,
-}: MemberPickerProps) => {
+export const MemberPicker = (props: MemberPickerProps) => {
+  const {
+    members,
+    groupIndex,
+    isOpen,
+    onOpenChange,
+    disabled = false,
+    title,
+    sceneVisibility,
+  } = props;
   const [order, selectOrder] = useMemberPickerOrder();
   const [query, setQuery] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const selectedMember = members.find((member) => member.id === selectedMemberId);
+  const selectedMember = props.selectionMode !== "multiple"
+    ? members.find((member) => member.id === props.selectedMemberId) : undefined;
   const unavailable = disabled || members.length === 0;
   const expanded = isOpen && !unavailable;
   const isShown = sceneVisibility?.isShown;
@@ -99,13 +105,29 @@ export const MemberPicker = ({
               <small>{counts.get(key)}人</small>
             </div>
           )}
+          {props.selectionMode === "multiple" ? (
+            <label
+              className={`member-picker__candidate member-picker__multiple-candidate${shownInScene ? " is-shown-in-scene" : ""}`}
+              style={{ boxShadow: `inset 4px 0 0 ${color}` }}
+            >
+              <input type="checkbox"
+                aria-label={`${member.name} ${groupName}${shownInScene ? " 表示中" : ""}`}
+                checked={props.selectedMemberIds.includes(member.id)}
+                onChange={(event) => props.onSelectionChange(event.target.checked
+                  ? [...props.selectedMemberIds, member.id]
+                  : props.selectedMemberIds.filter((id) => id !== member.id))} />
+              <span>{member.name}</span>
+              {shownInScene && <em className="member-picker__shown-badge" aria-hidden="true">表示中</em>}
+              <small>{groupName}</small>
+            </label>
+          ) : (
           <button
             className={`member-picker__candidate${shownInScene ? " is-shown-in-scene" : ""}`}
             type="button"
             aria-label={`${member.name} ${groupName}${shownInScene ? " 表示中" : ""}`}
             style={{ boxShadow: `inset 4px 0 0 ${color}` }}
             onClick={() => {
-              onSelect(member.id);
+              props.onSelect(member.id);
               onOpenChange(false);
               triggerRef.current?.focus();
             }}
@@ -114,6 +136,7 @@ export const MemberPicker = ({
             {shownInScene && <em className="member-picker__shown-badge" aria-hidden="true">表示中</em>}
             <small>{groupName}</small>
           </button>
+          )}
         </Fragment>
       );
     });
@@ -145,7 +168,9 @@ export const MemberPicker = ({
           : undefined}
         onClick={() => onOpenChange(!isOpen)}
       >
-        {members.length === 0
+        {props.selectionMode === "multiple"
+          ? props.selectedMemberIds.length > 0 ? `${props.selectedMemberIds.length}人を選択中` : "人を選ぶ"
+          : members.length === 0
           ? "割当できるメンバーなし"
           : selectedMember?.name ?? "メンバーを選択"}
       </button>

@@ -7341,7 +7341,7 @@ html:not([data-app-runtime="capacitor-ios"]):not([data-native-workspace="true"])
   padding: 8px;
 }
 
-.member-picker__panel input {
+.member-picker__panel input[type="search"] {
   min-width: 0;
   min-height: 44px;
   width: 100%;

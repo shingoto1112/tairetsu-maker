@@ -29,7 +29,7 @@ const frame: FormationFrame = {
 const assignmentProps = (): ComponentProps<typeof AssignmentPanel> => ({
   members, memberGroups, objects, objectGroups: [], frames: [frame],
   currentFrame: frame, previousFrame: null, objectStates: {}, previousObjectStates: {},
-  onAssignMember: vi.fn().mockReturnValue(true),
+  onAssignMembers: vi.fn().mockReturnValue(true),
   onApplyPreviousAssignments: vi.fn(), onRemoveAssignment: vi.fn(), onSelectFrame: vi.fn(),
 });
 const objectProps = (): ComponentProps<typeof ObjectPanel> => ({
@@ -41,7 +41,7 @@ const objectProps = (): ComponentProps<typeof ObjectPanel> => ({
   onNudgeZ: vi.fn(), onAddObject: vi.fn(),
   onCreateObjectGroup: vi.fn(), onUpdateObjectGroup: vi.fn(), onDeleteObjectGroup: vi.fn(),
   onAddObjectToGroup: vi.fn(), onChangeObjectGroup: vi.fn(), onSetAllObjectsFrameVisibility: vi.fn(),
-  onCopySelected: vi.fn(), onPasteObject: vi.fn(), onAssignMember: vi.fn().mockReturnValue(true),
+  onCopySelected: vi.fn(), onPasteObject: vi.fn(), onAssignMembers: vi.fn().mockReturnValue(true),
   onRemoveAssignment: vi.fn(), onPlaceSelectedObject: vi.fn(),
 });
 const memberProps = (): ComponentProps<typeof MemberPanel> => ({
@@ -71,10 +71,10 @@ describe("roster panel integration", () => {
   it("starts object assignment with all candidates and keeps the zIndex callback behind its Japanese label", async () => {
     const user = userEvent.setup(); const p = objectProps();
     render(<ObjectPanel {...p} objectAssignments={{}} memberVisibility={{ m1: true, m2: false }} />);
-    await user.click(within(objectCard("旗")).getByRole("button", { name: "メンバーを選択" }));
+    await user.click(within(objectCard("旗")).getByRole("button", { name: "人を選ぶ" }));
     expect((screen.getByRole("checkbox", { name: /非表示の人だけ/ }) as HTMLInputElement).checked).toBe(false);
-    expect(screen.getByRole("button", { name: /太郎 赤組/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /花子 赤組/ })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /太郎 赤組/ })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /花子 赤組/ })).toBeTruthy();
     const order = within(objectCard("旗")).getByLabelText("重なり順（大きいほど手前）");
     fireEvent.change(order, { target: { value: "14" } });
     expect(p.onUpdateObjectState).toHaveBeenCalledWith("o1", { zIndex: 14 });
@@ -193,19 +193,19 @@ describe("roster panel integration", () => {
   it.each(["objects", "assignments"] as const)("selects a candidate without assigning until confirmation in %s", async (panel) => {
     const user = userEvent.setup();
     const props = panel === "objects" ? objectProps() : assignmentProps();
-    if (panel === "objects") render(<ObjectPanel {...objectProps()} onAssignMember={props.onAssignMember} />);
-    else render(<AssignmentPanel {...assignmentProps()} onAssignMember={props.onAssignMember} />);
-    await user.click(within(objectCard("旗")).getByRole("button", { name: "メンバーを選択" }));
-    expect(screen.queryByRole("button", { name: "太郎 赤組" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "花子 赤組" }));
-    expect(props.onAssignMember).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("メンバー候補")).toBeNull();
-    const selectedTrigger = screen.getByRole("button", { name: "花子" });
+    if (panel === "objects") render(<ObjectPanel {...objectProps()} onAssignMembers={props.onAssignMembers} />);
+    else render(<AssignmentPanel {...assignmentProps()} onAssignMembers={props.onAssignMembers} />);
+    await user.click(within(objectCard("旗")).getByRole("button", { name: "人を選ぶ" }));
+    expect(screen.queryByRole("checkbox", { name: "太郎 赤組" })).toBeNull();
+    await user.click(screen.getByRole("checkbox", { name: "花子 赤組" }));
+    expect(props.onAssignMembers).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("メンバー候補")).toBeTruthy();
+    const selectedTrigger = screen.getByRole("button", { name: "1人を選択中" });
     const card = selectedTrigger.closest("article");
     expect(card).toBeTruthy();
-    await user.click(within(card!).getByRole("button", { name: "割当" }));
-    expect(props.onAssignMember).toHaveBeenCalledExactlyOnceWith("o1", "m2");
-    expect(screen.getAllByRole("button", { name: "メンバーを選択" })).toHaveLength(2);
+    await user.click(within(card!).getByRole("button", { name: "割当（1人）" }));
+    expect(props.onAssignMembers).toHaveBeenCalledExactlyOnceWith("o1", ["m2"]);
+    expect(screen.getAllByRole("button", { name: "人を選ぶ" })).toHaveLength(2);
   });
 
   it.each(["objects", "assignments"] as const)("opens only one picker and allows a member already assigned to another object in %s", async (panel) => {
@@ -213,12 +213,12 @@ describe("roster panel integration", () => {
     if (panel === "objects") render(<ObjectPanel {...objectProps()} />);
     else render(<AssignmentPanel {...assignmentProps()} />);
     const triggers = ["旗", "椅子"].map((name) =>
-      within(objectCard(name)).getByRole("button", { name: "メンバーを選択" }));
+      within(objectCard(name)).getByRole("button", { name: "人を選ぶ" }));
     await user.click(triggers[0]);
     await user.click(triggers[1]);
     expect(screen.getAllByLabelText("メンバー候補")).toHaveLength(1);
     expect(triggers[0].getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: "太郎 赤組" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "太郎 赤組" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "太郎 の割当を解除" }).parentElement?.querySelector<HTMLElement>(".assignment-chip__dot")?.style.backgroundColor).toBe("rgb(239, 71, 111)");
   });
 
@@ -227,8 +227,8 @@ describe("roster panel integration", () => {
     if (panel === "objects") render(<ObjectPanel {...objectProps()} {...access} />);
     else render(<AssignmentPanel {...assignmentProps()} {...access} />);
     const buttons = [
-      ...screen.getAllByRole("button", { name: "メンバーを選択" }),
-      ...screen.getAllByRole("button", { name: "割当" }),
+      ...screen.getAllByRole("button", { name: "人を選ぶ" }),
+      ...screen.getAllByRole("button", { name: "割当（0人）" }),
     ];
     for (const button of buttons) {
       expect((button as HTMLButtonElement).disabled).toBe(true);
