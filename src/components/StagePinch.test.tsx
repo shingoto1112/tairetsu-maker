@@ -21,7 +21,7 @@ const props = (): ComponentProps<typeof StageCanvas> => {
     currentTime: 0, audioDuration: 0, audioName: null, canUndo: false, canRedo: false,
     onUndo: vi.fn(), onRedo: vi.fn(), onSelect: vi.fn(), onStagePointerPositionChange: vi.fn(), onMoveMember: vi.fn(),
     onUpdateObjectState: vi.fn(), onBeginProjectEdit: vi.fn(), onEndProjectEdit: vi.fn(), onToggleFullscreen: vi.fn(),
-    onContextMenuRequest: vi.fn(), onTogglePlayback: vi.fn(), onSaveFrame: vi.fn(), onCaptureStageImage: vi.fn(),
+    onContextMenuRequest: vi.fn(), onTogglePlayback: vi.fn(), onSaveProject: vi.fn(), onCaptureStageImage: vi.fn(),
     onTogglePerspective: vi.fn(), onSeekAudio: vi.fn() };
 };
 describe("stage view-only pinch", () => {
@@ -163,7 +163,7 @@ describe("stage view-only pinch", () => {
     fireEvent.pointerUp(viewport,touch(2,557)); fireEvent.pointerUp(viewport,touch(1,300)); flush();
     expect(set).toHaveBeenCalledTimes(1); expect(p.viewStates!.get("one")?.zoom).toBeCloseTo(1.285, 8);
     expect(preview.style.transform).toBe(""); expect(p.project).toEqual(before);
-    expect(p.onBeginProjectEdit).not.toHaveBeenCalled(); expect(p.onSaveFrame).not.toHaveBeenCalled();
+    expect(p.onBeginProjectEdit).not.toHaveBeenCalled(); expect(p.onSaveProject).not.toHaveBeenCalled();
   });
   it("does not save on ordinary or locked touch release", () => {
     const { p, view, viewport } = setup(); const set = vi.spyOn(p.viewStates!, "set");

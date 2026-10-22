@@ -144,7 +144,7 @@ export const Timeline = ({
         <div>
           <h2>このシーンの詳細</h2>
           <span>
-            Scene {index + 1} / {formatTime(frame.timeSec)}
+            シーン{index + 1} / {formatTime(frame.timeSec)}
           </span>
         </div>
         <button

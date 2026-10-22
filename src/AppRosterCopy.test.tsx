@@ -42,12 +42,12 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 async function startCopy() {
   fireEvent.click(await screen.findByRole("button", { name: "前の大会のメニュー" }));
   fireEvent.click(screen.getByRole("button", { name: "この名簿で新しく作る" }));
-  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "新大会" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: "新大会" } });
   await waitFor(() => expect(screen.getByRole("button", { name: "作成する" }).hasAttribute("disabled")).toBe(false));
 }
 it.each(["stage", "parade"])("creates an independent %s roster from a locally saved shared document, shows all and reloads", async mode => {
   render(<App />); await startCopy();
-  fireEvent.change(screen.getByRole("combobox", { name: "作成タイプ" }), { target: { value: mode } });
+  fireEvent.click(screen.getByRole("radio", { name: mode === "stage" ? /^ステージ隊列/ : /^パレード隊列/ }));
   fireEvent.click(screen.getByRole("button", { name: "作成する" }));
   await screen.findByTestId("copy-canvas");
   // A successful initial save keeps the normal creation notice.

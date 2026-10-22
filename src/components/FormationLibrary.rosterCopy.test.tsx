@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { FormationLibrary, type NewFormationInput } from "./FormationLibrary";
 import { createSampleProject } from "../sampleProject";
@@ -20,8 +20,8 @@ function setup(hasTools = true) {
 }
 async function open(mode = "stage") {
   fireEvent.click(screen.getByRole("button", { name: /追加/ })); fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
-  fireEvent.click(screen.getByRole("button", { name: mode === "stage" ? /ステージ隊列/ : /パレード隊列/ }));
-  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "新大会" } });
+  fireEvent.click(screen.getByRole("radio", { name: mode === "stage" ? /^ステージ隊列/ : /^パレード隊列/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: "新大会" } });
 }
 async function selectSource() {
   fireEvent.change(screen.getByRole("combobox", { name: "名簿をコピー（任意）" }), { target: { value: "source" } });
@@ -36,12 +36,59 @@ it.each(["stage", "parade"])("shows optional copying outside advanced settings w
   await selectSource(); expect((screen.getByRole("checkbox", { name: "道具もコピーする" }) as HTMLInputElement).checked).toBe(true);
 });
 it("opens the card shortcut with source mode and permits changing it", async () => {
-  setup(); fireEvent.click(screen.getByRole("button", { name: "去年の大会のメニュー" }));
+  const { onCreate } = setup(false); fireEvent.click(screen.getByRole("button", { name: "去年の大会のメニュー" }));
   fireEvent.click(screen.getByRole("button", { name: "この名簿で新しく作る" }));
   await waitFor(() => expect((screen.getByRole("combobox", { name: "名簿をコピー（任意）" }) as HTMLSelectElement).value).toBe("source"));
-  expect((screen.getByRole("combobox", { name: "作成タイプ" }) as HTMLSelectElement).value).toBe("parade");
-  fireEvent.change(screen.getByRole("combobox", { name: "作成タイプ" }), { target: { value: "stage" } });
+  expect((screen.getByRole("radio", { name: /^パレード隊列/ }) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("radio", { name: /^ステージ隊列/ }));
   expect(screen.getByRole("spinbutton", { name: "縦幅" })).toBeTruthy();
+  await waitFor(() => expect(screen.getByRole("button", { name: "作成する" }).hasAttribute("disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "作成する" }));
+  await waitFor(() => expect(onCreate).toHaveBeenCalledOnce());
+  expect(onCreate.mock.calls[0][0]).toMatchObject({ title: "新しい隊列表", formationMode: "stage", rosterCopy: { source: { id: "source" } } });
+});
+
+it.each([["stage", ""], ["stage", "   "], ["parade", ""], ["parade", " \u3000 "]])("B9: directly opens the form and creates %s with default title for %j", async (mode, title) => {
+  const { onCreate } = setup(false);
+  fireEvent.click(screen.getByRole("button", { name: /追加/ }));
+  fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
+  expect(screen.queryByRole("dialog", { name: "作成タイプを選択" })).toBeNull();
+  expect((screen.getByRole("radio", { name: /^ステージ隊列/ }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByText("空欄の場合：新しい隊列表")).toBeTruthy();
+  fireEvent.click(screen.getByRole("radio", { name: mode === "stage" ? /^ステージ隊列/ : /^パレード隊列/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: title } });
+  fireEvent.click(screen.getByRole("button", { name: "作成する" }));
+  await waitFor(() => expect(onCreate).toHaveBeenCalledOnce());
+  expect(onCreate.mock.calls[0][0]).toMatchObject({ title: "新しい隊列表", formationMode: mode });
+});
+
+it("B9: changing type retains title, audio, roster choices and both modes' dimensions; failed creation can retry", async () => {
+  const { onCreate } = setup(false); await open(); await selectSource();
+  const audio = new File(["song"], "song.mp3", { type: "audio/mpeg" });
+  await act(async () => { fireEvent.change(document.querySelector('.audio-file-picker-button input')!, { target: { files: [audio] } }); });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "横幅" }), { target: { value: "15" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "縦幅" }), { target: { value: "9" } });
+  fireEvent.click(screen.getByRole("radio", { name: /^パレード隊列/ }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "全体距離" }), { target: { value: "123" } });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "横幅" }), { target: { value: "11" } });
+  fireEvent.click(screen.getByRole("radio", { name: /^ステージ隊列/ }));
+  expect((screen.getByRole("spinbutton", { name: "横幅" }) as HTMLInputElement).value).toBe("15");
+  expect((screen.getByRole("spinbutton", { name: "縦幅" }) as HTMLInputElement).value).toBe("9");
+  fireEvent.click(screen.getByRole("radio", { name: /^パレード隊列/ }));
+  expect((screen.getByRole("spinbutton", { name: "全体距離" }) as HTMLInputElement).value).toBe("123");
+  expect((screen.getByRole("spinbutton", { name: "横幅" }) as HTMLInputElement).value).toBe("11");
+  expect((screen.getByRole("textbox", { name: "隊列表名（任意）" }) as HTMLInputElement).value).toBe("新大会");
+  expect(screen.getByText("song.mp3")).toBeTruthy();
+  expect((screen.getByRole("combobox", { name: "名簿をコピー（任意）" }) as HTMLSelectElement).value).toBe("source");
+  onCreate.mockRejectedValueOnce(new Error("作成失敗"));
+  fireEvent.click(screen.getByRole("button", { name: "作成する" }));
+  await screen.findByText("作成失敗");
+  fireEvent.click(screen.getByRole("button", { name: "作成する" }));
+  await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(2));
+  const input = onCreate.mock.calls[1][0] as NewFormationInput;
+  expect(input).toMatchObject({ title: "新大会", formationMode: "parade", paradeSettings: { width: 11, totalDistance: 123 }, rosterCopy: { source: { id: "source" }, includeObjects: false } });
+  expect(input.audioFile).toBe(audio);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 it("disables copying tools when the source has none", async () => {
   const { onCreate } = setup(false); await open(); await selectSource();
@@ -55,7 +102,7 @@ it("keeps input on source read failure and retries with the device snapshot", as
   onLoadRosterSource.mockRejectedValueOnce(new Error("failed"));
   fireEvent.click(screen.getByRole("button", { name: "作成する" }));
   await screen.findByText(/コピー元の名簿を読み込めませんでした/);
-  expect(onCreate).not.toHaveBeenCalled(); expect((screen.getByRole("textbox", { name: "隊列表名" }) as HTMLInputElement).value).toBe("新大会");
+  expect(onCreate).not.toHaveBeenCalled(); expect((screen.getByRole("textbox", { name: "隊列表名（任意）" }) as HTMLInputElement).value).toBe("新大会");
   fireEvent.click(screen.getByRole("button", { name: "作成する" }));
   await waitFor(() => expect(onCreate).toHaveBeenCalledOnce());
 });
@@ -66,7 +113,7 @@ it.each(["shrink", "exclude", "back"])("asks about oversized tools and handles %
   fireEvent.click(within(dialog).getByRole("button", { name: choice === "back" ? "戻ってステージの大きさを変える"
     : choice === "shrink" ? "ステージに入る大きさに縮めてコピー" : "入らない道具はコピーしない" }));
   if (choice === "back") {
-    expect(onCreate).not.toHaveBeenCalled(); expect((screen.getByRole("textbox", { name: "隊列表名" }) as HTMLInputElement).value).toBe("新大会");
+    expect(onCreate).not.toHaveBeenCalled(); expect((screen.getByRole("textbox", { name: "隊列表名（任意）" }) as HTMLInputElement).value).toBe("新大会");
     expect((screen.getByRole("combobox", { name: "名簿をコピー（任意）" }) as HTMLSelectElement).value).toBe("source");
   } else {
     await waitFor(() => expect(onCreate).toHaveBeenCalledOnce());

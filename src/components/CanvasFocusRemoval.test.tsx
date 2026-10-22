@@ -31,7 +31,7 @@ const stageProps: ComponentProps<typeof StageCanvas> = {
   ...common, selectedFrameTime: 0, mode: "members", isPlaying: false,
   viewerPerspective: "audience", showMovementPaths: true, showMeterRulers: true,
   movementPathMode: "all", currentTime: 0, audioDuration: 100, audioName: null,
-  onTogglePlayback: vi.fn(), onSaveFrame: vi.fn(), onCaptureStageImage: vi.fn(),
+  onTogglePlayback: vi.fn(), onSaveProject: vi.fn(), onCaptureStageImage: vi.fn(),
   onTogglePerspective: vi.fn(), onSeekAudio: vi.fn(),
 };
 

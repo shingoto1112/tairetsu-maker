@@ -137,7 +137,9 @@ type StageCanvasProps = {
     target?: SceneElementEditTarget | SceneElementEditTarget[],
   ) => void;
   onTogglePlayback: () => void;
-  onSaveFrame: () => void;
+  onSaveProject: () => void;
+  isSaving?: boolean;
+  canSaveProject?: boolean;
   onCaptureStageImage: () => void;
   onTogglePerspective: () => void;
   onToggleFullscreen: () => void;
@@ -379,7 +381,9 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
       onBeginProjectEdit,
       onEndProjectEdit,
       onTogglePlayback,
-      onSaveFrame,
+      onSaveProject,
+      isSaving = false,
+      canSaveProject = true,
       onCaptureStageImage,
       onTogglePerspective,
       onToggleFullscreen,
@@ -1901,7 +1905,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
             sceneLabel={selectedFrameLabel} isPlaying={isPlaying} isFullscreen={isFullscreen}
             isReadOnly={isReadOnly} canUndo={canUndo} canRedo={canRedo}
             zoom={stageZoom} pinchLocked={isStagePinchLocked}
-            onUndo={onUndo} onRedo={onRedo} onPlay={onTogglePlayback} onSave={onSaveFrame}
+            onUndo={onUndo} onRedo={onRedo} onPlay={onTogglePlayback} onSaveProject={onSaveProject} saveDisabled={isSaving || !canSaveProject || isReadOnly}
             onSeek={onSeekAudio} onZoom={updateStageZoom} onCapture={onCaptureStageImage}
             onPerspective={onTogglePerspective} onFullscreen={onToggleFullscreen}
             onPinchLock={() => setIsStagePinchLocked((locked) => !locked)}
@@ -1970,10 +1974,11 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               )}
               <button
                 className="mini-button"
-                onClick={onSaveFrame}
+                onClick={onSaveProject}
                 type="button"
-                disabled={isReadOnly}
-                title={isReadOnly ? readOnlyMessage ?? "閲覧中です" : "現在のシーンを保存"}
+                disabled={isSaving || !canSaveProject || isReadOnly}
+                title="隊列表を保存"
+                aria-label="隊列表を保存"
               >
                 <Save size={15} />
                 保存

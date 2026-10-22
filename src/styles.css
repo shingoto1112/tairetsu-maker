@@ -1220,6 +1220,7 @@ h2 {
 .roster-copy-field { display: grid; gap: 8px; min-width: 0; }
 .roster-copy-field select { width: 100%; min-width: 0; }
 .roster-copy-field small { color: var(--muted); overflow-wrap: anywhere; }
+.creation-title-hint { color: var(--muted); font-size: 12px; }
 .roster-copy-size-dialog p { margin: 0; }
 .roster-copy-overflow-list { margin: 0; padding-left: 22px; max-height: 28vh; overflow: auto; overflow-wrap: anywhere; }
 .new-formation-dialog.roster-copy-size-dialog footer { flex-direction: column; align-items: stretch; gap: 8px; }

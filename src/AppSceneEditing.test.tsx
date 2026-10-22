@@ -163,8 +163,7 @@ it("A1: new project, member drag, +scene, B drag, assignment preview, save and r
   const view = render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: /追加.*新規/ }));
   fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
-  fireEvent.click(screen.getByRole("button", { name: /ステージ隊列/ }));
-  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "A1新規" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: "A1新規" } });
   fireEvent.click(screen.getByRole("button", { name: "作成する" }));
   await waitFor(() => expect(observed.canvas).not.toBeNull()); tick();
   fireEvent.click(screen.getByRole("tab", { name: "メンバー" }));
@@ -183,6 +182,7 @@ it("A1: new project, member drag, +scene, B drag, assignment preview, save and r
   await screen.findByRole("heading", { name: "シーン一覧" }, { timeout: 10_000 });
   fireEvent.click(document.querySelector(".scene-nav button.primary")!);
   const bId = current().selectedFrameId!; expect(bId).not.toBe(aId);
+  expect(current().project.frames.map(f => f.label)).toEqual(["シーン1", "シーン2"]);
   fireEvent.click(screen.getByRole("tab", { name: "メンバー" }));
   await dragStart(member(), 2); fireEvent.pointerUp(member(), pointer(2, 380));
   const bPositions = structuredClone(current().snapshot.positions);
@@ -198,13 +198,16 @@ it("A1: new project, member drag, +scene, B drag, assignment preview, save and r
     expect(current().snapshot.positions).toEqual(bPositions);
     expect(current().snapshot.objectStates).toEqual(bObjects);
   }
-  fireEvent.click(screen.getByTitle("現在のシーンを保存"));
+  const beforeSave = current().project;
+  fireEvent.click(screen.getByRole("button", { name: "隊列表を保存" }));
+  await screen.findByText("隊列表を保存しました。");
+  expect(current().project).toBe(beforeSave);
   const expected = geometry(current().project);
   expect(expected.find(f => f.id === aId)!.positions).toEqual(aPositions);
   expect(expected.find(f => f.id === bId)!.positions).toEqual(bPositions);
   expect(expected.find(f => f.id === aId)!.objectStates).toEqual(aObjects);
   expect(expected.find(f => f.id === bId)!.objectStates).toEqual(bObjects);
-  fireEvent.click(screen.getByTitle("変更を保存"));
+  fireEvent.click(document.querySelector(".toolbar-save-button")!);
   const id = current().project.id!;
   await waitFor(async () => expect(geometry((await repository.get(id))!.project)).toEqual(expected));
   view.unmount(); observed.canvas = null;
@@ -226,7 +229,7 @@ it.each([[false, false], [false, true], [true, false], [true, true]])("A2: every
   // Opening a Yjs document binds this device's song and queues its initial save.
   // Drain that work before measuring selection-only commits.
   if (yjs) {
-    await act(async () => { await observed.stage!.onSaveFrame(); });
+    await act(async () => { await observed.stage!.onSaveProject(); });
     expect((await repository.get(project.id!))!.project.audio).toEqual(project.audio);
   }
   const before = structuredClone(current().project);
@@ -266,10 +269,10 @@ it.each([[false, false], [false, true], [true, false], [true, true]])("A2: every
   expect(edits).not.toHaveBeenCalled();
 }, 25_000);
 
-it("A1: a retained save callback reads the latest target geometry and ignores a deleted target", async () => {
+it("A1/B2: a retained save callback persists the latest Project even after the selected scene is deleted", async () => {
   await open();
   railSelect("B");
-  const save = observed.stage!.onSaveFrame;
+  const save = observed.stage!.onSaveProject;
   act(() => {
     current().onMoveMember("m_anna", { x: 7, y: 4 });
     current().onUpdateObjectState("o_chair", { x: 6, y: 3 });
@@ -277,6 +280,7 @@ it("A1: a retained save callback reads the latest target geometry and ignores a 
   const latest = geometry(current().project);
   await act(async () => { await save(); });
   expect(geometry(current().project)).toEqual(latest);
+  expect(geometry((await repository.get(project.id!))!.project)).toEqual(latest);
   fireEvent.click(screen.getByRole("tab", { name: "シーン" }));
   fireEvent.click(await screen.findByRole("button", { name: "このシーンを削除" }));
   fireEvent.click(await screen.findByRole("button", { name: "削除する" }));
@@ -284,6 +288,99 @@ it("A1: a retained save callback reads the latest target geometry and ignores a 
   const before = current().project;
   await act(async () => { await save(); });
   expect(current().project).toBe(before);
+  expect((await repository.get(project.id!))!.project.frames).toEqual(before.frames);
+}, 25_000);
+
+it.each([false, true])("B2: both save buttons persist the same Project without changing scenes, Undo/Redo or shared recipes (Yjs=%s)", async yjs => {
+  useYjs = yjs;
+  await open();
+  railSelect("B");
+  const original = structuredClone(current().project.frames);
+  act(() => current().onMoveMember("m_anna", { x: 7, y: 4 }));
+  const edited = structuredClone(current().project.frames);
+  // Leave both an undo and a redo entry to detect either stack being changed.
+  act(() => current().onMoveMember("m_anna", { x: 8, y: 4 }));
+  act(() => current().onUndo());
+  expect(current().project.frames).toEqual(edited);
+  const edits = vi.spyOn(SharedProjectEditor.prototype, "edit");
+  for (const location of ["stage", "toolbar"]) {
+    const before = current().project;
+    expect(current().canUndo).toBe(true); expect(current().canRedo).toBe(true);
+    await act(async () => { fireEvent.click(location === "stage"
+      ? screen.getByRole("button", { name: "隊列表を保存" })
+      : document.querySelector(".toolbar-save-button")!); });
+    await screen.findByText("隊列表を保存しました。");
+    await waitFor(async () => expect((await repository.get(project.id!))!.project.frames).toEqual(edited));
+    expect(current().project).toBe(before);
+    expect(current().selectedFrameId).toBe("B");
+    expect(current().snapshot.positions).toEqual(edited[1].positions);
+    expect(current().canUndo).toBe(true); expect(current().canRedo).toBe(true);
+  }
+  expect(edits).not.toHaveBeenCalled();
+  act(() => current().onRedo());
+  expect(current().project.frames[1].positions.m_anna).toEqual({ x: 8, y: 4 });
+  act(() => current().onUndo());
+  expect(current().project.frames).toEqual(edited);
+  act(() => current().onUndo());
+  expect(current().project.frames).toEqual(original);
+}, 25_000);
+
+it("B2: failed stage save retains edits and history, emits no success, and can retry", async () => {
+  await open();
+  const persisted = (await repository.get(project.id!))!.project.frames;
+  act(() => current().onMoveMember("m_anna", { x: 7, y: 4 }));
+  const before = current().project;
+  const commit = vi.spyOn(repository, "commit").mockRejectedValueOnce(new Error("device write failed"));
+  fireEvent.click(screen.getByRole("button", { name: "隊列表を保存" }));
+  await waitFor(() => expect(commit).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.getByRole("button", { name: "隊列表を保存" }).hasAttribute("disabled")).toBe(false));
+  expect(screen.queryByText("隊列表を保存しました。")).toBeNull();
+  expect(current().project).toBe(before); expect(current().canUndo).toBe(true);
+  expect((await repository.get(project.id!))!.project.frames).toEqual(persisted);
+  fireEvent.click(screen.getByRole("button", { name: "隊列表を保存" }));
+  await screen.findByText("隊列表を保存しました。");
+  expect((await repository.get(project.id!))!.project.frames).toEqual(before.frames);
+}, 25_000);
+
+it("B2: both save buttons stay disabled until the same pending device save completes", async () => {
+  await open();
+  act(() => current().onMoveMember("m_anna", { x: 7, y: 4 }));
+  const originalCommit = repository.commit.bind(repository);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const commits = vi.spyOn(repository, "commit").mockImplementation(async input => { await pending; return originalCommit(input); });
+  const stage = screen.getByRole<HTMLButtonElement>("button", { name: "隊列表を保存" });
+  const toolbar = document.querySelector<HTMLButtonElement>(".toolbar-save-button")!;
+  fireEvent.click(stage);
+  await waitFor(() => expect(stage.disabled).toBe(true));
+  expect(toolbar.disabled).toBe(true);
+  fireEvent.click(stage); fireEvent.click(toolbar);
+  expect(commits).toHaveBeenCalledOnce();
+  await act(async () => { release(); });
+  await waitFor(() => expect(stage.disabled).toBe(false));
+  expect(toolbar.disabled).toBe(false);
+  expect((await repository.get(project.id!))!.project.frames).toEqual(current().project.frames);
+}, 25_000);
+
+it.each(["stage", "parade"] as const)("B9: %s blank titles use the creation default and keep same-name projects apart by ID", async mode => {
+  project.title = "新しい隊列表";
+  const view = render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /追加.*新規/ }));
+  fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
+  fireEvent.click(screen.getByRole("radio", { name: mode === "stage" ? /^ステージ隊列/ : /^パレード隊列/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: " \u3000 " } });
+  fireEvent.click(screen.getByRole("button", { name: "作成する" }));
+  await waitFor(() => { expect(current()?.project.title).toBe("新しい隊列表"); expect(current()!.project.id).not.toBe(project.id); });
+  expect(current().project.mode).toBe(mode);
+  expect(current().project.frames[0].label).toBe("シーン1");
+  const id = current().project.id!;
+  expect(id).not.toBe(project.id);
+  await waitFor(async () => expect((await repository.get(id))!.project.title).toBe("新しい隊列表"));
+  expect((await repository.get(project.id!))!.project.title).toBe("新しい隊列表");
+  view.unmount(); observed.canvas = null;
+  render(<App />);
+  expect(await screen.findAllByRole("button", { name: "新しい隊列表を開く" })).toHaveLength(2);
+  expect((await repository.get(id))!.project.mode).toBe(mode);
 }, 25_000);
 
 it("A2: Timeline selection keeps transport; its audio-position action resolves time; playback keeps the last tie", async () => {
@@ -304,7 +401,7 @@ it("A2: Timeline selection keeps transport; its audio-position action resolves t
   expect(current().selectedFrameId).toBe("B");
   expect(current().snapshot.positions).toEqual(current().project.frames[1].positions);
   // A captured save callback must use the latest project, including during playback.
-  const save = observed.stage!.onSaveFrame;
+  const save = observed.stage!.onSaveProject;
   const expected = geometry(current().project);
   await act(async () => { await save(); });
   expect(geometry(current().project)).toEqual(expected);
@@ -462,7 +559,7 @@ it.each(["stage", "parade"] as const)("A4: %s locked tools stay selectable witho
   project.stageObjects.forEach(object => { object.locked = true; });
   const view = await open();
   fireEvent.click(screen.getByRole("tab", { name: "道具" }));
-  await act(async () => { fireEvent.click(screen.getByTitle("隊列表を保存")); });
+  await act(async () => { fireEvent.click(document.querySelector(".toolbar-save-button")!); });
   const before = geometry(current().project);
   const begin = vi.spyOn(SharedProjectEditor.prototype, "begin");
   const edit = vi.spyOn(SharedProjectEditor.prototype, "edit");
@@ -521,8 +618,8 @@ it.each([["stage", .2], ["stage", 1], ["parade", .2], ["parade", 1]] as const)("
   const view = render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: /追加.*新規/ }));
   fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
-  fireEvent.click(screen.getByRole("button", { name: mode === "stage" ? /ステージ隊列/ : /パレード隊列/ }));
-  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名" }), { target: { value: "作成境界" } });
+  fireEvent.click(screen.getByRole("radio", { name: mode === "stage" ? /^ステージ隊列/ : /^パレード隊列/ }));
+  fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: "作成境界" } });
   const fields = mode === "stage" ? { widthMeters: 1, heightMeters: 1, gridSizeMeters: .1, memberDiameterMeters: diameter }
     : { paradeTotalDistance: 1, paradeWidthMeters: 1, paradeCellSizeMeters: .1, memberDiameterMeters: diameter };
   for (const [name, value] of Object.entries(fields)) {

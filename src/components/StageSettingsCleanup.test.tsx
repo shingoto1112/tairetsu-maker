@@ -23,7 +23,7 @@ for (const viewerPerspective of ["audience", "performer"] as const) {
       onUndo: noop, onRedo: noop, onSelect: noop, onStagePointerPositionChange: noop,
       onMoveMember: noop, onUpdateObjectState: noop, onBeginProjectEdit: noop, onEndProjectEdit: noop,
       onToggleFullscreen: noop, onContextMenuRequest: noop, onTogglePlayback: noop,
-      onSaveFrame: noop, onCaptureStageImage: noop, onTogglePerspective: noop, onSeekAudio: noop,
+      onSaveProject: noop, onCaptureStageImage: noop, onTogglePerspective: noop, onSeekAudio: noop,
     };
     const markup = renderToStaticMarkup(<StageCanvas {...props} />);
     const doc = new DOMParser().parseFromString(markup, "text/html");

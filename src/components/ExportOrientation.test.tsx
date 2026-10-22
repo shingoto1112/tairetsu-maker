@@ -34,7 +34,7 @@ for (const mode of ["meters", "centerSplit"] as const) {
       showMovementPaths:false, showMeterRulers:true, movementPathMode:"all", currentTime:0, audioDuration:100, audioName:null,
       onUndo:noop,onRedo:noop,onSelect:noop,onStagePointerPositionChange:noop,onMoveMember:noop,onUpdateObjectState:noop,
       onBeginProjectEdit:noop,onEndProjectEdit:noop,onToggleFullscreen:noop,onContextMenuRequest:noop,
-      onTogglePlayback:noop,onSaveFrame:noop,onCaptureStageImage:noop,onTogglePerspective:noop,onSeekAudio:noop,
+      onTogglePlayback:noop,onSaveProject:noop,onCaptureStageImage:noop,onTogglePerspective:noop,onSeekAudio:noop,
     };
     const editor = parse(renderToStaticMarkup(<StageCanvas {...props} />));
     const outputs = [

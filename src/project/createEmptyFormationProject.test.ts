@@ -8,6 +8,16 @@ const stageSettings = {
 };
 
 describe("createEmptyFormationProject", () => {
+  it("names only new scenes in Japanese and leaves existing titles and legacy scene labels intact", () => {
+    const project = createEmptyFormationProject("", stageSettings, null);
+    expect(project.title).toBe("");
+    expect(project.frames[0].label).toBe("シーン1");
+    project.frames[0].label = "Scene 1";
+    const reloaded = normalizeProject(JSON.parse(JSON.stringify(project)));
+    // Preserve the existing normalizer fallback; the creation default must not leak here.
+    expect(reloaded.title).toBe("隊列メーカー");
+    expect(reloaded.frames[0].label).toBe("Scene 1");
+  });
   it("keeps the saved showStageLabels default and other display defaults for new stages", () => {
     const project = createEmptyFormationProject("新規", stageSettings, null);
     expect(project.stage.showStageLabels).toBe(false);

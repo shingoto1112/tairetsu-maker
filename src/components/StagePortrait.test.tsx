@@ -18,7 +18,7 @@ const props: ComponentProps<typeof StageCanvas> = {
   canUndo: true, canRedo: true,
   onUndo: vi.fn(), onRedo: vi.fn(), onSelect: vi.fn(), onStagePointerPositionChange: vi.fn(),
   onMoveMember: vi.fn(), onUpdateObjectState: vi.fn(), onBeginProjectEdit: vi.fn(), onEndProjectEdit: vi.fn(),
-  onTogglePlayback: vi.fn(), onSaveFrame: vi.fn(), onCaptureStageImage: vi.fn(), onTogglePerspective: vi.fn(),
+  onTogglePlayback: vi.fn(), onSaveProject: vi.fn(), onCaptureStageImage: vi.fn(), onTogglePerspective: vi.fn(),
   onToggleFullscreen: vi.fn(), onSeekAudio: vi.fn(), onContextMenuRequest: vi.fn(),
 };
 let resizeFit: (width: number, height: number) => void;
@@ -40,6 +40,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("portrait stage controls and fit", () => {
+  it.each([false, true])("B2: disables project save for saving, unavailable or read-only states (compact=%s)", compact => {
+    const view = render(<StageCanvas {...props} compact={compact} />);
+    const save = () => screen.getByRole<HTMLButtonElement>("button", { name: "隊列表を保存" });
+    expect(save().title).toBe("隊列表を保存");
+    fireEvent.click(save()); expect(props.onSaveProject).toHaveBeenCalledOnce();
+    for (const state of [{ isSaving: true }, { canSaveProject: false }, { isReadOnly: true }]) {
+      view.rerender(<StageCanvas {...props} compact={compact} {...state} />);
+      expect(save().disabled).toBe(true);
+      fireEvent.click(save()); expect(props.onSaveProject).toHaveBeenCalledOnce();
+    }
+  });
   it("starts both portrait and landscape at 100%", () => {
     const portrait = render(<StageCanvas {...props} compact />);
     expect(screen.getByRole("button", { name: "ステージを全体表示に戻す" }).title).toContain("100%");
@@ -68,7 +79,7 @@ describe("portrait stage controls and fit", () => {
   });
   it("shows primary actions directly and accessible additional actions in the menu", () => {
     const { container } = render(<StageCanvas {...props} compact />);
-    for (const name of ["元に戻す", "やり直し", "再生", "現在のシーンを保存", "全画面"]) {
+    for (const name of ["元に戻す", "やり直し", "再生", "隊列表を保存", "全画面"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
     expect(screen.getByRole("slider", { name: "曲の再生位置" })).toBeTruthy();

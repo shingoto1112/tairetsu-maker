@@ -1,3 +1,4 @@
+import { nextSceneLabel } from "./nextSceneLabel";
 import type { NewFormationInput } from "../components/FormationLibrary";
 import { paradeDistanceError } from "./paradeLimits";
 import type { AudioMeta, Project } from "../types";
@@ -105,7 +106,7 @@ export const createEmptyFormationProject = (
     frames: [
       {
         id: createId("f"),
-        label: "Scene 1",
+        label: nextSceneLabel([]),
         timeSec: 0,
         sceneViewState: undefined,
         positions: {},

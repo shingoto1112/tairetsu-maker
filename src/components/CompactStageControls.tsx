@@ -8,7 +8,7 @@ type Props = {
   currentTime: number; duration: number; audioName: string | null; sceneLabel: string;
   isPlaying: boolean; isFullscreen: boolean; isReadOnly: boolean;
   canUndo: boolean; canRedo: boolean; zoom: number; pinchLocked: boolean;
-  onUndo: () => void; onRedo: () => void; onPlay: () => void; onSave: () => void;
+  onUndo: () => void; onRedo: () => void; onPlay: () => void; onSaveProject: () => void; saveDisabled: boolean;
   onSeek: (time: number) => void; onZoom: (zoom: number) => void;
   onCapture: () => void; onPerspective: () => void; onFullscreen: () => void; onPinchLock: () => void;
 };
@@ -29,8 +29,8 @@ export const CompactStageControls = (props: Props) => {
       {props.annotationControls}
       <span className="stage-current-scene" title={props.sceneLabel}><span className="stage-current-scene__label">{props.sceneLabel}</span></span>
       {props.isReadOnly && <span className="stage-readonly-pill">閲覧中</span>}
-      <button className="mini-button icon-only" type="button" aria-label="現在のシーンを保存" title="シーン保存"
-        disabled={props.isReadOnly} onClick={props.onSave}><Save size={18} /></button>
+      <button className="mini-button icon-only" type="button" aria-label="隊列表を保存" title="隊列表を保存"
+        disabled={props.saveDisabled} onClick={props.onSaveProject}><Save size={18} /></button>
       <button className="mini-button stage-compact-fit" type="button" aria-label="ステージを全体表示に戻す" title={`全体表示（現在${Math.round(props.zoom * 100)}%）`}
         onClick={() => props.onZoom(1)}>全体表示</button>
       <button className="mini-button icon-only" type="button" aria-label={props.isFullscreen ? "全画面を終了" : "全画面"}

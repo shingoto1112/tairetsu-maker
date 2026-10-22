@@ -1,3 +1,4 @@
+import { nextSceneLabel } from "./project/nextSceneLabel";
 import { alignedObjectPosition, constrainObjectMovePatch } from "./utils/objectMovement";
 import { rotatedObjectBounds } from "./utils/formationExportLayout";
 import { isObjectOutsideStage } from "./utils/objectGeometry";
@@ -3790,39 +3791,6 @@ function App() {
     return true;
   }
 
-  const saveCurrentFormation = async () => {
-    if (sharedEditorRef.current) {
-      if (await flushPendingAutoSave()) setNotice("現在の隊形を保存しました。", "success");
-      return;
-    }
-    if (!displayFrame) {
-      setNotice("保存先のフレームがありません。");
-      return;
-    }
-    const activeFrameId = displayFrame.id;
-    let savedLabel: string | undefined;
-    updateProject((previous) => {
-      const target = previous.frames.find(frame => frame.id === activeFrameId);
-      if (!target) return previous;
-      const currentSnapshot = getSnapshotForFrame(previous, activeFrameId);
-      savedLabel = target.label;
-      return {
-        ...previous,
-        frames: previous.frames.map((frame) =>
-          frame.id === activeFrameId
-            ? {
-                ...frame,
-                positions: currentSnapshot.positions,
-                objectStates: currentSnapshot.objectStates,
-              }
-            : frame,
-        ),
-      };
-    });
-
-    if (savedLabel !== undefined) setNotice(`「${savedLabel}」に現在の隊形を保存しました。`, "success");
-  };
-
   const saveProjectManually = async (
     options: { showNotice?: boolean } = { showNotice: true },
   ): Promise<boolean> => {
@@ -3854,7 +3822,7 @@ function App() {
     const id = createId("f");
     return {
       id,
-      label: `Scene ${sourceProject.frames.length + 1}`,
+      label: nextSceneLabel(sourceProject.frames),
       timeSec: Number(frameTime.toFixed(2)),
       section: "",
       notes: "",
@@ -7612,9 +7580,7 @@ function App() {
         title={project.title}
         canEditProject={true}
         canEditScene={true}
-        canSaveProject={
-          true
-        }
+        canSaveProject={true}
 
         onTitleChange={updateTitle}
         isDirty={isDirty}
@@ -7819,7 +7785,8 @@ function App() {
                   onBeginProjectEdit={beginProjectHistoryBatch}
                   onEndProjectEdit={endProjectHistoryBatch}
                   onTogglePlayback={togglePlayback}
-                  onSaveFrame={saveCurrentFormation}
+                  onSaveProject={() => saveProjectManually()}
+                  isSaving={isSaving}
                   onTogglePerspective={() =>
                     updateViewerPerspective(
                       viewerPerspective === "audience" ? "performer" : "audience",

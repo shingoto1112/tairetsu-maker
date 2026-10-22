@@ -110,6 +110,11 @@ const formatProjectDate = (project: ProjectSummary): string => {
   }).format(date);
 };
 
+const formationTypeOptions: { value: FormationMode; title: string; description: string }[] = [
+  { value: "stage", title: "ステージ隊列", description: "決まったステージの上で、シーンごとの隊形を作ります。発表会・ライブ向け" },
+  { value: "parade", title: "パレード隊列", description: "長いルートを進みながら変わる隊形を作ります。パレード・行進向け" },
+];
+
 type CreationNumberFieldProps = {
   name: string; label: string; min: number; max?: number; step: string; value: number;
   onChange: (value: number) => void; error?: string;
@@ -161,7 +166,6 @@ export const FormationLibrary = ({
   onDeleteProject,
 }: FormationLibraryProps) => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formationMode, setFormationMode] = useState<FormationMode>("stage");
   const [title, setTitle] = useState("");
@@ -304,16 +308,11 @@ export const FormationLibrary = ({
     resetDialog();
   };
 
-  const openCreateTypeDialog = () => {
-    setIsAddDialogOpen(false);
-    setIsTypeDialogOpen(true);
-  };
-
   const openCreateDialog = (nextMode: FormationMode, sourceId = "") => {
     resetDialog();
     setFormationMode(nextMode);
     setRosterSourceId(sourceId);
-    setIsTypeDialogOpen(false);
+    setIsAddDialogOpen(false);
     setIsDialogOpen(true);
   };
 
@@ -350,9 +349,8 @@ export const FormationLibrary = ({
     event.preventDefault();
     if (creatingRef.current || rosterLoading) return;
     const form = event.currentTarget;
-    const trimmedTitle = title.trim();
+    const trimmedTitle = title.trim() || "新しい隊列表";
     const errors: Record<string, string> = {};
-    if (!trimmedTitle) errors.title = "隊列表名を入力してください。";
     form.querySelectorAll<HTMLInputElement>('input[data-number-field]').forEach(input => {
       const error = creationNumberError(input.valueAsNumber, input.dataset.fieldLabel ?? "",
         Number(input.min), input.max === "" ? undefined : Number(input.max));
@@ -669,7 +667,7 @@ export const FormationLibrary = ({
               {onJoinInvitation && <button type="button" onClick={() => { setIsAddDialogOpen(false); onJoinInvitation(); }}>
                 <Users size={22} /><span><strong>招待リンクで参加</strong><small>招待リンクを貼り付けて参加します。</small></span>
               </button>}
-              <button type="button" onClick={openCreateTypeDialog}>
+              <button type="button" onClick={() => openCreateDialog("stage")}>
                 <Plus size={22} />
                 <span>
                   <strong>新しく作る</strong>
@@ -692,66 +690,6 @@ export const FormationLibrary = ({
               <button
                 className="mini-button"
                 onClick={() => setIsAddDialogOpen(false)}
-                type="button"
-              >
-                キャンセル
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
-
-      {isTypeDialogOpen && (
-        <div
-          className="new-formation-backdrop"
-          onPointerDown={() => setIsTypeDialogOpen(false)}
-        >
-          <div
-            className="new-formation-dialog"
-            onPointerDown={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="作成タイプを選択"
-          >
-            <header>
-              <h2>作成タイプを選択</h2>
-              <button
-                className="share-export-close"
-                onClick={() => setIsTypeDialogOpen(false)}
-                type="button"
-                aria-label="閉じる"
-              >
-                <X size={20} />
-              </button>
-            </header>
-            <div className="formation-type-grid">
-              <button
-                type="button"
-                className="formation-type-card"
-                onClick={() => openCreateDialog("stage")}
-              >
-                <strong>ステージ隊列</strong>
-                <span>
-                  固定されたステージ上で、シーンごとの隊形を作成します。
-                </span>
-                <small>ダンスステージ、体育館ステージ、発表会、ライブ向け</small>
-              </button>
-              <button
-                type="button"
-                className="formation-type-card"
-                onClick={() => openCreateDialog("parade")}
-              >
-                <strong>パレード隊列</strong>
-                <span>
-                  長い移動ルート上で、前進しながら変化する隊形を作成します。
-                </span>
-                <small>パレード、行進、縦長い演出向け</small>
-              </button>
-            </div>
-            <footer>
-              <button
-                className="mini-button"
-                onClick={() => setIsTypeDialogOpen(false)}
                 type="button"
               >
                 キャンセル
@@ -788,18 +726,26 @@ export const FormationLibrary = ({
               </button>
             </header>
 
-            <label>作成タイプ
-              <select value={formationMode} disabled={creating} onChange={event => setFormationMode(event.target.value as FormationMode)}>
-                <option value="stage">ステージ隊列</option><option value="parade">パレード隊列</option>
-              </select>
-            </label>
+            <fieldset className="horizontal-counting formation-type-choice" disabled={creating}>
+              <legend>作成タイプ</legend>
+              <div className="horizontal-counting__cards">
+                {formationTypeOptions.map(option => <label key={option.value} className={"counting-card" + (formationMode === option.value ? " is-selected" : "")}>
+                  <span className="counting-card__heading">
+                    <input type="radio" name="formationMode" value={option.value} checked={formationMode === option.value}
+                      onChange={() => setFormationMode(option.value)} />
+                    <strong>{option.title}</strong>
+                    <span className="counting-card__check" aria-hidden="true">{formationMode === option.value ? "✓" : ""}</span>
+                  </span>
+                  <small>{option.description}</small>
+                </label>)}
+              </div>
+            </fieldset>
 
             <label>
-              隊列表名
+              隊列表名（任意）
               <input
                 name="title"
-                aria-invalid={Boolean(fieldErrors.title)}
-                aria-describedby={fieldErrors.title ? "create-title-error" : undefined}
+                aria-describedby="create-title-hint"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="例：2026春 オープニング"
@@ -807,7 +753,7 @@ export const FormationLibrary = ({
               />
             </label>
 
-            {fieldErrors.title && <small id="create-title-error" className="formation-field-error">{fieldErrors.title}</small>}
+            <small id="create-title-hint" className="creation-title-hint">空欄の場合：新しい隊列表</small>
 
             {onLoadRosterSource && <section className="roster-copy-field">
               <label>名簿をコピー（任意）
