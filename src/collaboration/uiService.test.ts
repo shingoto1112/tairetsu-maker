@@ -231,3 +231,17 @@ it('reports confirmed cloud/copy saves separately if editor setup then fails', a
   expect(service.getSnapshot().error).toContain('ホームから隊列表を開いてください');
   expect((await repository.list({ limit: 100 })).items).toHaveLength(2);
 });
+it('a background list refresh keeps the login guidance that cloud save just showed', async () => {
+  const service = setup();
+  Object.assign(service, { auth: { state: () => ({ status: 'signed-out', guestRecovery: 'new-invite-required' }) } });
+  vi.spyOn(service, 'initialize').mockResolvedValue(undefined as never);
+  const refresh = vi.spyOn(service, 'refresh').mockResolvedValue();
+  await service.saveLocalToCloud('target', { current: () => true } as unknown as SharingOperation);
+  const guidance = { screen: 'account', notice: expect.stringContaining('ログインしてください') };
+  expect(service.getSnapshot()).toMatchObject(guidance);
+  // The home surface may finish loading after the tap and start its first list refresh.
+  await service.run(() => service.refresh(), { keepNotice: true });
+  expect(refresh).toHaveBeenCalledOnce(); expect(service.getSnapshot()).toMatchObject(guidance);
+  await service.run(async () => {});
+  expect(service.getSnapshot().notice).toBeNull();
+});

@@ -86,10 +86,11 @@ export class CollaborationUiService {
     this.patch({ auth, ...(changed ? { documents: [], cursor: null, members: [], invites: [], issued: null } : {}) });
     if (changed) { this.fixed = null; this.rescue = null; this.sharingCopies.clear(); this.listRevision++; }
   }
-  async run(action: () => Promise<void>) {
+  /** keepNotice: background refreshes must not wipe guidance a user action just showed. */
+  async run(action: () => Promise<void>, options: { keepNotice?: boolean } = {}) {
     if (this.state.busy) return;
     this.linkRevision++;
-    this.patch({ busy: true, error: null, notice: null });
+    this.patch({ busy: true, error: null, ...(options.keepNotice ? {} : { notice: null }) });
     try { await this.initialize(); await action(); }
     catch (error) { this.patch({ error: collaborationUiError(error) }); }
     finally { this.patch({ busy: false }); }

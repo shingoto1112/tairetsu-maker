@@ -29,11 +29,11 @@ function Surface({ service, view, localId, attached }: Props & { service: Collab
   useEffect(() => {
     const release = subscribeCloudAuth(() => service.authChanged());
     void service.initialize().then(() => {
-      if (view === "library") void service.run(() => service.refresh());
+      if (view === "library") void service.run(() => service.refresh(), { keepNotice: true });
     });
     const connectivity = () => {
       service.connectivityChanged();
-      if (view === "library" && navigator.onLine !== false) void service.run(() => service.refresh());
+      if (view === "library" && navigator.onLine !== false) void service.run(() => service.refresh(), { keepNotice: true });
     };
     window.addEventListener("offline", connectivity); window.addEventListener("online", connectivity);
     return () => { release(); window.removeEventListener("offline", connectivity); window.removeEventListener("online", connectivity); };
