@@ -19,6 +19,10 @@ type UiState = { screen: Screen; busy: boolean; error: string | null; notice: st
   documents: SharedDocumentSummary[]; cursor: DocumentCursor | null; members: SharedMember[]; invites: SharedInvite[]; link: string;
   issued: { inviteId: string; link: string } | null; localId: string | null };
 const messages: Record<string, string> = {
+  DOCUMENT_QUOTA_EXCEEDED: "自分が作成した共有隊列表は20件までです。不要な共有を終了してから、もう一度お試しください。端末のコピーを削除しても共有の枠は空きません。",
+  PROJECT_QUOTA_EXCEEDED: "共有サービスの保存容量がいっぱいのため、完了できませんでした。時間をおいてお試しいただくか、お問い合わせください。",
+  QUOTA_EXCEEDED: "共有できるデータ量の上限に達しました。内容を減らすか、端末で編集を続けてください。",
+  DOCUMENT_DELETED: "この隊列表の共有は終了しています。端末に残っているコピーをご利用ください。",
   INVALID_INVITE: "この招待は期限切れ、使用済み、または取り消されています。新しい招待リンクをもらってください。",
   INVALID_INVITE_LINK: "招待リンクを確認してください。正式な隊列メーカーのリンクを貼り付けてください。",
   INVALID_DISPLAY_NAME: "表示名は1〜80文字で入力してください。",
@@ -125,9 +129,8 @@ export class CollaborationUiService {
     const revision = ++this.listRevision, auth = this.auth?.state();
     if (auth?.status !== "signed-in" || typeof navigator !== "undefined" && navigator.onLine === false) { this.patch({ documents: [], cursor: null }); return; }
     if (!more) this.patch({ documents: [], cursor: null });
-    // Foundation caps the whole service at 100 documents. This lightweight
-    // page covers every local badge without reading any CRDT; cursor remains
-    // supported if that server limit grows in a later version.
+    // Read lightweight metadata without CRDT content. Further pages use the
+    // server cursor; 100 is a page size, not a service-wide document quota.
     const page = await this.lifecycle().listMyDocuments(100, more ? this.state.cursor : null);
     const latest = this.auth?.state();
     if (epoch !== cloudAuthEpoch() || revision !== this.listRevision || latest?.status !== "signed-in" || latest.userId !== auth.userId) return;

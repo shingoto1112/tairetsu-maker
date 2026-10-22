@@ -13,6 +13,7 @@ on:
       - 'scripts/testing/restore-sql-suite.mjs'
       - 'scripts/testing/ephemeral-sql-suite.mjs'
       - 'scripts/testing/multi-use-invites-sql-suite.mjs'
+      - 'scripts/testing/quota-and-ended-access-sql-suite.mjs'
       - 'scripts/testing/legacy-shutdown-sql-suite.mjs'
       - 'scripts/test-legacy-cloud-sql.mjs'
       - 'scripts/legacy-export-contract.test.ts'

@@ -1,5 +1,48 @@
 # 新しい共同編集 第3回：サーバー最小構成
 
+## 2026-10-22：作成枠と終了済み文書の参照制限（iPad 1.1.1 / build 33）
+
+今回の適用対象は **[20261022000000_collab_v2_quota_and_ended_access.sql](../supabase/migrations/20261022000000_collab_v2_quota_and_ended_access.sql) だけ**。以下の過去のfoundation適用・削除手順は今回に使わない。Codexはファイル作成とオフライン検証のみを行い、DB接続・適用・CI起動は行わない。ClaudeがレビューとLinux SQL試験を確認し、利用者の確認を取った後、利用者自身が適用する。
+
+変更内容：作成者ごとの有効な共有20件（終了済みは除外）、全体100件の件数判定廃止。サービスのbytes予算は維持する。同じ作成者＋initial_digestの全行検索を先に行うため、20件到達・bytes予算満杯時も有効な同一要求の再送は成功し、削除済みdigestはDOCUMENT_DELETEDとなる。新規だけDOCUMENT_QUOTA_EXCEEDED→bytes予算検査の順とする。
+
+documents/members/updates/sync_snapshotsのSELECTポリシーは、本人の所属とdeleted_atなしを確認するcan_read_documentに置換。helper所有者は既存is_memberと同じ管理ロールに合わせ、EXECUTEはauthenticatedだけ。履歴2表のhistory_allowedは変更しない。get_updates/list_membersはINVOKERのまま、is_member直後にaccess_statusのended検査を行う。外された人・部外者のNOT_MEMBER、access_statusの終了通知は維持する。migration自体で保存データの更新・削除はしない。
+
+適用前の確認（読み取りのみ）：
+
+1. 利用者が2026-10-22に確認した値は、有効文書6件・終了済み0件、bytes設定はリポジトリ既定値（total 128MiB等）、対象6表のSELECTはcollab_v2_member_readだけ。適用直前にも下のSQLで件数・容量設定・全SELECT/ALLポリシーを確認する。4表はis_member、履歴2表はhistory_allowed(document_id,'view')の計6つが想定。追加のpermissiveポリシーがあれば、今回の置換だけで参照を閉じられるとは判断せずClaudeへ確認する。
+2. Claudeが静的check、クライアント試験、typecheck/build、Linuxの使い捨てPostgresで新SQL suiteの成功を確認する。CIは本番に接続しない。SQL未実行のオフラインcheckだけで適用可としない。
+3. 既存DEFINER関数の管理所有者を確認する。SQL Editorの実行ロールが関数置換・owner設定・policy作成を実行できることを確認する。
+
+```sql
+begin read only;
+select count(*) filter(where deleted_at is null) as active_documents,
+  count(*) filter(where deleted_at is not null) as ended_documents from public.collab_v2_documents;
+select total_bytes,state_bytes,checkpoint_bytes,work_bytes,row_overhead,
+  max_snapshot_bytes,max_log_bytes,max_log_entries from collab_v2_private.budget_settings;
+select tablename,policyname,permissive,roles,cmd,qual from pg_policies
+where schemaname='public' and cmd in ('SELECT','ALL') and tablename in
+  ('collab_v2_documents','collab_v2_members','collab_v2_updates','collab_v2_sync_snapshots',
+   'collab_v2_checkpoints','collab_v2_checkpoint_contents') order by tablename,policyname;
+select p.oid::regprocedure as signature,pg_get_userbyid(p.proowner) as owner,p.prosecdef
+from pg_proc p where p.oid in ('collab_v2_private.is_member(uuid)'::regprocedure,
+  'public.collab_v2_create_document(uuid,text,bytea,text,bytea,bytea)'::regprocedure);
+commit;
+```
+
+適用と適用後の確認：
+
+1. 対象プロジェクトのSQL Editorで、今回のmigrationのコメントからbegin;〜commit;まで**全内容を1回のRunで一括実行**する。部分実行、既存migrationの貼り直し、db pushは行わない。新しいEdge配備や容量設定変更は不要。
+2. エラーなら同じセッションでROLLBACKし、失敗内容をClaudeへ渡す。途中の続きだけを実行しない。確定前の失敗は全体ROLLBACKとなる。再実行はClaudeの修正・確認後に全体を実行する。
+3. [適用後の読み取り確認SQL](../supabase/verify/20261022_quota_and_ended_access_verify.sql)を全体実行する。createの署名/default/戻り値・20件判定と再送順序、helperのSQL/STABLE/DEFINER・空search_path・管理所有者一致、get_updates/list_membersのINVOKERとended検査を確認する。createのEXECUTEはservice_roleだけ、helperと2つの読み取りRPCはauthenticatedだけ（PUBLIC/anonなし）。6表でRLS=true、4ポリシーがcan_read_document、履歴2ポリシーがhistory_allowedのままで、追加permissiveポリシーなしを確認する。
+4. 上の件数・容量設定の読み取りを再実行し、適用により既存データが更新されていないことを確認する。同時利用による増減は別途考慮する。動作確認用の文書を使う場合は利用者が範囲を決め、終了通知と端末コピー・未送信内容保持を確認する。SQL suiteは残存本文・履歴を含むfixtureで6表0行とanon権限拒否を確認するが、実Supabaseのロール設定・JWT・iPad実機は別途確認する。
+
+ロールバック方針：適用中の失敗はROLLBACK。COMMIT後に問題が見つかった場合は修正migrationを追加し、強化したRLSを元のis_memberだけの状態へ戻さない。文書データの削除や過去のfoundation再適用をロールバックとして使わない。
+
+クライアント確認：managementTransportとsupabaseTransportは終了判定にaccess_status RPCを利用し、lifecycleもmanagement.access経由で確認する。終了判定を文書テーブルの直接SELECTに依存する箇所はない。uiServiceのrun(action, { keepNotice })は維持する。100件は一覧のページサイズとして残し、全体件数の根拠にした旧コメントだけを修正する。
+
+検証範囲：追加SQL suiteは20/21件・終了による枠解放・全体100件超・20件到達かつbytes予算超過時の再送・削除済みdigest・6表RLS・RPC/ACL・適用失敗ROLLBACK・再適用を対象とする。WindowsではSQLを実行できず、Linux CIでの実行結果は未確認。
+
 第11回-1（11a）：[旧クラウド停止・期限付き救出の手順](LEGACY_CLOUD_SHUTDOWN.md)を追加。
 旧11 SQLとV2 foundationは変更せず、独立した停止migrationを追加した。
 本番推奨順はV2 foundation→停止migration→Realtimeの **Allow public access OFF**→
@@ -84,7 +127,7 @@ create は2のみ、append は DB と内部 schema 一致を検査する。本�
 | 文書の永続receipt | 4,096件 |
 | 文書のsnapshot＋ログ＋receipt見積もり | 16 MiB |
 | 新方式全体のbytes＋receipt見積もり | 128 MiB |
-| 作成者ごとの文書／全新文書 | 20件／100件（削除墓標も数える） |
+| 作成者ごとの有効な共有文書 | 20件（終了済みは除外、全体件数上限なし。2026-10-22 migration適用後） |
 | 文書ごとの招待発行 | 32件/時、保管256件 |
 | schema 1内容 | メンバー500、シーン200、配置100,000、CRDT論理要素100,000、client ID 1,024 |
 

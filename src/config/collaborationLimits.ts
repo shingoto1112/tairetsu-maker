@@ -16,3 +16,6 @@ export type EphemeralBudgetSettings = { enabled: boolean; maxHz: number; message
 export const EPHEMERAL_BUDGET: Readonly<EphemeralBudgetSettings> = Object.freeze({ enabled: true, maxHz: 3, messagesPerSecond: 60,
   reservePerSecond: 12, minimumConnections: 8, maxConnections: 32, connectionTtlMs: 45000,
   pollMs: 30000, permitMs: 15000 });
+
+/** Creation slots are independent of per-document content and byte limits. */
+export const SHARED_CREATION_LIMITS = Object.freeze({ activeDocumentsPerCreator: 20 });

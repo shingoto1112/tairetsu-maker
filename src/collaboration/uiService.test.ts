@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { CollaborationUiService } from './uiService';
+import { CollaborationUiService, collaborationUiError } from './uiService';
+import { TransportError } from './transport';
 import type { CollaborationUiOptions } from './uiTypes';
 import { forgetInvitation } from '../storage/invitationMemory';
 import type { ParticipantAuthState } from './guestAuth';
@@ -12,6 +13,15 @@ import type { SharedDocumentSummary } from './managementTransport';
 import type { ProjectRecord } from '../repositories/types';
 beforeEach(forgetInvitation);
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+const quotaMessages = [
+  ['DOCUMENT_QUOTA_EXCEEDED', '自分が作成した共有隊列表は20件までです。不要な共有を終了してから、もう一度お試しください。端末のコピーを削除しても共有の枠は空きません。'],
+  ['PROJECT_QUOTA_EXCEEDED', '共有サービスの保存容量がいっぱいのため、完了できませんでした。時間をおいてお試しいただくか、お問い合わせください。'],
+  ['QUOTA_EXCEEDED', '共有できるデータ量の上限に達しました。内容を減らすか、端末で編集を続けてください。'],
+  ['DOCUMENT_DELETED', 'この隊列表の共有は終了しています。端末に残っているコピーをご利用ください。'],
+] as const;
+it.each(quotaMessages)('explains %s without conflating count and bytes', (code, message) => {
+  expect(collaborationUiError(new TransportError(code === 'DOCUMENT_DELETED' ? 'permission' : 'capacity', code))).toBe(message);
+});
 const setup = () => {
   const service = new CollaborationUiService(() => ({ config: null } as CollaborationUiOptions));
   service.invitation('original'); return service;
@@ -63,6 +73,23 @@ async function cloudSetup(initialAuth: ParticipantAuthState = { status: 'signed-
   service.authChanged();
   return { service, options, startSharing, createInvite, repository, operation, changeAuth: (next: ParticipantAuthState) => { auth = next; service.authChanged(); } };
 }
+it.each(quotaMessages)('both sharing entries keep the saved project and fixed copy on %s, without automatic retry', async (code, message) => {
+  const { service, startSharing, operation, repository } = await cloudSetup();
+  startSharing.mockRejectedValue(new TransportError(code === 'DOCUMENT_DELETED' ? 'permission' : 'capacity', code));
+  const original = await repository.get('target'), commit = vi.spyOn(repository, 'commit');
+  await service.saveLocalToCloud('target', operation);
+  expect(startSharing).toHaveBeenCalledOnce();
+  expect(service.getSnapshot()).toMatchObject({ busy: false, notice: null });
+  expect(service.getSnapshot().error).toContain(message);
+  expect(await repository.get('target')).toEqual(original);
+  const fixedCopy = structuredClone(commit.mock.calls[0][0]);
+  await service.start('作成者');
+  expect(startSharing).toHaveBeenCalledTimes(2);
+  expect(commit.mock.calls[1][0]).toEqual(fixedCopy);
+  expect(await repository.get('target')).toEqual(original);
+  expect((await repository.list({ limit: 100 })).items).toHaveLength(2);
+  expect(operation.settle).toHaveBeenLastCalledWith(false, true);
+});
 it.each([
   { status: 'signed-out', guestRecovery: 'new-invite-required' },
   { status: 'signed-in', userId: 'guest', isGuest: true, sessionPersistence: 'browser-data' },

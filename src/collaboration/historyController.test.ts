@@ -36,6 +36,37 @@ async function setup() {
     durable:async()=>{const r=(await repository.get(project.id!))!;await repository.commit({project:r.project,collaboration:{...r.collaboration!,serverCursor:'1'},localRevision:'2',expectedRepositoryRevision:r.repositoryRevision,operationId:'received'});}};
 }
 describe('9d durable operation owner',()=>{
+  it.each([
+    ['DOCUMENT_QUOTA_EXCEEDED','自分が作成した共有隊列表は20件までです。不要な共有を終了してから、もう一度お試しください。端末のコピーを削除しても共有の枠は空きません。'],
+    // History keeps its actionable capacity guidance for both byte quotas.
+    ['PROJECT_QUOTA_EXCEEDED','容量がいっぱいのため完了できませんでした。「新しい隊列表として開く」をお試しください。'],
+    ['QUOTA_EXCEEDED','容量がいっぱいのため完了できませんでした。「新しい隊列表として開く」をお試しください。'],
+    ['DOCUMENT_DELETED','この隊列表の共有は終了しています。端末に残っているコピーをご利用ください。'],
+  ])('maps %s in history errors; a capacity failure while keeping a copy keeps its own message',async(code,message)=>{
+    expect(historyError(new TransportError('capacity',code))).toBe(message);
+    const s=await setup(),c=s.make();
+    vi.spyOn(s.history,'manual').mockRejectedValue(new TransportError('capacity',code));
+    await c.run(()=>c.manual());expect(c.getSnapshot().error).toBe('容量がいっぱいのため控えを残せませんでした。');expect(c.getSnapshot().notice).toBeNull();c.stop();
+  });
+  it.each(['PROJECT_QUOTA_EXCEEDED','DOCUMENT_QUOTA_EXCEEDED','QUOTA_EXCEEDED'])('retains the restore request and pending edits after %s and stops background retries',async code=>{
+    vi.useFakeTimers();
+    const s=await setup(),first=s.make(),before=await s.repository.get(s.project.id!);
+    const restore=vi.spyOn(s.history,'restore').mockRejectedValue(new TransportError('capacity',code));
+    try {
+      await first.run(()=>first.restore(checkpointId));
+      const fixed=structuredClone(s.value!.restore!.request);
+      expect(s.value?.restore?.failed).toBe(code);expect(first.getSnapshot().retry).toBe(false);
+      expect(await s.repository.get(s.project.id!)).toEqual(before);
+      first.wake();await vi.advanceTimersByTimeAsync(60000);expect(restore).toHaveBeenCalledOnce();first.stop();
+      const restart=s.make();
+      try {
+        restart.wake();await vi.advanceTimersByTimeAsync(60000);
+        await restart.run(()=>restart.restore());
+        expect(restore).toHaveBeenCalledOnce();expect(s.value!.restore!.request).toEqual(fixed);
+        expect(await s.repository.get(s.project.id!)).toEqual(before);
+      } finally { restart.stop(); }
+    } finally { first.stop();vi.useRealTimers(); }
+  });
   it('does not send a restore when the initial operation record cannot be saved',async()=>{
     const s=await setup(),c=s.make();s.failStorage(true);await c.run(()=>c.restore(checkpointId));
     expect(s.requests).toEqual([]);expect(c.getSnapshot().error).toContain('保存できません');expect(s.value).toBeNull();c.stop();

@@ -50,6 +50,32 @@ async function setup() {
 }
 
 describe("sharing lifecycle API", () => {
+  it.each(['DOCUMENT_QUOTA_EXCEEDED','PROJECT_QUOTA_EXCEEDED','QUOTA_EXCEEDED'])("keeps durable creation bytes and unsent edits across %s without automatic retry", async code => {
+    const s = await setup(), rpc = s.backend.rpc.bind(s.backend);
+    const requests: unknown[] = [];
+    vi.spyOn(s.backend, 'rpc').mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === 'collab_v2_create_document') { requests.push(structuredClone(args)); throw new RpcError('54000', code); }
+      return rpc(name, args);
+    });
+    await expect(s.creator.lifecycle.startSharing('project_a', '作成者')).rejects.toMatchObject({ code });
+    expect(requests).toHaveLength(1);
+    const first = (await s.repository.get('project_a'))!;
+    expect(first.collaboration?.base).toBeTruthy();
+    // Restart the lifecycle owner; the repository retains the fixed Y.Doc.
+    await expect(s.client(actors[0]).lifecycle.startSharing('project_a', '作成者')).rejects.toMatchObject({ code });
+    expect(requests[1]).toEqual(requests[0]);
+    expect((await s.repository.get('project_a'))?.collaboration).toEqual(first.collaboration);
+    const coordinator = new SaveCoordinator(s.repository, () => {}); coordinator.activate(first);
+    const editor = await SharedProjectEditor.create(coordinator, first.project, () => {}, () => {});
+    editor.edit(p => ({ ...p, title: '容量拒否後の端末編集' })); await coordinator.flush(); editor.destroy();
+    const edited = (await s.repository.get('project_a'))!;
+    await expect(s.creator.lifecycle.startSharing('project_a', '作成者')).rejects.toMatchObject({ code });
+    expect((await s.repository.get('project_a'))?.collaboration).toEqual(edited.collaboration);
+    expect((await s.repository.get('project_a'))?.project.title).toBe('容量拒否後の端末編集');
+    expect(edited.collaboration?.outbox.length).toBeGreaterThan(0);
+    expect(edited.collaboration?.base).toEqual(first.collaboration?.base);
+    expect(requests).toHaveLength(3);
+  });
   it("uses one 7-day link for multiple people and replays only the current membership after expiry/revocation", async () => {
     const s = await setup(); await s.creator.lifecycle.startSharing("project_a", "作成者");
     const link = await s.creator.lifecycle.createInvite(documentId);

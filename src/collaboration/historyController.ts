@@ -10,7 +10,10 @@ import { createHistoryJournal, type HistoryJournal, type HistoryOperation } from
 export const historyError = (error: unknown): string => {
   const code = (error as { code?: string }).code;
   if (error instanceof TransportError && error.kind === 'rate-limit' || ['RATE_LIMIT', 'BUSY', 'WORKER_BUSY', 'VALIDATION_BUDGET'].includes(code ?? '')) return '少し時間をおいてから、もう一度お試しください。';
-  if (['CHECKPOINT_QUOTA_EXCEEDED', 'QUOTA_EXCEEDED', 'DEFERRED_CAPACITY', 'RESTORE_REQUEST_LIMIT'].includes(code ?? '')) return '容量がいっぱいのため完了できませんでした。「新しい隊列表として開く」をお試しください。';
+  if (code === 'DOCUMENT_QUOTA_EXCEEDED') return '自分が作成した共有隊列表は20件までです。不要な共有を終了してから、もう一度お試しください。端末のコピーを削除しても共有の枠は空きません。';
+  if (code === 'DOCUMENT_DELETED') return 'この隊列表の共有は終了しています。端末に残っているコピーをご利用ください。';
+  // History keeps its actionable capacity guidance; the sharing screens explain quota codes in their own words.
+  if (['CHECKPOINT_QUOTA_EXCEEDED', 'QUOTA_EXCEEDED', 'PROJECT_QUOTA_EXCEEDED', 'DEFERRED_CAPACITY', 'RESTORE_REQUEST_LIMIT'].includes(code ?? '')) return '容量がいっぱいのため完了できませんでした。「新しい隊列表として開く」をお試しください。';
   if (['RESTORE_UPDATE_TOO_LARGE', 'RESTORE_TOPOLOGY_MISMATCH'].includes(code ?? '')) return 'この控えは共有中の隊列表に戻せません。「新しい隊列表として開く」をお試しください。';
   if (code === 'LEGACY_CHECKPOINT_REQUIRES_BASE_PROJECT') return '古い形式の控えです。元の隊列表を開いて、独立した隊列表として保存してください。';
   if (code === 'CHECKPOINT_PROTECTED') return '戻す処理で使われているため、この控えは削除できません。処理が終わってからお試しください。';
@@ -23,7 +26,7 @@ export const historyError = (error: unknown): string => {
 type State = { loaded: boolean; busy: boolean; items: CheckpointSummary[]; cursor: CheckpointCursor | null; error: string | null; notice: string | null; restore: RestoreState | null; retry: boolean };
 type Options = { localId: string; repository: ProjectRepository; history: CollaborationHistory; identity: CollaborationData;
   valid: () => boolean; wake: () => void; journal?: HistoryJournal };
-const rejectedBeforeCommit = ['RESTORE_UPDATE_TOO_LARGE', 'RESTORE_TOPOLOGY_MISMATCH', 'QUOTA_EXCEEDED', 'CHECKPOINT_QUOTA_EXCEEDED'];
+const rejectedBeforeCommit = ['RESTORE_UPDATE_TOO_LARGE', 'RESTORE_TOPOLOGY_MISMATCH', 'QUOTA_EXCEEDED', 'CHECKPOINT_QUOTA_EXCEEDED', 'PROJECT_QUOTA_EXCEEDED', 'DOCUMENT_QUOTA_EXCEEDED'];
 /** Session-owned, survives dialog close. Observe only repository.get (durable),
  * never the live editor Doc or a provider's in-memory cursor. */
 export class HistoryController {
