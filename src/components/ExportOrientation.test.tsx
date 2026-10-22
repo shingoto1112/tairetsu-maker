@@ -41,6 +41,11 @@ for (const mode of ["meters", "centerSplit"] as const) {
       parse(renderToStaticMarkup(<PrintPreview project={p} options={{...defaultPrintOptions, viewerPerspective:perspective, includeAssignments:true}} />)),
       parse(renderToStaticMarkup(<StaticStagePreview project={p} frame={f} stageWidth={9.3} range={{left:0,right:9.3,top:0,bottom:5.4}} outputWidth={700} viewerPerspective={perspective} />)),
     ];
+    // Centre counts beside the displayed 0m line: the audience edge of the effective front (lateral fronts
+    // count as bottom), mirrored for the performer view. Editor and every output agree.
+    const countsBelow = (front === "top") === (perspective === "performer");
+    expect(editor.querySelector(".stage-canvas-with-rulers")!.classList.contains("is-ruler-bottom")).toBe(countsBelow);
+    for (const out of outputs) expect(out.querySelector(".print-stage-preview")!.classList.contains("is-ruler-bottom")).toBe(countsBelow);
     for (const out of outputs) {
       const drawing = out.querySelector<HTMLElement>(".print-stage-preview")!;
       const scale = parseFloat(drawing.style.getPropertyValue("--print-stage-width-mm")) / 9.3;

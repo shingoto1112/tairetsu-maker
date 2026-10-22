@@ -4272,6 +4272,29 @@ h2 {
   display: none;
 }
 
+/* The centre-count row follows the displayed 0m line: below the stage when 0m is shown at the bottom.
+   Vertical rulers and the stage take the first row; the row is mirrored around the stage edge. */
+.stage-canvas-with-rulers.is-ruler-bottom > * {
+  grid-row: 1;
+}
+
+.stage-canvas-with-rulers.is-ruler-bottom > .ruler-corner,
+.stage-canvas-with-rulers.is-ruler-bottom > .meter-ruler--horizontal {
+  border-bottom: 0;
+  border-top: 1px solid #e2e8f0;
+  grid-row: 2;
+}
+
+.is-ruler-bottom > .meter-ruler--horizontal .meter-ruler__tick {
+  bottom: 5px;
+  top: auto;
+}
+
+.is-ruler-bottom > .meter-ruler--horizontal .meter-ruler__tick::after {
+  bottom: 19px;
+  top: auto;
+}
+
 .meter-ruler--vertical .meter-ruler__tick {
   right: var(--ruler-label-offset-px, 31px);
   transform: translateY(-50%);
@@ -6019,6 +6042,28 @@ h2 {
   top: 1.2mm;
   white-space: nowrap;
   width: 7mm;
+}
+
+/* Centre counts beside the displayed 0m line: directly below the stage range, above any scene gap.
+   The label boxes mirror the top row (1.2mm from the far edge); over a scene gap they mask the grid. */
+.print-stage-preview.is-ruler-bottom .print-ruler-x {
+  grid-column: auto;
+  grid-row: auto;
+  height: var(--print-ruler-x-height-mm, 6mm);
+  left: var(--print-ruler-left-mm, 10mm);
+  position: absolute;
+  top: var(--print-ruler-x-top-mm);
+  width: var(--print-stage-width-mm);
+  z-index: 4;
+}
+
+.print-stage-preview.is-ruler-bottom .print-ruler-x span {
+  bottom: 1.2mm;
+  top: auto;
+}
+
+.print-stage-preview.is-ruler-bottom.has-scene-gap .print-ruler-x span {
+  background: #ffffff;
 }
 
 .print-ruler-y {

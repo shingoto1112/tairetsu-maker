@@ -96,3 +96,27 @@ it("cancellation before/during generation, cross-realm AbortError and fallback n
     expect(fallback).toHaveBeenCalledTimes(phase === "fallback" ? 1 : 0);
   }
 });
+
+it("puts the centre counts beside the displayed 0m line and keeps the page height", () => {
+  const p = vectorPdfFixture(); const frame = p.frames[0];
+  const counts = (page: ReturnType<typeof buildScenePage>) => visibleTextLines(page.drawings).filter(t => /^\d+$/.test(t.text) && t.size < 3);
+  const stageY = (page: ReturnType<typeof buildScenePage>) => (page.drawings.find(d => d.kind === "group" && d.id === "stage") as { y: number }).y;
+  const top = buildScenePage(p, frame.id, { viewerPerspective: "performer" }, () => []);
+  const bottom = buildScenePage(p, frame.id, { viewerPerspective: "audience" }, () => []);
+  expect(bottom.height).toBeCloseTo(top.height);
+  expect(counts(top).length).toBeGreaterThan(0); expect(counts(bottom).length).toBe(counts(top).length);
+  // Top: above the stage. Bottom: below the stage frame, inside the page.
+  expect(Math.max(...counts(top).map(t => t.y))).toBeLessThan(stageY(top));
+  const metrics = getPrintMetrics(p, [frame], defaultPrintOptions);
+  expect(Math.min(...counts(bottom).map(t => t.y))).toBeGreaterThan(stageY(bottom));
+  expect(Math.max(...counts(bottom).map(t => t.y))).toBeLessThan(bottom.height);
+  expect(stageY(bottom)).toBeLessThan(stageY(top));
+  expect(metrics.mmPerMeter).toBeGreaterThan(0);
+  // Over a scene gap the labels get a white box so the gap grid does not cross them.
+  const withGap = buildScenePage(p, frame.id, { viewerPerspective: "audience" }, () => [], undefined, { metrics, gapAfter: true });
+  const boxes = withGap.drawings.filter(d => d.kind === "shape" && (d as { fill?: string }).fill === "#ffffff");
+  expect(boxes.length).toBe(counts(withGap).length);
+  expect(withGap.drawings.filter(d => d.kind === "shape" && (d as { fill?: string }).fill === "#ffffff").length).toBeGreaterThan(0);
+  expect(buildScenePage(p, frame.id, { viewerPerspective: "performer" }, () => [], undefined, { metrics, gapAfter: true })
+    .drawings.some(d => d.kind === "shape" && (d as { fill?: string }).fill === "#ffffff")).toBe(false);
+});

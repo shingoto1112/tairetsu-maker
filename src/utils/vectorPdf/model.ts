@@ -1,9 +1,10 @@
 import type { Project } from "../../types";
 import type { ShareExportOptions } from "../../components/ShareExportModal";
-import { defaultPrintOptions, getEffectiveSize, getPrintMetrics, getPrintRulerTopMm,
+import { PRINT_RULER_X_LABEL_WIDTH_MM, defaultPrintOptions, getEffectiveSize, getPrintMetrics, getPrintRulerTopMm,
   getPrintRulerBottomMm, getPrintMemberLabelFontSizeMm, isPrintMemberVisible, getFramePrintVerticalRange,
   getParadePrintRulerLabels, getPrintSideRulerWidthMm, PRINT_STAGE_RIGHT_SAFETY_MM, type PrintMetrics } from "../printLayout";
 import { createStageExportView, readablePropLabelRotation } from "../stageExportView";
+import { horizontalRulerSide } from "../verticalGrid";
 import { createDefaultObjectState, sortFrames } from "../interpolation";
 import { GRID_LINE_TOKENS, horizontalEmphasizedLines, verticalEmphasizedLines } from "../gridEmphasis";
 import { getSafeParadeBackwardDistance, normalizeParadeHorizontalMeasureMode } from "../parade";
@@ -77,8 +78,13 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
   const range = getFramePrintVerticalRange(project, frame, size, metrics);
   const m = metrics.mmPerMeter, w = metrics.stageWidthMm, h = (range.depthMeters + gapMeters) * m;
   const left = getPrintSideRulerWidthMm(isParade, options.includeMeterRulers);
-  const top = getPrintRulerTopMm(project, metrics, options);
-  const bottom = options.includeMeterRulers ? getPrintRulerBottomMm(project, metrics, options) : 0;
+  const rulerTop = getPrintRulerTopMm(project, metrics, options);
+  const rulerBottom = options.includeMeterRulers ? getPrintRulerBottomMm(project, metrics, options) : 0;
+  // Centre counts sit beside the displayed 0m line; at the bottom the two margins swap (same height).
+  const rulerAtBottom = options.includeMeterRulers &&
+    horizontalRulerSide(project.stage, options.viewerPerspective, isParade) === "bottom";
+  const top = rulerAtBottom ? rulerBottom : rulerTop;
+  const bottom = rulerAtBottom ? rulerTop : rulerBottom;
   const view = createStageExportView(size, project.stage, options.viewerPerspective, isParade);
   const totalDistance = project.paradeSettings?.totalDistance ?? project.stage.depthMeters;
   const backward = getSafeParadeBackwardDistance(project.paradeSettings?.backwardDistanceMeters);
@@ -163,7 +169,13 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
   drawings.push({ kind: "group", id: "stage", x: left, y: 9 + top, rotation: 0, children: stage });
   if (options.includeMeterRulers) {
     const labels = isParade ? createHorizontalRulerLabels(size.widthMeters, horizontalMode) : view.horizontalLabels;
-    for (const label of labels) drawings.push(text(label.label, left + label.positionMeters * m, 9 + 1.2 + 1.5, pt(7), "#111827", 700));
+    // Mirrors the DOM row: 1.2mm from the far edge of a rulerTop-high band, right below the stage range.
+    const labelY = rulerAtBottom ? 9 + top + range.depthMeters * m + rulerTop - 1.2 - 1.5 : 9 + 1.2 + 1.5;
+    for (const label of labels) {
+      if (rulerAtBottom && gapMeters) drawings.push({ kind: "shape", x: left + label.positionMeters * m - PRINT_RULER_X_LABEL_WIDTH_MM / 2,
+        y: labelY - 1.5, width: PRINT_RULER_X_LABEL_WIDTH_MM, height: 3, fill: "#ffffff" });
+      drawings.push(text(label.label, left + label.positionMeters * m, labelY, pt(7), "#111827", 700));
+    }
     const verticalLabels = isParade ? getParadePrintRulerLabels(totalDistance, backward, range).map(l => ({
       ...l, positionMeters: l.internalY - range.topMeters,
     })) : view.verticalLabels.map(l => ({ ...l, className: undefined }));

@@ -10,6 +10,8 @@ export type PinchGeometry = {
   startOrigin: Point;
   anchorMeters: Point;
   bleedMeters?: number;
+  /** The member bleed sits below the stage (horizontal ruler at the bottom); default above. */
+  bleedBelow?: boolean;
   bottom?: number;
   centerAtFit?: boolean;
 };
@@ -27,7 +29,8 @@ export const resolvePinchView = (geometry: PinchGeometry, zoom: number, midpoint
     x: p.left + Math.max(0, (v.width - p.left - p.right - width) / 2),
     y: geometry.centerAtFit && zoom <= 1 ? Math.max(0, (v.height - height) / 2) : p.top,
   };
-  const anchor = { x: f.left + bleed + geometry.anchorMeters.x * ppm, y: f.top + bleed + geometry.anchorMeters.y * ppm };
+  const bleedAbove = geometry.bleedBelow ? 0 : bleed;
+  const anchor = { x: f.left + bleed + geometry.anchorMeters.x * ppm, y: f.top + bleedAbove + geometry.anchorMeters.y * ppm };
   const scroll = {
     x: constrain(origin.x + anchor.x - (midpoint.x - v.left), width + p.left + p.right - v.width),
     y: constrain(origin.y + anchor.y - (midpoint.y - v.top), height + p.top + p.bottom - v.height),
@@ -35,7 +38,7 @@ export const resolvePinchView = (geometry: PinchGeometry, zoom: number, midpoint
   const scale = zoom / geometry.startZoom;
   const startAnchor = {
     x: f.left + ((geometry.bleedMeters ?? 0) + geometry.anchorMeters.x) * geometry.pixelsPerMeter * geometry.startZoom,
-    y: f.top + ((geometry.bleedMeters ?? 0) + geometry.anchorMeters.y) * geometry.pixelsPerMeter * geometry.startZoom,
+    y: f.top + ((geometry.bleedBelow ? 0 : geometry.bleedMeters ?? 0) + geometry.anchorMeters.y) * geometry.pixelsPerMeter * geometry.startZoom,
   };
   // Place the scaled old stage anchor at the same clamped position as the final layout.
   const translate = {

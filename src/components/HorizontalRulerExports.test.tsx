@@ -6,6 +6,8 @@ import { StaticStagePreview } from "./StaticStagePreview";
 import { formationExportFixture } from "../utils/formationExportFixture";
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
 import { createHorizontalGridLines } from "../utils/horizontalGrid";
+import { defaultPrintOptions } from "../utils/printLayout";
+import type { Project, ViewerPerspective } from "../types";
 for(const mode of ['stage','parade'] as const) for(const counting of ['meters','centerSplit'] as const) for(const width of [12,13,12.5,40]) {
  it(mode+' '+counting+' '+width+' A4 and image/PDF/mobile drawing agree',()=>{
   const project=formationExportFixture();project.mode=mode;project.stage.widthMeters=width;project.stage.horizontalGuideMode=counting;
@@ -47,4 +49,48 @@ it('uses each scene width while preserving the common A4 scale and frame', () =>
   expect(Number(centers[1].getAttribute('x1'))).toBe(6.5);
   const viewBoxes = [...dom.querySelectorAll('.print-stage-guides')].map(el => el.getAttribute('viewBox')?.split(' ')[2]);
   expect(new Set(viewBoxes)).toEqual(new Set(['13']));
+});
+
+it('puts the centre counts beside the displayed 0m line without changing any height', () => {
+  const previews = (project: Project, viewerPerspective: ViewerPerspective, extra: Partial<typeof defaultPrintOptions> = {}) =>
+    [...new DOMParser().parseFromString(renderToStaticMarkup(<PrintPreview project={project}
+      options={{ ...defaultPrintOptions, includeAssignments: true, viewerPerspective, ...extra }}/>), 'text/html')
+      .querySelectorAll<HTMLElement>('.print-stage-preview')];
+  const project = formationExportFixture();
+  project.useGlobalStageSize = false;
+  // One wide scene sets the common scale, so the first two scenes share page 1 with a scene gap between them.
+  [[30, 4], [12, 3], [12, 3]].forEach(([w, d], i) => { project.frames[i].stageWidthMeters = w; project.frames[i].stageDepthMeters = d; });
+  const audience = previews(project, 'audience'), performer = previews(project, 'performer');
+  expect(audience.length).toBe(3);
+  expect(audience.every(el => el.classList.contains('is-ruler-bottom'))).toBe(true);
+  expect(performer.some(el => el.classList.contains('is-ruler-bottom') || el.classList.contains('has-scene-gap'))).toBe(false);
+  // Only a scene followed by a gap masks the gap grid behind its labels.
+  expect(audience.map(el => el.classList.contains('has-scene-gap'))).toEqual(audience.map(el => !!el.querySelector('.print-scene-gap-start')));
+  expect(audience.some(el => el.classList.contains('has-scene-gap'))).toBe(true);
+  audience.forEach((el, i) => {
+    // The two margins swap; the drawing height and the total stay the same.
+    const [top, stage] = el.style.gridTemplateRows.split(' ');
+    const [performerTop, performerStage] = performer[i].style.gridTemplateRows.split(' ');
+    expect(stage).toBe(performerStage);
+    expect(top).toBe(performer[i].style.paddingBottom);
+    expect(el.style.paddingBottom).toBe(performerTop);
+    expect(el.style.getPropertyValue('--print-ruler-x-top-mm')).not.toBe('');
+    expect(performer[i].style.getPropertyValue('--print-ruler-x-top-mm')).toBe('');
+  });
+  // Old data with the front at the top has 0m at the top for the audience.
+  const top = formationExportFixture(); top.stage.frontDirection = 'top';
+  expect(previews(top, 'audience').some(el => el.classList.contains('is-ruler-bottom'))).toBe(false);
+  expect(previews(top, 'performer').every(el => el.classList.contains('is-ruler-bottom'))).toBe(true);
+  // Parades and drawings without rulers keep today's layout.
+  const parade = formationExportFixture(); parade.mode = 'parade';
+  parade.paradeSettings = { totalDistance: 100, width: 12, cellSizeMeters: 1, direction: 'up', rulerPosition: 'both', emphasizeEvery5m: true, emphasizeEvery10m: true };
+  for (const view of ['audience', 'performer'] as const) {
+    expect(previews(parade, view).some(el => el.classList.contains('is-ruler-bottom'))).toBe(false);
+    expect(previews(project, view, { includeMeterRulers: false }).some(el => el.classList.contains('is-ruler-bottom'))).toBe(false);
+  }
+  // The roster's small drawing follows the same side.
+  const small = (viewerPerspective: ViewerPerspective) => new DOMParser().parseFromString(renderToStaticMarkup(<StaticStagePreview project={project}
+    frame={project.frames[1]} stageWidth={12} range={{ left: 0, right: 12, top: 0, bottom: 8 }} outputWidth={500} viewerPerspective={viewerPerspective}/>), 'text/html')
+    .querySelector('.print-stage-preview')!.classList.contains('is-ruler-bottom');
+  expect([small('audience'), small('performer')]).toEqual([true, false]);
 });

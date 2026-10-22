@@ -4,7 +4,7 @@ import type { AnnotationLine } from "../types";
 import { horizontalEmphasizedLines, verticalEmphasizedLines, gridLineStyle, stageVerticalRulerPositions } from "../utils/gridEmphasis";
 import { horizontalGridOriginMeters, snapMemberGroupHorizontal } from "../utils/horizontalGrid";
 import { memberGroupAxisBounds, snapMemberGroupAxis, snapPositionInBounds } from "../utils/positionGrid";
-import { stageVerticalGridOriginMeters } from "../utils/verticalGrid";
+import { horizontalRulerSide, stageVerticalGridOriginMeters } from "../utils/verticalGrid";
 import { createHorizontalRulerLabels } from "../utils/horizontalRuler";
 import { stageRulerPosition } from "../utils/rulerPosition";
 import {
@@ -440,6 +440,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     };
     const frontDirection =
       stage.frontDirection ?? stage.audienceSide ?? "bottom";
+    // The centre-count row follows the displayed 0m line; the 18px spare row moves to the other side.
+    const rulerAtBottom = horizontalRulerSide(stage, viewerPerspective) === "bottom";
     const originMode = stage.originMode ?? "center";
     const memberDiameterMeters = Math.min(
       1,
@@ -1064,8 +1066,10 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
         startDistance,
         startZoom, continuousZoom: startZoom, finishing: false, lastAnchor: midpoint,
         geometry: { viewport, padding: { left: 0, right: 0, top: 0, bottom: 0 }, startZoom, pixelsPerMeter: fittedStageSize.pxPerMeter,
-          fixed: { left: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, right: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, top: showMeterRulers ? RULER_LABEL_HEIGHT_PX : 0 },
-          bleedMeters: showMeterRulers ? memberDiameterMeters / 2 : 0, bottom: showMeterRulers ? RULER_BOTTOM_PADDING_PX : 0, centerAtFit: true,
+          fixed: { left: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0, right: showMeterRulers ? RULER_LABEL_WIDTH_PX : 0,
+            top: showMeterRulers ? (rulerAtBottom ? RULER_BOTTOM_PADDING_PX : RULER_LABEL_HEIGHT_PX) : 0 },
+          bleedMeters: showMeterRulers ? memberDiameterMeters / 2 : 0, bleedBelow: showMeterRulers && rulerAtBottom,
+          bottom: showMeterRulers ? (rulerAtBottom ? RULER_LABEL_HEIGHT_PX : RULER_BOTTOM_PADDING_PX) : 0, centerAtFit: true,
           stageMeters: { width: stage.widthMeters, height: stage.depthMeters }, startScroll: { x: container.scrollLeft, y: container.scrollTop },
           startOrigin: { x: layoutRect.left - viewport.left + container.scrollLeft, y: layoutRect.top - viewport.top + container.scrollTop },
           anchorMeters: stageAnchorMeters({ x: midpoint.clientX, y: midpoint.clientY }, { x: stageRect.left, y: stageRect.top }, visibleStageSize.pxPerMeter) },
@@ -2095,17 +2099,22 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
               ref={exportElementRef}
               className={
                 showMeterRulers
-                  ? "stage-canvas-with-rulers"
+                  ? `stage-canvas-with-rulers${rulerAtBottom ? " is-ruler-bottom" : ""}`
                   : "stage-canvas-with-rulers hide-rulers"
               }
               style={{
                 gridTemplateColumns: showMeterRulers
                   ? `${visibleStageSize.rulerWidth}px ${visibleStageSize.widthPx}px ${visibleStageSize.rulerWidth}px`
                   : `${visibleStageSize.widthPx}px`,
-                gridTemplateRows: showMeterRulers
-                  ? `${visibleStageSize.rulerHeight}px ${visibleStageSize.heightPx}px`
-                  : `${visibleStageSize.heightPx}px`,
-                paddingBottom: showMeterRulers
+                gridTemplateRows: !showMeterRulers
+                  ? `${visibleStageSize.heightPx}px`
+                  : rulerAtBottom
+                    ? `${visibleStageSize.heightPx}px ${visibleStageSize.rulerHeight}px`
+                    : `${visibleStageSize.rulerHeight}px ${visibleStageSize.heightPx}px`,
+                paddingBottom: showMeterRulers && !rulerAtBottom
+                  ? `${visibleStageSize.rulerBottomPadding}px`
+                  : undefined,
+                paddingTop: showMeterRulers && rulerAtBottom
                   ? `${visibleStageSize.rulerBottomPadding}px`
                   : undefined,
                 "--ruler-member-bleed-px": `${visibleStageSize.memberBleedPx}px`,

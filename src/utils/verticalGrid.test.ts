@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createSampleProject } from "../sampleProject";
 import { createDefaultParadeSettings } from "../project/defaults";
 import { verticalEmphasizedLines } from "./gridEmphasis";
-import { stageVerticalGridOriginMeters } from "./verticalGrid";
+import { horizontalRulerSide, stageVerticalGridOriginMeters } from "./verticalGrid";
 import { snapMemberGroupAxis, snapPositionInBounds } from "./positionGrid";
 import { snapPastedMemberPosition, snapPastedObjectPosition } from "./placementGrid";
 import { snapToGrid } from "./coordinates";
@@ -116,4 +116,17 @@ describe("both axes retain group formation at bounds", () => {
       expect(group).toEqual(original);
     });
   }
+});
+
+describe("horizontal centre-count row follows the displayed 0m line", () => {
+  it.each([
+    ["bottom", "audience", "bottom"], ["bottom", "performer", "top"],
+    ["top", "audience", "top"], ["top", "performer", "bottom"],
+    ["left", "audience", "bottom"], [undefined, undefined, "bottom"],
+  ] as const)("origin %s, view %s -> %s", (front, view, side) => {
+    expect(horizontalRulerSide({ frontDirection: front, audienceSide: "bottom" }, view)).toBe(side);
+  });
+  it("keeps parades on top", () => {
+    expect(horizontalRulerSide({ frontDirection: "bottom", audienceSide: "bottom" }, "audience", true)).toBe("top");
+  });
 });

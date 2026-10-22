@@ -5,14 +5,15 @@ import path from 'node:path';
 
 const origin = process.env.REPOSITORY_TEST_ORIGIN ?? 'http://127.0.0.1:5392';
 assert.ok(/^http:\/\/127\.0\.0\.1:539[2-9]$/.test(origin));
-const out = path.resolve('output/build30');
+const out = path.resolve(process.env.RULER_TEST_OUT ?? 'output/build30');
 await mkdir(out, { recursive: true });
 const base = JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json', 'utf8')).stage;
 const cases = [
   ...[12, 30].flatMap(width => ['meters', 'centerSplit'].map(counting => ({ mode: 'stage', width, counting, front: 'bottom', perspective: 'audience', viewport: [1180, 820] }))),
   { mode: 'stage', width: 12, counting: 'meters', front: 'top', perspective: 'performer', viewport: [1180, 820], zoom: true },
+  { mode: 'stage', width: 12, counting: 'centerSplit', front: 'bottom', perspective: 'performer', viewport: [1180, 820], zoom: true },
   { mode: 'stage', width: 12, counting: 'centerSplit', front: 'bottom', perspective: 'audience', viewport: [820, 1180], shot: true },
-  { mode: 'parade', width: 12, counting: 'meters', viewport: [1180, 820], scroll: true, zoom: true },
+  { mode: 'parade', width: 12, counting: 'meters', viewport: [1180, 820], scroll: true, zoom: true, entry: true },
   { mode: 'parade', width: 12, counting: 'centerSplit', viewport: [820, 1180], scroll: true, shot: true },
   // Integer length exposes 0m/start ticks on the frame; noninteger T/B checks interior 0m.
   { mode: 'parade', width: 12, counting: 'meters', total: 10, backward: 0, viewport: [1180, 820] },
@@ -77,7 +78,7 @@ async function measure(page, c, name) {
           const translation = axis === 'x' ? matrix.m41 : matrix.m42;
           tickCenter = (axis === 'x' ? rect.left : rect.top) + pseudoStart + translation + pseudoSize / 2;
         }
-        rows.push({ axis, side: axis === 'x' ? '上' : label.parentElement.className.includes('right') ? '右' : '左',
+        rows.push({ axis, side: axis === 'x' ? (rect.top >= area.bottom - 1 ? '下' : '上') : label.parentElement.className.includes('right') ? '右' : '左',
           position, label: label.textContent, target, reference, labelCenter, tickCenter,
           labelDelta: labelCenter - reference, tickDelta: tickCenter === null ? null : tickCenter - reference });
       }
@@ -88,6 +89,9 @@ async function measure(page, c, name) {
   }, { c, name });
   assert.ok(Math.abs(data.centerDelta) <= .25, `center line ${name} ${data.centerDelta}`);
   assert.equal(data.dpr, 2); assert.ok(data.rows.some(r => r.axis === 'x')); assert.ok(data.rows.some(r => r.axis === 'y'));
+  // Stage centre counts sit beside the displayed 0m line (front top + audience, or bottom + performer: top); parade: top.
+  const countsSide = c.mode === 'parade' || ((c.front ?? 'bottom') === 'top') === ((c.perspective ?? 'audience') !== 'performer') ? '上' : '下';
+  for (const row of data.rows.filter(r => r.axis === 'x')) assert.equal(row.side, countsSide, `${name} centre counts side ${JSON.stringify(row)}`);
   measurements.push(data);
   await writeFile(path.join(out, 'ruler-measurements.json'), JSON.stringify({ measurements, operations, errors, blocked: [...blocked] }, null, 2));
   for (const row of data.rows) {
@@ -146,7 +150,7 @@ try {
       await measure(page, c, name + '-rulers-restored');
       console.log('HIDE_RULERS PASS');
     }
-    if (index === 6) {
+    if (c.entry) {
       // Real canvas → raw context-menu point → App entry → save. Both target-specific lattices are independent of the ruler CSS.
       const read = () => page.evaluate(async id => {
         const { IndexedDbProjectRepository } = await import('/src/repositories/indexedDbRepository.ts');

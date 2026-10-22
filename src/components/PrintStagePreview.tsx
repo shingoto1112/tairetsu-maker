@@ -2,6 +2,7 @@ import { getFramePrintVerticalRange } from "../utils/printLayout";
 export { getFramePrintVerticalRange } from "../utils/printLayout";
 import { PrintObjectLabel } from "./PrintObjectLabel";
 import { createStageExportView, readablePropLabelRotation } from "../utils/stageExportView";
+import { horizontalRulerSide } from "../utils/verticalGrid";
 import { useId } from "react";
 import { AnnotationLines } from "./AnnotationLines";
 import { horizontalEmphasizedLines, verticalEmphasizedLines } from "../utils/gridEmphasis";
@@ -689,6 +690,12 @@ export const PrintStagePreview = ({
   const assignmentMemberSizeMm = getAssignmentMemberSizeMm(project, metrics);
   const rulerTopMm = viewport?.topMm ?? getPrintRulerTopMm(project, metrics, options);
   const rulerBottomMm = viewport?.bottomMm ?? getPrintRulerBottomMm(project, metrics, options);
+  // The centre-count row sits beside the displayed 0m line. At the bottom it is drawn right below the
+  // stage range (above any scene gap) and the two margins swap, so heights and page breaks stay the same.
+  const rulerAtBottom = options.includeMeterRulers &&
+    horizontalRulerSide(project.stage, options.viewerPerspective, isParade) === "bottom";
+  const topSideMm = rulerAtBottom ? rulerBottomMm : rulerTopMm;
+  const bottomSideMm = rulerAtBottom ? rulerTopMm : rulerBottomMm;
   const leftRulerMm = viewport?.sideMm ?? getPrintSideRulerWidthMm(
     isParade,
     options.includeMeterRulers,
@@ -778,15 +785,19 @@ export const PrintStagePreview = ({
     : view.verticalGrid(metrics.gridSizeMeters, options.includeGrid).filter(line => line.positionMeters >= verticalRange.topMeters - 1e-7 && line.positionMeters <= verticalRange.bottomMeters + 1e-7);
   const previewStyle = {
     gridTemplateColumns: `${leftRulerMm}mm ${metrics.stageWidthMm}mm ${rightRulerMm}mm`,
-    gridTemplateRows: `${rulerTopMm}mm ${stageHeightMm}mm`,
-    paddingBottom: `${rulerBottomMm}mm`,
+    gridTemplateRows: `${topSideMm}mm ${stageHeightMm}mm`,
+    paddingBottom: `${bottomSideMm}mm`,
     paddingRight: `${stageRightSafetyMm}mm`,
     width: `${totalPreviewWidthMm}mm`,
     "--print-member-size": `${memberDiameterMm}mm`,
-    "--print-ruler-bottom-mm": `${rulerBottomMm}mm`,
+    "--print-ruler-bottom-mm": `${bottomSideMm}mm`,
     "--print-ruler-left-mm": `${leftRulerMm}mm`,
     "--print-ruler-right-mm": `${rightRulerMm}mm`,
-    "--print-ruler-top-mm": `${rulerTopMm}mm`,
+    "--print-ruler-top-mm": `${topSideMm}mm`,
+    ...(rulerAtBottom ? {
+      "--print-ruler-x-top-mm": `${topSideMm + verticalRange.depthMeters * metrics.mmPerMeter}mm`,
+      "--print-ruler-x-height-mm": `${rulerTopMm}mm`,
+    } : {}),
     "--print-stage-right-safety-mm": `${stageRightSafetyMm}mm`,
     "--print-stage-center-x-mm": metersToPrintMm(sceneWidthMeters / 2, metrics),
     "--print-stage-height-mm": `${stageHeightMm}mm`,
@@ -978,6 +989,8 @@ export const PrintStagePreview = ({
       className={[
         "print-stage-preview",
         !options.includeMeterRulers ? "without-rulers" : "",
+        rulerAtBottom ? "is-ruler-bottom" : "",
+        rulerAtBottom && gapAfter ? "has-scene-gap" : "",
       ]
         .filter(Boolean)
         .join(" ")}
