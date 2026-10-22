@@ -4,6 +4,7 @@ import { createDefaultObjectState } from "./interpolation";
 import { getMemberLabelFontSize } from "./memberLabel";
 import { getSafeParadeBackwardDistance, getSafeParadeCanvasDistance, internalYToParadeDistance, paradeDistanceToInternalY } from "./parade";
 import { boundedTicks } from "./boundedTicks";
+import { rotatedObjectBounds } from "./formationExportLayout";
 
 // Single source of truth for legacy DOM and vector A4 pagination and dimensions.
 export type EffectiveStageSize = {
@@ -566,8 +567,15 @@ export const getFramePrintVerticalRange = (
     if (!((state.visible ?? object.visible) !== false)) {
       return;
     }
-    minY = Math.min(minY, state.y);
-    maxY = Math.max(maxY, state.y + state.heightMeters);
+    const bounds = rotatedObjectBounds(state);
+    // Extend the legacy crop without shrinking scenes whose rotated prop is shorter.
+    minY = Math.min(minY, state.y, bounds.top);
+    maxY = Math.max(maxY, state.y + state.heightMeters, bounds.bottom);
+  });
+
+  Object.values(frame.annotationLines ?? {}).forEach((line) => {
+    minY = Math.min(minY, line.y1, line.y2);
+    maxY = Math.max(maxY, line.y1, line.y2);
   });
 
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {

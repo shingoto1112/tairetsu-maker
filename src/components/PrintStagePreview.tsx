@@ -1,3 +1,5 @@
+import { getFramePrintVerticalRange } from "../utils/printLayout";
+export { getFramePrintVerticalRange } from "../utils/printLayout";
 import { PrintObjectLabel } from "./PrintObjectLabel";
 import { createStageExportView, readablePropLabelRotation } from "../utils/stageExportView";
 import { useId } from "react";
@@ -80,7 +82,6 @@ const PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM = 13;
 const PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM = 8;
 const PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM = 24;
 const PRINT_MEMBER_LABEL_FONT_BOOST_MM = 0.2;
-const PRINT_PARADE_EXPORT_PADDING_METERS = 2;
 const PRINT_ASSIGNMENT_SIDE_GAP_MM = 7;
 const PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM = 4;
 const PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM = 82;
@@ -522,96 +523,6 @@ export const getPrintMetrics = (
     orientation,
     pageUsableHeightMm: pageSize.height,
     stageWidthMm,
-  };
-};
-
-const snapDown = (value: number, step: number): number =>
-  Math.floor(value / step + 0.0001) * step;
-
-const snapUp = (value: number, step: number): number =>
-  Math.ceil(value / step - 0.0001) * step;
-
-export const getFramePrintVerticalRange = (
-  project: Project,
-  frame: FormationFrame,
-  stageSize: EffectiveStageSize,
-  metrics: PrintMetrics,
-): SceneVerticalRange => {
-  if (project.mode !== "parade") {
-    return {
-      bottomMeters: stageSize.depthMeters,
-      depthMeters: stageSize.depthMeters,
-      topMeters: 0,
-    };
-  }
-
-  const totalDistance = Math.max(
-    project.paradeSettings?.totalDistance ?? project.stage.depthMeters,
-    1,
-  );
-  const backwardDistanceMeters = getSafeParadeBackwardDistance(
-    project.paradeSettings?.backwardDistanceMeters,
-  );
-  const canvasDistanceMeters = getSafeParadeCanvasDistance(
-    totalDistance,
-    backwardDistanceMeters,
-  );
-  const memberDiameterMeters = Math.max(project.stage.memberDiameterMeters ?? 0.5, 0.01);
-  const memberRadiusMeters = memberDiameterMeters / 2;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  project.members.forEach((member) => {
-    const position = frame.positions[member.id];
-    if (!position || !isMemberVisible(frame, member)) {
-      return;
-    }
-    minY = Math.min(minY, position.y - memberRadiusMeters);
-    maxY = Math.max(maxY, position.y + memberRadiusMeters);
-  });
-
-  project.stageObjects.forEach((object) => {
-    const state = getObjectState(frame, object);
-    if (!((state.visible ?? object.visible) !== false)) {
-      return;
-    }
-    minY = Math.min(minY, state.y);
-    maxY = Math.max(maxY, state.y + state.heightMeters);
-  });
-
-  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
-    const emptyDepth = Math.min(
-      canvasDistanceMeters,
-      Math.max(10, metrics.gridSizeMeters * 10),
-    );
-    return {
-      bottomMeters: emptyDepth,
-      depthMeters: emptyDepth,
-      topMeters: 0,
-    };
-  }
-
-  const step = Math.max(metrics.gridSizeMeters, 0.01);
-  const topMeters = Math.max(
-    0,
-    snapDown(minY - PRINT_PARADE_EXPORT_PADDING_METERS, step),
-  );
-  const bottomMeters = Math.min(
-    canvasDistanceMeters,
-    snapUp(maxY + PRINT_PARADE_EXPORT_PADDING_METERS, step),
-  );
-  const safeBottomMeters =
-    bottomMeters > topMeters
-      ? bottomMeters
-      : Math.min(
-          canvasDistanceMeters,
-          topMeters + Math.min(canvasDistanceMeters, PRINT_PARADE_EXPORT_PADDING_METERS * 2),
-        );
-
-  return {
-    bottomMeters: safeBottomMeters,
-    depthMeters: Math.max(safeBottomMeters - topMeters, step),
-    topMeters,
   };
 };
 

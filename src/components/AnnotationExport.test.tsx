@@ -8,9 +8,9 @@ import type { AnnotationLine } from "../types";
 const line: AnnotationLine = { x1: 1, y1: -2, x2: 8, y2: 90, color: "blue", dash: "dashed" };
 const dom = (html: string) => { const root = document.createElement("div"); root.innerHTML = html; return root; };
 describe("annotation exports preserve layout and original dash endpoints", () => {
-  it.each(["stage", "parade"] as const)("A4 %s has identical geometry with and without lines", mode => {
+  it("A4 stage has identical geometry with and without lines", () => {
+    const mode = "stage";
     const p = formationExportFixture(); p.mode = mode;
-    if (mode === "parade") p.paradeSettings = { width: 12, totalDistance: 100, cellSizeMeters: 1, direction: "up", rulerPosition: "both", emphasizeEvery5m: true, emphasizeEvery10m: true };
     const before = dom(renderToStaticMarkup(<PrintPreview project={p} />));
     p.frames.forEach(f => { f.annotationLines = { line }; });
     const after = dom(renderToStaticMarkup(<PrintPreview project={p} />));
@@ -19,6 +19,22 @@ describe("annotation exports preserve layout and original dash endpoints", () =>
     after.querySelectorAll(".annotation-lines").forEach(n => { const group = n.parentElement!; const defs = group.previousElementSibling; group.remove(); defs?.remove(); });
     expect(after.innerHTML).toBe(before.innerHTML);
     expect(before.querySelectorAll(".print-page").length).toBe(after.querySelectorAll(".print-page").length);
+  });
+  it("A4 parade expands the crop to include remote annotations while keeping original dash endpoints", () => {
+    const p = formationExportFixture(); p.mode = "parade";
+    p.paradeSettings = { width: 12, totalDistance: 100, cellSizeMeters: 1, direction: "up", rulerPosition: "both", emphasizeEvery5m: true, emphasizeEvery10m: true };
+    const before = dom(renderToStaticMarkup(<PrintPreview project={p} />));
+    p.frames.forEach(f => { f.annotationLines = { line }; });
+    const after = dom(renderToStaticMarkup(<PrintPreview project={p} />));
+    // Previously the line was clipped to the members/props crop [0,8].
+    // Its -2..90 endpoints now extend that crop to [0,92], limited by the route.
+    expect([...before.querySelectorAll(".print-stage-guides")].map(n => n.getAttribute("viewBox"))).toEqual(Array(3).fill("0 0 12 8"));
+    expect([...after.querySelectorAll(".print-stage-guides")].map(n => n.getAttribute("viewBox"))).toEqual(Array(3).fill("0 0 12 92"));
+    expect(after.querySelectorAll(".print-page")).toHaveLength(3);
+    after.querySelectorAll("[data-annotation-line]").forEach(ink => {
+      expect(ink.getAttribute("y1")).toBe("-2"); expect(ink.getAttribute("y2")).toBe("90");
+      expect(ink.getAttribute("stroke-dasharray")).toBe("8 6");
+    });
   });
   it("mobile/image/roster static drawing clips a crossing line without new endpoints or handles", () => {
     const p = formationExportFixture(); p.mode = "parade"; const f = p.frames[0]; f.annotationLines = { line };

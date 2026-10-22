@@ -118,10 +118,13 @@ it("rejects tiny grid, nonfinite geometry and huge dashed annotations with actio
 
 it("includes exact drawing budgets and rejects the next dash, per scene and per document", () => {
   const p = vectorParadeFixture({ empty: true }); p.stageObjects = []; p.members = [];
+  // Keep the crop [0,10] fixed while increasing only the horizontal dash count.
+  // A lone y=0 annotation now correctly crops to [0,2], rather than empty [0,10].
+  p.frames[0].annotationLines = { anchor: { x1: 0, y1: 0, x2: 0, y2: 8, dash: "solid", color: "black" } };
   const validate = () => validateParadeA4Export(p, p.frames.map(f => f.id), defaultPrintOptions)!;
   const base = validate().documentDrawings;
   const m = getPrintMetrics(p, p.frames, defaultPrintOptions).mmPerMeter;
-  const setDrawings = (count: number) => { p.frames[0].annotationLines = { edge: { x1: 0, y1: 0, x2: (count - base - 1 - .25) * (14 * 25.4 / 96) / m, y2: 0, dash: "dashed", color: "black" } }; };
+  const setDrawings = (count: number) => { p.frames[0].annotationLines = { ...p.frames[0].annotationLines, edge: { x1: 0, y1: 0, x2: (count - base - 1 - .25) * (14 * 25.4 / 96) / m, y2: 0, dash: "dashed", color: "black" } }; };
   setDrawings(PARADE_A4_DRAWING_BUDGET);
   expect(validate().documentDrawings).toBe(PARADE_A4_DRAWING_BUDGET);
   const source = structuredClone(p.frames[0]);
