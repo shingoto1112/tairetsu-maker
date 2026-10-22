@@ -54,22 +54,35 @@ export function placeNewMembers(project: Project, frame: FormationFrame, count: 
     if (Math.abs(base - minEdge) > EPS) yield minEdge;
     if (Math.abs(base - maxEdge) > EPS) yield maxEdge;
   }
-  function* candidates() {
-    const left = snapHorizontalPositionInBounds(0, grid, gridOrigin, 0, stage.widthMeters);
-    const right = snapHorizontalPositionInBounds(stage.widthMeters, grid, gridOrigin, 0, stage.widthMeters);
-    for (const y of axis(base.y, yStep, stage.depthMeters)) {
-      for (const x of axis(base.x, xStep, stage.widthMeters, left, right)) yield { x, y };
+  const left = snapHorizontalPositionInBounds(0, grid, gridOrigin, 0, stage.widthMeters);
+  const right = snapHorizontalPositionInBounds(stage.widthMeters, grid, gridOrigin, 0, stage.widthMeters);
+  // One row's evenly spaced spots through the start point, left to right. The edges are a last
+  // resort after them, so a block never gets an uneven gap at its end.
+  const rowXs = [...axis(base.x, xStep, stage.widthMeters, base.x, base.x)].sort((a, b) => a - b);
+  const edgeXs = [left, right].filter((x, i, all) => all.indexOf(x) === i && !rowXs.some(v => Math.abs(v - x) <= EPS));
+  const startIndex = Math.max(0, rowXs.findIndex(x => Math.abs(x - base.x) <= EPS));
+  const positions: Position[] = [];
+  let remaining = count;
+  for (const y of axis(base.y, yStep, stage.depthMeters)) {
+    if (remaining === 0) break;
+    const open = rowXs.flatMap((x, index) => free({ x, y }) ? [index] : []);
+    // An empty row takes the new members in order as one block centred on the start point.
+    // A row already in use continues to the right of the start point, then fills its left side.
+    const order = open.length === rowXs.length
+      ? (() => {
+        const size = Math.min(remaining, rowXs.length);
+        const first = Math.max(0, Math.min(rowXs.length - size, startIndex - Math.floor((size - 1) / 2)));
+        return Array.from({ length: size }, (_, k) => first + k);
+      })()
+      : [...open.filter(index => index >= startIndex), ...open.filter(index => index < startIndex)];
+    for (const x of [...order.map(index => rowXs[index]), ...edgeXs]) {
+      if (remaining === 0) break;
+      const position = { x, y };
+      if (!free(position)) continue;
+      positions.push(position); reserve(position); remaining--;
     }
   }
-  const iterator = candidates();
-  const positions: Position[] = [];
-  let overlapCount = 0;
-  for (let i = 0; i < count; i++) {
-    let candidate = iterator.next();
-    while (!candidate.done && !free(candidate.value)) candidate = iterator.next();
-    const position = candidate.done ? { ...base } : candidate.value;
-    if (candidate.done) overlapCount++;
-    positions.push(position); reserve(position);
-  }
+  const overlapCount = remaining;
+  for (; remaining > 0; remaining--) positions.push({ ...base });
   return { positions, overlapCount };
 }

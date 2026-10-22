@@ -32,8 +32,17 @@ it.each(["stage", "parade"] as const)("places %s circles deterministically in ro
 it("keeps stage vertical coordinates unsnapped and reuses center-split horizontal snapping", () => {
   const p = fixture(); p.stage.gridSizeMeters = 1; p.stage.horizontalGuideMode = "centerSplit";
   expect(placeNewMembers(p, p.frames[0], 3).positions).toEqual([
-    { x: 3, y: 2.15 }, { x: 4, y: 2.15 }, { x: 2, y: 2.15 },
+    { x: 2, y: 2.15 }, { x: 3, y: 2.15 }, { x: 4, y: 2.15 },
   ]);
+});
+it("lays a batch out left to right as a centred block, and later additions continue to its right", () => {
+  const p = fixture(), f = p.frames[0]; p.stage.gridSizeMeters = .5; p.stage.widthMeters = 6;
+  const batch = placeNewMembers(p, f, 5).positions;
+  expect(batch.map(pos => pos.x)).toEqual([2, 2.5, 3, 3.5, 4]);
+  expect(new Set(batch.map(pos => pos.y)).size).toBe(1);
+  batch.forEach((pos, i) => { p.members.push({ id: `m${i}`, name: "m", color: "red" }); f.positions[`m${i}`] = pos; });
+  const next = placeNewMembers(p, f, 1).positions[0];
+  expect(next).toEqual({ x: 4.5, y: batch[0].y });
 });
 it("uses the effective stage circle diameter, including its minimum and maximum", () => {
   for (const [saved, effective] of [[.1, .2], [2, 1]]) {
@@ -62,8 +71,11 @@ it.each(["stage", "parade"] as const)("continues with overlapping default positi
   const p = fixture(mode); Object.assign(p.stage, { widthMeters: 1, depthMeters: 1, memberDiameterMeters: 1 });
   Object.assign(p.paradeSettings!, { width: 1, totalDistance: 1, backwardDistanceMeters: 0 });
   const result = placeNewMembers(p, p.frames[0], 4);
-  expect(result.overlapCount).toBe(3); expect(result.positions).toHaveLength(4);
-  expect(result.positions.every(pos => JSON.stringify(pos) === JSON.stringify(result.positions[0]))).toBe(true);
+  expect(result.positions).toHaveLength(4); expect(result.overlapCount).toBeGreaterThan(0);
+  const placed = result.positions.length - result.overlapCount;
+  separated(result.positions.slice(0, placed), 1);
+  const stacked = result.positions.slice(placed);
+  expect(stacked.every(pos => JSON.stringify(pos) === JSON.stringify(stacked[0]))).toBe(true);
 });
 it("places 300 members on a long fine-grid parade quickly, including sequential additions", () => {
   const p = fixture("parade"), f = p.frames[0], start = performance.now();
@@ -74,7 +86,9 @@ it("places 300 members on a long fine-grid parade quickly, including sequential 
     expect(result.overlapCount).toBe(0);
     const id = `m${i}`; p.members.push({ id, name: id, color: "red" }); f.positions[id] = result.positions[0];
   }
-  expect(Object.values(f.positions)).toEqual(bulk.positions);
+  const sequential = Object.values(f.positions);
+  // One-by-one additions start at the centre and continue to the right.
+  expect(sequential[1].y).toBe(sequential[0].y); expect(sequential[1].x).toBeGreaterThan(sequential[0].x);
   expect(performance.now() - start).toBeLessThan(2000);
-  separated(bulk.positions, .5);
+  separated(bulk.positions, .5); separated(sequential, .5);
 });

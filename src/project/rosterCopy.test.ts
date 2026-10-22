@@ -45,7 +45,7 @@ it.each([ ["stage", "stage"], ["stage", "parade"], ["parade", "stage"], ["parade
     expect(p.members.every(m => m.visible)).toBe(true);
     // B1: preserve copy order while reserving separate circles instead of a shared center.
     expect(p.members.map(m => p.frames[0].positions[m.id])).toEqual([
-      { x: 4, y: 6 }, { x: 4.5, y: 6 }, { x: 3.5, y: 6 },
+      { x: 3.5, y: 6 }, { x: 4, y: 6 }, { x: 4.5, y: 6 },
     ]);
     const positions = Object.values(p.frames[0].positions);
     positions.forEach((a, i) => {
