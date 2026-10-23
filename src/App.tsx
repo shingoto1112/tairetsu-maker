@@ -834,7 +834,7 @@ function App() {
   const [panelScrollTarget, setPanelScrollTarget] =
     useState<PanelScrollTarget | null>(null);
   const [viewerPerspective, setViewerPerspective] = useState<ViewerPerspective>(
-    initial.project.viewerPerspective ?? "audience",
+    initial.project.viewerPerspective ?? (initial.project.mode === "parade" ? "audience" : "performer"),
   );
   const [showMovementPaths, setShowMovementPaths] = useState(false);
   const [showMeterRulers, setShowMeterRulers] = useState(true);
@@ -1258,7 +1258,7 @@ function App() {
     lastHistoryPushRef.current = null;
     projectRef.current = nextProject;
     setProject(nextProject);
-    setViewerPerspective(nextProject.viewerPerspective ?? "audience");
+    setViewerPerspective(nextProject.viewerPerspective ?? (nextProject.mode === "parade" ? "audience" : "performer"));
     markLocalEdit(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
@@ -1283,7 +1283,7 @@ function App() {
     lastHistoryPushRef.current = null;
     projectRef.current = nextProject;
     setProject(nextProject);
-    setViewerPerspective(nextProject.viewerPerspective ?? "audience");
+    setViewerPerspective(nextProject.viewerPerspective ?? (nextProject.mode === "parade" ? "audience" : "performer"));
     markLocalEdit(nextProject);
     setIsDirty(true);
     refreshHistoryCounts();
@@ -3594,8 +3594,10 @@ function App() {
   function nudgeSelectionByKeyboard(event: KeyboardEvent): boolean {
     const delta = getKeyboardNudgeDelta(
       event,
-      project.mode === "parade" ? "audience" : viewerPerspective,
+      viewerPerspective,
       project.stage.gridSizeMeters,
+      project.stage,
+      project.mode === "parade",
     );
     if (!delta) {
       return false;
@@ -4975,7 +4977,7 @@ function App() {
     setIsMemberSelectionMode(false);
     setMode("members");
     setActivePanelTab("members");
-    setViewerPerspective(nextProject.viewerPerspective ?? "audience");
+    setViewerPerspective(nextProject.viewerPerspective ?? (nextProject.mode === "parade" ? "audience" : "performer"));
     setPositionFocusRequest(0);
     setCurrentTime(0);
     setIsPlaying(false);

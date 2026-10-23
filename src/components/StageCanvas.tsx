@@ -1,3 +1,4 @@
+import { isStageViewRotated180 } from "../utils/stageOrientation";
 import { useCanvasEditScope, type CanvasEditOperation } from "../hooks/useCanvasEditScope";
 import { useAnnotationEditor } from "./useAnnotationEditor";
 import type { AnnotationLine } from "../types";
@@ -313,7 +314,7 @@ const coordinateLabel = (
   viewerPerspective: ViewerPerspective,
 ): string => {
   const stageValue =
-    viewerPerspective === "performer"
+    isStageViewRotated180({ frontDirection }, viewerPerspective)
       ? axis === "x"
         ? stageWidth - displayedValue
         : stageDepth - displayedValue
@@ -433,6 +434,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const [isStagePinchLocked, setIsStagePinchLocked] = useState(false);
     const stableFitAreaSizeRef = useRef(fitAreaSize);
     const stage = project.stage;
+    const rotated180 = isStageViewRotated180(stage, viewerPerspective);
     const memberGroups = project.memberGroups ?? [];
     const guideSettings = {
       snapGuideEnabled: project.guideSettings?.snapGuideEnabled ?? true,
@@ -471,8 +473,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     );
     const verticalTicks = useMemo(
       () => stageVerticalRulerPositions(stage.depthMeters, stageVerticalGridOriginMeters(stage.depthMeters, stage) === 0)
-        .map(y => viewerPerspective === "performer" ? stage.depthMeters - y : y).sort((a,b) => a-b),
-      [stage.depthMeters, frontDirection, viewerPerspective],
+        .map(y => rotated180 ? stage.depthMeters - y : y).sort((a,b) => a-b),
+      [stage.depthMeters, frontDirection, rotated180],
     );
 
     useImperativeHandle(exportRef, () => {
@@ -1904,7 +1906,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const annotation = useAnnotationEditor({ lines: project.frames.find(f => f.id === selectedFrameId)?.annotationLines,
       width: stage.widthMeters, depth: stage.depthMeters, step: stage.gridSizeMeters, counting: horizontalGuideMode,
       verticalOrigin: stageVerticalGridOriginMeters(stage.depthMeters, stage),
-      reflected: viewerPerspective === "performer", context: project.id + ":" + selectedFrameId, disabled: isPlaying || isReadOnly,
+      reflected: rotated180, context: project.id + ":" + selectedFrameId, disabled: isPlaying || isReadOnly,
       onChange: onAnnotationLineChange });
     useLayoutEffect(() => {
       if (annotation.active) clearStagePan();
@@ -2135,7 +2137,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   <span key={item.key}
                     className="meter-ruler__tick"
                     data-position={item.positionMeters}
-                    style={{ left: stageRulerPosition(viewerPerspective === "performer" ? stage.widthMeters - item.positionMeters : item.positionMeters, stage.widthMeters) }}>
+                    style={{ left: stageRulerPosition(rotated180 ? stage.widthMeters - item.positionMeters : item.positionMeters, stage.widthMeters) }}>
                     {item.label}
                   </span>
                 ))}
@@ -2149,7 +2151,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   <span
                     key={`y-${tick}`}
                     className="meter-ruler__tick"
-                    data-position={viewerPerspective === "performer" ? stage.depthMeters - tick : tick}
+                    data-position={rotated180 ? stage.depthMeters - tick : tick}
                     style={{ top: stageRulerPosition(tick, stage.depthMeters) }}
                   >
                     {coordinateLabel(
@@ -2205,7 +2207,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       key={`stage-grid-x-${tick.positionMeters}`}
                       data-emphasis={tick.emphasis}
                       data-position={tick.positionMeters}
-                      style={{ ...gridLineStyle(tick.emphasis, true), left: `${((viewerPerspective === "performer" ? stage.widthMeters - tick.positionMeters : tick.positionMeters) / stage.widthMeters) * 100}%` }}
+                      style={{ ...gridLineStyle(tick.emphasis, true), left: `${((rotated180 ? stage.widthMeters - tick.positionMeters : tick.positionMeters) / stage.widthMeters) * 100}%` }}
                     />
                   ))}
                   {stageGridHorizontalTicks.map((tick) => (
@@ -2214,7 +2216,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                       key={`stage-grid-y-${tick.positionMeters}`}
                       data-emphasis={tick.emphasis}
                       data-position={tick.positionMeters}
-                      style={{ ...gridLineStyle(tick.emphasis, false), top: `${((viewerPerspective === "performer" ? stage.depthMeters - tick.positionMeters : tick.positionMeters) / stage.depthMeters) * 100}%` }}
+                      style={{ ...gridLineStyle(tick.emphasis, false), top: `${((rotated180 ? stage.depthMeters - tick.positionMeters : tick.positionMeters) / stage.depthMeters) * 100}%` }}
                     />
                   ))}
                 </div>
@@ -2434,7 +2436,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                     const objectState = toSnapshot.objectStates[object.id];
                     if (!objectState?.visible) return null;
                     const displayTopLeft =
-                      viewerPerspective === "performer"
+                      rotated180
                         ? {
                             x:
                               stage.widthMeters -
@@ -2657,7 +2659,7 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
                   <span
                     key={`y-right-${tick}`}
                     className="meter-ruler__tick"
-                    data-position={viewerPerspective === "performer" ? stage.depthMeters - tick : tick}
+                    data-position={rotated180 ? stage.depthMeters - tick : tick}
                     style={{ top: stageRulerPosition(tick, stage.depthMeters) }}
                   >
                     {coordinateLabel(

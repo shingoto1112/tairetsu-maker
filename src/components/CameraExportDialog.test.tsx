@@ -11,7 +11,8 @@ it("offers camera PNG and one-page PDF and closes with Escape", () => {
   expect((screen.getByRole("radio", { name: "踊る人側から見た向き" }) as HTMLInputElement).checked).toBe(true);
   expect(screen.queryByText(/0mにする/)).toBeNull();
   expect(screen.getByRole("group", { name: "書き出す向き" }).querySelectorAll(".counting-card")).toHaveLength(2);
-  expect(screen.getByRole("radio", { name: "踊る人側から見た向き" }).closest("label")?.textContent).toContain("0m（客席側）が下");
+  expect(screen.getByRole("radio", { name: "踊る人側から見た向き" }).closest("label")?.textContent).toContain("0m（客席側）が上");
+  expect(screen.getByRole("radio", { name: "観客側から見た向き" }).closest("label")?.textContent).toContain("0m（客席側）が下");
   fireEvent.click(screen.getByRole("button", { name: "画像を作成" })); expect(onExport).toHaveBeenLastCalledWith("image", "performer");
   fireEvent.click(screen.getByRole("radio", { name: "観客側から見た向き" }));
   fireEvent.click(screen.getByRole("button", { name: "PDF" }));

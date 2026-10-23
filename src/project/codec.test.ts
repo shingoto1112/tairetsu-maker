@@ -13,8 +13,13 @@ const context: NormalizationContext = {
 const normalize = (p: unknown) => normalizeProjectWithContext(p as Project, context);
 
 describe("Project codec and legacy normalization", () => {
-  it("keeps platform contract commit inputs identical to anonymous normalization", () => {
-    expect(normalize(fixtures.stage)).toEqual(normalize(commitFixtures.stage));
+  it("keeps platform contract geometry identical while preserving its saved audience view", () => {
+    const legacyStage = normalize(fixtures.stage);
+    const savedStage = normalize(commitFixtures.stage);
+    expect(legacyStage.viewerPerspective).toBe("performer");
+    expect(savedStage.viewerPerspective).toBe("audience");
+    // The platform fixture contains an explicitly saved view; never rewrite it to the new default.
+    expect({ ...legacyStage, viewerPerspective: "audience" }).toEqual(savedStage);
     expect(normalize(fixtures.parade)).toEqual(normalize(commitFixtures.parade));
   });
   it.each(Object.entries(fixtures))("round trips anonymous %s without mutating input", (_, raw) => {

@@ -8,13 +8,12 @@ export const stageVerticalGridOriginMeters = (
 ): number => (override ?? stage.frontDirection ?? stage.audienceSide ?? "bottom") === "top" ? 0 : depth;
 
 /** The horizontal centre-count row sits beside the 0m line as displayed (the audience edge).
- * The performer view mirrors the stage vertically; parades keep the row on top. */
+ * Performer views put 0m on top for every legacy front; parades keep the row on top. */
 export const horizontalRulerSide = (
-  stage: Pick<StageConfig, "frontDirection" | "audienceSide">,
+  _stage: Pick<StageConfig, "frontDirection" | "audienceSide">,
   perspective: ViewerPerspective = "audience",
   isParade = false,
 ): "top" | "bottom" => {
   if (isParade) return "top";
-  const zeroAtTop = stageVerticalGridOriginMeters(1, stage) === 0;
-  return zeroAtTop === (perspective !== "performer") ? "top" : "bottom";
+  return perspective === "performer" ? "top" : "bottom";
 };

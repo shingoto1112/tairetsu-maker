@@ -1,3 +1,4 @@
+import { isStageViewRotated180 } from "../utils/stageOrientation";
 import { AnnotationLines } from "./AnnotationLines";
 import { memo } from "react";
 import type { FormationFrame, Project, StageObject, ViewerPerspective } from "../types";
@@ -79,7 +80,7 @@ export const SceneThumbnailPreview = memo(function SceneThumbnailPreview({projec
         strokeWidth="0.035"
       />
       {/* Transform contents once; stored coordinates and annotation endpoints stay unchanged. */}
-      <g transform={!isParade && viewerPerspective === "performer" ? `rotate(180 ${width / 2} ${depth / 2})` : undefined}>
+      <g transform={isStageViewRotated180(project.stage, viewerPerspective, isParade) ? `rotate(180 ${width / 2} ${depth / 2})` : undefined}>
         <AnnotationLines lines={frame.annotationLines} />
         {project.stageObjects.map((object) => {
           const state =

@@ -406,7 +406,7 @@ export const normalizeProjectWithContext = (project: Project, context: Normaliza
     animationSettings,
     guideSettings,
     focusMemberId,
-    viewerPerspective: project.viewerPerspective ?? "audience",
+    viewerPerspective: project.viewerPerspective ?? (mode === "parade" ? "audience" : "performer"),
     updatedAt: project.updatedAt || now,
   };
 };

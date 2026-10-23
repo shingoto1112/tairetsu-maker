@@ -18,22 +18,24 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "画像を作成" }));
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ scope, format: "image", fileName: expect.stringMatching(/^演目_隊列表_/), options: expect.objectContaining({ includeAssignments: true }) }));
   });
-  it("initializes from the current view, keeps selection local, resets on reopen, and hides it for parade", async () => {
+  it.each(["top", "bottom"] as const)("%s: initializes from the current view, keeps selection local, resets on reopen, and hides it for parade", async frontDirection => {
     const onExport = vi.fn(), props = { projectTitle: "確認", currentSceneLabel: "1", onClose: vi.fn(), onExport, viewerPerspective: "performer" as const };
-    const { rerender } = render(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen />);
+    const stage = { ...formationExportFixture().stage, frontDirection };
+    const { rerender } = render(<ShareExportModal stage={stage} {...props} isOpen />);
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
     expect(screen.queryByText(/縦の目盛りの0m/)).toBeNull();
     expect(screen.getByRole("group", { name: "書き出す向き" }).querySelectorAll(".counting-card")).toHaveLength(2);
     expect(screen.getByRole("radio", { name: "踊る人側から見た向き" }).closest("label")?.textContent).toContain("0m（客席側）が上");
+    expect(screen.getByRole("radio", { name: "観客側から見た向き" }).closest("label")?.textContent).toContain("0m（客席側）が下");
     expect((screen.getByRole("radio", { name: "踊る人側から見た向き" }) as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "観客側から見た向き" }));
     fireEvent.click(screen.getByRole("button", { name: "PDFを作成" }));
     expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ options: expect.objectContaining({ viewerPerspective: "audience" }) }));
-    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen={false} />);
-    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen />);
+    rerender(<ShareExportModal stage={stage} {...props} isOpen={false} />);
+    rerender(<ShareExportModal stage={stage} {...props} isOpen />);
     fireEvent.click(screen.getByRole("button", { name: /^このシーンを書き出す/ }));
     expect((screen.getByRole("radio", { name: "踊る人側から見た向き" }) as HTMLInputElement).checked).toBe(true);
-    rerender(<ShareExportModal stage={formationExportFixture().stage} {...props} isOpen isParade />);
+    rerender(<ShareExportModal stage={stage} {...props} isOpen isParade />);
     expect(screen.queryByRole("radio")).toBeNull();
   });
   it("offers embedding fonts only as a small PDF option that starts off on every open", () => {

@@ -1,3 +1,4 @@
+import { isStageViewRotated180 } from "./stageOrientation";
 import { Position, StageConfig, ViewerPerspective } from "../types";
 import { boundObjectPosition, type ObjectGeometry } from "./objectGeometry";
 
@@ -83,7 +84,7 @@ export const displayPointToStagePoint = (
   stage: StageConfig,
   viewerPerspective: ViewerPerspective,
 ): Position =>
-  viewerPerspective === "performer"
+  isStageViewRotated180(stage, viewerPerspective)
     ? {
         x: stage.widthMeters - position.x,
         y: stage.depthMeters - position.y,
@@ -95,7 +96,7 @@ export const stagePointToDisplayPoint = (
   stage: StageConfig,
   viewerPerspective: ViewerPerspective,
 ): Position =>
-  viewerPerspective === "performer"
+  isStageViewRotated180(stage, viewerPerspective)
     ? {
         x: stage.widthMeters - position.x,
         y: stage.depthMeters - position.y,

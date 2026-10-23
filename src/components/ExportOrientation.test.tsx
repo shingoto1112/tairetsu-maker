@@ -41,9 +41,8 @@ for (const mode of ["meters", "centerSplit"] as const) {
       parse(renderToStaticMarkup(<PrintPreview project={p} options={{...defaultPrintOptions, viewerPerspective:perspective, includeAssignments:true}} />)),
       parse(renderToStaticMarkup(<StaticStagePreview project={p} frame={f} stageWidth={9.3} range={{left:0,right:9.3,top:0,bottom:5.4}} outputWidth={700} viewerPerspective={perspective} />)),
     ];
-    // Centre counts beside the displayed 0m line: the audience edge of the effective front (lateral fronts
-    // count as bottom), mirrored for the performer view. Editor and every output agree.
-    const countsBelow = (front === "top") === (perspective === "performer");
+    // Centre counts follow the named view's 0m edge for every legacy front.
+    const countsBelow = perspective === "audience";
     expect(editor.querySelector(".stage-canvas-with-rulers")!.classList.contains("is-ruler-bottom")).toBe(countsBelow);
     for (const out of outputs) expect(out.querySelector(".print-stage-preview")!.classList.contains("is-ruler-bottom")).toBe(countsBelow);
     for (const out of outputs) {
@@ -81,7 +80,7 @@ for (const mode of ["meters", "centerSplit"] as const) {
           const pos = (parseFloat(horizontal ? el.style.left : el.style.top)+(horizontal ? 7 : 4)/2)/scale;
           const match = er.find(e => {
             const internal = Number(e.dataset.position);
-            return Math.abs((perspective === "performer" ? dimension-internal : internal)-pos)<1e-6;
+            return Math.abs(((front === "top" ? perspective === "audience" : perspective === "performer") ? dimension-internal : internal)-pos)<1e-6;
           });
           expect(match).toBeDefined();
           // Editor float subtraction can render integer ticks as "3.0m".
@@ -113,11 +112,11 @@ it("reflects each scene around its own dimensions, then crops the static drawing
   }
 });
 
-it("keeps parade output independent of perspective and loads old projects as audience without changing coordinates", () => {
+it("keeps parade output independent of perspective and loads old stage projects as performer without changing coordinates", () => {
   const old=formationExportFixture(); delete old.viewerPerspective;
   const coordinates=JSON.stringify(old.frames.map(f=>f.positions));
   const loaded=normalizeProject(old);
-  expect(loaded.viewerPerspective ?? "audience").toBe("audience");
+  expect(loaded.viewerPerspective).toBe("performer");
   expect(JSON.stringify(loaded.frames.map(f=>f.positions))).toBe(coordinates);
   const p=formationExportFixture(); p.mode="parade";
   p.paradeSettings={width:12,totalDistance:12,backwardDistanceMeters:2,cellSizeMeters:.5,direction:"up",rulerPosition:"both",emphasizeEvery5m:true,emphasizeEvery10m:true};

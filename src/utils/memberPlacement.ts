@@ -1,3 +1,4 @@
+import { isStageViewRotated180 } from "./stageOrientation";
 import type { FormationFrame, Position, Project, ViewerPerspective } from "../types";
 import { objectSceneBounds } from "../project/objectAppearance";
 import { constrainMemberPosition } from "./coordinates";
@@ -62,10 +63,10 @@ export function placeNewMembers(project: Project, frame: FormationFrame, count: 
   const left = snapHorizontalPositionInBounds(0, grid, gridOrigin, 0, stage.widthMeters);
   const right = snapHorizontalPositionInBounds(stage.widthMeters, grid, gridOrigin, 0, stage.widthMeters);
   // One row's evenly spaced spots through the start point, left to right as the user sees the stage
-  // (the performer view mirrors it; parades are always drawn from the audience). The edges are a
+  // (using the displayed rotation; parades never rotate). The edges are a
   // last resort after them, so a block never gets an uneven gap at its end.
-  const mirrored = !parade && perspective === "performer";
-  const rowXs = [...axis(base.x, xStep, stage.widthMeters, base.x, base.x)].sort((a, b) => mirrored ? b - a : a - b);
+  const rotated180 = isStageViewRotated180(stage, perspective, parade);
+  const rowXs = [...axis(base.x, xStep, stage.widthMeters, base.x, base.x)].sort((a, b) => rotated180 ? b - a : a - b);
   const edgeXs = [left, right].filter((x, i, all) => all.indexOf(x) === i && !rowXs.some(v => Math.abs(v - x) <= EPS));
   const startIndex = Math.max(0, rowXs.findIndex(x => Math.abs(x - base.x) <= EPS));
   const positions: Position[] = [];

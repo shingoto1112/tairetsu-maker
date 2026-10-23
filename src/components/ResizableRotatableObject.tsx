@@ -1,3 +1,5 @@
+import { resizeStageObject } from "../utils/stageObjectResize";
+import { isStageViewRotated180 } from "../utils/stageOrientation";
 import { useCanvasEditScope, type CanvasEditOperation, type CanvasEditScope } from "../hooks/useCanvasEditScope";
 import { horizontalGridOriginMeters } from "../utils/horizontalGrid";
 import { snapObjectPosition } from "../utils/objectMovement";
@@ -19,7 +21,6 @@ import {
 import {
   clientPointToMeters,
   stagePointToDisplayPoint,
-  snapToGrid,
 } from "../utils/coordinates";
 import {
   createEdgeAutoScroller,
@@ -176,7 +177,7 @@ export const ResizableRotatableObject = ({
   );
 
   const getDisplayTopLeft = (objectState: ObjectState) =>
-    viewerPerspective === "performer"
+    isStageViewRotated180(stage, viewerPerspective)
       ? {
           x: stage.widthMeters - objectState.x - objectState.widthMeters,
           y: stage.depthMeters - objectState.y - objectState.heightMeters,
@@ -321,24 +322,7 @@ export const ResizableRotatableObject = ({
     const dy = pointer.y - drag.startPointer.y;
 
     if (drag.kind === "resize") {
-      applyObjectPatch(drag, {
-        widthMeters: Math.max(
-          0.1,
-          snapToGrid(
-            drag.startState.widthMeters + dx,
-            stage.gridSizeMeters,
-            stage.showGrid,
-          ),
-        ),
-        heightMeters: Math.max(
-          0.1,
-          snapToGrid(
-            drag.startState.heightMeters + dy,
-            stage.gridSizeMeters,
-            stage.showGrid,
-          ),
-        ),
-      });
+      applyObjectPatch(drag, resizeStageObject(drag.startState, { x: dx, y: dy }, stage, viewerPerspective));
       return;
     }
 

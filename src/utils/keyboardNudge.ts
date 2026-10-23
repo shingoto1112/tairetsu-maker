@@ -1,4 +1,5 @@
-import type { Position, ViewerPerspective } from "../types";
+import { isStageViewRotated180 } from "./stageOrientation";
+import type { Position, StageConfig, ViewerPerspective } from "../types";
 import { roundMeters } from "./coordinates";
 
 const KEYBOARD_NUDGE_SMALL = 0.01;
@@ -24,6 +25,8 @@ export const getKeyboardNudgeDelta = (
   event: KeyboardEvent,
   viewerPerspective: ViewerPerspective,
   gridSizeMeters?: number,
+  stage: Partial<Pick<StageConfig, "frontDirection" | "audienceSide">> = {},
+  isParade = false,
 ): Position | null => {
   const step = getKeyboardNudgeMeters(event, gridSizeMeters);
   const displayDelta =
@@ -40,11 +43,10 @@ export const getKeyboardNudgeDelta = (
     return null;
   }
 
-  // 踊る人側視点では表示が反転しているため、画面上の矢印方向を優先して内部座標を反転する。
-  const direction = viewerPerspective === "performer" ? -1 : 1;
+  // 180°回転表示では両軸の移動量を戻し、画面の矢印方向に動かす。
+  const direction = isStageViewRotated180(stage, viewerPerspective, isParade) ? -1 : 1;
   return {
     x: roundMeters(displayDelta.x * direction),
     y: roundMeters(displayDelta.y * direction),
   };
 };
-

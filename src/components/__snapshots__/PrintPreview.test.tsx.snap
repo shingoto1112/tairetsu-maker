@@ -1,5 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`default A4 layout and drawing > legacy top audience 1`] = `"ff4ab5172d2a87f180b4ca16267ee170a6ed5c32f130398b34954143e33e3152"`;
+
+exports[`default A4 layout and drawing > legacy top performer 1`] = `"2696f1b6e1365c7ce1fe0054da20e11ae4ffc63a5476bcf9a7070d8942b1f848"`;
+
 exports[`default A4 layout and drawing > parade document 1`] = `"b7e61dc61944a5a5f274fad4199bb7e811610c246c94600c762ee072d2145c4c"`;
 
 exports[`default A4 layout and drawing > parade stage-only 1`] = `"460c3e3bd3a494db4e0653eab02e062b762c101115d999301faeba21b163205c"`;

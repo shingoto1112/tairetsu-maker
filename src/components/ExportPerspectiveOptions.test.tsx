@@ -23,7 +23,7 @@ it.each(["bottom", "top", "left", "right", undefined] as const)("%s: cards match
     const card = cards[index];
     const actualZero = createStageExportView({ widthMeters: 9.3, depthMeters: 5.4 }, stage, perspective).verticalLabels.find(label => label.label === "0m")!;
     const top = actualZero.positionMeters === 0;
-    expect(top).toBe(frontDirection === "top" ? perspective === "audience" : perspective === "performer");
+    expect(top).toBe(perspective === "performer");
     expect(within(card).getByText(`0m（客席側）が${top ? "上" : "下"}`)).toBeTruthy();
     const zero = within(card).getByText("0m");
     expect(zero.getAttribute("y")).toBe(top ? "14" : "86");

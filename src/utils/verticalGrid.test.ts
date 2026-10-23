@@ -121,7 +121,7 @@ describe("both axes retain group formation at bounds", () => {
 describe("horizontal centre-count row follows the displayed 0m line", () => {
   it.each([
     ["bottom", "audience", "bottom"], ["bottom", "performer", "top"],
-    ["top", "audience", "top"], ["top", "performer", "bottom"],
+    ["top", "audience", "bottom"], ["top", "performer", "top"],
     ["left", "audience", "bottom"], [undefined, undefined, "bottom"],
   ] as const)("origin %s, view %s -> %s", (front, view, side) => {
     expect(horizontalRulerSide({ frontDirection: front, audienceSide: "bottom" }, view)).toBe(side);

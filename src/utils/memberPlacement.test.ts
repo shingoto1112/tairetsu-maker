@@ -108,10 +108,13 @@ it("places 300 members on a long fine-grid parade quickly, including sequential 
   expect(performance.now() - start).toBeLessThan(2000);
   separated(bulk.positions, .5); separated(sequential, .5);
 });
-it("orders left to right as displayed: the performer view mirrors the stage, parades never mirror", () => {
+it("orders left to right as displayed for each legacy front; parades never rotate", () => {
   const p = fixture(); p.stage.gridSizeMeters = .5; p.stage.widthMeters = 6;
   expect(placeNewMembers(p, p.frames[0], 3, undefined, "audience").positions.map(pos => pos.x)).toEqual([2.5, 3, 3.5]);
   expect(placeNewMembers(p, p.frames[0], 3, undefined, "performer").positions.map(pos => pos.x)).toEqual([3.5, 3, 2.5]);
+  p.stage.frontDirection = "top";
+  expect(placeNewMembers(p, p.frames[0], 3, undefined, "audience").positions.map(pos => pos.x)).toEqual([3.5, 3, 2.5]);
+  expect(placeNewMembers(p, p.frames[0], 3, undefined, "performer").positions.map(pos => pos.x)).toEqual([2.5, 3, 3.5]);
   const parade = fixture("parade");
   expect(placeNewMembers(parade, parade.frames[0], 3, undefined, "performer").positions.map(pos => pos.x))
     .toEqual(placeNewMembers(parade, parade.frames[0], 3, undefined, "audience").positions.map(pos => pos.x));

@@ -1,5 +1,5 @@
+import { isStageViewRotated180 } from "./stageOrientation";
 import type { AnnotationLine, ObjectState, Position, StageConfig, ViewerPerspective } from "../types";
-import { stagePointToDisplayPoint } from "./coordinates";
 import { horizontalEmphasizedLines, stageVerticalRulerPositions, verticalEmphasizedLines } from "./gridEmphasis";
 import { createHorizontalRulerLabels } from "./horizontalRuler";
 import { stageVerticalGridOriginMeters } from "./verticalGrid";
@@ -25,17 +25,17 @@ export const createStageExportView = (
   perspective: ViewerPerspective = "audience",
   isParade = false,
 ) => {
-  const reflected = !isParade && perspective === "performer";
-  const x = (value: number) => reflected ? size.widthMeters - value : value;
-  const y = (value: number) => reflected ? size.depthMeters - value : value;
-  const point = (value: Position) => stagePointToDisplayPoint(value, { ...stage, ...size }, reflected ? "performer" : "audience");
+  const rotated180 = isStageViewRotated180(stage, perspective, isParade);
+  const x = (value: number) => rotated180 ? size.widthMeters - value : value;
+  const y = (value: number) => rotated180 ? size.depthMeters - value : value;
+  const point = (value: Position) => ({ x: x(value.x), y: y(value.y) });
   const topOrigin = stageVerticalGridOriginMeters(size.depthMeters, stage) === 0;
   const mode = stage.horizontalGuideMode ?? "meters";
   return {
     point, x, y,
     object: (state: ObjectState): ObjectState => ({ ...state,
-      x: reflected ? x(state.x) - state.widthMeters : state.x,
-      y: reflected ? y(state.y) - state.heightMeters : state.y,
+      x: rotated180 ? x(state.x) - state.widthMeters : state.x,
+      y: rotated180 ? y(state.y) - state.heightMeters : state.y,
     }),
     annotations: (lines?: Record<string, AnnotationLine>) => lines && Object.fromEntries(
       Object.entries(lines).map(([id, line]) => [id, { ...line,

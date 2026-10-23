@@ -1,3 +1,4 @@
+import { isStageViewRotated180 } from "../utils/stageOrientation";
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { EphemeralSession, EphemeralTarget } from '../collaboration/ephemeralSession';
 import type { Project, ViewerPerspective } from '../types';
@@ -50,7 +51,7 @@ export default function RemoteInteractionLayer({ session, project, sceneId, pers
         const h = state?.heightMeters ?? w;
         let x = position.x, y = position.y;
         if (!object) { x -= w / 2; y -= h / 2; }
-        if (!parade && perspective === 'performer') { x = width - x - w; y = height - y - h; }
+        if (isStageViewRotated180(project.stage, perspective, parade)) { x = width - x - w; y = height - y - h; }
         const left = rect.left + x / width * rect.width, top = rect.top + y / height * rect.height;
         const pixelW = w / width * rect.width, pixelH = h / height * rect.height;
         // Include a rotation-sized margin for objects near a viewport edge.

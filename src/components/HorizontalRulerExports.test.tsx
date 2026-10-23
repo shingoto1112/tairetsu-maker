@@ -77,10 +77,10 @@ it('puts the centre counts beside the displayed 0m line without changing any hei
     expect(el.style.getPropertyValue('--print-ruler-x-top-mm')).not.toBe('');
     expect(performer[i].style.getPropertyValue('--print-ruler-x-top-mm')).toBe('');
   });
-  // Old data with the front at the top has 0m at the top for the audience.
+  // Legacy top data follows the same named view as bottom data.
   const top = formationExportFixture(); top.stage.frontDirection = 'top';
-  expect(previews(top, 'audience').some(el => el.classList.contains('is-ruler-bottom'))).toBe(false);
-  expect(previews(top, 'performer').every(el => el.classList.contains('is-ruler-bottom'))).toBe(true);
+  expect(previews(top, 'audience').every(el => el.classList.contains('is-ruler-bottom'))).toBe(true);
+  expect(previews(top, 'performer').some(el => el.classList.contains('is-ruler-bottom'))).toBe(false);
   // Parades and drawings without rulers keep today's layout.
   const parade = formationExportFixture(); parade.mode = 'parade';
   parade.paradeSettings = { totalDistance: 100, width: 12, cellSizeMeters: 1, direction: 'up', rulerPosition: 'both', emphasizeEvery5m: true, emphasizeEvery10m: true };

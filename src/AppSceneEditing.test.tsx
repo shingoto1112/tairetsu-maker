@@ -252,7 +252,8 @@ it.each([[false, false], [false, true], [true, false], [true, true]])("A2: every
   fireEvent.click(screen.getByRole("button", { name: "全体名簿を開く" }));
   const modal = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
   fireEvent.click(within(modal).getByRole("button", { name: "道具管理" }));
-  fireEvent.click(within(modal).getByRole("button", { name: "道具割当" }));
+  // The first switch can suspend while the lazy object view loads.
+  fireEvent.click(await within(modal).findByRole("button", { name: "道具割当" }));
   for (const id of ["C", "A", "B", "A"]) {
     fireEvent.click(await within(modal).findByRole("button", { name: new RegExp(`^[123]\\. ${id} `) })); check(id);
   }

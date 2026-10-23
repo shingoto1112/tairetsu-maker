@@ -1,3 +1,4 @@
+import { isStageViewRotated180 } from "./stageOrientation";
 import { rotatedObjectHalfExtents } from "./objectGeometry";
 import type { Project, StageConfig, StageSnapshot, ViewerPerspective } from "../types";
 
@@ -24,7 +25,7 @@ export const selectionScrollBounds = (
     const width = halfWidth * 2, height = halfHeight * 2;
     bounds = { x: state.x + (state.widthMeters - width) / 2, y: state.y + (state.heightMeters - height) / 2, widthMeters: width, heightMeters: height };
   }
-  if (project.mode !== "parade" && perspective === "performer") {
+  if (isStageViewRotated180(stage, perspective, project.mode === "parade")) {
     bounds = { ...bounds, x: stage.widthMeters - bounds.x - bounds.widthMeters, y: stage.depthMeters - bounds.y - bounds.heightMeters };
   }
   return { ...bounds, minimumScroll: true };

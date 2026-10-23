@@ -38,8 +38,8 @@ for (const viewerPerspective of ["audience", "performer"] as const) {
       const zero = ticks.find(tick => Number.parseFloat(tick.textContent!) === 0)!;
       expect(zero.textContent).toBe("0m");
       expect(Number(zero.dataset.position)).toBe(frontDirection === "top" ? 0 : 5.4);
-      // The 0m edge still follows the legacy origin, then the current view reflection.
-      const zeroAtTop = (frontDirection === "top") === (viewerPerspective === "audience");
+      // The internal origin stays legacy-compatible; the visible 0m edge follows the named view.
+      const zeroAtTop = viewerPerspective === "performer";
       expect(zero.style.top).toBe(zeroAtTop
         ? "calc(var(--stage-border-width) / 2)"
         : "calc(100% - var(--stage-border-width) / 2)");

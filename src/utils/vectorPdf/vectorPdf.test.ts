@@ -67,6 +67,33 @@ it.each(["audience", "performer"] as const)("reuses PrintPreview coordinates, gr
   expect(JSON.stringify(p)).toBe(before);
 });
 
+it.each([
+  ["top", "performer", 2, 1, 3, 1.5, 4, 3, 0],
+  ["top", "audience", 8, 5, 7, 4.5, 6, 3, 6],
+  ["bottom", "performer", 8, 5, 7, 4.5, 6, 3, 0],
+  ["bottom", "audience", 2, 1, 3, 1.5, 4, 3, 6],
+] as const)("%s/%s: vector geometry has independent numeric expectations", (frontDirection, viewerPerspective, x, y, propX, propY, x2, y2, zeroY) => {
+  const p = vectorPdfFixture(10, 6), frame = p.frames[0];
+  p.stage.frontDirection = frontDirection; p.members = p.members.slice(0, 1);
+  frame.positions.m0 = { x: 2, y: 1 };
+  frame.objectStates.panel = { ...frame.objectStates.panel, x: 2, y: 1, widthMeters: 2, heightMeters: 1 };
+  frame.annotationLines = { a: { x1: 2, y1: 1, x2: 4, y2: 3, color: "red", dash: "solid" } };
+  const page = buildScenePage(p, frame.id, { viewerPerspective }, propText);
+  const m = getPrintMetrics(p, [frame], defaultPrintOptions).mmPerMeter;
+  const stage = find(page.drawings, "stage"), member = find(stage.children, "m0"), prop = find(stage.children, "panel");
+  expect(member.x / m).toBeCloseTo(x); expect(member.y / m).toBeCloseTo(y);
+  expect(prop.x / m).toBeCloseTo(propX); expect(prop.y / m).toBeCloseTo(propY);
+  const line = find(stage.children, "annotations").children[0];
+  expect(line.kind).toBe("line");
+  if (line.kind === "line") {
+    expect([line.x1 / m, line.y1 / m, line.x2 / m, line.y2 / m]).toEqual([x, y, x2, y2]);
+  }
+  const zero = visibleTextLines(page.drawings).filter(t => t.text === "0m");
+  expect(zero).toHaveLength(2);
+  // Ruler text is centred vertically on its line.
+  for (const label of zero) expect(label.y).toBeCloseTo(stage.y + zeroY * m);
+});
+
 it("does not embed hidden, assigned, omitted names or fully clipped prop text", () => {
   const p = vectorPdfFixture(); p.members[0].name = "𠮷"; p.members[0].visible = false;
   p.frames[0].objectAssignments = { panel: ["m1"] };

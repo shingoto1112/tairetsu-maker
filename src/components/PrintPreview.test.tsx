@@ -15,6 +15,13 @@ const drawingMarkup = (html: string) => html.replace(/ title="[^"]*" role="img" 
   .replace(/(<div class="print-ruler print-ruler-x">)[\s\S]*?<\/div>/g, "$1</div>");
 
 describe("default A4 layout and drawing", () => {
+  for (const viewerPerspective of ["performer", "audience"] as const) {
+    it(`legacy top ${viewerPerspective}`, () => {
+      const project = formationExportFixture(); project.stage.frontDirection = "top";
+      const html = renderToStaticMarkup(<PrintPreview project={project} options={{ ...defaultPrintOptions, viewerPerspective }} />);
+      expect(createHash("sha256").update(drawingMarkup(html)).digest("hex")).toMatchSnapshot();
+    });
+  }
   for (const mode of [undefined, "stage", "parade"] as const) {
     it(`keeps the empty assignment label complete in both renderers (${mode ?? "legacy stage"})`, () => {
       const project = formationExportFixture(); project.mode = mode;
@@ -44,7 +51,7 @@ describe("default A4 layout and drawing", () => {
       // Keep the original exact geometry/page/member hash by normalizing ONLY
       // this change's prop label wrapper. A separate snapshot records the new HTML.
       const baselineProject = { ...project, stage: { ...project.stage, frontDirection: "top" as const } };
-      const baseline = drawingMarkup(renderToStaticMarkup(<PrintPreview project={baselineProject} variant={variant} />))
+      const baseline = drawingMarkup(renderToStaticMarkup(<PrintPreview project={baselineProject} variant={variant} options={{ ...defaultPrintOptions, viewerPerspective: "performer" }} />))
         .replace(/<span class="print-object-label"[^>]*>旗<\/span>/g, "旗");
       expect(createHash("sha256").update(baseline).digest("hex")).toBe(legacyHashes[mode][variant]);
       const drawing = drawingMarkup(html);
