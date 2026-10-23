@@ -14,6 +14,31 @@ const paradeProject = () => {
 };
 
 describe("project card reduced model", () => {
+  it.each([
+    ["bottom", "audience", true, 8, 5], ["bottom", "performer", true, 8, 5],
+    ["top", "audience", false, 2, 1], ["top", "performer", false, 2, 1],
+  ] as const)("always draws performer view for %s saved as %s", (front, perspective, rotated, x, y) => {
+    const p = createSampleProject(); p.stage = { ...p.stage, widthMeters: 10, depthMeters: 6, frontDirection: front };
+    p.viewerPerspective = perspective; p.frames[0].positions.m_anna = { x: 2, y: 1 };
+    const before = structuredClone(p), model = createProjectCardPreviewModel(p)!;
+    expect(model.rotated180).toBe(rotated);
+    // Fixed 10 x 6 SVG parent transform. Drawing values stay internal until this one transform.
+    expect(model.rotated180 ? { x: 10 - model.points[0].x, y: 6 - model.points[0].y } : model.points[0])
+      .toMatchObject({ x, y });
+    expect(p).toEqual(before);
+    p.mode = "parade";
+    const parade = createProjectCardPreviewModel(p)!;
+    expect(parade.rotated180).toBe(false); expect(parade.points[0]).toMatchObject({ x: 2, y: 1 });
+    expect(parade.gridOriginY).toBe(0);
+  });
+
+  it("keeps fractional grid origins internal before rotation", () => {
+    const p = createSampleProject(); p.stage = { ...p.stage, widthMeters: 10.3, depthMeters: 5.4,
+      gridSizeMeters: 0.3, horizontalGuideMode: "centerSplit", frontDirection: "bottom" };
+    const model = createProjectCardPreviewModel(p)!;
+    expect(model).toMatchObject({ gridStep: 0.6, gridOriginX: 5.65, gridOriginY: 5.4, rotated180: true });
+  });
+
   it("uses the first scene in stable time order without mutating the project", () => {
     const project = createSampleProject();
     project.frames[0].timeSec = 20;

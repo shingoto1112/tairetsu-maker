@@ -141,6 +141,8 @@ export const SelectedPositionCard = ({
   const yLabel = projectMode === "parade" ? "m位置" : "縦（最前から）";
   // Stage 縦 uses the same numbers as the rulers: 最前 is 0m, larger toward 奥.
   const frontAtTop = (stage.frontDirection ?? stage.audienceSide ?? "bottom") === "top";
+  // Physical performer-right is positive, independently of the current view.
+  const xSign = projectMode === "parade" || frontAtTop ? 1 : -1;
   const fromFront = (internalY: number) => roundDetailMeters(frontAtTop ? internalY : stageDepthMeters - internalY);
   const displayYValue = (internalY: number | undefined) =>
     projectMode === "parade"
@@ -171,14 +173,14 @@ export const SelectedPositionCard = ({
       ? internalX === undefined
         ? undefined
         : Math.abs(toDisplayX(internalX, stageWidthMeters) ?? 0)
-      : toDisplayX(internalX, stageWidthMeters);
+      : internalX === undefined ? undefined : xSign * (toDisplayX(internalX, stageWidthMeters) ?? 0);
   const internalXValue = (
     displayX: number,
     currentInternalX: number | undefined,
   ) =>
     useParadeCenterSplitX
       ? fromCenterSplitDistance(displayX, currentInternalX, stageWidthMeters)
-      : fromDisplayX(displayX, stageWidthMeters);
+      : fromDisplayX(xSign * displayX, stageWidthMeters);
   const minDisplayX = useParadeCenterSplitX ? 0 : -stageWidthMeters / 2;
   const maxDisplayX = stageWidthMeters / 2;
   const objectStage = { ...stage, widthMeters: stageWidthMeters, depthMeters: coordinateDepthMeters };
@@ -186,7 +188,8 @@ export const SelectedPositionCard = ({
   const leftSide = (objectState?.x ?? stageWidthMeters / 2) < stageWidthMeters / 2 - 0.001;
   const signedMinX = roundMeters(objectBounds.minX) - stageWidthMeters / 2;
   const signedMaxX = roundMeters(objectBounds.maxX) - stageWidthMeters / 2;
-  const objectDisplayXBounds = !useParadeCenterSplitX ? { min: signedMinX, max: signedMaxX }
+  const xEnds = [xSign * signedMinX, xSign * signedMaxX];
+  const objectDisplayXBounds = !useParadeCenterSplitX ? { min: Math.min(...xEnds), max: Math.max(...xEnds) }
     : leftSide ? { min: Math.max(0, -signedMaxX), max: Math.max(0, -signedMinX) }
     : { min: Math.max(0, signedMinX), max: Math.max(0, signedMaxX) };
   const yEnds = [objectDisplayYValue(roundMeters(objectBounds.minY), objectState?.heightMeters ?? 0) ?? 0,

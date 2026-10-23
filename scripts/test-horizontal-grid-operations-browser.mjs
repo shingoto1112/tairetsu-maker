@@ -1,7 +1,9 @@
 import { chromium,expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile,writeFile } from 'node:fs/promises';
-const origin='http://127.0.0.1:5193',browser=await chromium.launch({headless:true}),checks=[];
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5193',browser=await chromium.launch({headless:true}),checks=[];
 const base=JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json','utf8')).stage;
 const save=async page=>{await page.locator('.toolbar-save-button').click();await expect(page.locator('.toolbar-save-button')).not.toHaveClass(/is-dirty/);};
 const read=async(page,id)=>page.evaluate(async id=>{const {IndexedDbProjectRepository}=await import('/src/repositories/indexedDbRepository.ts');const r=new IndexedDbProjectRepository();const p=(await r.get(id)).project;r.close();return p;},id);
@@ -34,7 +36,7 @@ try{
   assert.equal(distributed.m0.x,.15);assert.equal(distributed.m1.x,9.7);
   await page.locator('body').click({position:{x:2,y:2}});await page.keyboard.press('ControlOrMeta+Z');await save(page);await page.keyboard.press('Escape');
   checks.push(mode+' '+counting+' template .37 spacing + arithmetic distribution unchanged');
-  await page.getByRole('tab',{name:'メンバー',exact:true}).click();await c.click();const xInput=page.locator('.selected-position-card .detail-edit-field').filter({hasText:mode==='parade'&&counting==='centerSplit'?'横位置（センター割り）':'横（センターから）'}).locator('input');await expect(xInput).toBeVisible();await xInput.fill('0.37');await xInput.blur();await save(page);assert.ok(Math.abs((await read(page,p.id)).frames[0].positions.m2.x-5.52)<1e-9,'numeric input stays off-grid');checks.push(mode+' '+counting+' numeric input no resnap');
+  await page.getByRole('tab',{name:'メンバー',exact:true}).click();await c.click();const xInput=page.locator('.selected-position-card .detail-edit-field').filter({hasText:mode==='parade'&&counting==='centerSplit'?'横位置（センター割り）':'横（センターから）'}).locator('input');await expect(xInput).toBeVisible();await xInput.fill('0.37');await xInput.blur();await save(page);assert.ok(Math.abs((await read(page,p.id)).frames[0].positions.m2.x-(mode==='stage'?4.78:5.52))<1e-9,'numeric input stays off-grid');checks.push(mode+' '+counting+' numeric input no resnap');
   await page.getByRole('tab',{name:'メンバー',exact:true}).click();await page.getByRole('button',{name:'コピー',exact:true}).first().click();
   const area2=await surface.boundingBox();await page.mouse.move(area2.x+area2.width*.63,area2.y+area2.height*.5);await page.getByRole('button',{name:'貼り付け',exact:true}).first().click();await save(page);const pasted=await read(page,p.id);const pasteId=pasted.members.find(m=>!p.members.some(before=>before.id===m.id)).id;const latest=pasted.frames[0].positions[pasteId];const originX=5.15+(counting==='centerSplit'?.5:0);assert.ok(Math.abs((latest.x-originX)-Math.round(latest.x-originX))<.001,'paste new origin');checks.push(mode+' '+counting+' paste destination grid');
   await page.getByRole('button',{name:'メンバー',exact:true}).first().click();await save(page);const added=await read(page,p.id);const id=added.members.find(m=>!pasted.members.some(before=>before.id===m.id)).id;const addedX=added.frames[0].positions[id].x;assert.ok(Math.abs((addedX-originX)-Math.round(addedX-originX))<.001,'new member origin');checks.push(mode+' '+counting+' new member');
@@ -46,6 +48,6 @@ try{
   await context.close();
  }
  console.log('GRID_OPERATIONS PASS '+JSON.stringify(checks));
- await writeFile('C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-grid/operations-results.json',JSON.stringify(checks,null,2));
+ await writeFile(join(tmpdir(),'tairetsu-horizontal-grid-results.json'),JSON.stringify(checks,null,2));
 }finally{await browser.close();}
 

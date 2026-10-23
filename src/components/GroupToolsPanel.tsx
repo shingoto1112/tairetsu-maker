@@ -8,10 +8,11 @@ import {
   Shapes,
   Users,
 } from "lucide-react";
-import { AlignmentAction, FormationTemplate, Member } from "../types";
+import { AlignmentAction, FormationMode, FormationTemplate, Member } from "../types";
 import { NumericInput } from "./NumericInput";
 
 type GroupToolsPanelProps = {
+  projectMode?: FormationMode;
   members: Member[];
   selectedMemberIds: string[];
   isSelectionMode: boolean;
@@ -37,6 +38,7 @@ const templateLabels: Array<{ id: FormationTemplate; label: string }> = [
 ];
 
 export const GroupToolsPanel = ({
+  projectMode = "stage",
   members,
   selectedMemberIds,
   isSelectionMode,
@@ -155,8 +157,8 @@ export const GroupToolsPanel = ({
             onClick={() => onNudgeSelection(0, -0.5)}
             disabled={sceneDisabled || !hasSelection}
             type="button"
-            aria-label="奥へ移動"
-            title="奥へ"
+            aria-label={projectMode === "parade" ? "奥へ移動" : "上へ移動"}
+            title={projectMode === "parade" ? "奥へ" : "上へ移動"}
           >
             <ArrowUp size={28} />
           </button>
@@ -166,7 +168,7 @@ export const GroupToolsPanel = ({
             disabled={sceneDisabled || !hasSelection}
             type="button"
             aria-label="左へ移動"
-            title="左へ"
+            title={projectMode === "parade" ? "左へ" : "左へ移動"}
           >
             <ArrowLeft size={28} />
           </button>
@@ -176,7 +178,7 @@ export const GroupToolsPanel = ({
             disabled={sceneDisabled || !hasSelection}
             type="button"
             aria-label="右へ移動"
-            title="右へ"
+            title={projectMode === "parade" ? "右へ" : "右へ移動"}
           >
             <ArrowRight size={28} />
           </button>
@@ -185,8 +187,8 @@ export const GroupToolsPanel = ({
             onClick={() => onNudgeSelection(0, 0.5)}
             disabled={sceneDisabled || !hasSelection}
             type="button"
-            aria-label="客席へ移動"
-            title="客席へ"
+            aria-label={projectMode === "parade" ? "客席へ移動" : "下へ移動"}
+            title={projectMode === "parade" ? "客席へ" : "下へ移動"}
           >
             <ArrowDown size={28} />
           </button>

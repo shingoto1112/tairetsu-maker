@@ -7,6 +7,46 @@ import { createSampleProject } from "../sampleProject";
 import { getSnapshotForFrame } from "../utils/interpolation";
 
 afterEach(cleanup);
+
+// Hand-calculated for 10 x 6m. This card has no perspective prop: both views use these physical values.
+it.each([
+  ["top", -3, 1, 6], ["bottom", 3, 5, 4],
+  ["left", 3, 5, 4], ["right", 3, 5, 4], [undefined, 3, 5, 4],
+] as const)("performer-right signs and inverse for front=%s", (front, x, y, internalX) => {
+  const p = props(); p.stage = { ...p.stage, depthMeters: 6, frontDirection: front };
+  p.snapshot.positions.m_anna = { x: 2, y: 1 };
+  const before = structuredClone(p.snapshot);
+  render(<SelectedPositionCard {...p} />);
+  expect((input(/^横（/) as HTMLInputElement).value).toBe(String(x));
+  expect((input(/^縦（/) as HTMLInputElement).value).toBe(String(y));
+  expect(p.onMoveMember).not.toHaveBeenCalled();
+  change(/^横（/, "1");
+  expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: internalX, y: 1 });
+  // Number stepper changes pass through the same onChange inverse as typed values.
+  change(/^横（/, "1.01");
+  expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: front === "top" ? 6.01 : 3.99, y: 1 });
+  change(/^横（/, "0.99");
+  expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: front === "top" ? 5.99 : 4.01, y: 1 });
+  expect(p.snapshot).toEqual(before);
+});
+it.each([
+  ["top", -3, -5, 3, 6], ["bottom", 3, -3, 5, 4],
+] as const)("prop keeps its stored corner and reordered numeric bounds for %s", (front, x, min, max, internalX) => {
+  const p = props(); p.stage = { ...p.stage, depthMeters: 6, frontDirection: front };
+  p.selected = { type: "object", id: "o_chair" };
+  p.snapshot.objectStates.o_chair = { objectId: "o_chair", x: 2, y: 1, widthMeters: 2, heightMeters: 1, rotation: 0, visible: true, zIndex: 10 };
+  render(<SelectedPositionCard {...p} />);
+  const field = input(/^横（/) as HTMLInputElement;
+  expect(field.value).toBe(String(x)); expect(field.min).toBe(String(min)); expect(field.max).toBe(String(max));
+  change(/^横（/, "1"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: internalX });
+});
+it("uses audienceSide top when legacy front is absent", () => {
+  const p = props(); p.stage.frontDirection = undefined; p.stage.audienceSide = "top";
+  p.snapshot.positions.m_anna.y = 1;
+  render(<SelectedPositionCard {...p} />);
+  expect((input(/^横（/) as HTMLInputElement).value).toBe("-3");
+  change(/^横（/, "1"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 6, y: 1 });
+});
 function props(): ComponentProps<typeof SelectedPositionCard> {
   const p = createSampleProject();
   return { selected: { type: "member", id: "m_anna" }, selectedMemberIds: [], members: p.members,
@@ -22,9 +62,9 @@ it.each(["meters", "centerSplit"] as const)("preserves signed stage coordinates 
   const p = props(); p.stage.horizontalGuideMode = mode;
   p.snapshot.positions.m_anna.y = 2;
   render(<SelectedPositionCard {...p} />);
-  expect((input(/^横（/) as HTMLInputElement).value).toBe("-3");
+  expect((input(/^横（/) as HTMLInputElement).value).toBe("3");
   expect(screen.queryByRole("textbox")).toBeNull();
-  change(/^横（/, "-1.13"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 3.87, y: 2 });
+  change(/^横（/, "-1.13"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 6.13, y: 2 });
   // 縦 is measured from 最前 (0m ruler line): internal y 2 on an 8m stage is 6m from the front.
   expect((input(/^縦（最前から）/) as HTMLInputElement).value).toBe("6");
   change(/^縦（/, "1.5"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 2, y: 6.5 });
@@ -61,7 +101,7 @@ it("uses one tool geometry editor with minimum .01, rotation and size-dependent 
   change(/縦幅/, "4"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { heightMeters: 4, x: 8, y: 4 });
   change(/横幅/, "5"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { widthMeters: 5, x: 5, y: 6 });
   change(/回転角度/, "-35.5"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { rotation: -35.5 });
-  change(/^横（/, "99"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: 9 });
+  change(/^横（/, "99"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: 0 });
   // A prop's 縦 is the distance from 最前 to its front edge: y 6 + height 1 on an 8m stage is 1m.
   expect((input(/^縦（/) as HTMLInputElement).value).toBe("1");
   change(/^縦（/, "2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { y: 5 });
@@ -84,7 +124,7 @@ it("edits the sole member selected in multiple-selection mode", () => {
   const p = props(); p.selected = null; p.selectedMemberIds = ["m_anna"]; p.snapshot.positions.m_anna.y = 2;
   render(<SelectedPositionCard {...p} />);
   expect(screen.getByText("Anna")).toBeTruthy();
-  change(/^横（/, "-1.13"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 3.87, y: 2 });
+  change(/^横（/, "-1.13"); expect(p.onMoveMember).toHaveBeenLastCalledWith("m_anna", { x: 6.13, y: 2 });
 });
 it.each(["member", "object"] as const)("disables readonly/playback edits for %s, including programmatic changes", type => {
   const p = props(); p.selected = { type, id: type === "member" ? "m_anna" : "o_chair" };
@@ -100,7 +140,7 @@ it('accepts negative tool corners with rotation-aware numeric bounds and keeps a
   const p = props(); p.selected = { type: "object", id: "o_chair" };
   p.snapshot.objectStates.o_chair = { objectId: "o_chair", x: -1.25, y: 2, widthMeters: 3, heightMeters: .5, rotation: 90, visible: true, zIndex: 10 };
   render(<SelectedPositionCard {...p} />);
-  change(/^横（/, "-6.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: -1.2 });
+  change(/^横（/, "6.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: -1.2 });
   change(/横幅/, "4"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { widthMeters: 4, x: -1.25, y: 2 });
   change(/回転角度/, "45"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { rotation: 45 });
 });
@@ -118,5 +158,5 @@ it('leaves old overflow untouched on selection and corrects both axes on the nex
   p.snapshot.objectStates.o_chair = { objectId: "o_chair", x: -9, y: -9, widthMeters: 3, heightMeters: .5, rotation: 90, visible: true, zIndex: 10 };
   render(<SelectedPositionCard {...p} />);
   expect(p.onUpdateObjectState).not.toHaveBeenCalled();
-  change(/^横（/, "-6.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: -1.2, y: 1.25 });
+  change(/^横（/, "6.2"); expect(p.onUpdateObjectState).toHaveBeenLastCalledWith("o_chair", { x: -1.2, y: 1.25 });
 });

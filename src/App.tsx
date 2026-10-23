@@ -1,5 +1,6 @@
 import { getEffectiveStageSize } from "./utils/effectiveStageSize";
 import { getKeyboardNudgeDelta } from "./utils/keyboardNudge";
+import { isStageViewRotated180, screenAlignmentToInternal } from "./utils/stageOrientation";
 import { moveMembersRelative } from "./utils/memberRelativeMove";
 import { nextSceneLabel } from "./project/nextSceneLabel";
 import { alignedObjectPosition, constrainObjectMovePatch } from "./utils/objectMovement";
@@ -6775,7 +6776,8 @@ function App() {
 
   const nudgeSelection = (dx: number, dy: number) => {
     if (selectedMemberIds.length === 0) return;
-    nudgeMembers(selectedMemberIds, { x: dx, y: dy }, "複数メンバー移動");
+    const sign = isStageViewRotated180(project.stage, viewerPerspective, project.mode === "parade") ? -1 : 1;
+    nudgeMembers(selectedMemberIds, { x: sign * dx, y: sign * dy }, "複数メンバー移動");
   };
 
   const mirrorSelection = () => {
@@ -6846,6 +6848,7 @@ function App() {
   };
 
   const alignSelectedMembers = (action: AlignmentAction) => {
+    action = screenAlignmentToInternal(action, isStageViewRotated180(project.stage, viewerPerspective, project.mode === "parade"));
     const targetIds = [
       ...new Set([
         ...(selected?.type === "member" ? [selected.id] : []),
@@ -6975,7 +6978,8 @@ function App() {
     if (!object || !state) {
       return;
     }
-    const constrained = alignedObjectPosition(state, action, effectiveStage);
+    const internalAction = screenAlignmentToInternal(action, isStageViewRotated180(project.stage, viewerPerspective, project.mode === "parade"));
+    const constrained = alignedObjectPosition(state, internalAction, effectiveStage);
     updateObjectState(object.id, constrained);
     setNotice(`${object.name} を配置しました。`, "success");
   };
@@ -7099,6 +7103,7 @@ function App() {
           >
           <div data-member-tools-panel="true">
             <GroupToolsPanel
+              projectMode={project.mode}
               members={project.members}
               selectedMemberIds={selectedMemberIds}
               isSelectionMode={isMemberSelectionMode}

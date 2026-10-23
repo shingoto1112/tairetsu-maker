@@ -4,17 +4,18 @@ import { horizontalGridOriginMeters } from "./horizontalGrid";
 import { createDefaultObjectState, getSnapshotForFrame, sortFrames } from "./interpolation";
 import { getMemberDisplayColor } from "./memberAppearance";
 import { getSafeParadeCanvasDistance, normalizeParadeHorizontalMeasureMode } from "./parade";
+import { isStageViewRotated180 } from "./stageOrientation";
+import { stageVerticalGridOriginMeters } from "./verticalGrid";
 
 export type ProjectCardPreviewPoint = Readonly<{ x: number; y: number; color: string }>;
 export type ProjectCardPreviewObject = Readonly<{
   x: number; y: number; width: number; height: number; rotation: number;
   color: string; shape: StageObjectShape; opacity: number;
 }>;
-
 /** Detached drawing values only: no Project, frame, member, audio or CRDT references. */
 export type ProjectCardPreviewModel = Readonly<{
   width: number; top: number; height: number;
-  gridStep: number; gridOriginX: number;
+  gridStep: number; gridOriginX: number; gridOriginY: number; rotated180: boolean;
   radius: number; pointStrokeWidth: number;
   points: readonly ProjectCardPreviewPoint[];
   objects: readonly ProjectCardPreviewObject[];
@@ -71,7 +72,10 @@ export function createProjectCardPreviewModel(project: Project): ProjectCardPrev
       color: safeColor(object.color, "#64748b"), shape: object.shape,
       opacity: object.type === "curtain" ? 0.42 : 0.32 });
   }
+  // Stage cards always show the performer view (0m on top); the card rotates once in its SVG.
   return { width, top: range.top, height, gridStep, gridOriginX: horizontalGridOriginMeters(width, mode),
+    gridOriginY: parade ? 0 : stageVerticalGridOriginMeters(depth, project.stage),
+    rotated180: isStageViewRotated180(project.stage, "performer", parade),
     radius: (dense ? 0.075 : 0.11) * scale, pointStrokeWidth: (dense ? 0.025 : 0.04) * scale,
     points, objects };
 }

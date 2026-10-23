@@ -27,6 +27,22 @@ const setup = () => {
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
 
 describe("project card SVG and placeholder", () => {
+  it.each(["top", "bottom"] as const)("rotates grid, people and props together for %s", async front => {
+    const data = setup(); data.project.stage = { ...data.project.stage, widthMeters: 10, depthMeters: 6, frontDirection: front };
+    data.project.viewerPerspective = "audience";
+    data.project.frames[0].positions.m_anna = { x: 2, y: 1 };
+    // Cards draw people and props only (no annotation lines), as before.
+    data.project.frames[0].annotationLines = { a: { x1: 2, y1: 1, x2: 4, y2: 3, color: "red", dash: "dashed" } };
+    const view = render(<ProjectCardPreview summary={data.summary} source={data.source} />);
+    await act(async () => { data.visible(); await settle(); });
+    const group = view.container.querySelector("[data-preview-content]")!;
+    expect(group.getAttribute("transform")).toBe(front === "bottom" ? "translate(10 6) rotate(180)" : null);
+    expect(group.querySelector("circle")!.getAttribute("cx")).toBe("2");
+    expect(group.querySelector("circle")!.getAttribute("cy")).toBe("1");
+    expect(group.querySelectorAll("[data-preview-object]")).toHaveLength(2);
+    expect(group.querySelector('rect[fill^="url("]')).not.toBeNull();
+    expect(group.querySelectorAll("line")).toHaveLength(1); // the centre line only
+  });
   it("uses a neutral hidden icon before reading and outside the viewport", async () => {
     const data = setup(), view = render(<ProjectCardPreview summary={data.summary} source={data.source} />);
     expect(view.container.querySelector(".project-card-preview__placeholder")).not.toBeNull();
@@ -50,7 +66,7 @@ describe("project card SVG and placeholder", () => {
     expect(svg.getAttribute("width")).toBe("100%"); expect(svg.getAttribute("height")).toBe("100%");
     expect(svg.querySelectorAll("pattern")).toHaveLength(1);
     expect(svg.querySelector("pattern")!.getAttribute("patternUnits")).toBe("userSpaceOnUse");
-    expect(svg.querySelector("pattern")!.getAttribute("patternTransform")).toBe("translate(6.5 0)");
+    expect(svg.querySelector("pattern")!.getAttribute("patternTransform")).toBe("translate(6.5 6)");
     expect(svg.querySelector("pattern")!.getAttribute("width")).toBe("0.5");
     expect(svg.querySelectorAll("line")).toHaveLength(1);
     const chair = svg.querySelectorAll("[data-preview-object]")[1];

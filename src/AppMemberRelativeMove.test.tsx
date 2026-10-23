@@ -90,7 +90,7 @@ const keyboard = (key: string, repeat = false) => fireEvent.keyDown(window, { ke
 
 it.each([
   ["ArrowLeft", "左へ移動", -0.17, 0], ["ArrowRight", "右へ移動", 0.11, 0],
-  ["ArrowUp", "奥へ移動", 0, -0.31], ["ArrowDown", "客席へ移動", 0, 0.13],
+  ["ArrowUp", "上へ移動", 0, -0.31], ["ArrowDown", "下へ移動", 0, 0.13],
 ] as const)("B6: key %s and panel %s preserve offsets at the edge and Undo restores both", async (key, button, x, y) => {
   await open();
   const before = structuredClone(frame().positions);
@@ -181,6 +181,11 @@ it.each(["stage", "parade"] as const)("B6: a retained panel callback uses latest
   project.frames[0].positions = { m_anna: { x: 1, y: 1 }, m_ben: { x: 3.3, y: 2.3 } };
   await open();
   const retained = observed.panel!.onNudgeSelection;
+  if (mode === "parade") {
+    expect(screen.getByRole("button", { name: "奥へ移動" }).title).toBe("奥へ");
+    expect(screen.getByRole("button", { name: "客席へ移動" }).title).toBe("客席へ");
+    expect(screen.getByRole("button", { name: "右へ移動" }).title).toBe("右へ");
+  }
   // Move after capturing the callback, so its render snapshot is stale.
   act(() => current().onMoveMember("m_ben", { x: 3.9, y: mode === "parade" ? 12.3 : 2.9 }));
   const before = structuredClone(frame().positions);
@@ -198,15 +203,50 @@ it.each(["stage", "parade"] as const)("B6: keyboard uses effective bounds in %s"
   expectDelta(before, { x: 0.1, y: mode === "parade" ? 0.14 : 0.1 });
 }, 20_000);
 
-it.each(["audience", "performer"] as const)("B6: keyboard perspective is preserved and panel keeps its existing internal direction in %s", async perspective => {
-  project.viewerPerspective = perspective;
-  project.frames[0].positions = { m_anna: { x: 1.17, y: 1.31 }, m_ben: { x: 3.89, y: 2.27 } };
+it.each([
+  ["bottom", "performer", -0.5], ["bottom", "audience", 0.5],
+  ["top", "performer", 0.5], ["top", "audience", -0.5],
+] as const)("screen directions for front=%s view=%s", async (front, perspective, delta) => {
+  project.stage.frontDirection = front; project.viewerPerspective = perspective;
+  project.stage.widthMeters = 10; project.stage.depthMeters = 6;
+  project.frames[0].positions = { m_anna: { x: 2, y: 1 }, m_ben: { x: 6, y: 4 } };
+  project.frames[0].objectStates.o_chair = { objectId: "o_chair", x: 2, y: 1, widthMeters: 2, heightMeters: 1, rotation: 0, visible: true, zIndex: 10 };
   await open(); const before = structuredClone(frame().positions);
-  keyboard("ArrowRight");
-  expectDelta(before, { x: perspective === "performer" ? -0.25 : 0.25, y: 0 });
+  // Both physical coordinate values remain unchanged across the two screen perspectives.
+  fireEvent.click(screen.getByRole("button", { name: "選択解除" }));
+  act(() => current().onSelect({ type: "member", id: "m_anna" }));
+  expect((screen.getByRole("spinbutton", { name: /^横（/ }) as HTMLInputElement).value).toBe(front === "top" ? "-3" : "3");
+  expect((screen.getByRole("spinbutton", { name: /^縦（/ }) as HTMLInputElement).value).toBe(front === "top" ? "1" : "5");
+  act(() => current().onSelect({ type: "member", id: "m_ben" }, { append: true }));
+  keyboard("ArrowRight"); expectDelta(before, { x: delta / 2, y: 0 });
   act(() => current().onUndo());
-  fireEvent.click(screen.getByRole("button", { name: "右へ移動" }));
-  expectDelta(before, { x: 0.5, y: 0 }); // B5 is deliberately unchanged.
+  for (const [button, x, y] of [
+    ["右へ移動", delta, 0], ["左へ移動", -delta, 0],
+    ["下へ移動", 0, delta], ["上へ移動", 0, -delta],
+  ] as const) {
+    const target = screen.getByRole("button", { name: button });
+    expect(target.title).toBe(button);
+    fireEvent.click(target); expectDelta(before, { x, y });
+    act(() => current().onUndo()); expect(frame().positions).toEqual(before);
+  }
+  const edges = delta < 0 ? [["left", "x", 6], ["right", "x", 2], ["top", "y", 4], ["bottom", "y", 1]] as const
+    : [["left", "x", 2], ["right", "x", 6], ["top", "y", 1], ["bottom", "y", 4]] as const;
+  for (const [action, axis, expected] of edges) {
+    act(() => observed.panel!.onAlignSelection(action));
+    for (const id of ["m_anna", "m_ben"]) expect(frame().positions[id][axis]).toBe(expected);
+    act(() => current().onUndo()); expect(frame().positions).toEqual(before);
+  }
+  fireEvent.click(screen.getByRole("tab", { name: "道具" }));
+  await screen.findByText("整列・配置", { selector: "strong" });
+  act(() => current().onSelect({ type: "object", id: "o_chair" }));
+  const propEdges = delta < 0 ? [["左端", "x", 8], ["右端", "x", 0], ["上端", "y", 5], ["下端", "y", 0]] as const
+    : [["左端", "x", 0], ["右端", "x", 8], ["上端", "y", 0], ["下端", "y", 5]] as const;
+  for (const [button, axis, expected] of propEdges) {
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    expect(frame().objectStates.o_chair[axis]).toBe(expected);
+    act(() => current().onUndo());
+    expect(frame().objectStates.o_chair).toEqual(project.frames[0].objectStates.o_chair);
+  }
 }, 20_000);
 
 it("B6: oversized selection stays intact with one notice, without blocking the other axis", async () => {
