@@ -1,7 +1,8 @@
-import type { StageConfig, ViewerPerspective } from "../types";
+import type { Project, StageConfig, ViewerPerspective } from "../types";
 import { ExportPerspectiveOptions } from "./ExportPerspectiveOptions";
 import { Download, FileText, Users, X } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { hasReducedPrintMemberLabels } from "../utils/printLayout";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { formatExportTimestamp } from "../utils/exportFileName";
 import type { ExportSource } from "../utils/mobileExportTypes";
@@ -36,6 +37,8 @@ export type ShareExportRequest = {
 };
 
 type ShareExportModalProps = {
+  project?: Project;
+  selectedFrameId?: string;
   stage: StageConfig;
   isOpen: boolean;
   projectTitle: string;
@@ -67,6 +70,8 @@ const makeDefaultFileName = (projectTitle: string): string =>
   `${projectTitle.trim() || "隊列メーカー"}_隊列表_${formatExportTimestamp()}`;
 
 export const ShareExportModal = ({
+  project,
+  selectedFrameId,
   stage,
   isOpen,
   projectTitle,
@@ -94,6 +99,17 @@ export const ShareExportModal = ({
   // Deliberately not remembered: the lighter viewer-font PDF is the normal choice.
   const [embedPdfFonts, setEmbedPdfFonts] = useState(false);
   const [rosterTarget, setRosterTarget] = useState<"members" | null>(null);
+  const hasReducedLabels = useMemo(() => {
+    if (!isOpen || !scope || rosterTarget || !project) return false;
+    const ids = project.frames.filter(frame => scope !== "current" || !selectedFrameId || frame.id === selectedFrameId).map(frame => frame.id);
+    return hasReducedPrintMemberLabels(project, ids, { ...fixedExportOptions, includeAssignments,
+      viewerPerspective: isParade ? "audience" : exportPerspective });
+  }, [isOpen, scope, rosterTarget, project, selectedFrameId, includeAssignments, isParade, exportPerspective]);
+  // Suggest only what is still possible: 1m is the largest circle, and the side column may already be off.
+  const canEnlargeMembers = (project?.stage.memberDiameterMeters ?? 0.5) < 1;
+  const labelFitHint = canEnlargeMembers && includeAssignments ? "丸を大きくするか、道具割当欄を外すと大きく表示できます。"
+    : canEnlargeMembers ? "丸を大きくすると大きく表示できます。"
+    : includeAssignments ? "道具割当欄を外すと大きく表示できます。" : "";
   const dialogRef = useRef<HTMLElement>(null);
   const handleModalTab = useModalFocus(dialogRef, isOpen && !rosterTarget);
 
@@ -343,6 +359,9 @@ export const ShareExportModal = ({
             <p className="notice muted">
               シーン名とステージ画像を並べた、印刷しやすい固定レイアウトで書き出します。
             </p>
+            {hasReducedLabels && <p className="notice muted" role="status" data-member-label-fit-notice>
+              名前を丸の中に収めるため、文字を小さくしています。{labelFitHint}
+            </p>}
 
             {format === "pdf" && <label className="export-font-option">
               <input type="checkbox" checked={embedPdfFonts} onChange={(event) => setEmbedPdfFonts(event.target.checked)} />

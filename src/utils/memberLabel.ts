@@ -87,3 +87,66 @@ export const getMemberLabelFontSize = (diameter: number, labelLines: string[], o
   // At extreme zoom the readable floor wins, without changing/clipping the text.
   return Math.max(min, Math.floor(Math.min(desired, limit) * scale + 1e-9) / scale);
 };
+
+/** Matches the print CSS, including the four-character gap and three-character shift. */
+export const exportMemberLabelLineHeightEm = (lines: string[]): number => {
+  const variant = getMemberLabelVariant(lines);
+  return variant === "default" ? .84 : variant === "four" ? .90 : .88;
+};
+
+/** Ink, not advance: kana's outer side bearings do not paint the circle.
+ * BIZ UDP Gothic Bold あ/い have ~.074em outer bearings. .085em is the optical
+ * estimate (the outline corners are empty); other full-width glyphs and voiced
+ * kana (whose marks occupy the upper corners) get no rebate.
+ * Count graphemes so marks/ZWJ sequences never acquire extra advances. */
+export const estimateExportMemberLabelInkWidthEm = (line: string): number => {
+  const chars = memberLabelCharacters(line.normalize("NFC"));
+  const kana = (ch: string) => /^[\u3041-\u3096\u30a1-\u30fa]$/u.test(ch) && !/\p{Mark}/u.test(ch.normalize("NFD"));
+  // Bundled Bold advances: i=.320, l=.360, I=.440, b/d/p/q=.730,
+  // uppercase Q=.900. A generic .6em ASCII estimate undercounts those glyphs.
+  const advance = (ch: string) => ch === "i" ? .35 : ch === "l" ? .38 : ch === "I" ? .46
+    : /^[!|.,:;'`]$/.test(ch) ? .4
+    : /^\s$/u.test(ch) ? .35
+    : /^[WMwm@%&#]$/.test(ch) ? 1
+    : /^[A-Z]$/.test(ch) ? .9
+    : /^[0-9]$/.test(ch) ? .8
+    : /^[a-z]$/.test(ch) ? .75
+    : /^[\x20-\x7e]$/.test(ch) ? 1
+    : /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(ch) ? 1.15
+    : kana(ch) ? 1 : 1.02;
+  return Math.max(0, chars.reduce((sum, ch) => sum + advance(ch), 0)
+    - (chars.length && kana(chars[0]) ? .085 : 0)
+    - (chars.length && kana(chars[chars.length - 1]) ? .085 : 0));
+};
+
+/** Each row is checked at its own outer ink y against the circle's chord.
+ * No readable floor or diameter percentage can override export containment. */
+export const exportMemberLabelFitLimit = (diameter: number, lines: string[]): number => {
+  const variant = getMemberLabelVariant(lines);
+  const leading = exportMemberLabelLineHeightEm(lines);
+  const shift = variant === "three" ? -.04 : 0;
+  // Small CSS line boxes round their baselines to layout pixels. Latin/kana
+  // multi-line ink needs a taller envelope than the editor's .92em assumption.
+  // Three-kana rows retain their measured optical envelope (e.g. あおい).
+  const inkHeight = (line: string) => /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(line) ? 1.3
+    : variant === "three" && /^[\u3041-\u3096\u30a1-\u30fa]+$/u.test(line.normalize("NFC")) && !/\p{Mark}/u.test(line.normalize("NFD")) ? .92
+    : /[\x21-\x7e\u3041-\u3096\u30a1-\u30fa]/u.test(line) || variant === "four" ? 1.2 : .92;
+  const extent = Math.max(0, ...lines.map((line, i) => line.trim() ? Math.hypot(
+    estimateExportMemberLabelInkWidthEm(line) / 2,
+    Math.abs((i - (lines.length - 1) / 2) * leading + shift) + inkHeight(line) / 2,
+  ) : 0));
+  if (!extent) return Infinity;
+  const radius = Math.max(0, diameter) / 2;
+  // Below the old print floor (<6.8 CSS px), layout quantization matters.
+  // Reserve half a CSS pixel (~.1323mm) for baseline rounding, not a diameter
+  // percentage. This also covers sub-1px text in the 1mm stress case.
+  // This is a rounding allowance, never a minimum font size or post-fit boost.
+  const clearance = radius / extent < 1.8 ? .5 * (25.4 / 96) : 0;
+  return Math.max(0, radius - clearance) / extent;
+};
+
+/** Keep an already fitting candidate byte-for-byte; only reductions round down. */
+export const fitExportMemberLabelFontSize = (diameter: number, lines: string[], candidate: number, precision = 2): number => {
+  const limit = exportMemberLabelFitLimit(diameter, lines);
+  return candidate <= limit ? candidate : Math.floor(limit * 10 ** precision) / 10 ** precision;
+};

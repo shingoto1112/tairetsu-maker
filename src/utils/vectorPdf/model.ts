@@ -10,7 +10,7 @@ import { GRID_LINE_TOKENS, horizontalEmphasizedLines, verticalEmphasizedLines } 
 import { getSafeParadeBackwardDistance, normalizeParadeHorizontalMeasureMode } from "../parade";
 import { createHorizontalRulerLabels, toHorizontalCountingMode } from "../horizontalRuler";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../memberAppearance";
-import { getMemberLabelVariant, splitMemberLabel } from "../memberLabel";
+import { exportMemberLabelLineHeightEm, getMemberLabelVariant, splitMemberLabel } from "../memberLabel";
 import { objectRenderShape } from "../../project/objectAppearance";
 
 /** Coordinates and widths are millimetres in the existing PrintPreview, before A4 fitting.
@@ -154,7 +154,7 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     const lines = splitMemberLabel(member.name), variant = getMemberLabelVariant(lines);
     const fontSize = getPrintMemberLabelFontSizeMm(diameter, lines);
     // Four-character CSS adds a .02em gap between its .88em line boxes.
-    const lineHeight = fontSize * (variant === "default" ? .84 : variant === "four" ? .90 : .88);
+    const lineHeight = fontSize * exportMemberLabelLineHeightEm(lines);
     const color = getMemberDisplayColor(member, { frame, groups: project.memberGroups });
     if (!/^#[0-9a-f]{6}$/i.test(color)) throw new UnsupportedVectorLayout("メンバー色の形式が未対応です。");
     layers.push({ z: 20, node: { kind: "group", id: member.id, x: p.x * m, y: (p.y - range.topMeters) * m, rotation: 0, children: [

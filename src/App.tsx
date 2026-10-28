@@ -8075,6 +8075,8 @@ function App() {
         {completedExport && <Suspense fallback={<div role="status">書き出し完了画面を準備中…</div>}><ExportCompletionDialog result={completedExport} onClose={() => setCompletedExport(null)} onCopyImage={canCopyExport ? copyImageToClipboard : undefined} /></Suspense>}
     {helpPage}
     {isShareExportOpen && <Suspense fallback={<div role="status">共有画面を読み込み中…</div>}><ShareExportModal
+      project={project}
+      selectedFrameId={selectedFrame?.id}
       isOpen={isShareExportOpen}
       stage={project.stage}
       viewerPerspective={viewerPerspective}

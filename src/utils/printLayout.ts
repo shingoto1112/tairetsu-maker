@@ -1,7 +1,7 @@
 import type { FormationFrame, Member, ObjectState, Project, StageObject } from "../types";
 import type { ShareExportOptions } from "../components/ShareExportModal";
 import { createDefaultObjectState } from "./interpolation";
-import { getMemberLabelFontSize } from "./memberLabel";
+import { fitExportMemberLabelFontSize, getMemberLabelFontSize, splitMemberLabel } from "./memberLabel";
 import { getSafeParadeBackwardDistance, getSafeParadeCanvasDistance, internalYToParadeDistance, paradeDistanceToInternalY } from "./parade";
 import { boundedTicks } from "./boundedTicks";
 import { rotatedObjectBounds } from "./formationExportLayout";
@@ -164,8 +164,9 @@ export const getObjectState = (
 export const getPrintMemberLabelFontSizeMm = (
   diameterMm: number,
   labelLines: string[],
-): number =>
-  getMemberLabelFontSize(diameterMm, labelLines, {
+  purpose: "export" | "preview" = "export",
+): number => {
+  const candidate = getMemberLabelFontSize(diameterMm, labelLines, {
     min: 1.8,
     precision: 2,
     boost: PRINT_MEMBER_LABEL_FONT_BOOST_MM,
@@ -173,6 +174,26 @@ export const getPrintMemberLabelFontSizeMm = (
     inset: 0,
     borderOverlap: 0,
   });
+  return purpose === "preview" ? candidate : fitExportMemberLabelFontSize(diameterMm, labelLines, candidate);
+};
+
+/** Called only by the open export sheet, with exactly the selected export scope. */
+export const hasReducedPrintMemberLabels = (
+  project: Project, frameIds: string[], supplied: Partial<ShareExportOptions> = {},
+): boolean => {
+  const options = { ...defaultPrintOptions, ...supplied };
+  const frames = project.frames.filter(frame => frameIds.includes(frame.id));
+  if (!frames.length) return false;
+  const metrics = getPrintMetrics(project, frames, options);
+  const reduced = (member: Member, diameter: number) => {
+    const lines = splitMemberLabel(member.name);
+    return getPrintMemberLabelFontSizeMm(diameter, lines) < getPrintMemberLabelFontSizeMm(diameter, lines, "preview");
+  };
+  return frames.some(frame => project.members.some(member => frame.positions[member.id] &&
+    isPrintMemberVisible(frame, member) && reduced(member, getPrintMemberDiameterMm(project, metrics))) ||
+    (options.includeAssignments && getAssignmentPrintEntries(project, frame).some(entry =>
+      entry.assignedMembers.some(member => reduced(member, getAssignmentMemberSizeMm(project, metrics))))));
+};
 
 export const getAssignmentObjectOrder = (project: Project): Map<string, number> => {
   const orderById = new Map<string, number>();

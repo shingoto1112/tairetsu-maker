@@ -1,4 +1,4 @@
-import { getFramePrintVerticalRange } from "../utils/printLayout";
+import { getFramePrintVerticalRange, getPrintMemberLabelFontSizeMm } from "../utils/printLayout";
 export { getFramePrintVerticalRange } from "../utils/printLayout";
 import { PrintObjectLabel } from "./PrintObjectLabel";
 import { createStageExportView, readablePropLabelRotation } from "../utils/stageExportView";
@@ -20,7 +20,6 @@ import { createDefaultObjectState, sortFrames } from "../utils/interpolation";
 import { getMemberDisplayColor, getReadableMemberLabelColor } from "../utils/memberAppearance";
 import {
   getMemberLabelClassName,
-  getMemberLabelFontSize,
   splitMemberLabel,
 } from "../utils/memberLabel";
 import {
@@ -82,7 +81,6 @@ const PRINT_ASSIGNMENT_MEMBER_SIZE_MIN_MM = 8;
 const PRINT_ASSIGNMENT_MEMBER_SIZE_MAX_MM = 13;
 const PRINT_ASSIGNMENT_OBJECT_MIN_HEIGHT_MM = 8;
 const PRINT_ASSIGNMENT_OBJECT_MIN_WIDTH_MM = 24;
-const PRINT_MEMBER_LABEL_FONT_BOOST_MM = 0.2;
 const PRINT_ASSIGNMENT_SIDE_GAP_MM = 7;
 const PRINT_PARADE_ASSIGNMENT_SIDE_GAP_MM = 4;
 const PRINT_ASSIGNMENT_SIDE_MAX_WIDTH_MM = 82;
@@ -172,19 +170,6 @@ const getObjectState = (
   frame: FormationFrame,
   object: StageObject,
 ): ObjectState => frame.objectStates?.[object.id] ?? createDefaultObjectState(object);
-
-const getPrintMemberLabelFontSizeMm = (
-  diameterMm: number,
-  labelLines: string[],
-): number =>
-  getMemberLabelFontSize(diameterMm, labelLines, {
-    min: 1.8,
-    precision: 2,
-    boost: PRINT_MEMBER_LABEL_FONT_BOOST_MM,
-    border: 0,
-    inset: 0,
-    borderOverlap: 0,
-  });
 
 const getAssignmentObjectOrder = (project: Project): Map<string, number> => {
   const orderById = new Map<string, number>();
@@ -652,6 +637,7 @@ export const PrintStagePreview = ({
   viewport,
   highlightedObjectId,
   hideLabels = false,
+  labelPurpose = "export",
 }: {
   commonWidthMeters: number;
   frame: FormationFrame;
@@ -666,6 +652,7 @@ export const PrintStagePreview = ({
   highlightedObjectId?: string;
   /** Read-only previews may omit member and prop names; exports always draw them. */
   hideLabels?: boolean;
+  labelPurpose?: "export" | "preview";
 }) => {
   const annotationClipId = useId();
   const isParade = project.mode === "parade";
@@ -832,7 +819,7 @@ export const PrintStagePreview = ({
         style={{
           backgroundColor: memberColor,
           color: labelColor,
-          fontSize: `${getPrintMemberLabelFontSizeMm(memberDiameterMm, labelLines)}mm`,
+          fontSize: `${getPrintMemberLabelFontSizeMm(memberDiameterMm, labelLines, labelPurpose)}mm`,
           left: metersToPrintCenteredMm(
             centerXMeters - leftMeters,
             metrics,
@@ -881,6 +868,7 @@ export const PrintStagePreview = ({
           fontSize: `${getPrintMemberLabelFontSizeMm(
             assignmentMemberSizeMm,
             labelLines,
+            labelPurpose,
           )}mm`,
         }}
       >

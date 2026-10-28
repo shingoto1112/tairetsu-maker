@@ -13,7 +13,7 @@ export const StaticStagePreview = ({ project, frame, stageWidth, range, outputWi
 }) => {
   const pxPerMeter = (outputWidth - side * 2) / (range.right - range.left);
   return <div className="static-stage-preview">
-  <PrintStagePreview project={project} frame={frame} commonWidthMeters={stageWidth} gapAfter={false} highlightedObjectId={highlightedObjectId} hideLabels={hideLabels}
+  <PrintStagePreview project={project} frame={frame} commonWidthMeters={stageWidth} gapAfter={false} highlightedObjectId={highlightedObjectId} hideLabels={hideLabels} labelPurpose="preview"
     options={{ ...defaultPrintOptions, viewerPerspective }}
     verticalRange={{ topMeters: range.top, bottomMeters: range.bottom, depthMeters: range.bottom - range.top }}
     viewport={{ leftMeters: range.left, rightMeters: range.right, sideMm: side * MM_PER_PX,

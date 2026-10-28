@@ -9,7 +9,7 @@ import { renderScenePages } from "./renderer";
 import { createVectorPdfPrototype } from "./index";
 import { createStageExportView } from "../stageExportView";
 import { getPrintMetrics, defaultPrintOptions, getPrintMemberLabelFontSizeMm } from "../../components/PrintPreview";
-import { splitMemberLabel } from "../memberLabel";
+import { exportMemberLabelFitLimit, splitMemberLabel } from "../memberLabel";
 
 // Resolve from repository root on Windows and POSIX without importing Node into product code.
 const readFonts: FontBytesReader = async name => new Uint8Array(await readFile(`public/fonts/biz-udp-gothic/${name}`));
@@ -21,6 +21,31 @@ const find = (nodes: Drawing[], id: string): Extract<Drawing, { kind: "group" }>
   }
   throw new Error(`missing ${id}`);
 };
+
+it.each(["stage", "parade"] as const)("%s: export sizes reach the model without modifying Project, geometry or page dimensions", mode => {
+  const p = vectorPdfFixture(29, 23.5); p.mode = mode;
+  p.paradeSettings = { width: 29, totalDistance: 23.5, backwardDistanceMeters: 0, cellSizeMeters: .5,
+    direction: "up", rulerPosition: "both", horizontalMeasureMode: "centerSplit", emphasizeEvery5m: true, emphasizeEvery10m: true };
+  p.stage.memberDiameterMeters = .5;
+  ["あ", "あい", "あおい", "鈴木一郎", "たかはしゆ", "佐々木小次郎"].forEach((name, i) => {
+    if (p.members[i]) p.members[i].name = name;
+  });
+  const before = JSON.stringify(p), options = { ...defaultPrintOptions, includeAssignments: true };
+  const metrics = getPrintMetrics(p, [p.frames[0]], options);
+  const page = buildScenePage(p, p.frames[0].id, options, propText);
+  const noLabels = structuredClone(p); noLabels.members.forEach(m => m.name = "");
+  const control = buildScenePage(noLabels, p.frames[0].id, options, propText);
+  expect([page.width, page.height]).toEqual([control.width, control.height]);
+  for (const member of p.members.filter(m => p.frames[0].positions[m.id])) {
+    const group = find(page.drawings, member.id), originalGeometry = find(control.drawings, member.id);
+    const lines = visibleTextLines(group.children), diameter = .5 * metrics.mmPerMeter;
+    expect([group.x, group.y, group.children[0]]).toEqual([originalGeometry.x, originalGeometry.y, originalGeometry.children[0]]);
+    expect(lines.map(l => l.text)).toEqual(splitMemberLabel(member.name));
+    expect(lines[0].size).toBe(getPrintMemberLabelFontSizeMm(diameter, splitMemberLabel(member.name)));
+    expect(lines[0].size).toBeLessThanOrEqual(exportMemberLabelFitLimit(diameter, splitMemberLabel(member.name)));
+  }
+  expect(JSON.stringify(p)).toBe(before);
+});
 
 it("reads only versioned same-origin public assets on demand with the caller's cancellation signal", async () => {
   const fetcher = vi.fn(async () => new Response(new Uint8Array([1, 2, 3])));
