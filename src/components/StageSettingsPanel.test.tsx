@@ -33,12 +33,13 @@ describe("B10 stage size presentation", () => {
       [`${fixed ? "ステージ" : "基準"}の横幅（m）`, { widthMeters: 20 }],
       [`${fixed ? "ステージ" : "基準"}の縦幅（m）`, { depthMeters: 20 }],
       ["グリッド間隔（m）", { gridSizeMeters: 20 }],
-      ["メンバー円の直径（m）", { memberDiameterMeters: 1 }],
     ] as const) {
       fireEvent.change(screen.getByRole("spinbutton", { name: label }), { target: { value: "20" } });
       expect(onChange).toHaveBeenLastCalledWith(patch);
     }
     // OFF still edits the base stage config, never a scene-specific field.
+    fireEvent.click(screen.getByRole("radio", { name: "1.0m" }));
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1][0](stage)).toEqual({ memberDiameterMeters: 1 });
     expect(onChange).toHaveBeenCalledTimes(4);
     fireEvent.click(toggle);
     expect(onToggle).toHaveBeenCalledExactlyOnceWith(!fixed);
@@ -78,6 +79,22 @@ describe("B10 stage size presentation", () => {
 });
 
 describe("stage tab detailed settings", () => {
+  it.each(["stage", "parade"] as const)("%s uses the picker, keeps received legacy values and steps the latest stage only", mode => {
+    const stage = { ...createSampleProject().stage, memberDiameterMeters: .3 };
+    const onChange = vi.fn(), onParadeSettingsChange = vi.fn();
+    const props = { mode, stage, useGlobalStageSize: true, onChange, onParadeSettingsChange, onUseGlobalStageSizeChange: vi.fn() };
+    const view = render(<StageSettingsPanel {...props} />);
+    expect(screen.getByText("今の値 0.30m")).toBeTruthy(); expect(onChange).not.toHaveBeenCalled();
+    view.rerender(<StageSettingsPanel {...props} stage={{ ...stage, memberDiameterMeters: .65 }} />);
+    expect(screen.getByText("今の値 0.65m")).toBeTruthy(); expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "丸の直径を0.05m大きくする" }));
+    const update = onChange.mock.calls[0][0];
+    expect(update({ ...stage, memberDiameterMeters: .8, widthMeters: 22 })).toEqual({ memberDiameterMeters: .85 });
+    expect(onParadeSettingsChange).not.toHaveBeenCalled();
+    view.rerender(<StageSettingsPanel {...props} disabled />);
+    fireEvent.click(screen.getByRole("button", { name: "丸の直径を0.05m大きくする" }));
+    expect(onChange).toHaveBeenCalledOnce();
+  });
   it("omits legacy direction, origin and label controls without writing saved values", () => {
     const stage = { ...createSampleProject().stage, frontDirection: "top" as const,
       audienceSide: "bottom" as const, originMode: "topLeft" as const, showStageLabels: true };

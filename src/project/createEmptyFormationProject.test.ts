@@ -8,6 +8,15 @@ const stageSettings = {
 };
 
 describe("createEmptyFormationProject", () => {
+  it.each([NaN, Infinity, .3, 1.1])("rejects invalid new diameter %s at the creation boundary", memberDiameterMeters => {
+    expect(() => createEmptyFormationProject("新規", { ...stageSettings, memberDiameterMeters }, null)).toThrow("直径");
+  });
+  it.each([[undefined, .5], [.3, .3], [.65, .65], [.1, .2], [1.1, 1]])("retains legacy normalization %s → %s", (value, expected) => {
+    const project = createEmptyFormationProject("既存", stageSettings, null);
+    project.stage.memberDiameterMeters = value;
+    delete project.stage.memberCircleDiameterM;
+    expect(normalizeProject(project).stage.memberDiameterMeters).toBe(expected);
+  });
   it("names only new scenes in Japanese and leaves existing titles and legacy scene labels intact", () => {
     const project = createEmptyFormationProject("", stageSettings, null);
     expect(project.title).toBe("");

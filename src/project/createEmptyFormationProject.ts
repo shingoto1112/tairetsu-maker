@@ -1,4 +1,6 @@
 import { nextSceneLabel } from "./nextSceneLabel";
+import { creationNumberError } from "./creationValidation";
+import { MEMBER_DIAMETER_MIN, MEMBER_DIAMETER_MAX } from "../utils/memberDiameter";
 import type { NewFormationInput } from "../components/FormationLibrary";
 import { paradeDistanceError } from "./paradeLimits";
 import type { AudioMeta, Project } from "../types";
@@ -21,6 +23,9 @@ export const createEmptyFormationProject = (
   >,
   audio: AudioMeta | null,
 ): Project => {
+  const diameterError = creationNumberError(settings.memberDiameterMeters, "メンバーの丸の直径",
+    MEMBER_DIAMETER_MIN, MEMBER_DIAMETER_MAX);
+  if (diameterError) throw new Error(diameterError);
   const now = new Date().toISOString();
   const formationMode = settings.formationMode ?? "stage";
   if (formationMode === "parade") {
@@ -50,10 +55,7 @@ export const createEmptyFormationProject = (
     formationMode === "parade"
       ? paradeSettings?.cellSizeMeters ?? 1
       : Math.max(0.05, settings.gridSizeMeters);
-  const memberDiameterMeters = Math.min(
-    1,
-    Math.max(0.1, settings.memberDiameterMeters),
-  );
+  const memberDiameterMeters = settings.memberDiameterMeters;
   return {
     id: createProjectId(),
     version: 1,

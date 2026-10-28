@@ -30,6 +30,8 @@ import { setMembersFrameVisibility as applyMembersFrameVisibility } from "./proj
 import { MEMBER_PLACEMENT_OVERLAP_NOTICE, placeNewMembers } from "./utils/memberPlacement";
 import { validateParadeA4Export } from "./utils/paradeA4Limits";
 import { applyObjectAppearance, objectDraftForGroup, changeObjectMembership, type ObjectAppearancePatch } from "./project/objectAppearance";
+import type { StageSettingsChange } from "./components/StageSettingsPanel";
+import { MEMBER_DIAMETER_MAX, STORED_MEMBER_DIAMETER_MIN } from "./utils/memberDiameter";
 import {
   createProjectId,
   positiveNumber,
@@ -3215,8 +3217,23 @@ function App() {
     updateObjectState(id, { zIndex: Math.max(0, (current?.zIndex ?? 0) + delta) });
   };
 
-  const updateStage = (patch: Partial<Project["stage"]>) => {
-    updateProject((previous) => ({
+  const canEditMemberDiameter = () => appView === "editor" && !canvasPlaybackRef.current &&
+    (!sharedSession.active?.attached || sharedSession.store.getSnapshot().sharing === "active");
+  const memberDiameterEditingAllowedRef = useRef(canEditMemberDiameter);
+  memberDiameterEditingAllowedRef.current = canEditMemberDiameter;
+  const updateStage = (change: StageSettingsChange) => {
+    updateProject((previous) => {
+      const patch = typeof change === "function" ? change(previous.stage) : change;
+      if (patch.memberDiameterMeters !== undefined) {
+        const value = patch.memberDiameterMeters;
+        if (!memberDiameterEditingAllowedRef.current() || !Number.isFinite(value) ||
+          value < STORED_MEMBER_DIAMETER_MIN || value > MEMBER_DIAMETER_MAX) return previous;
+        if (Object.keys(patch).length === 1) {
+          if (value === (previous.stage.memberDiameterMeters ?? 0.5)) return previous;
+          return { ...previous, stage: { ...previous.stage, memberDiameterMeters: value } };
+        }
+      }
+      return ({
       ...previous,
       stage: {
         ...previous.stage,
@@ -3249,7 +3266,8 @@ function App() {
           ),
         ),
       },
-    }), "ステージ設定編集");
+    });
+    }, "ステージ設定編集");
   };
 
   const updateParadeSettings = (patch: Partial<ParadeSettings>) => {
@@ -7225,6 +7243,7 @@ function App() {
           snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
           disabled={false}
 
+          memberDiameterDisabled={!canEditMemberDiameter()}
           onChange={updateStage}
           onParadeSettingsChange={updateParadeSettings}
           onUseGlobalStageSizeChange={updateUseGlobalStageSize}
@@ -7344,6 +7363,7 @@ function App() {
         snapToGuides={project.guideSettings?.snapToGuideEnabled ?? false}
         disabled={false}
 
+        memberDiameterDisabled={!canEditMemberDiameter()}
         onChange={updateStage}
         onParadeSettingsChange={updateParadeSettings}
         onUseGlobalStageSizeChange={updateUseGlobalStageSize}

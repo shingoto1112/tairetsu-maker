@@ -23,6 +23,8 @@ import type { Project } from "../types";
 
 import { LegalLinks } from "./LegalLinks";
 import { HorizontalCountingCards } from "./HorizontalCountingCards";
+import { MemberDiameterPicker } from "./MemberDiameterPicker";
+import { applyMemberDiameterAction, MEMBER_DIAMETER_MIN, MEMBER_DIAMETER_MAX, NEW_MEMBER_DIAMETER } from "../utils/memberDiameter";
 import { toHorizontalCountingMode, toParadeHorizontalMeasureMode } from "../utils/horizontalRuler";
 
 export type NewFormationInput = {
@@ -175,7 +177,7 @@ export const FormationLibrary = ({
   const [gridSizeMeters, setGridSizeMeters] = useState(0.5);
   const [horizontalGuideMode, setHorizontalGuideMode] =
     useState<HorizontalGuideMode>("centerSplit");
-  const [memberDiameterMeters, setMemberDiameterMeters] = useState(0.5);
+  const [memberDiameterMeters, setMemberDiameterMeters] = useState(NEW_MEMBER_DIAMETER);
   const [paradeTotalDistance, setParadeTotalDistance] = useState(100);
   // New parade defaults (user decision 2026-10-06): 10m wide, 0.5m cells.
   const [paradeWidthMeters, setParadeWidthMeters] = useState(10);
@@ -290,7 +292,7 @@ export const FormationLibrary = ({
     setUseGlobalStageSize(true);
     setGridSizeMeters(0.5);
     setHorizontalGuideMode("centerSplit");
-    setMemberDiameterMeters(0.5);
+    setMemberDiameterMeters(NEW_MEMBER_DIAMETER);
     setParadeTotalDistance(100);
     setParadeWidthMeters(10);
     setParadeCellSizeMeters(0.5);
@@ -347,7 +349,7 @@ export const FormationLibrary = ({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (creatingRef.current || rosterLoading) return;
+    if (disabled || creatingRef.current || rosterLoading) return;
     const form = event.currentTarget;
     const trimmedTitle = title.trim() || "新しい隊列表";
     const errors: Record<string, string> = {};
@@ -356,6 +358,9 @@ export const FormationLibrary = ({
         Number(input.min), input.max === "" ? undefined : Number(input.max));
       if (error) errors[input.name] = error;
     });
+    const diameterError = creationNumberError(memberDiameterMeters, "メンバーの丸の直径",
+      MEMBER_DIAMETER_MIN, MEMBER_DIAMETER_MAX);
+    if (diameterError) errors.memberDiameterMeters = diameterError;
     if (formationMode === "parade") {
       const distanceError = paradeDistanceError({ totalDistance: paradeTotalDistance });
       if (distanceError) errors.paradeTotalDistance = distanceError;
@@ -366,7 +371,11 @@ export const FormationLibrary = ({
       // Reveal every invalid advanced field, even when the first error is elsewhere.
       if (Object.keys(errors).some(key => form.elements.namedItem(key) instanceof HTMLInputElement &&
         (form.elements.namedItem(key) as HTMLInputElement).closest("details"))) setAdvancedOpen(true);
-      requestAnimationFrame(() => input?.focus());
+      if (errors.memberDiameterMeters) setAdvancedOpen(true);
+      requestAnimationFrame(() => {
+        if (input) input.focus();
+        else form.querySelector<HTMLInputElement>(".member-diameter-picker input")?.focus();
+      });
       return;
     }
     const isParade = formationMode === "parade";
@@ -804,6 +813,7 @@ export const FormationLibrary = ({
                 <HorizontalCountingCards value={horizontalGuideMode} onChange={setHorizontalGuideMode} />
                 <details className="settings-disclosure" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
                   <summary>詳しい設定（あとから変更できます）</summary>
+                <div className="creation-advanced-fields">
                 <CreationNumberField name="gridSizeMeters" label="グリッド間隔" min={0.1} step="0.05"
                   value={gridSizeMeters} onChange={setGridSizeMeters} error={fieldErrors.gridSizeMeters} />
                 <label>
@@ -817,8 +827,10 @@ export const FormationLibrary = ({
                   </select>
                 </label>
 
-                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.2} max={1} step="0.05"
-                  value={memberDiameterMeters} onChange={setMemberDiameterMeters} error={fieldErrors.memberDiameterMeters} />
+                <MemberDiameterPicker value={memberDiameterMeters} disabled={disabled || creating}
+                  onChange={action => setMemberDiameterMeters(current => applyMemberDiameterAction(current, action))}
+                  error={fieldErrors.memberDiameterMeters} />
+                </div>
                 </details>
               </section>
             ) : (
@@ -834,6 +846,7 @@ export const FormationLibrary = ({
                 <HorizontalCountingCards value={toHorizontalCountingMode(paradeHorizontalMeasureMode)} onChange={(value) => setParadeHorizontalMeasureMode(toParadeHorizontalMeasureMode(value))} />
                 <details className="settings-disclosure" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
                   <summary>詳しい設定（あとから変更できます）</summary>
+                <div className="creation-advanced-fields">
 
                 <label>
                   距離目盛り表示
@@ -865,8 +878,10 @@ export const FormationLibrary = ({
                   />
                   10mごとのライン強調
                 </label>
-                <CreationNumberField name="memberDiameterMeters" label="メンバー円の直径" min={0.2} max={1} step="0.05"
-                  value={memberDiameterMeters} onChange={setMemberDiameterMeters} error={fieldErrors.memberDiameterMeters} />
+                <MemberDiameterPicker value={memberDiameterMeters} disabled={disabled || creating}
+                  onChange={action => setMemberDiameterMeters(current => applyMemberDiameterAction(current, action))}
+                  error={fieldErrors.memberDiameterMeters} />
+                </div>
                 </details>
                 <small>作成後の初期表示はスタート地点です。</small>
               </section>

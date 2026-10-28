@@ -1,5 +1,7 @@
 import { GridEmphasisSettings } from "./GridEmphasisSettings";
 import { HorizontalCountingCards } from "./HorizontalCountingCards";
+import { MemberDiameterPicker } from "./MemberDiameterPicker";
+import { applyMemberDiameterAction } from "../utils/memberDiameter";
 import { toHorizontalCountingMode, toParadeHorizontalMeasureMode } from "../utils/horizontalRuler";
 import {
   FormationMode,
@@ -13,6 +15,8 @@ import {
 import { NumericInput } from "./NumericInput";
 import { PanelStickyHeader } from "./PanelStickyHeader";
 
+export type StageSettingsChange = Partial<StageConfig> | ((stage: StageConfig) => Partial<StageConfig>);
+
 type StageSettingsPanelProps = {
   mode?: FormationMode;
   stage: StageConfig;
@@ -23,7 +27,8 @@ type StageSettingsPanelProps = {
   snapToGuides?: boolean;
   disabled?: boolean;
   disabledMessage?: string;
-  onChange: (patch: Partial<StageConfig>) => void;
+  onChange: (patch: StageSettingsChange) => void;
+  memberDiameterDisabled?: boolean;
   onParadeSettingsChange?: (patch: Partial<ParadeSettings>) => void;
   onUseGlobalStageSizeChange: (enabled: boolean) => void;
   onToggleMeterRulers?: () => void;
@@ -41,6 +46,7 @@ export const StageSettingsPanel = ({
   snapToGuides = false,
   disabled = false,
   disabledMessage,
+  memberDiameterDisabled = false,
   onChange,
   onParadeSettingsChange,
   onUseGlobalStageSizeChange,
@@ -67,6 +73,11 @@ export const StageSettingsPanel = ({
   const readOnlyNotice =
     disabledMessage ??
     "クラウドプロジェクトの全体設定は初期実装では編集できません。ローカルへ複製すると編集できます。";
+  const diameterPicker = <MemberDiameterPicker value={stage.memberDiameterMeters ?? 0.5}
+    disabled={disabled || memberDiameterDisabled}
+    onChange={action => onChange(latest => ({
+      memberDiameterMeters: applyMemberDiameterAction(latest.memberDiameterMeters ?? 0.5, action),
+    }))} />;
   const displaySettings = (
     <div className="stage-display-settings">
       <h3>表示設定</h3>
@@ -203,6 +214,7 @@ export const StageSettingsPanel = ({
           <HorizontalCountingCards compact disabled={disabled}
             value={toHorizontalCountingMode(effectiveParadeSettings.horizontalMeasureMode)}
             onChange={(value) => onParadeSettingsChange?.({ horizontalMeasureMode: toParadeHorizontalMeasureMode(value) })} />
+          {diameterPicker}
           <label>
             距離目盛り
             <select
@@ -283,19 +295,7 @@ export const StageSettingsPanel = ({
       </label>
       <HorizontalCountingCards compact disabled={disabled} value={stage.horizontalGuideMode ?? "meters"}
         onChange={(horizontalGuideMode) => onChange({ horizontalGuideMode })} />
-      <label>
-        メンバー円の直径（m）
-        <NumericInput
-          min={0.2}
-          max={1}
-          step="0.05"
-          disabled={disabled}
-          value={stage.memberDiameterMeters ?? 0.5}
-          onValueChange={(memberDiameterMeters) =>
-            onChange({ memberDiameterMeters })
-          }
-        />
-      </label>
+      {diameterPicker}
     </div>
     <details className="settings-disclosure" open>
       <summary>詳しい設定</summary>

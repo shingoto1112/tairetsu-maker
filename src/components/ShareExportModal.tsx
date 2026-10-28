@@ -1,4 +1,5 @@
 import type { Project, StageConfig, ViewerPerspective } from "../types";
+import { MEMBER_DIAMETER_MAX } from "../utils/memberDiameter";
 import { ExportPerspectiveOptions } from "./ExportPerspectiveOptions";
 import { Download, FileText, Users, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -106,7 +107,7 @@ export const ShareExportModal = ({
       viewerPerspective: isParade ? "audience" : exportPerspective });
   }, [isOpen, scope, rosterTarget, project, selectedFrameId, includeAssignments, isParade, exportPerspective]);
   // Suggest only what is still possible: 1m is the largest circle, and the side column may already be off.
-  const canEnlargeMembers = (project?.stage.memberDiameterMeters ?? 0.5) < 1;
+  const canEnlargeMembers = (project?.stage.memberDiameterMeters ?? 0.5) < MEMBER_DIAMETER_MAX;
   const labelFitHint = canEnlargeMembers && includeAssignments ? "丸を大きくするか、道具割当欄を外すと大きく表示できます。"
     : canEnlargeMembers ? "丸を大きくすると大きく表示できます。"
     : includeAssignments ? "道具割当欄を外すと大きく表示できます。" : "";

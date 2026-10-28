@@ -7,7 +7,7 @@ import type { ParadeCanvas } from "./components/ParadeCanvas";
 import type { Project } from "./types";
 import { createSampleProject } from "./sampleProject";
 import { MemoryProjectRepository } from "./repositories/contract/testing/MemoryProjectRepository";
-import { createSharedDocument } from "./collaboration/model";
+import { createSharedDocument, getModel, REMOTE_ORIGIN } from "./collaboration/model";
 import { createCollaborationData } from "./collaboration/persistence";
 import { SharedProjectEditor } from "./collaboration/editorSession";
 import { getSnapshotForFrame } from "./utils/interpolation";
@@ -15,6 +15,8 @@ import { StageCanvas as RenderStageCanvas } from "./components/StageCanvas";
 import { ParadeCanvas as RenderParadeCanvas } from "./components/ParadeCanvas";
 import * as audioStorage from "./utils/audioStorage";
 import JSZip from "jszip";
+import * as Y from "yjs";
+import { encodeUpdate } from "./collaboration/persistence";
 import type { FormationLibrary } from "./components/FormationLibrary";
 import { RepositoryError } from "./repositories/types";
 import { EphemeralSession } from "./collaboration/ephemeralSession";
@@ -27,6 +29,7 @@ const observed = vi.hoisted(() => ({
   stage: null as StageProps | null,
   delayBegin: null as Promise<boolean> | null,
   library: null as ComponentProps<typeof FormationLibrary> | null,
+  settings: null as ComponentProps<typeof import("./components/StageSettingsPanel").StageSettingsPanel> | null,
 }));
 let project: Project;
 let repository: MemoryProjectRepository;
@@ -36,6 +39,10 @@ let serial: number;
 vi.mock("./components/FormationLibrary", async original => {
   const { FormationLibrary: Library } = await original<typeof import("./components/FormationLibrary")>();
   return { FormationLibrary: (p: ComponentProps<typeof FormationLibrary>) => { observed.library = p; return <Library {...p} />; } };
+});
+vi.mock("./components/StageSettingsPanel", async original => {
+  const { StageSettingsPanel: Panel } = await original<typeof import("./components/StageSettingsPanel")>();
+  return { StageSettingsPanel: (p: NonNullable<typeof observed.settings>) => { observed.settings = p; return <Panel {...p} />; } };
 });
 vi.mock("./storage/appRepository", async original => ({
   ...await original<typeof import("./storage/appRepository")>(),
@@ -76,6 +83,7 @@ beforeEach(() => {
   localStorage.clear(); useYjs = false;
   repository = undefined as unknown as MemoryProjectRepository;
   observed.canvas = null; observed.stage = null; observed.delayBegin = null;
+  observed.settings = null;
   raf = new Map(); serial = 0;
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} unobserve() {} });
@@ -615,14 +623,15 @@ it.each(["stage", "parade"] as const)("A4: %s locked tools keep the touch long-p
   view.unmount();
 }, 25_000);
 
-it.each([["stage", .2], ["stage", 1], ["parade", .2], ["parade", 1]] as const)("A7: %s creation persists numeric boundaries (diameter=%s) through actual App reload", async (mode, diameter) => {
+it.each([["stage", .5], ["stage", 1], ["parade", .5], ["parade", 1]] as const)("B: %s creation persists picker boundaries (diameter=%s) through actual App reload", async (mode, diameter) => {
   const view = render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: /追加.*新規/ }));
   fireEvent.click(screen.getByRole("button", { name: /新しく作る/ }));
   fireEvent.click(screen.getByRole("radio", { name: mode === "stage" ? /^ステージ隊列/ : /^パレード隊列/ }));
   fireEvent.change(screen.getByRole("textbox", { name: "隊列表名（任意）" }), { target: { value: "作成境界" } });
-  const fields = mode === "stage" ? { widthMeters: 1, heightMeters: 1, gridSizeMeters: .1, memberDiameterMeters: diameter }
-    : { paradeTotalDistance: 1, paradeWidthMeters: 1, paradeCellSizeMeters: .1, memberDiameterMeters: diameter };
+  fireEvent.click(screen.getByRole("radio", { name: diameter === 1 ? "1.0m" : "0.5m" }));
+  const fields = mode === "stage" ? { widthMeters: 1, heightMeters: 1, gridSizeMeters: .1 }
+    : { paradeTotalDistance: 1, paradeWidthMeters: 1, paradeCellSizeMeters: .1 };
   for (const [name, value] of Object.entries(fields)) {
     fireEvent.change(document.querySelector(`[name="${name}"]`)!, { target: { value: String(value) } });
   }
@@ -662,6 +671,63 @@ it("A6: real App unmounts roster after Escape while retaining rename/add/group d
   const reopened = await screen.findByRole("dialog", { name: "メンバー/道具の管理" });
   expect((within(reopened).getByRole("textbox", { name: "新しい組 1行目" }) as HTMLInputElement).value).toBe("新しい名前");
   expect((within(reopened).getByRole("textbox", { name: "新しい組 2行目" }) as HTMLInputElement).value).toBe("追加の名前");
+}, 25_000);
+
+it.each([["stage", false], ["parade", false], ["stage", true], ["parade", true]] as const)("B: %s diameter actions use latest state, retain geometry, reject invalid updates and skip no-ops (Yjs=%s)", async (mode, yjs) => {
+  project.mode = mode; project.stage.memberDiameterMeters = .3; useYjs = yjs;
+  let editor: SharedProjectEditor | undefined;
+  let coordinator: Parameters<typeof SharedProjectEditor.create>[0] | undefined;
+  const originalCreate = SharedProjectEditor.create;
+  vi.spyOn(SharedProjectEditor, "create").mockImplementation(async (...args) => {
+    coordinator = args[0]; editor = await originalCreate(...args); return editor;
+  });
+  await open();
+  fireEvent.click(screen.getByRole("tab", { name: "ステージ" }));
+  await screen.findByText("今の値 0.30m");
+  const before = current().project, positions = geometry(before);
+  const update = observed.settings!.onChange;
+  act(() => update({ memberDiameterMeters: .3 }));
+  expect(current().project).toBe(before);
+  for (const value of [NaN, Infinity, .1, 1.1]) act(() => update({ memberDiameterMeters: value }));
+  expect(current().project).toBe(before);
+  fireEvent.click(screen.getByRole("button", { name: "丸の直径を0.05m大きくする" }));
+  expect(current().project.stage.memberDiameterMeters).toBe(.5);
+  act(() => update({ memberDiameterMeters: .65 }));
+  const step = () => update(latest => ({ memberDiameterMeters: Math.round(((latest.memberDiameterMeters ?? .5) + .05) * 100) / 100 }));
+  act(() => { step(); step(); });
+  expect(current().project.stage.memberDiameterMeters).toBe(.75);
+  if (editor) {
+    const active = editor;
+    const remoteBefore = current().project;
+    act(() => active.doc.transact(() => {
+      getModel(active.doc).settings.set("diameter", { "stage.memberDiameterMeters": .65, "stage.memberCircleDiameterM": .65 });
+      getModel(active.doc).settings.set("width", { "stage.widthMeters": 19, "paradeSettings.width": 19 });
+    }, REMOTE_ORIGIN));
+    await act(async () => { await coordinator!.receiveCollaborationSnapshot(encodeUpdate(Y.encodeStateAsUpdate(active.doc)), [], "1"); });
+    await screen.findByText("今の値 0.65m");
+    expect(current().project.stage.widthMeters).toBe(19);
+    expect(current().project).not.toBe(remoteBefore);
+    act(step);
+    expect(current().project.stage.memberDiameterMeters).toBe(.7);
+    expect(current().project.stage.widthMeters).toBe(19);
+  }
+  expect(geometry(current().project)).toEqual(positions);
+  const value = current().project.stage.memberDiameterMeters;
+  await act(async () => { fireEvent.click(document.querySelector(".toolbar-save-button")!); });
+  await waitFor(async () => expect((await repository.get(project.id!))!.project.stage.memberDiameterMeters).toBe(value));
+}, 25_000);
+
+it("B: playback disables the picker and a retained update callback cannot edit", async () => {
+  project.audio = { id: "song", name: "曲", type: "audio/mpeg", size: 1, duration: 20 };
+  await open();
+  fireEvent.click(screen.getByRole("tab", { name: "ステージ" }));
+  await screen.findByRole("group", { name: "メンバーの丸の大きさ（直径）" });
+  const update = observed.settings!.onChange;
+  await act(async () => { await observed.stage!.onTogglePlayback(); });
+  expect(observed.settings!.memberDiameterDisabled).toBe(true);
+  const before = current().project;
+  act(() => update({ memberDiameterMeters: .8 }));
+  expect(current().project).toBe(before);
 }, 25_000);
 
 const importFile = async (value: unknown, format: "json" | "wrapped" | "zip", name = "import") => {

@@ -83,7 +83,7 @@ it("B1: a full destination still copies the entire roster and notifies", async (
   fireEvent.change(screen.getByRole("spinbutton", { name: "横幅" }), { target: { value: "1" } });
   fireEvent.change(screen.getByRole("spinbutton", { name: "縦幅" }), { target: { value: "1" } });
   fireEvent.click(screen.getByText("詳しい設定（あとから変更できます）"));
-  fireEvent.change(screen.getByRole("spinbutton", { name: "メンバー円の直径" }), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("radio", { name: "1.0m" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "道具もコピーする" }));
   fireEvent.click(screen.getByRole("button", { name: "作成する" }));
   await screen.findByTestId("copy-canvas");
