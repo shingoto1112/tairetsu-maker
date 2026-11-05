@@ -1,5 +1,6 @@
 import { checkAbort } from "./fonts";
 import { DEVICE_FONT_RESOURCE, DEVICE_SPACE_WIDTH } from "./deviceFont";
+import { recompressFlateStreams } from "./recompress";
 
 /** Font name hint for viewers. Android's PDFium-based viewers pick a gothic only for this name (others
  * fall back to Mincho); iOS and desktop viewers use their default Japanese gothic for any name. */
@@ -59,6 +60,13 @@ export async function attachDeviceFont(bytes: ArrayBuffer, options: { codes: Ite
     if (done.has(fonts)) continue; // jsPDF shares one resource dictionary between pages
     if (fonts.get(name)) throw new Error("端末字体の資源名が既存のフォントと重なります。");
     fonts.set(name, font); done.add(fonts);
+  }
+  checkAbort(options.signal);
+  // Optional size step (same decoded bytes, zlib's best level). Only cancellation may stop the export:
+  // on any other failure the streams already replaced were each verified, the rest stay as they were.
+  if (options.objectStreams) {
+    try { await recompressFlateStreams(doc, options.signal); }
+    catch (error) { if (error && typeof error === "object" && "name" in error && error.name === "AbortError") throw error; }
   }
   checkAbort(options.signal);
   const saved = await doc.save({ useObjectStreams: options.objectStreams, addDefaultPage: false, updateFieldAppearances: false });

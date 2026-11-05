@@ -1,8 +1,10 @@
 import { checkAbort } from "./fonts";
+import { recompressFlateStreams } from "./recompress";
 
 /** Re-save an already VERIFIED jsPDF output with PDF 1.5 object streams (pdf-lib, loaded on demand).
- * Page, font, image and form streams are copied as they are; only the object dictionaries and the
- * cross-reference table are packed and Flate-compressed (3–9% smaller in measurements).
+ * The object dictionaries and the cross-reference table are packed and Flate-compressed (3–9% smaller
+ * in measurements), and page, font, image and form streams are re-encoded with zlib's best level
+ * without changing their decoded bytes (recompressFlateStreams, about 7–8% smaller).
  * Returns null — and the caller keeps the original bytes — when pdf-lib cannot load it, the page
  * count changes, the re-saved file does not load again, or it is not smaller. Cancellation is never
  * swallowed. Callers must keep their own checks on the original output: after packing, font
@@ -14,6 +16,8 @@ export async function packObjectStreams(bytes: ArrayBuffer, pageCount: number, s
     checkAbort(signal);
     const doc = await PDFDocument.load(bytes, { updateMetadata: false });
     if (doc.getPageCount() !== pageCount) return null;
+    await recompressFlateStreams(doc, signal);
+    checkAbort(signal);
     const packed = await doc.save({ useObjectStreams: true, addDefaultPage: false, updateFieldAppearances: false });
     checkAbort(signal);
     const again = await PDFDocument.load(packed, { updateMetadata: false });
