@@ -104,7 +104,7 @@ const StageSettingsPanel = lazy(() => import("./components/StageSettingsPanel").
 const Timeline = lazy(() => import("./components/Timeline").then(module => ({ default: module.Timeline })));
 import { Toolbar } from "./components/Toolbar";
 import { createCloudAuthClient, getCloudAuthErrorMessage, type CloudAuthSession } from "./cloud/auth";
-import { getAppFeatureFlags } from "./platform/runtime";
+import { getAppFeatureFlags, getAppRuntime } from "./platform/runtime";
 import { getCloudConfig } from "./cloud/config";
 import { hydrateCloudAuthSessionFromNativeStorage, readCloudAuthSession, saveCloudAuthSession } from "./cloud/session";
 
@@ -7410,6 +7410,7 @@ function App() {
     const libraryService = collaborationLibrary.service;
     const libraryUi = collaborationLibrary.ui;
     const collaborationOnHome = APP_FEATURES.collaborationV2 && storageReady;
+    const canRescueLegacyDrafts = getAppRuntime() === "capacitor-ios" && storageReady && !!repositoryRef.current;
     const hasStorageTools = storageReady && !!repositoryRef.current && "readMaintenance" in repositoryRef.current;
     return (
       <>
@@ -7417,7 +7418,7 @@ function App() {
           account={collaborationOnHome ? { ...libraryAccountButton(libraryUi?.auth, collaborationLibrary.failed),
             onClick: () => { void collaborationUi.get().then(service => service.account()); } } : undefined}
           onOpenStorageManager={hasStorageTools ? () => setStorageMenuRequest(request => request + 1) : undefined}
-          onOpenLegacyImport={APP_FEATURES.collaborationV2 && storageReady && repositoryRef.current ? () => setLegacyMenuRequest(request => request + 1) : undefined}
+          onOpenLegacyImport={canRescueLegacyDrafts ? () => setLegacyMenuRequest(request => request + 1) : undefined}
           cloudProjects={libraryUi ? toCloudLibraryCards(libraryUi.documents, savedProjects, libraryUi.auth) : []}
           onOpenCloudProject={libraryService ? documentId => { void libraryService.run(() => libraryService.openExisting(documentId)); } : undefined}
           onRefreshCloud={libraryService && libraryUi?.auth.status === "signed-in" ? () => { void libraryService.run(() => libraryService.refresh()); } : undefined}
@@ -7428,9 +7429,11 @@ function App() {
           projects={savedProjects}
           notice={storageStatus ?? storageWarning ?? notice}
           disabled={!storageReady}
-          collaborationSlot={APP_FEATURES.collaborationV2 && storageReady ? <Suspense fallback={<p role="status">共同編集を準備中…</p>}><CollaborationSurface bridge={collaborationUi} view="library" />
-            {repositoryRef.current && <LegacyRescuePanel repository={repositoryRef.current as import("./legacyImport/importer").ImportRepository} config={cloudConfig} onChanged={refreshLocalLibrary}
-              openRequest={legacyMenuRequest} hideEntry />}</Suspense> : undefined}
+          collaborationSlot={<>
+            {collaborationOnHome && <Suspense fallback={<p role="status">共同編集を準備中…</p>}><CollaborationSurface bridge={collaborationUi} view="library" /></Suspense>}
+            {canRescueLegacyDrafts && <Suspense fallback={null}><LegacyRescuePanel repository={repositoryRef.current as import("./legacyImport/importer").ImportRepository} onChanged={refreshLocalLibrary}
+              openRequest={legacyMenuRequest} hideEntry /></Suspense>}
+          </>}
           renderProjectBadge={APP_FEATURES.collaborationV2 ? summary => summary.sharing ? <Suspense fallback="クラウド"><CollaborationBadge bridge={collaborationUi} summary={summary} /></Suspense> : "ローカル" : undefined}
           onJoinInvitation={APP_FEATURES.collaborationV2 ? () => { void collaborationUi.get().then(ui => ui.invitation("")); } : undefined}
           onSaveToCloud={APP_FEATURES.collaborationV2 ? saveStoredProjectToCloud : undefined}

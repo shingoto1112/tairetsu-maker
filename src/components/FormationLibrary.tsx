@@ -56,7 +56,7 @@ type FormationLibraryProps = {
   account?: LibraryHeaderAccount;
   /** "…" → 保存データの管理 (StorageTools stays mounted in storageTools). */
   onOpenStorageManager?: () => void;
-  /** "…" → 旧クラウドのデータを取り込む (LegacyRescuePanel stays mounted in collaborationSlot). */
+  /** "…" → 旧クラウドの下書きを救出 (LegacyRescuePanel stays mounted in collaborationSlot). */
   onOpenLegacyImport?: () => void;
   /** Card picture for a stored formation; the folder icon is used without it. */
   renderProjectPreview?: (summary: ProjectSummary) => ReactNode;

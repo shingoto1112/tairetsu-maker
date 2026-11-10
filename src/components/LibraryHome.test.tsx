@@ -85,7 +85,7 @@ describe("home layout", () => {
     await userEvent.click(within(header).getByRole("button", { name: "クラウドの一覧を更新" }));
     expect(onRefreshCloud).toHaveBeenCalledTimes(1);
     await userEvent.click(more);
-    await userEvent.click(within(header).getByRole("button", { name: "旧クラウドのデータを取り込む" }));
+    await userEvent.click(within(header).getByRole("button", { name: "旧クラウドの下書きを救出" }));
     expect(onOpenLegacyImport).toHaveBeenCalledTimes(1);
     // 使い方 lives in the header, so the footer keeps only the policy links.
     expect(within(screen.getByRole("navigation", { name: "規約とサポート" })).queryByRole("button", { name: "使い方" })).toBeNull();
@@ -127,25 +127,23 @@ describe("home layout", () => {
   });
 });
 
-describe("old cloud import entry", () => {
+describe("old cloud draft rescue entry", () => {
   const repository = {} as ImportRepository;
-  it("shows no legacy buttons on the home page and opens a chooser from the … menu request", async () => {
-    const { rerender } = render(<LegacyRescuePanel repository={repository} config={null} onChanged={async () => {}} openRequest={0} hideEntry />);
+  it("hides its own entry and opens drafts directly from the … menu request", async () => {
+    const { rerender } = render(<LegacyRescuePanel repository={repository} onChanged={async () => {}} openRequest={0} hideEntry />);
     expect(screen.queryByRole("button", { name: "旧クラウドの隊列表を取り込む" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
-    rerender(<LegacyRescuePanel repository={repository} config={null} onChanged={async () => {}} openRequest={1} hideEntry />);
+    rerender(<LegacyRescuePanel repository={repository} onChanged={async () => {}} openRequest={1} hideEntry />);
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByRole("heading", { name: "旧クラウドのデータを取り込む" })).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole("button", { name: "この端末に残っている旧クラウドの下書き" }));
-    expect(within(dialog).getByRole("heading", { name: "旧クラウドの下書き" })).toBeTruthy();
-    await userEvent.click(within(dialog).getByRole("button", { name: "戻る" }));
-    await userEvent.click(within(dialog).getByRole("button", { name: "旧クラウドの隊列表を取り込む" }));
-    expect(within(dialog).getByRole("heading", { name: "旧クラウドの隊列表を取り込む" })).toBeTruthy();
+    expect(within(dialog).getByRole("heading", { name: "旧クラウドの下書きを救出" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "端末の下書きを調べる" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "戻る" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "一覧を取得" })).toBeNull();
     await userEvent.click(within(dialog).getByRole("button", { name: "救出画面を閉じる" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   it("does not reopen on remount with an already handled request", () => {
-    render(<LegacyRescuePanel repository={repository} config={null} onChanged={async () => {}} openRequest={3} hideEntry />);
+    render(<LegacyRescuePanel repository={repository} onChanged={async () => {}} openRequest={3} hideEntry />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

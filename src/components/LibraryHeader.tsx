@@ -10,7 +10,7 @@ type Props = {
   onOpenStorageManager?: () => void;
   onRefreshCloud?: () => void;
   cloudBusy?: boolean;
-  /** Old cloud (stopped 2026-10-05) import and on-device draft rescue. */
+  /** On-device draft rescue after old cloud import ended on 2026-11-04. */
   onOpenLegacyImport?: () => void;
 };
 
@@ -66,7 +66,7 @@ export const LibraryHeader = ({ onOpenHelp, account, onOpenStorageManager, onRef
             <RefreshCw size={16} aria-hidden="true" />クラウドの一覧を更新
           </button>}
           {onOpenLegacyImport && <button type="button" onClick={() => choose(onOpenLegacyImport)}>
-            <ArchiveRestore size={16} aria-hidden="true" />旧クラウドのデータを取り込む
+            <ArchiveRestore size={16} aria-hidden="true" />旧クラウドの下書きを救出
           </button>}
           <a href={PUBLIC_LINKS.privacy} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
             <ShieldCheck size={16} aria-hidden="true" />プライバシー
