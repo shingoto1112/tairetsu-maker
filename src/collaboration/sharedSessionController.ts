@@ -13,7 +13,7 @@ import { createManagementTransport } from "./managementTransport";
 import { getModel } from "./model";
 import type { HistoryResult } from "./commands";
 import type { CollaborationTransport } from "./transport";
-import { describeAudio, mergeAudioBindings, sameSong, songKey, validateAudioBindings } from "../repositories/audioBindings";
+import { mergeAudioBindings, sameSong, songKey, validateAudioBindings } from "../repositories/audioBindings";
 import { chooseDeviceAudio, deviceAudioCandidates } from "./deviceAudio";
 import { CollaborationHistory, createHistoryTransport } from './historyApi';
 import { HistoryController } from './historyController';

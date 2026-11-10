@@ -237,8 +237,6 @@ const FLOATING_MENU_MARGIN_PX = 10;
 const APP_NAME = "隊列メーカー";
 const APP_FEATURES = getAppFeatureFlags();
 
-const IPAD_AUTH_REDIRECT_URL = "jp.tairetsu.maker://auth/callback";
-
 const MEMBER_COLOR_PRESETS = [
   { label: "赤 ライト", value: "#fca5a5" },
   { label: "赤 明るめ", value: "#f87171" },
@@ -1831,11 +1829,6 @@ function App() {
     return selectedIndex > 0 ? sortedFrames[selectedIndex - 1] : null;
   }, [project.frames, selectedFrame]);
 
-  const selectedSceneNumber = useMemo(() => {
-    const index = displayFrames.findIndex((frame) => frame.id === selectedFrame?.id);
-    return index >= 0 ? index + 1 : 0;
-  }, [displayFrames, selectedFrame?.id]);
-
   const currentSceneFrame = useMemo(
     () => getActiveFrameAtTime(project.frames, currentTime) ?? selectedFrame,
     [currentTime, project.frames, selectedFrame],
@@ -3020,9 +3013,6 @@ function App() {
     restoreMember = false,
   ) => {
     const member = project.members.find((item) => item.id === memberId);
-    const assignedObjectIds = Object.entries(selectedFrame?.objectAssignments ?? {})
-      .filter(([, memberIds]) => memberIds.includes(memberId))
-      .map(([objectId]) => objectId);
     updateMemberAssignmentsInCurrentFrame(
       (frame, frameStage) => {
         const objectAssignments = removeMemberFromAssignments(
@@ -3509,21 +3499,6 @@ function App() {
     if (Object.values(patch).some(value => typeof value === "number" && !Number.isFinite(value))) return;
     const nextPatch = constrainObjectMovePatch(objectState, patch, effectiveStage);
     updateObjectState(id, nextPatch);
-    if (selectedFrame) {
-      const nextState = {
-        ...objectState,
-        ...nextPatch,
-        widthMeters: Math.max(
-          0.1,
-          nextPatch.widthMeters ?? objectState.widthMeters,
-        ),
-        heightMeters: Math.max(
-          0.1,
-          nextPatch.heightMeters ?? objectState.heightMeters,
-        ),
-      };
-
-    }
   };
 
   const scrollKeyboardTargetIntoView = (bounds: CanvasScrollBounds | null) => {
@@ -3860,7 +3835,6 @@ function App() {
         ),
       }), "シーン編集");
     };
-    const patchKeys = Object.keys(patch);
 
     applyChange();
   };
@@ -6213,7 +6187,6 @@ function App() {
         setNotice(options.notice, "success");
       }
     };
-    const memberIds = [...new Set(options.memberIds ?? selectedMemberIds)];
 
     applyChange();
   };
