@@ -8163,3 +8163,25 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   white-space: pre;
   transform: translate(-50%, -50%);
 }
+
+/* Touch targets (2026-11-11): on touch screens every small control keeps its look but answers a 44x44px
+   finger target (Apple HIG). The transparent pseudo element only grows the hit area: layout, size and
+   painting stay exactly as they are. Zero specificity, so any rule that positions one of these wins.
+   The play button and the visibility tabs are left out: positioning them changes how their shadows overlap. */
+@media (pointer: coarse) {
+  :where(.mini-button, .icon-button, .stage-timebar__skip, .stage-zoom-reset, .toolbar-menu-button,
+    .scene-thumbnail-rail__toggle, .color-palette-trigger,
+    .audio-timeline__zoom button) {
+    position: relative;
+  }
+  :where(.mini-button, .icon-button, .stage-timebar__skip, .stage-zoom-reset, .toolbar-menu-button,
+    .scene-thumbnail-rail__toggle, .color-palette-trigger,
+    .audio-timeline__zoom button)::after {
+    content: "";
+    position: absolute;
+    top: min(0px, calc((100% - 44px) / 2));
+    right: min(0px, calc((100% - 44px) / 2));
+    bottom: min(0px, calc((100% - 44px) / 2));
+    left: min(0px, calc((100% - 44px) / 2));
+  }
+}
