@@ -42,7 +42,7 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 - 画面に関わる変更では、`src/App.tsx`、対象の `src/components/`、`src/styles.css` を確認する。
 - 保存・読み込み・共有ファイルに関わる変更では、`src/repositories/`（端末保存。Web／Windows は IndexedDB、iPad は SQLite）、`src/storage/`（起動時の接続・移行・復旧）、`src/utils/audioStorage.ts`、`src/utils/tairetsuFile.ts` を確認する。
 - 座標・ドラッグ・目盛りに関わる変更では、`src/utils/coordinates.ts`、`src/components/StageCanvas.tsx`、`src/components/ParadeCanvas.tsx` を確認する。
-- 印刷・書き出しに関わる変更では、`src/utils/printLayout.ts`（配置の計算はここだけに置き、写しを作らない）、`src/components/PrintPreview.tsx`、`src/components/PrintStagePreview.tsx`、`src/utils/vectorPdf/`、`src/utils/exportImage.ts`、`src/utils/pdfExport.ts` を確認する。
+- 印刷・書き出しに関わる変更では、`src/utils/printLayout.ts`（配置の計算はここだけに置き、写しを作らない）、`src/components/SceneDrawing.tsx`（シーンの描画は1か所）、`src/components/PrintPreview.tsx`、`src/utils/vectorPdf/`、`src/utils/exportImage.ts`、`src/utils/pdfExport.ts` を確認する。
 - 既存のGit差分を確認し、ユーザーの変更を巻き戻さない。
 
 ## 守るべき互換性
