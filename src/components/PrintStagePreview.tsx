@@ -3,8 +3,8 @@
 import {
   PRINT_RULER_X_LABEL_WIDTH_MM, PRINT_RULER_Y_LABEL_HEIGHT_MM, PRINT_STAGE_RIGHT_SAFETY_MM,
   getAssignmentEntryPrintLayout, getAssignmentMemberSizeMm, getAssignmentObjectPrintSize, getAssignmentPrintEntries,
-  getEffectiveSize, getObjectState, getPrintMemberDiameterMm,
-  getPrintMemberLabelFontSizeMm, getPrintMeterRulerClassName, getPrintRulerBottomMm, getPrintRulerTopMm,
+  getEffectiveSize, getObjectState, getParadePrintRulerLabels, getPrintMemberDiameterMm,
+  getPrintMemberLabelFontSizeMm, getPrintRulerBottomMm, getPrintRulerTopMm,
   getPrintSideRulerWidthMm, isMemberVisible, metersToPrintCenteredMm, metersToPrintMm, shouldPrintAssignmentSide,
   shouldPrintRightRuler,
 } from "../utils/printLayout";
@@ -35,9 +35,7 @@ import {
 } from "../utils/memberLabel";
 import {
   getSafeParadeBackwardDistance,
-  internalYToParadeDistance,
   normalizeParadeHorizontalMeasureMode,
-  paradeDistanceToInternalY,
 } from "../utils/parade";
 import type { ShareExportOptions } from "./ShareExportModal";
 
@@ -115,65 +113,11 @@ export const PrintStagePreview = ({
     project.paradeSettings?.backwardDistanceMeters,
   );
   const verticalRulerLabels = isParade
-    ? (() => {
-        const minDistance =
-          internalYToParadeDistance(
-            verticalRange.bottomMeters,
-            totalDistance,
-            backwardDistanceMeters,
-          ) ?? 0;
-        const maxDistance =
-          internalYToParadeDistance(
-            verticalRange.topMeters,
-            totalDistance,
-            backwardDistanceMeters,
-          ) ??
-          totalDistance;
-        const start = Math.ceil(minDistance - 0.001);
-        const end = Math.floor(maxDistance + 0.001);
-        const labels: Array<{
-          className?: string;
-          key: number;
-          label: string;
-          top: string;
-        }> = [];
-        for (let meter = start; meter <= end; meter += 1) {
-          const internalY = paradeDistanceToInternalY(
-            meter,
-            totalDistance,
-            backwardDistanceMeters,
-          );
-          labels.push({
-            className: getPrintMeterRulerClassName(meter),
-            key: meter,
-            label: `${meter}m`,
-            top: metersToPrintCenteredMm(
-              internalY - verticalRange.topMeters,
-              metrics,
-              PRINT_RULER_Y_LABEL_HEIGHT_MM,
-            ),
-          });
-        }
-        if (labels.length === 0) {
-          const fallbackMeter = Math.round((minDistance + maxDistance) / 2);
-          const internalY = paradeDistanceToInternalY(
-            fallbackMeter,
-            totalDistance,
-            backwardDistanceMeters,
-          );
-          labels.push({
-            className: getPrintMeterRulerClassName(fallbackMeter),
-            key: fallbackMeter,
-            label: `${fallbackMeter}m`,
-            top: metersToPrintCenteredMm(
-              internalY - verticalRange.topMeters,
-              metrics,
-              PRINT_RULER_Y_LABEL_HEIGHT_MM,
-            ),
-          });
-        }
-        return labels;
-      })()
+    // Shared with the A4 preview and the vector PDF: at most 16,384 marks, so a huge distance cannot stall the page.
+    ? getParadePrintRulerLabels(totalDistance, backwardDistanceMeters, verticalRange).map(item => ({
+        className: item.className, key: item.meter, label: item.label,
+        top: metersToPrintCenteredMm(item.internalY - verticalRange.topMeters, metrics, PRINT_RULER_Y_LABEL_HEIGHT_MM),
+      }))
     : view.verticalLabels.filter(item => item.positionMeters >= verticalRange.topMeters - 1e-7 && item.positionMeters <= verticalRange.bottomMeters + 1e-7).map(item => ({
         className: undefined, key: item.positionMeters, label: item.label,
         top: metersToPrintCenteredMm(item.positionMeters - verticalRange.topMeters, metrics, PRINT_RULER_Y_LABEL_HEIGHT_MM),

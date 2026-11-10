@@ -6,6 +6,7 @@ import { PrintStagePreview, getFramePrintVerticalRange as previewRange, paginate
 import { StaticStagePreview } from "./StaticStagePreview";
 import { formationExportFixture } from "../utils/formationExportFixture";
 import { createDefaultObjectState } from "../utils/interpolation";
+import { MAX_RENDER_TICKS } from "../utils/boundedTicks";
 import { defaultPrintOptions, getEffectiveSize, getFramePrintVerticalRange, getPrintMetrics, paginateFrames } from "../utils/printLayout";
 import { buildScenePage, type Drawing } from "../utils/vectorPdf/model";
 import { validateParadeA4Export, UnsafeParadeA4Export } from "../utils/paradeA4Limits";
@@ -29,6 +30,18 @@ const group = (drawings: Drawing[], id: string) => {
 
 it("re-exports the exact same range implementation from PrintStagePreview", () => {
   expect(previewRange).toBe(getFramePrintVerticalRange);
+});
+
+// Reads stay permissive (the 500m limit is input policy only), so a file can carry any finite distance.
+// The scene drawing used to push one ruler label per metre without a limit: 1,000km took 20s, larger never ended.
+it.each([1e6, 1e12, 1e20])("bounds the parade ruler labels of the scene drawing for a %dm parade", distance => {
+  const p = fixture(); p.paradeSettings!.totalDistance = distance; p.stageObjects = []; p.frames[0].objectStates = {};
+  p.frames[0].positions = { m0: { x: 6, y: distance / 2 } };
+  const html = renderToStaticMarkup(<StaticStagePreview project={p} frame={p.frames[0]} stageWidth={12} outputWidth={720}
+    range={{ left: 0, right: 12, top: 0, bottom: distance }} />);
+  const labels = (html.match(/<span[^>]*>-?\d+m<\/span>/g) ?? []).length;
+  expect(labels).toBeGreaterThan(0);
+  expect(labels).toBeLessThanOrEqual(2 * MAX_RENDER_TICKS);
 });
 
 it.each([
