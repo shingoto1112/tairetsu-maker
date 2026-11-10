@@ -6,12 +6,16 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 ## プロジェクト概要
 
 - アプリ名: 隊列メーカー
-- 目的: ダンス、舞台、パレードなどで使う隊列表を作成・編集・保存・印刷・書き出しできるWebアプリ。
+- 目的: ダンス、舞台、パレードなどで使う隊列表を作成・編集・保存・印刷・書き出しできるiPadアプリ／Webアプリ。
 - 技術構成: React + TypeScript + Vite
+- iPad版: Capacitor（`ios/`。保存・音源・共有シートは Swift）
 - Windowsダウンロード版: Tauri
+- クラウド保存・共同編集（任意）: Supabase + Yjs（`src/collaboration/`、`supabase/`）
 - package manager: npm
 - 主なコマンド:
   - 開発: `npm run dev`
+  - 型チェック: `npm run typecheck`
+  - テスト: `npm test`
   - ビルド: `npm run build`
   - プレビュー: `npm run preview`
   - Windows版開発: `npm run desktop:dev`
@@ -36,16 +40,16 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 - `AGENTS.md` と `docs/SPEC.md` を確認する。
 - `src/types.ts` で関連データ構造を確認する。
 - 画面に関わる変更では、`src/App.tsx`、対象の `src/components/`、`src/styles.css` を確認する。
-- 保存・読み込み・共有ファイルに関わる変更では、`src/utils/storage.ts`、`src/utils/audioStorage.ts`、`src/utils/tairetsuFile.ts`、`src/utils/share.ts` を確認する。
+- 保存・読み込み・共有ファイルに関わる変更では、`src/repositories/`（端末保存。Web／Windows は IndexedDB、iPad は SQLite）、`src/storage/`（起動時の接続・移行・復旧）、`src/utils/audioStorage.ts`、`src/utils/tairetsuFile.ts` を確認する。
 - 座標・ドラッグ・目盛りに関わる変更では、`src/utils/coordinates.ts`、`src/components/StageCanvas.tsx`、`src/components/ParadeCanvas.tsx` を確認する。
-- 印刷・スクリーンショットに関わる変更では、`src/components/PrintPreview.tsx`、`src/utils/exportImage.ts`、`src/utils/pdfExport.ts` を確認する。
+- 印刷・書き出しに関わる変更では、`src/utils/printLayout.ts`（配置の計算はここだけに置き、写しを作らない）、`src/components/PrintPreview.tsx`、`src/components/PrintStagePreview.tsx`、`src/utils/vectorPdf/`、`src/utils/exportImage.ts`、`src/utils/pdfExport.ts` を確認する。
 - 既存のGit差分を確認し、ユーザーの変更を巻き戻さない。
 
 ## 守るべき互換性
 
 - 既存データとの互換性を壊さない。
 - 保存データ形式を変える場合は、読み込み時の補完・移行処理を考える。
-- `localStorage`、IndexedDB、`.tairetsu` / `.zip` 読み込み書き出しの既存仕様を壊さない。
+- 端末保存（IndexedDB／SQLite）、旧 `localStorage` データからの移行、`.tairetsu` / `.zip` 読み込み書き出しの既存仕様を壊さない。
 - 旧データで `mode` がない場合はステージモードとして扱う。
 - パレード設定などの新しいフィールドがない場合は安全な初期値で補完する。
 
@@ -58,7 +62,7 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 - フルスクリーンでは全体を無理に縮小せず、必要に応じてスクロールできる。
 - 隊列表周辺の操作ボタンは左側に整理する。
 - 画面右側はできるだけ隊列表表示に使う。
-- 共有リンク機能は使わない方針。
+- 隊列表そのものを URL に入れる共有リンク（旧 hash 共有）は使わない方針。共同編集の招待リンクは別の仕組みで、現行機能（`docs/COLLABORATION_*.md`）。
 - JSON単体バックアップ機能は優先度低め。
 - ZIPでの読み込み・書き出しを基本にする。
 - 印刷機能では、各シーンのステージ画像とシーン名だけを出力する。
@@ -109,7 +113,7 @@ Codex は今後の作業で、まずこのファイルと `docs/SPEC.md` を確�
 - スクリーンショットはステージ周辺だけを画像化し、左パネルや操作ボタンを含めない。
 - ZIP共有を基本にし、`.tairetsu` と `.zip` を読み込めるようにする。
 - ZIP内部の判定は拡張子やMIME typeだけに依存せず、`manifest.json` と `project.json` の存在と内容で行う。
-- 共有リンク機能は使わない方針。実装を復活させる場合は、サーバー保存先と権限設計を先に確認する。
+- 隊列表を URL に入れる共有リンク（旧 hash 共有）は使わない方針。実装を復活させる場合は、サーバー保存先と権限設計を先に確認する（共同編集の招待リンクはこれとは別）。
 
 ## 実装時の注意
 

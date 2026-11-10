@@ -14,8 +14,11 @@ dist
 vite.config.js
 vite.config.d.ts
 .playwright-cli/
-output/playwright/
-output/storage-performance/
+
+# Local verification output, one-off probes and reports (never committed)
+/output/
+/artifacts/
+.tmp-*
 
 # Local logs
 *.log

@@ -1,130 +1,55 @@
 # 隊列メーカー
 
-隊列メーカーは、ダンスやステージ発表向けの「シーン切り替え型の隊列表 / 舞台図エディタ」です。メンバーの立ち位置に加えて、道具、椅子、机、パネル、幕などをステージ上に配置し、音源の再生時間に合わせてシーンごとの静的な隊列表を確認できます。
+ダンス・舞台・パレードの隊列表（フォーメーション表）を作る iPad アプリ／Web アプリです。メンバーの立ち位置と道具をシーンごとに置き、曲に合わせて確かめ、PDF・画像・名簿として書き出せます。
 
-バックエンドは使わず、隊列表データはブラウザの`localStorage`、JSON、またはURL hashに圧縮して保存・共有します。音源ファイル本体はIndexedDBへ保存し、共有URLには含まれません。
+作業の決まりは [`AGENTS.md`](AGENTS.md)、仕様は [`docs/SPEC.md`](docs/SPEC.md) を先に読んでください。
 
-## 起動方法
+## 構成
+
+- 画面: React + TypeScript + Vite（`src/`）。Web 版は Vercel が `main` を自動で公開します。
+- iPad 版: 同じ画面を Capacitor（WKWebView）で包み、保存・音源・共有シートは Swift（`ios/`）で行います。
+- Windows 版: Tauri（`src-tauri/`）。
+- クラウド保存・共同編集（任意）: Supabase（認証・データベース・Realtime・Edge Functions、`supabase/`）と Yjs。ログインしなくても端末だけで使えます。
+
+## 起動・確認
 
 ```bash
 npm install
-npm run dev
+npm run dev        # 開発サーバー
+npm run typecheck  # 型チェック
+npm test           # 全テスト（Vitest）
+npm run build      # 本番ビルド（dist/ は生成物。Git には入れない）
 ```
 
-起動後、Viteが表示するローカルURLをブラウザで開いてください。
+Node 22 以上が必要です。
 
-## ビルド方法
+## 環境変数
 
-Vercelへ公開する前に、以下のコマンドで本番ビルドを確認します。
+`.env.example` を `.env` にコピーして設定します。何も設定しなければ、クラウドを使わない端末専用のアプリとして動きます。
 
-```bash
-npm run build
-```
+| 変数 | 役割 |
+| --- | --- |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Supabase の公開設定（anon または publishable キー。service_role は入れない） |
+| `VITE_COLLABORATION_V2` | `1` のビルドだけクラウド保存・共同編集を有効にする |
+| `VITE_COLLABORATION_INVITATION_URL` | 招待リンクの土台にする URL（省略時は公開サイト） |
+| `VITE_PUBLIC_SITE_URL` | 利用規約・プライバシー・サポートのページを置く公開サイト（省略時は本番の URL） |
 
-ビルド成果物は`dist/`に作成されます。`dist/`は生成物のためGitHubには含めません。
+## データの保存
 
-## Windowsダウンロード版
+- 隊列表は端末の中に1件ずつ保存します（Web／Windows は IndexedDB、iPad は SQLite）。
+- 音源ファイルは端末の中だけに保存し、クラウドへは送りません。
+- 受け渡しは `.tairetsu`／ZIP の書き出し・読み込みで行います（音源を同梱できます）。
+- 隊列表を URL に入れる共有リンクは作りません（昔のリンクを開いたときの読み込みだけ残しています）。
+- 共同編集は招待リンクで参加します。仕組みは `docs/COLLABORATION_*.md` と `docs/COLLAB_V2_SERVER.md`。
 
-Windows向けのダウンロード版はTauriで作成します。Web版と同じReact/Vite実装を使い、`src-tauri/` の設定でデスクトップアプリとして包みます。
+## 書き出し
 
-```bash
-npm run desktop:dev
-npm run desktop:build
-```
+- 隊列表: A4 の PDF（既定は軽いベクター PDF）と画像。道具の割当欄を付けられます。
+- 名簿: PDF・画像（A4／スマホ向け）・Excel（.xlsx）。
+- 仕様は `docs/SPEC.md`、ベクター PDF の作りは `src/utils/vectorPdf/README.md`。
 
-初回ビルドにはRust/Cargo、Microsoft C++ Build Tools、WebView2 Runtimeが必要です。詳しい手順は [`docs/WINDOWS_APP_RELEASE.md`](docs/WINDOWS_APP_RELEASE.md) を参照してください。
-ローカル環境を整えずにGitHub ActionsでWindowsインストーラーを作ることもできます。
+## 配布
 
-## GitHubへアップロードする流れ
-
-初回だけ、Gitをインストールしてからプロジェクトフォルダで以下を実行します。
-
-```bash
-git init
-git branch -M main
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/<your-account>/tairetsu-maker.git
-git push -u origin main
-```
-
-GitHubでは、リポジトリ名を`tairetsu-maker`、公開範囲は最初はPrivateにするのがおすすめです。
-
-## Vercelデプロイ方法
-
-VercelでGitHubリポジトリをImport Projectするときは、以下の設定を使います。
-
-- Framework Preset: Vite
-- Install Command: `npm install`
-- Build Command: `npm run build`
-- Output Directory: `dist`
-
-このアプリは現時点で外部API用の環境変数を必要としません。GitHubの`main`ブランチへpushすると、Vercel側で自動的に再ビルド・再デプロイされます。
-
-## 基本的な使い方
-
-1. 上部ツールバーで編集モードを選びます。
-2. 左側パネルでメンバー、オブジェクト、ステージ設定を編集します。
-3. 中央のステージ上でメンバーやオブジェクトをドラッグして配置します。
-4. 下部タイムラインでフレームを選び、「隊形保存」で現在の状態を保存します。
-5. 音源を読み込み、再生すると`timeSec`に沿って表示シーンが切り替わります。
-
-## メンバー追加
-
-ツールバーの「メンバー」ボタンで追加します。左側のメンバー一覧から、名前、色、表示/非表示、前後関係を編集できます。メンバー編集モードでは、ステージ上の丸いアイコンをドラッグして配置できます。
-
-## ステージ設定
-
-左側の「ステージ設定」で、ステージ横幅、縦幅、グリッド間隔、中央線、上手/下手ラベル、客席方向を変更できます。座標はすべてm単位で保存されるため、表示サイズが変わっても隊列表データは実寸ベースで保持されます。
-
-横目盛りはセンター基準です。たとえば横幅12mのステージでは、左端-6m、中央0m、右端+6mとして表示されます。縦幅目盛りは最前基準です。縦幅6mなら、客席側に近い最前が0m、ステージ奥が6mとして表示されます。内部座標は既存仕様を維持し、目盛りと表示だけを切り替えます。
-
-## 道具・移動幕の追加
-
-ツールバーの「道具」または「幕」ボタンで追加します。左側のステージオブジェクト一覧で、種類、形、色、幅、高さ、回転、表示、ロック、zIndexを編集できます。オブジェクト編集モードでは、ドラッグ移動、右下ハンドルでサイズ変更、上部ハンドルで回転ができます。
-
-## 曲ファイルの読み込み
-
-右側の音源パネルからMP3/WAV/M4Aなどのローカル音声ファイルを読み込みます。再生/一時停止、シーク、再生速度、簡易ループ範囲を操作できます。
-
-音源ファイル本体は`localStorage`ではなくIndexedDBに保存されます。共有URLには含まれないため、別端末で共有リンクを開いた人は自分の端末で同じ曲ファイルを読み込んでください。
-
-## フレーム保存と同期
-
-各`FormationFrame`は`label`と`timeSec`を持ちます。`timeSec`はそのシーンの開始時刻です。再生中は、現在時刻以下で最も後ろにあるシーンの静的なメンバー位置、道具位置、表示/非表示、道具割当を表示します。MVPではシーン間の自動移動アニメーションは無効です。
-
-現在の曲再生位置でフレームを追加したい場合は、下部タイムラインの「現在時刻で追加」を使います。
-
-## シーンと推しカメ
-
-タイムラインの各フレームはシーンカードとして扱えます。左右矢印キー、または「前のシーン」「次のシーン」でコマ送りできます。
-
-再生中はシーンの開始時刻に到達したタイミングで、そのシーンの隊列表へ切り替わります。既存データに`MovementPath`や`movementPlans`が含まれていても読み込みは可能ですが、現在のMVPでは再生表示に反映しません。
-
-メンバー一覧の「注目」ボタンで注目メンバーを設定できます。推しカメONでは注目メンバーを強調し、他メンバーを薄く表示します。
-
-## JSONエクスポート / インポート
-
-ツールバーの「JSON」で隊列表データを書き出せます。「取込」でJSONを読み込めます。URLが長くなりすぎる場合や、確実にデータを渡したい場合はJSON共有を使ってください。
-
-## 共有リンク
-
-「共有」ボタンを押すと、隊列表データを`lz-string`で圧縮し、URL hashの`#project=...`に埋め込んだリンクをクリップボードへコピーします。共有されるのはステージ設定、メンバー、オブジェクト、フレームなどの隊列表データだけです。
-
-## PNG書き出し
-
-「PNG」ボタンで、現在表示中のステージを画像として保存できます。ステージ、グリッド、メンバー、道具、幕、ラベル、現在のフレーム名/時刻が含まれます。
-
-## 今後の拡張候補
-
-- FirebaseやSupabaseを使った短い共有リンク
-- ログイン機能
-- 閲覧専用リンク / 編集可能リンク
-- 複数隊列表管理
-- BPM入力と8カウント自動計算
-- 動線の軌跡表示
-- 衝突判定
-- メンバーごとの移動距離表示
-- PDF書き出し
-- 複数ページの隊列表印刷
-- チーム共有機能
+- Web: `main` へ push すると Vercel が公開します。
+- iPad: TestFlight へのアップロードは手動起動（GitHub Actions の `ios-testflight.yml`、または `codemagic.yaml`）。
+- Windows: `npm run desktop:build`（Rust／Cargo、Microsoft C++ Build Tools、WebView2 Runtime が必要）。GitHub Actions の `windows-desktop.yml` でも作れます。手順は [`docs/WINDOWS_APP_RELEASE.md`](docs/WINDOWS_APP_RELEASE.md)。

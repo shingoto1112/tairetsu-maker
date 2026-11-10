@@ -25,3 +25,8 @@ Copyright (c) 2019 Andrew Dillon. MIT: pdf-lib.txt
 Bundled dependencies: @pdf-lib/standard-fonts 1.0.0 (MIT), @pdf-lib/upng 1.0.1 (MIT),
 pako 1.0.11 (MIT AND Zlib), tslib (0BSD).
 Source: https://github.com/Hopding/pdf-lib
+
+pako 1.0.11 (also used directly to re-encode the streams of exported PDFs with zlib's best level)
+Copyright (C) 2014-2017 Vitaly Puzrin and Andrei Tuputcyn; zlib part (C) 1995-2013 Jean-loup Gailly and Mark Adler.
+MIT AND Zlib: pako.txt
+Source: https://github.com/nodeca/pako
