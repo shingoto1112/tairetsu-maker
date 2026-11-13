@@ -77,9 +77,9 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
     throw new UnsupportedVectorLayout("パレードの進行方向はupのみ対応しています。");
   const range = getFramePrintVerticalRange(project, frame, size, metrics);
   const m = metrics.mmPerMeter, w = metrics.stageWidthMm, h = (range.depthMeters + gapMeters) * m;
-  const left = getPrintSideRulerWidthMm(isParade, options.includeMeterRulers);
+  const left = getPrintSideRulerWidthMm(isParade, options.includeMeterRulers, metrics);
   const rulerTop = getPrintRulerTopMm(project, metrics, options);
-  const rulerBottom = options.includeMeterRulers ? getPrintRulerBottomMm(project, metrics, options) : 0;
+  const rulerBottom = options.includeMeterRulers || metrics.memberSidePaddingMm !== undefined ? getPrintRulerBottomMm(project, metrics, options) : 0;
   // Centre counts sit beside the displayed 0m line; at the bottom the two margins swap (same height).
   const rulerAtBottom = options.includeMeterRulers &&
     horizontalRulerSide(project.stage, options.viewerPerspective, isParade) === "bottom";
@@ -190,7 +190,8 @@ export function buildScenePage(project: Project, frameId: string, supplied: Part
   }
   if (pageExtent && (!(pageExtent.width > 0 && pageExtent.height > 0) || !Number.isFinite(pageExtent.width + pageExtent.height)))
     throw new UnsupportedVectorLayout("印刷ページの寸法が不正です。");
-  return { frameId, width: left + w + (options.includeMeterRulers ? left + (isParade ? PRINT_STAGE_RIGHT_SAFETY_MM : 0) : 0), height: 9 + top + h + bottom, ...pageExtent, drawings };
+  return { frameId, width: left + w + (options.includeMeterRulers || metrics.memberSidePaddingMm !== undefined
+    ? left + (isParade && options.includeMeterRulers ? PRINT_STAGE_RIGHT_SAFETY_MM : 0) : 0), height: 9 + top + h + bottom, ...pageExtent, drawings };
 }
 
 export function visibleTextLines(drawings: Drawing[]): TextLine[] {

@@ -2,6 +2,24 @@
 .roster-assignment-view.has-scene-preview {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
+.roster-assignment-view.has-external-toolbar { grid-template-rows: minmax(0, 1fr); }
+.roster-assignment-view.has-external-toolbar.has-scene-preview { grid-template-rows: auto minmax(0, 1fr); }
+
+/* One stable slot for both orientations; queries use the panel's actual width. */
+.roster-assignment-toolbar-slot .roster-assignment-toolbar { background: transparent; }
+.roster-assignment-toolbar-slot .roster-assignment-secondary { display: grid; grid-template-columns: minmax(0, 1fr); }
+/* ▶ follows the scene name (not pushed to the far edge); long names are cut with … */
+.roster-assignment-toolbar-slot .roster-assignment-nav { display: grid; grid-template-columns: 44px minmax(0, max-content) 44px; justify-content: start; }
+.roster-assignment-toolbar-slot .roster-assignment-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+.roster-assignment-toolbar-slot .roster-assignment-actions button { width: 100%; }
+@container assignment-toolbar (min-width: 400px) {
+  .roster-assignment-toolbar-slot .roster-assignment-actions { display: flex; }
+  .roster-assignment-toolbar-slot .roster-assignment-actions button { width: auto; }
+}
+@container assignment-toolbar (min-width: 680px) {
+  .roster-assignment-toolbar-slot .roster-assignment-secondary { grid-template-columns: minmax(0, 1fr) auto; }
+  .roster-assignment-toolbar-slot .roster-assignment-actions { grid-column: 1 / -1; }
+}
 
 .roster-assignment-media {
   align-items: flex-start;

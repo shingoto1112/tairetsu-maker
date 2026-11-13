@@ -6860,9 +6860,11 @@ html:not([data-app-runtime="capacitor-ios"]):not([data-native-workspace="true"])
   overflow: hidden;
   padding: 2px;
 }
+.roster-assignment-toolbar button,
 .roster-assignment-view button,
 .roster-assignment-view select,
 .roster-assignment-view input { min-height: 44px; }
+.roster-assignment-toolbar button:focus-visible,
 .roster-assignment-view button:focus-visible { outline: 3px solid #5eead4; outline-offset: 2px; }
 .roster-assignment-view [hidden] { display: none !important; }
 .roster-assignment-toolbar { display: grid; gap: 10px; min-width: 0; background: #fff; }
@@ -6916,10 +6918,6 @@ html:not([data-app-runtime="capacitor-ios"]):not([data-native-workspace="true"])
 .member-toggle-list__other { color: #64748b; font-size: 12px; max-width: 42%; overflow-wrap: anywhere; }
 .roster-assignment-footnote { border-top: 1px solid #e2e8f0; padding: 6px 2px 0; flex-shrink: 0; font-size: 12px; }
 
-@media (min-width: 960px) and (orientation: landscape) {
-  .roster-manager-modal.is-assignments .roster-manager-mode-controls { display: flex; align-items: center; gap: 16px; }
-  .roster-manager-modal.is-assignments .roster-manager-topbar { padding-top: 8px; padding-bottom: 8px; }
-}
 .roster-assignment-view.is-narrow .roster-assignment-body { grid-template-columns: minmax(0, 1fr); }
 .roster-assignment-back { align-self: start; flex-shrink: 0; }
 @media (max-width: 520px) {
@@ -7280,7 +7278,9 @@ html:not([data-app-runtime="capacitor-ios"]):not([data-native-workspace="true"])
   width: 18px;
 }
 
-.roster-table__group-heading > input {
+.roster-table__input-form { display: contents; }
+
+.roster-table__group-heading > form > input {
   font-weight: 800;
   text-align: center;
 }
@@ -7577,8 +7577,8 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
 }
-.roster-table__name-cell > input { min-width: 0; width: 100%; }
-.roster-table__group-heading > input { min-width: 0; }
+.roster-table__name-cell > form > input { min-width: 0; width: 100%; }
+.roster-table__group-heading > form > input { min-width: 0; }
 .roster-table__delete {
   align-self: start;
   background: transparent;

@@ -47,7 +47,7 @@ it.each([.75, .8])("roster copy uses form value %s rather than source .3", async
     { includeObjects: false }, prefix => `${prefix}_${++serial}`).project;
   expect(copied.stage.memberDiameterMeters).toBe(value); expect(source.stage.memberDiameterMeters).toBe(.3);
 });
-it.each([NaN, Infinity, .3, 1.1])("explicitly validates malformed state %s even without a numeric DOM input", async value => {
+it.each([NaN, Infinity, .3, 2.05])("explicitly validates malformed state %s even without a numeric DOM input", async value => {
   const { onCreate } = setup(); open("stage");
   // Fault injection: a future input regression must not bypass state validation.
   const apply = vi.spyOn(diameter, "applyMemberDiameterAction").mockReturnValue(value);

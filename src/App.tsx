@@ -430,15 +430,6 @@ const defaultStageObjectDraft: StageObjectDraft = {
   heightMeters: 0.8,
 };
 
-const curtainDraft: StageObjectDraft = {
-  type: "curtain",
-  shape: "rectangle",
-  name: "移動幕",
-  color: "#7c3aed",
-  widthMeters: 1.4,
-  heightMeters: 5,
-};
-
 const markDraft: StageObjectDraft = {
   type: "mark",
   shape: "circle",
@@ -2332,7 +2323,7 @@ function App() {
       id: selected.id,
       label: object.name,
       targetType: "object" as const,
-      kindLabel: object.type === "curtain" ? "幕" : "道具",
+      kindLabel: "道具",
       startPosition: fromSnapshot.objectStates[selected.id],
       endPosition: toSnapshot.objectStates[selected.id],
     };
@@ -2635,7 +2626,7 @@ function App() {
       if (objectGroupId && !group) return previous;
       const effectiveDraft = group ? objectDraftForGroup(previous, group, {
         ...draft, name: nextRosterItemName(previous.stageObjects, previous.objectGroups ?? [], "objects", group.id),
-        color: group.color ?? draft.color, type: group.defaultType ?? draft.type,
+        color: group.color ?? draft.color, type: "prop",
       }) : draft;
       const activeFrame = previous.frames.find(frame => frame.id === activeFrameId) ?? previous.frames[0];
       const activeStage = { ...previous.stage, ...getEffectiveStageSize(previous, activeFrame) };
@@ -3246,15 +3237,6 @@ function App() {
           patch.horizontalGuideMode ??
           previous.stage.horizontalGuideMode ??
           "meters",
-        memberDiameterMeters: Math.min(
-          1,
-          Math.max(
-            0.2,
-            patch.memberDiameterMeters ??
-              previous.stage.memberDiameterMeters ??
-              0.5,
-          ),
-        ),
       },
     });
     }, "ステージ設定編集");
@@ -6498,7 +6480,7 @@ function App() {
         ...defaultStageObjectDraft,
         name: nextGroupObjectName(group.name),
         color: group.color ?? defaultStageObjectDraft.color,
-        type: group.defaultType ?? "prop",
+        type: "prop",
         shape: group.defaultShape ?? "rectangle",
       },
       visibleInCurrentFrame,
@@ -6607,7 +6589,7 @@ function App() {
         ...defaultStageObjectDraft,
         name: trimmedName,
         color: group?.color ?? defaultStageObjectDraft.color,
-        type: group?.defaultType ?? defaultStageObjectDraft.type,
+        type: "prop",
         shape: group?.defaultShape ?? defaultStageObjectDraft.shape,
       };
       const draft = group ? objectDraftForGroup(previous, group, baseDraft) : baseDraft;
@@ -7926,14 +7908,6 @@ function App() {
                 type="button"
               >
                 道具追加
-              </button>
-              <button
-                onClick={() =>
-                  runContextMenuAction(() => addObjectAtContextPosition(curtainDraft))
-                }
-                type="button"
-              >
-                幕追加
               </button>
               <button
                 onClick={() =>

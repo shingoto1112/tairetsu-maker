@@ -13,7 +13,7 @@ describe("Web export delivery", () => {
     vi.stubGlobal("navigator", { share, canShare, userAgent: "Android" });
     expect(canShareExportFiles(files)).toBe(true);
     const result = shareExportFiles(files, "名簿");
-    expect(share).toHaveBeenCalledExactlyOnceWith({ files, title: "名簿" });
+    expect(share).toHaveBeenCalledExactlyOnceWith({ files });
     await expect(result).resolves.toBe("shared"); expect(canShare).toHaveBeenCalledWith({ files });
   });
   it("does not download on cancellation, unsupported share or failure", async () => {

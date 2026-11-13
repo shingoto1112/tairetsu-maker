@@ -30,6 +30,8 @@ export type PrintMetrics = {
   orientation: PrintOrientation;
   pageUsableHeightMm: number;
   stageWidthMm: number;
+  /** Extra side clearance for diameters above the legacy 1m range; omitted for byte compatibility. */
+  memberSidePaddingMm?: number;
 };
 
 export type AssignmentPrintEntry = {
@@ -81,7 +83,9 @@ export const defaultPrintOptions: ShareExportOptions = {
 export const getPrintSideRulerWidthMm = (
   isParade: boolean,
   includeMeterRulers: boolean,
+  metrics?: PrintMetrics,
 ): number => {
+  if (metrics?.memberSidePaddingMm !== undefined) return metrics.memberSidePaddingMm;
   if (!includeMeterRulers) {
     return 0;
   }
@@ -516,10 +520,21 @@ export const getPrintMetrics = (
     isParade,
     assignmentSideWidthMm,
   );
-  const stageWidthMm = Math.max(
+  let stageWidthMm = Math.max(
     40,
     availableWidthMm - assignmentSideGapMm - assignmentSideWidthMm,
   );
+  let memberSidePaddingMm: number | undefined;
+  const diameter = project.stage.memberDiameterMeters ?? 0.5;
+  // Keep every legacy layout operation unchanged at <=1m. For larger circles,
+  // solve stage width + two half-circle margins + fixed assignment widths <= paper.
+  if (diameter > 1) {
+    stageWidthMm = Math.min(stageWidthMm,
+      (pageSize.width - stageRightSafetyMm - assignmentSideGapMm - assignmentSideWidthMm
+        - 2 * PRINT_STAGE_MEMBER_CLEARANCE_MM) / (1 + diameter / commonWidthMeters));
+    memberSidePaddingMm = Math.max(leftRulerWidthMm, rightRulerWidthMm,
+      diameter * stageWidthMm / commonWidthMeters / 2 + PRINT_STAGE_MEMBER_CLEARANCE_MM);
+  }
   return {
     assignmentSideGapMm,
     assignmentSideWidthMm,
@@ -535,6 +550,7 @@ export const getPrintMetrics = (
     orientation,
     pageUsableHeightMm: pageSize.height,
     stageWidthMm,
+    ...(memberSidePaddingMm === undefined ? {} : { memberSidePaddingMm }),
   };
 };
 
@@ -640,7 +656,8 @@ export const getPrintRulerTopMm = (
   options: ShareExportOptions,
 ): number => {
   if (!options.includeMeterRulers) {
-    return 0;
+    return metrics.memberSidePaddingMm === undefined ? 0
+      : getPrintMemberDiameterMm(project, metrics) / 2 + PRINT_STAGE_MEMBER_CLEARANCE_MM;
   }
   const memberRadiusMm = getPrintMemberDiameterMm(project, metrics) / 2;
   return Math.max(

@@ -49,6 +49,14 @@ const contextAdd = async (point: Position, name: string) => {
 };
 const lattice = (value: number, step: number, origin: number) => expect((value - origin) / step).toBeCloseTo(Math.round((value - origin) / step), 7);
 
+it("keeps mark additions as mark and removes the curtain action", async () => {
+  await open();
+  act(() => observed.canvas!.onContextMenuRequest({ clientX: 100, clientY: 100, stagePosition: { x: 4, y: 2 }, target: { type: "stage" } }));
+  expect(screen.queryByRole("button", { name: "幕追加" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "マーク追加" }));
+  expect(observed.canvas!.project.stageObjects.slice(-1)[0]!.type).toBe("mark");
+});
+
 it.each(["stage", "parade"] as const)("%s shows paste guidance only while the internal clipboard is empty", async mode => {
   project.mode = mode;
   await open();

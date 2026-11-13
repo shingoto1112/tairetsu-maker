@@ -1,7 +1,7 @@
 import { ArrowLeft, FileDown } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import type { CSSProperties, KeyboardEvent } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
 import type { Member, MemberGroup, ObjectGroup, StageObject } from "../types";
 import { ColorPaletteInput } from "./ColorPaletteInput";
 import { collectGroupedItems, type RosterColumn, type RosterMode } from "../utils/rosterColumns";
@@ -104,6 +104,7 @@ export const RosterManagementModal = ({
 }: RosterManagementModalProps) => {
   const [mode, setMode] = useState<RosterMode>("members");
   const [objectView, setObjectView] = useState<"names" | "assignments">("names");
+  const [assignmentToolbarSlot, setAssignmentToolbarSlot] = useState<HTMLDivElement | null>(null);
   const [cellDrafts, setCellDrafts] = useState<Record<string, string>>({});
   const [memberGroupDrafts, setMemberGroupDrafts] = useState<Record<string, string>>({});
   const [objectGroupDrafts, setObjectGroupDrafts] = useState<Record<string, string>>({});
@@ -277,13 +278,6 @@ export const RosterManagementModal = ({
     return null;
   }
 
-  const focusCell = (columnId: string, rowIndex: number) => {
-    window.setTimeout(() => {
-      const column = (mode === "members" ? memberColumns : objectColumns).find((item) => item.id === columnId);
-      inputRefs.current.get(getCellKey(mode, columnId, column?.items[rowIndex]?.id))?.focus();
-    }, 0);
-  };
-
   const commitCell = (
     column: RosterColumn<Member | StageObject>,
     rowIndex: number,
@@ -296,7 +290,7 @@ export const RosterManagementModal = ({
     if (draft === undefined) {
       return;
     }
-    // Consume synchronously so Enter followed by blur cannot commit twice.
+    // Consume synchronously so submit followed by blur cannot commit twice.
     delete cellDraftsRef.current[key];
     setCellDrafts({ ...cellDraftsRef.current });
     const nextName = draft.trim();
@@ -346,24 +340,6 @@ export const RosterManagementModal = ({
     }
   };
 
-  const handleCellKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
-    column: RosterColumn<Member | StageObject>,
-    rowIndex: number,
-  ) => {
-    if (
-      event.key !== "Enter" ||
-      composing.current ||
-      event.nativeEvent.isComposing ||
-      event.nativeEvent.keyCode === 229
-    ) {
-      return;
-    }
-    event.preventDefault();
-    commitCell(column, rowIndex);
-    focusCell(column.id, rowIndex + 1);
-  };
-
   const commitGroupName = (groupId: string, draftMode: RosterMode = mode) => {
     if (composing.current || deleting.current || (draftMode === "objects" && !canEditObjects && Boolean(onCommitObjectAppearance))) return;
     if (!dirtyGroups.current.delete(`${draftMode}:${groupId}`)) return;
@@ -393,6 +369,24 @@ export const RosterManagementModal = ({
     }
   };
 
+  const handleNameSubmit = (
+    event: FormEvent<HTMLFormElement>,
+    column: RosterColumn<Member | StageObject>,
+    rowIndex?: number,
+  ) => {
+    event.preventDefault();
+    if (composing.current || deleting.current || objectNamesDisabled) return;
+    const nextItem = column.items[rowIndex === undefined ? 0 : rowIndex + 1];
+    // The addition key stays the same even when the current input becomes a new item.
+    const nextKey = getCellKey(mode, column.id, nextItem?.id);
+    flushSync(() => {
+      if (rowIndex === undefined) commitGroupName(column.id);
+      else commitCell(column, rowIndex);
+    });
+    // Use the newly mounted input ref within this gesture to retain the iOS keyboard.
+    inputRefs.current.get(nextKey)?.focus();
+  };
+
   const renderGroupHeader = (column: RosterColumn<Member | StageObject>) => {
     if (column.groupId === null) {
       return <span className="roster-table__ungrouped">{column.label}</span>;
@@ -415,8 +409,10 @@ export const RosterManagementModal = ({
             }
           }}
         />
+        <form className="roster-table__input-form" onSubmit={(event) => handleNameSubmit(event, column)}>
         <input
           aria-label={`${column.label}のグループ名`}
+          enterKeyHint="next"
           disabled={objectNamesDisabled}
           value={drafts[column.id] ?? column.label}
           onChange={(event) => {
@@ -430,18 +426,8 @@ export const RosterManagementModal = ({
           onCompositionEnd={(event) => {
             if (document.activeElement !== event.currentTarget) commitGroupName(column.id);
           }}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              !composing.current &&
-              !event.nativeEvent.isComposing &&
-              event.nativeEvent.keyCode !== 229
-            ) {
-              event.preventDefault();
-              event.currentTarget.blur();
-            }
-          }}
         />
+        </form>
         <button
           className="roster-table__delete"
           type="button"
@@ -530,11 +516,13 @@ export const RosterManagementModal = ({
           </div>
           {mode === "objects" && (
             <div className="roster-assignment-switch" role="group" aria-label="道具管理の表示">
-              <button type="button" aria-pressed={objectView === "names"} onClick={() => setObjectView("names")}>名前の編集</button>
+              <button type="button" aria-pressed={objectView === "names"} onClick={() => setObjectView("names")}>道具の追加・編集</button>
               <button type="button" aria-pressed={objectView === "assignments"} onClick={() => setObjectView("assignments")}>道具割当</button>
             </div>
           )}
           </div>
+          {mode === "objects" && objectView === "assignments" &&
+            <div className="roster-assignment-toolbar-slot" ref={setAssignmentToolbarSlot} />}
           {mode === "objects" && objectView === "names" && project && onCommitObjectAppearance ?
             <ObjectShapeSizeEditor project={project} objectId={selectedObjectId} canEdit={canEditObjects}
               readOnlyMessage={objectReadOnlyMessage} totalCount={totalCount} onCommit={onCommitObjectAppearance} /> :
@@ -566,7 +554,7 @@ export const RosterManagementModal = ({
 
         {mode === "objects" && objectView === "assignments" ? (
           <Suspense fallback={<p role="status">割当を読み込み中…</p>}>
-            <RosterAssignmentView viewerPerspective={viewerPerspective} frames={frames} currentFrame={currentFrame}
+            <RosterAssignmentView toolbarSlot={assignmentToolbarSlot} viewerPerspective={viewerPerspective} frames={frames} currentFrame={currentFrame}
               objectStates={objectStates} previousFrame={previousFrame} previousObjectStates={previousObjectStates}
               members={members} memberGroups={memberGroups} objects={objects} objectGroups={objectGroups}
               canEditAssignments={canEditAssignments} readOnlyMessage={readOnlyMessage}
@@ -645,8 +633,10 @@ export const RosterManagementModal = ({
                           <ObjectShapeIcon shape={(item as StageObject).shape} color={item.color} />
                         </button>}
                         {mode === "objects" && !item && <span aria-hidden="true" />}
+                        <form className="roster-table__input-form" onSubmit={(event) => handleNameSubmit(event, column, rowIndex)}>
                         <input
                           key={key}
+                          enterKeyHint="next"
                           className="roster-table__cell-input"
                           style={{
                             "--roster-group-color": column.color ?? "#94a3b8",
@@ -670,11 +660,9 @@ export const RosterManagementModal = ({
                           onCompositionEnd={(event) => {
                             if (document.activeElement !== event.currentTarget) commitCell(column, rowIndex);
                           }}
-                          onKeyDown={(event) =>
-                            handleCellKeyDown(event, column, rowIndex)
-                          }
                           aria-label={`${column.label} ${rowIndex + 1}行目`}
                         />
+                        </form>
                         {item && <button
                           className="roster-table__delete"
                           type="button"

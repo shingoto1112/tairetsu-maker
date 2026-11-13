@@ -51,6 +51,12 @@ const createProps = (): ComponentProps<typeof RosterManagementModal> => ({
   onUpdateObjectGroupColor: vi.fn(),
 });
 
+const submitName = (input: HTMLElement) => {
+  const form = input.closest("form");
+  expect(form).not.toBeNull();
+  fireEvent.submit(form!);
+};
+
 describe("RosterManagementModal", () => {
   afterEach(() => cleanup());
   it("focuses the back button, cycles Tab and returns focus when closed", () => {
@@ -133,7 +139,7 @@ describe("RosterManagementModal", () => {
     render(<RosterManagementModal {...props} initialMode={mode} members={[member]} objects={[object]} />);
     const cell = screen.getByRole("textbox", { name: "未所属 1行目" }) as HTMLInputElement;
     fireEvent.change(cell, { target: { value: "  " } });
-    fireEvent.keyDown(cell, { key: "Enter" });
+    submitName(cell);
     fireEvent.blur(cell);
     expect(cell.value).toBe(mode === "members" ? member.name : object.name);
     expect(props.onNotice).toHaveBeenCalledExactlyOnceWith("名前は空欄にできません。削除は×から行えます。");
@@ -157,8 +163,9 @@ describe("RosterManagementModal", () => {
     const input = screen.getByRole("textbox", { name: `${label}のグループ名` }) as HTMLInputElement;
     input.focus();
     fireEvent.change(input, { target: { value: "" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    submitName(input);
     expect(input.value).toBe(label);
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: `${label} 1行目` }));
     expect(props.onNotice).toHaveBeenCalledWith("名前は空欄にできません。削除は×から行えます。");
     expect(remove).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: `${label}のグループを削除` }));
@@ -200,7 +207,7 @@ describe("RosterManagementModal", () => {
     render(<RosterManagementModal {...props} />);
     expect(screen.queryByRole("group", { name: "道具管理の表示" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "道具管理" }));
-    expect(screen.getByRole("button", { name: "名前の編集" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "道具の追加・編集" }).getAttribute("aria-pressed")).toBe("true");
     await user.click(screen.getByRole("button", { name: "道具割当" }));
     await act(async () => { await vi.dynamicImportSettled(); });
     expect(await screen.findByLabelText("道具名簿の割当")).toBeTruthy();
@@ -208,7 +215,7 @@ describe("RosterManagementModal", () => {
     expect(screen.queryByLabelText("道具名簿の割当")).toBeNull();
     expect(screen.queryByRole("group", { name: "道具管理の表示" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "道具管理" }));
-    expect(screen.getByRole("button", { name: "名前の編集" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "道具の追加・編集" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("opens export with a frozen source after committing a cell and blocks IME", async () => {
@@ -277,7 +284,11 @@ describe("RosterManagementModal", () => {
     expect(screen.queryByRole("button", { name: "書き出し ▾" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "道具割当" }));
     await act(async () => { await vi.dynamicImportSettled(); });
-    await screen.findByLabelText("道具名簿の割当");
+    const view = await screen.findByLabelText("道具名簿の割当");
+    const toolbar = screen.getByRole("group", { name: "道具割当の操作" });
+    expect(toolbar.closest(".roster-manager-topbar")).not.toBeNull();
+    expect(toolbar.closest('[role="dialog"]')).toBe(view.closest('[role="dialog"]'));
+    expect(view.contains(toolbar)).toBe(false);
     expect(screen.queryByLabelText("名簿の人数")).toBeNull();
     expect(screen.queryByRole("button", { name: "書き出し ▾" })).toBeNull();
   });
@@ -385,30 +396,151 @@ describe("RosterManagementModal", () => {
     expect(screen.getByRole("button", { name: "旗に道具を追加" })).toBeTruthy();
   });
 
-  it.each([{ isComposing: true }, { keyCode: 229 }])("ignores IME Enter in cells and group names (%j)", (ime) => {
+  // Enter keydown is left to the browser (iOS reports keyCode 229 even for the real return key);
+  // navigation happens only on submit, and a submit that arrives mid-composition is ignored.
+  it("ignores IME Enter keydown and any submit during composition in cells and group names", () => {
     const props = createProps();
     render(<RosterManagementModal {...props} />);
     const cell = screen.getByRole("textbox", { name: "赤組 1行目" });
     cell.focus();
     fireEvent.change(cell, { target: { value: "変換中" } });
-    fireEvent.keyDown(cell, { key: "Enter", ...ime });
+    fireEvent.keyDown(cell, { key: "Enter", isComposing: true, keyCode: 229 });
+    fireEvent.compositionStart(cell);
+    submitName(cell);
     expect(props.onAddMember).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(cell);
+    fireEvent.compositionEnd(cell);
     const groupName = screen.getByRole("textbox", { name: "赤組のグループ名" });
     groupName.focus();
     fireEvent.change(groupName, { target: { value: "青組" } });
-    fireEvent.keyDown(groupName, { key: "Enter", ...ime });
+    fireEvent.keyDown(groupName, { key: "Enter", isComposing: true, keyCode: 229 });
+    fireEvent.compositionStart(groupName);
+    submitName(groupName);
     expect(props.onRenameMemberGroup).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(groupName);
+    fireEvent.compositionEnd(groupName);
   });
 
-  it("retains regular typed Enter addition", () => {
+  it("retains regular typed addition via submit", () => {
     const props = createProps();
     render(<RosterManagementModal {...props} />);
     const cell = screen.getByRole("textbox", { name: "未所属 1行目" });
     fireEvent.change(cell, { target: { value: " 手入力 " } });
-    fireEvent.keyDown(cell, { key: "Enter" });
+    submitName(cell);
     expect(props.onAddMember).toHaveBeenCalledExactlyOnceWith(null, "手入力");
+  });
+
+  it.each(["members", "objects"] as const)("submits once to the next row and from the last row to addition synchronously in %s", mode => {
+    const props = createProps();
+    render(<RosterManagementModal {...props} initialMode={mode}
+      members={[member, { ...member, id: "m2", name: "花子" }]}
+      objects={[object, { ...object, id: "tool2", name: "旗2" }]} />);
+    const first = screen.getByRole("textbox", { name: "未所属 1行目" });
+    const second = screen.getByRole("textbox", { name: "未所属 2行目" });
+    const addition = screen.getByRole("textbox", { name: "未所属 3行目" });
+    first.focus();
+    fireEvent.change(first, { target: { value: " 改名 " } });
+    // keydown alone must not commit or navigate; native implicit submit is the entry point.
+    fireEvent.keyDown(first, { key: "Enter" });
+    expect(document.activeElement).toBe(first);
+    const rename = mode === "members" ? props.onRenameMember : props.onRenameObject;
+    expect(rename).not.toHaveBeenCalled();
+    submitName(first);
+    expect(document.activeElement).toBe(second);
+    fireEvent.blur(first);
+    expect(rename).toHaveBeenCalledExactlyOnceWith(mode === "members" ? "m" : "tool", "改名");
+    submitName(second);
+    expect(document.activeElement).toBe(addition);
+    expect(rename).toHaveBeenCalledTimes(1);
+    const forms = screen.getByRole("table").querySelectorAll("form");
+    for (const form of forms) {
+      expect(form.querySelectorAll("input")).toHaveLength(1);
+      expect(form.querySelector("form")).toBeNull();
+      expect(form.querySelector("input")?.getAttribute("enterkeyhint")).toBe("next");
+    }
+  });
+
+  it.each(["members", "objects"] as const)("adds three names and focuses each newly mounted addition synchronously in %s", mode => {
+    const props = createProps();
+    const add = vi.fn();
+    const Harness = () => {
+      const [members, setMembers] = useState(props.members);
+      const [objects, setObjects] = useState(props.objects);
+      return <RosterManagementModal {...props} initialMode={mode} members={members} objects={objects}
+        onAddMember={(groupId, name) => { add(groupId, name); setMembers(items => [...items, { ...member, id: `m${items.length}`, name }]); }}
+        onAddObject={(groupId, name) => { add(groupId, name); setObjects(items => [...items, { ...object, id: `o${items.length}`, name }]); }} />;
+    };
+    render(<Harness />);
+    for (let row = 1; row <= 3; row++) {
+      const input = screen.getByRole("textbox", { name: `未所属 ${row}行目` });
+      input.focus();
+      fireEvent.change(input, { target: { value: ` 追加${row} ` } });
+      submitName(input);
+      const next = screen.getByRole("textbox", { name: `未所属 ${row + 1}行目` }) as HTMLInputElement;
+      expect(document.activeElement).toBe(next);
+      expect(next.value).toBe("");
+      expect(input.isConnected).toBe(false);
+      expect((screen.getByRole("textbox", { name: `未所属 ${row}行目` }) as HTMLInputElement).value).toBe(`追加${row}`);
+      expect(add).toHaveBeenCalledTimes(row);
+      expect(add).toHaveBeenLastCalledWith(null, `追加${row}`);
+    }
+  });
+
+  it.each(["members", "objects"] as const)("keeps focus and adds nothing on an empty addition submit in %s", mode => {
+    const props = createProps();
+    render(<RosterManagementModal {...props} initialMode={mode} />);
+    const input = screen.getByRole("textbox", { name: "未所属 1行目" }) as HTMLInputElement;
+    input.focus();
+    submitName(input);
+    fireEvent.change(input, { target: { value: "  " } });
+    submitName(input);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("");
+    expect(props.onAddMember).not.toHaveBeenCalled();
+    expect(props.onAddObject).not.toHaveBeenCalled();
+  });
+
+  it.each(["members", "objects"] as const)("commits group name once and focuses its first row synchronously in %s", mode => {
+    const props = createProps();
+    render(<RosterManagementModal {...props} initialMode={mode}
+      members={[member]} memberGroups={[{ ...props.memberGroups[0], memberIds: [member.id] }]}
+      objects={[object]} objectGroups={[{ ...props.objectGroups[0], objectIds: [object.id] }]} />);
+    const label = mode === "members" ? "赤組" : "旗";
+    const input = screen.getByRole("textbox", { name: `${label}のグループ名` });
+    input.focus();
+    fireEvent.change(input, { target: { value: " 新グループ " } });
+    submitName(input);
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: `${label} 1行目` }));
+    fireEvent.blur(input);
+    expect(mode === "members" ? props.onRenameMemberGroup : props.onRenameObjectGroup)
+      .toHaveBeenCalledExactlyOnceWith(mode === "members" ? "g" : "o", "新グループ");
+  });
+
+  it("ignores submit while composing or deleting and for read-only object names", async () => {
+    const props = createProps();
+    let resolve!: (deleted: boolean) => void;
+    const remove = vi.fn(() => new Promise<boolean>(done => { resolve = done; }));
+    const { rerender } = render(<RosterManagementModal {...props} members={[member]} onDeleteMember={remove} />);
+    const input = screen.getByRole("textbox", { name: "未所属 1行目" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "下書き" } });
+    fireEvent.compositionStart(input);
+    submitName(input);
+    expect(document.activeElement).toBe(input);
+    expect(props.onRenameMember).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(input);
+    fireEvent.click(screen.getByRole("button", { name: "太郎を名簿から削除" }));
+    submitName(input);
+    expect(document.activeElement).toBe(input);
+    expect(props.onRenameMember).not.toHaveBeenCalled();
+    await act(async () => resolve(false));
+    rerender(<RosterManagementModal {...props} initialMode="objects" allowedModes={["objects"]}
+      objects={[object]} canEditObjects={false} onCommitObjectAppearance={() => null} />);
+    const locked = screen.getByRole("textbox", { name: "未所属 1行目" }) as HTMLInputElement;
+    expect(locked.disabled).toBe(true);
+    fireEvent.change(locked, { target: { value: "不可" } });
+    submitName(locked);
+    expect(props.onRenameObject).not.toHaveBeenCalled();
   });
 
   it("sets group and ungrouped color variables on roster cells", () => {

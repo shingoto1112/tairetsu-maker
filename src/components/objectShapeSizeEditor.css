@@ -56,12 +56,28 @@
 .roster-table td.is-object-selected { background: #ecfdf5; box-shadow: inset 0 0 0 2px #0f766e; }
 .roster-manager-modal.is-object-names .roster-table__name-cell { grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; }
 .roster-manager-modal { container: roster / inline-size; }
-.roster-manager-modal.is-object-names .roster-manager-topbar { grid-template-columns: 1fr; }
-.roster-manager-modal.is-object-names .roster-manager-mode-controls { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; }
+.roster-manager-modal:is(.is-object-names, .is-assignments) .roster-manager-topbar { grid-template-columns: minmax(0, 1fr); }
+.roster-manager-modal:is(.is-object-names, .is-assignments) .roster-manager-mode-controls { display: flex; flex-wrap: wrap; align-items: start; align-self: start; align-content: start; gap: 12px; }
+/* Reserve the same text width in either selected state. */
+.roster-manager-modal:is(.is-object-names, .is-assignments) .roster-assignment-switch button { font-weight: 700; white-space: nowrap; }
+/* Same frame as 形と大きさ: stretches to the left column's height, content centred.
+   Keep a shell while the assignment view is still lazy-loading. */
+.roster-assignment-toolbar-slot {
+  container: assignment-toolbar / inline-size;
+  align-self: stretch;
+  align-content: center;
+  display: grid;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #dbe7ee;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.roster-assignment-toolbar-slot:empty { min-height: 62px; }
 .roster-manager-modal.is-object-names .roster-table th, .roster-manager-modal.is-object-names .roster-table td { min-width: 240px; }
 @container roster (min-width: 980px) {
-  .roster-manager-modal.is-object-names .roster-manager-topbar { grid-template-columns: max-content minmax(0, 1fr); }
-  .roster-manager-modal.is-object-names .roster-manager-mode-controls { display: grid; align-content: start; }
+  .roster-manager-modal:is(.is-object-names, .is-assignments) .roster-manager-topbar { grid-template-columns: max-content minmax(0, 1fr); }
+  .roster-manager-modal:is(.is-object-names, .is-assignments) .roster-manager-mode-controls { display: grid; align-content: start; }
 }
 /* Respond to the editor's actual column width without remounting numeric drafts. */
 @container object-editor (max-width: 539px) {

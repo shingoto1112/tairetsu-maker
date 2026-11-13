@@ -1,10 +1,10 @@
-/** UI limits differ from the retained legacy storage range (0.2–1.0m). */
+/** UI limits differ from the retained legacy storage range (0.2–2.0m). */
 export const MEMBER_DIAMETER_MIN = 0.5;
 export const STORED_MEMBER_DIAMETER_MIN = 0.2;
-export const MEMBER_DIAMETER_MAX = 1;
+export const MEMBER_DIAMETER_MAX = 2;
 export const MEMBER_DIAMETER_STEP = 0.05;
 export const NEW_MEMBER_DIAMETER = 0.75;
-export const MEMBER_DIAMETER_PRESETS = [MEMBER_DIAMETER_MIN, NEW_MEMBER_DIAMETER, MEMBER_DIAMETER_MAX] as const;
+export const MEMBER_DIAMETER_PRESETS = [0.5, 0.75, 1.0] as const;
 
 export type MemberDiameterAction =
   | { type: "select"; value: number }

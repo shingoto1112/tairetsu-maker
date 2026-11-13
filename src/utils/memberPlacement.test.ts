@@ -61,9 +61,9 @@ it("lays a batch out left to right as a centred block, and later additions conti
   expect(next).toEqual({ x: 4.5, y: batch[0].y });
 });
 it("uses the effective stage circle diameter, including its minimum and maximum", () => {
-  for (const [saved, effective] of [[.1, .2], [2, 1]]) {
+  for (const [saved, effective] of [[.1, .2], [1.5, 1.5], [2, 2], [3, 2]]) {
     const p = fixture(); p.stage.memberDiameterMeters = saved; p.stage.showGrid = false;
-    const result = placeNewMembers(p, p.frames[0], 10);
+    const result = placeNewMembers(p, p.frames[0], 4);
     expect(result.overlapCount).toBe(0); separated(result.positions, effective);
     expect(result.positions[1].x - result.positions[0].x).toBeCloseTo(effective);
   }

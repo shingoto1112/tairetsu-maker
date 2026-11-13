@@ -166,17 +166,13 @@ describe("roster panel integration", () => {
     }
   });
 
-  it("keeps object type changes limited to type without overwriting shape or dimensions", async () => {
+  it("does not expose object type selectors", async () => {
     const user = userEvent.setup();
     const props = objectProps();
     render(<ObjectPanel {...props} />);
-    const card = objectCard("旗");
-    const select = within(card).getAllByRole("combobox").find((element) =>
-      element.closest("label")?.textContent?.startsWith("種類"));
-    expect(select).toBeTruthy();
-    await user.selectOptions(select!, "curtain");
-    expect(props.onUpdateObject).toHaveBeenCalledExactlyOnceWith("o1", { type: "curtain" });
-    expect(props.onUpdateObjectState).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "＋グループ" }));
+    expect(screen.queryByLabelText(/種類/)).toBeNull();
+    expect(within(objectCard("旗")).queryByText("種類")).toBeNull();
   });
 
   // The shared entrance and access/disabled cases now live in PanelTabs.test.tsx.

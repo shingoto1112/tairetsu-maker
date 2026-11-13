@@ -158,12 +158,13 @@ const renderSceneDrawing = ({
   const leftRulerMm = viewport?.sideMm ?? getPrintSideRulerWidthMm(
     isParade,
     options.includeMeterRulers,
+    metrics,
   );
-  const rightRulerMm = viewport?.sideMm ?? (shouldPrintRightRuler(options)
-    ? getPrintSideRulerWidthMm(isParade, true)
+  const rightRulerMm = viewport?.sideMm ?? (shouldPrintRightRuler(options) || metrics.memberSidePaddingMm !== undefined
+    ? getPrintSideRulerWidthMm(isParade, options.includeMeterRulers, metrics)
     : 0);
   const stageRightSafetyMm =
-    !viewport && isParade && rightRulerMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
+    !viewport && isParade && options.includeMeterRulers && rightRulerMm > 0 ? PRINT_STAGE_RIGHT_SAFETY_MM : 0;
   const totalPreviewWidthMm =
     leftRulerMm + metrics.stageWidthMm + rightRulerMm + stageRightSafetyMm;
   const totalDistance =
@@ -394,7 +395,7 @@ const renderSceneDrawing = ({
     <div
       className={[
         "print-stage-preview",
-        !options.includeMeterRulers ? "without-rulers" : "",
+        !options.includeMeterRulers && metrics.memberSidePaddingMm === undefined ? "without-rulers" : "",
         rulerAtBottom ? "is-ruler-bottom" : "",
         rulerAtBottom && gapAfter ? "has-scene-gap" : "",
       ]

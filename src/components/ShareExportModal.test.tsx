@@ -51,6 +51,9 @@ describe("ShareExportModal mobile and A4 coexistence", () => {
     expect(notice()).toBe("名前を丸の中に収めるため、文字を小さくしています。丸を大きくするか、道具割当欄を外すと大きく表示できます。");
     const largest = { ...p, members: [{ id: "m0", name: "WWWWWWWWWWWW", color: "#0d8b78" }], stage: { ...p.stage, widthMeters: 36, depthMeters: 20, memberDiameterMeters: 1 } };
     rerender(<ShareExportModal {...props} project={largest} stage={largest.stage} />);
+    expect(notice()).toBe("名前を丸の中に収めるため、文字を小さくしています。丸を大きくするか、道具割当欄を外すと大きく表示できます。");
+    const maximum = { ...largest, stage: { ...largest.stage, widthMeters: 72, memberDiameterMeters: 2 } };
+    rerender(<ShareExportModal {...props} project={maximum} stage={maximum.stage} />);
     expect(notice()).toBe("名前を丸の中に収めるため、文字を小さくしています。道具割当欄を外すと大きく表示できます。");
     fireEvent.click(screen.getByRole("checkbox", { name: /道具割当も右側に表示する/ }));
     expect(notice()).toBe("名前を丸の中に収めるため、文字を小さくしています。");

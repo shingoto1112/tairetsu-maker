@@ -15,7 +15,7 @@ export const canShareExportFiles = (files: File[]): boolean => {
 export const shareExportFiles = (files: File[], title: string): Promise<"shared" | "cancelled" | "unsupported"> => {
   if (isNativeExportRuntime()) return shareBlobsWithNativeSheet({ files: files.map((file) => ({ blob: file, fileName: file.name })), title });
   if (!canShareExportFiles(files)) return Promise.resolve("unsupported");
-  return navigator.share({ files, title }).then(() => "shared" as const).catch((error: unknown) => {
+  return navigator.share({ files }).then(() => "shared" as const).catch((error: unknown) => {
     if (error instanceof DOMException && error.name === "AbortError") return "cancelled" as const;
     throw error;
   });

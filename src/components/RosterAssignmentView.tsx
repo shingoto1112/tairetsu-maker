@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FormationFrame, Member, MemberGroup, ObjectGroup, ObjectState, Project, StageObject, ViewerPerspective } from "../types";
 import { RosterAssignmentSceneStrip } from "./RosterAssignmentSceneStrip";
 import { RosterAssignmentStagePreview, rosterPreviewHeight } from "./RosterAssignmentStagePreview";
@@ -11,6 +12,8 @@ import { isMemberShownInScene } from "../utils/assignmentCandidates";
 import type { MemberPickerSceneVisibility } from "./MemberPicker";
 
 export type RosterAssignmentViewProps = {
+  /** undefined: inline toolbar; null: external slot requested but not mounted yet. */
+  toolbarSlot?: HTMLElement | null;
   frames: FormationFrame[];
   currentFrame: FormationFrame | null;
   objectStates: Record<string, ObjectState>;
@@ -48,6 +51,9 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
     onHiddenOnlyChange: setHiddenMembersOnly,
   }), [memberVisibility, hiddenMembersOnly]);
   const rootRef = useRef<HTMLElement>(null);
+  const applyPreviousRef = useRef<HTMLButtonElement>(null);
+  const previousSceneRef = useRef<HTMLButtonElement>(null);
+  const nextSceneRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLElement>(null);
   const [narrow, setNarrow] = useState(false);
@@ -167,9 +173,9 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
     if (confirmCount !== null) cancelRef.current?.focus();
     else if (!busy && returnConfirmFocus.current) {
       returnConfirmFocus.current = false;
-      const button = rootRef.current?.querySelector<HTMLButtonElement>("[data-apply-previous]");
-      if (button && !button.disabled) button.focus({ preventScroll: true });
-      else rootRef.current?.querySelector<HTMLButtonElement>(".roster-assignment-nav button:not(:disabled)")?.focus({ preventScroll: true });
+      const button = [applyPreviousRef.current, previousSceneRef.current, nextSceneRef.current]
+        .find((candidate) => candidate?.isConnected && !candidate.disabled);
+      (button ?? rootRef.current)?.focus({ preventScroll: true });
     }
   }, [confirmCount, busy]);
   const finishConfirm = (value: boolean) => {
@@ -221,8 +227,31 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
     }
   });
 
-  return <section className={`roster-assignment-view${narrow ? " is-narrow" : ""}${project ? " has-scene-preview" : ""}`} ref={rootRef}
-    aria-label="道具名簿の割当" aria-busy={busy}
+  const externalToolbar = props.toolbarSlot !== undefined;
+  const toolbar = <header className="roster-assignment-toolbar" role="group" aria-label="道具割当の操作" aria-busy={busy}>
+      {!canEditAssignments && <p className="roster-assignment-readonly">{readOnlyMessage}</p>}
+      <div className="roster-assignment-secondary">
+        {/* Keep the arrows on the same row even in the narrow external panel. */}
+        <div className="roster-assignment-nav" role="group" aria-label="シーンの切り替え">
+          <button ref={previousSceneRef} type="button" aria-label="前のシーン" title="前のシーン" disabled={sceneIndex <= 0}
+            onClick={() => onSelectFrame(frames[sceneIndex - 1].id)}>◀</button>
+          <span className="roster-assignment-nav__current" aria-live="polite">
+            {currentFrame ? <><b>{sceneIndex + 1}/{frames.length}</b> {currentFrame.label}・{sceneTime(currentFrame.timeSec)}</> : "シーンがありません"}
+          </span>
+          <button ref={nextSceneRef} type="button" aria-label="次のシーン" title="次のシーン" disabled={sceneIndex < 0 || sceneIndex >= frames.length - 1}
+            onClick={() => onSelectFrame(frames[sceneIndex + 1].id)}>▶</button>
+        </div>
+        <span className="roster-assignment-summary" aria-label="割当の集計">表示中 {model.visibleIds.size}個・担当者なし {model.unassignedCount}個・担当者 {model.assignedCount}人</span>
+        <div className="roster-assignment-actions">
+          <button ref={applyPreviousRef} type="button" data-apply-previous disabled={disabled || !model.differences.length} onClick={applyPrevious}>前シーンの割当を反映</button>
+          <button type="button" disabled={disabled || !canUndo || !onUndo} onClick={() => { if (!disabled && canUndo) void run(() => onUndo?.()); }}>元に戻す</button>
+        </div>
+      </div>
+      {notice && <p role="status" className="roster-assignment-help">{notice}</p>}
+    </header>;
+
+  return <section className={`roster-assignment-view${narrow ? " is-narrow" : ""}${project ? " has-scene-preview" : ""}${externalToolbar ? " has-external-toolbar" : ""}`} ref={rootRef}
+    aria-label="道具名簿の割当" aria-busy={busy} tabIndex={-1}
     onKeyDownCapture={(event) => {
       if (confirmCount === null) return;
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finishConfirm(false); }
@@ -233,27 +262,7 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
         }
       }
     }}>
-    <header className="roster-assignment-toolbar">
-      {!canEditAssignments && <p className="roster-assignment-readonly">{readOnlyMessage}</p>}
-      <div className="roster-assignment-secondary">
-        {/* The scene strip below picks any scene; this row only steps and names the current one. */}
-        <div className="roster-assignment-nav" role="group" aria-label="シーンの切り替え">
-          <button type="button" aria-label="前のシーン" title="前のシーン" disabled={sceneIndex <= 0}
-            onClick={() => onSelectFrame(frames[sceneIndex - 1].id)}>◀</button>
-          <span className="roster-assignment-nav__current" aria-live="polite">
-            {currentFrame ? <><b>{sceneIndex + 1}/{frames.length}</b> {currentFrame.label}・{sceneTime(currentFrame.timeSec)}</> : "シーンがありません"}
-          </span>
-          <button type="button" aria-label="次のシーン" title="次のシーン" disabled={sceneIndex < 0 || sceneIndex >= frames.length - 1}
-            onClick={() => onSelectFrame(frames[sceneIndex + 1].id)}>▶</button>
-        </div>
-        <span className="roster-assignment-summary" aria-label="割当の集計">表示中 {model.visibleIds.size}個・担当者なし {model.unassignedCount}個・担当者 {model.assignedCount}人</span>
-        <div>
-          <button type="button" data-apply-previous disabled={disabled || !model.differences.length} onClick={applyPrevious}>前シーンの割当を反映</button>
-          <button type="button" disabled={disabled || !canUndo || !onUndo} onClick={() => { if (!disabled && canUndo) void run(() => onUndo?.()); }}>元に戻す</button>
-        </div>
-      </div>
-      {notice && <p role="status" className="roster-assignment-help">{notice}</p>}
-    </header>
+    {externalToolbar ? props.toolbarSlot && createPortal(toolbar, props.toolbarSlot) : toolbar}
     {project && (currentFrame || frames.length > 0) && <div className="roster-assignment-media">
       {currentFrame && <RosterAssignmentStagePreview viewerPerspective={viewerPerspective} project={project} frame={currentFrame}
         highlightedObjectId={selectedObject?.id} maxWidth={rootWidth * (narrow ? 0.5 : 0.45)}
@@ -264,7 +273,7 @@ export const RosterAssignmentView = (props: RosterAssignmentViewProps) => {
     <div className="roster-assignment-body">
       <div className="roster-assignment-list" ref={listRef} hidden={narrow && showDetail}
         onScroll={(event) => { if (!narrow || !showDetail) listScroll.current = event.currentTarget.scrollTop; }}>
-        {!objects.length && <p className="empty-state">道具がありません。名前の編集で道具を追加してください。</p>}
+        {!objects.length && <p className="empty-state">道具がありません。「道具の追加・編集」で道具を追加してください。</p>}
         {!!objects.length && !model.visibleIds.size && <p className="empty-state compact">このシーンで表示中の道具はありません。</p>}
         <RosterAssignmentList groups={model.groups} visibleIds={model.visibleIds} assignments={model.assignments}
           selectedId={selectedObject?.id} retainedId={retainedId === selectedObject?.id ? retainedId : undefined}

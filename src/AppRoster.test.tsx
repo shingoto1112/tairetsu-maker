@@ -86,7 +86,7 @@ describe("App roster confirmation integration", () => {
         const objects = tab === "道具";
         await waitFor(() => expect(within(roster).getByRole("button", { name: objects ? "道具管理" : "メンバー管理" }).classList.contains("is-active")).toBe(true));
         if (objects) {
-          expect(within(roster).getByRole("button", { name: "名前の編集" }).getAttribute("aria-pressed")).toBe("true");
+          expect(within(roster).getByRole("button", { name: "道具の追加・編集" }).getAttribute("aria-pressed")).toBe("true");
           fireEvent.click(within(roster).getByRole("button", { name: "道具割当" }));
         } else {
           fireEvent.click(within(roster).getByRole("button", { name: "道具管理" }));
@@ -419,6 +419,18 @@ describe("App roster confirmation integration", () => {
     fireEvent.click(within(roster).getByRole("button", { name: "道具管理" }));
     return roster;
   };
+  it.each(["curtain", "mark", "area"] as const)("new group objects ignore legacy default type %s in both entrances", async defaultType => {
+    testProject.objectGroups = [{ id: "flags", name: "旗", objectIds: ["o_chair"], defaultType, defaultShape: "circle" }];
+    render(<App />); fireEvent.click(await screen.findByRole("button", { name: "削除検証を開く" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "道具" }));
+    const card = (await screen.findByRole("textbox", { name: "旗 のグループ名" })).closest("article")!;
+    fireEvent.click(within(card).getByRole("button", { name: "道具" }));
+    expect(canvas.project!.stageObjects.slice(-1)[0]!.type).toBe("prop");
+    const roster = await openObjectRoster();
+    fireEvent.click(within(roster).getByRole("button", { name: "旗に道具を追加" }));
+    expect(canvas.project!.stageObjects.slice(-1)[0]!.type).toBe("prop");
+    expect(canvas.project!.objectGroups![0].defaultType).toBe(defaultType);
+  }, INTEGRATION_TIMEOUT_MS);
   it("object roster steps create separate Undo/Redo entries, keep individual scenes, and save registration", async () => {
     testProject.frames.forEach((f, i) => { f.objectStates.o_chair.widthMeters = i === 2 ? 2 : 1.23; });
     testProject.stageObjects.find(o => o.id === "o_chair")!.widthMeters = 1.23;
@@ -518,7 +530,7 @@ describe("App roster confirmation integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "コピー" }));
     fireEvent.click(screen.getByRole("button", { name: "貼り付け" }));
     const copy = canvas.project!.stageObjects.slice(-1)[0];
-    expect(copy.id).not.toBe(source.id); expect(copy.shape).toBe(source.shape);
+    expect(copy.id).not.toBe(source.id); expect(copy.shape).toBe(source.shape); expect(copy.type).toBe("curtain");
     expect(copy.widthMeters).toBe(source.widthMeters); expect(copy.heightMeters).toBe(source.heightMeters);
     canvas.project!.frames.forEach((f, i) => {
       expect(f.objectStates[copy.id].widthMeters).toBe(states[i].widthMeters); expect(f.objectStates[copy.id].heightMeters).toBe(states[i].heightMeters);
@@ -650,7 +662,7 @@ describe("App roster confirmation integration", () => {
     const before = JSON.parse(JSON.stringify(canvas.project!.frames[frameIndex])) as Project["frames"][number];
     await user.click(within(view).getByRole("button", { name: /^椅子・/ }));
     if (action === "previous") {
-      await user.click(within(view).getByRole("button", { name: "前シーンの割当を反映" }));
+      await user.click(within(roster).getByRole("button", { name: "前シーンの割当を反映" }));
       const confirm = within(view).getByRole("dialog", { name: "前シーンの割当を反映" });
       expect(confirm.textContent).toContain("1個の道具の担当が変わります");
       await user.click(within(confirm).getByRole("button", { name: "反映する" }));
@@ -669,7 +681,7 @@ describe("App roster confirmation integration", () => {
     }
     await waitFor(() => expect(canvas.project!.frames[frameIndex].objectAssignments).not.toEqual(before.objectAssignments));
     expect(canvas.project!.frames[frameIndex].memberVisibility?.[action === "add" ? "m_anna" : "m_ben"]).toBe(false);
-    await user.click(within(view).getByRole("button", { name: "元に戻す" }));
+    await user.click(within(roster).getByRole("button", { name: "元に戻す" }));
     await waitFor(() => expect(canvas.project!.frames[frameIndex]).toEqual(before));
     expect(within(view).getByRole("button", { name: action === "previous" ? "Anna 未所属" : "Ben 未所属" }).getAttribute("aria-pressed")).toBe("true");
   }, INTEGRATION_TIMEOUT_MS);

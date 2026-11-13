@@ -1,6 +1,7 @@
 import type { Project, StageConfig, AnimationSettings, MovementPath } from "../types";
 import { createSampleProject } from "../sampleProject";
 import { createId } from "../utils/ids";
+import { MEMBER_DIAMETER_MAX, STORED_MEMBER_DIAMETER_MIN } from "../utils/memberDiameter";
 import {
   createProjectId,
   positiveNumber,
@@ -123,13 +124,13 @@ export const normalizeProjectWithContext = (project: Project, context: Normaliza
     showCenterMarker: rawStage.showCenterMarker ?? true,
     showCenterLine: rawStage.showCenterLine ?? true,
     memberDiameterMeters: Math.min(
-      1,
+      MEMBER_DIAMETER_MAX,
       positiveNumber(
         rawStage.memberDiameterMeters ??
           legacyStage.memberCircleDiameterM ??
           legacyProject.memberCircleDiameterM,
         0.5,
-        0.2,
+        STORED_MEMBER_DIAMETER_MIN,
       ),
     ),
     horizontalGuideMode:

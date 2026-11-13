@@ -92,30 +92,6 @@ type ObjectPanelProps = {
 
 type VisibilityTab = "visible" | "hidden";
 
-const objectTypes: StageObjectType[] = [
-  "prop",
-  "setPiece",
-  "chair",
-  "table",
-  "panel",
-  "curtain",
-  "mark",
-  "area",
-  "custom",
-];
-
-const typeLabel: Record<StageObjectType, string> = {
-  prop: "道具",
-  setPiece: "大道具",
-  chair: "椅子",
-  table: "机",
-  panel: "パネル",
-  curtain: "移動幕",
-  mark: "立ち位置",
-  area: "範囲",
-  custom: "カスタム",
-};
-
 export const ObjectPanel = ({
   projectId, canAssignMembers = true,
   portrait = false,
@@ -165,8 +141,6 @@ export const ObjectPanel = ({
   const panelRef = useRef<HTMLElement | null>(null);
   const [groupDraftName, setGroupDraftName] = useState("");
   const [groupDraftColor, setGroupDraftColor] = useState("#0d8b78");
-  const [groupDraftType, setGroupDraftType] =
-    useState<StageObjectType>("prop");
   const [groupDraftShape, setGroupDraftShape] =
     useState<StageObjectShape>("rectangle");
   const [expandedObjectGroupIds, setExpandedObjectGroupIds] = useState<
@@ -244,7 +218,6 @@ export const ObjectPanel = ({
     onCreateObjectGroup({
       name: groupDraftName.trim() || undefined,
       color: groupDraftColor,
-      defaultType: groupDraftType,
       defaultShape: groupDraftShape,
     });
     setGroupDraftName("");
@@ -292,7 +265,7 @@ export const ObjectPanel = ({
   const pickerItems = useMemo<VisibilityItem[]>(() => objects.map((object) => {
     const visible = objectStates[object.id]?.visible ?? object.visible ?? true;
     const count = objectAssignments[object.id]?.length ?? 0;
-    const states = [visible ? "表示" : "非表示", typeLabel[object.type], object.locked ? "ロック" : "編集可", "割当" + count + "人"];
+    const states = [visible ? "表示" : "非表示", object.locked ? "ロック" : "編集可", "割当" + count + "人"];
     return { id: object.id, name: object.name, color: object.color, square: true, visible,
       selected: selected?.type === "object" && selected.id === object.id,
       status: states.join("・"), fullStatus: states.join("・"), detailCount: Number(count > 0) + Number(object.locked), disabled: sceneDisabled, disabledReason: sceneDisabled ? sceneReadOnlyMessage : undefined };
@@ -417,23 +390,6 @@ export const ObjectPanel = ({
                     label="グループの色"
                   />
                 </div>
-                <label>
-                  種類
-                  <select
-                    value={groupDraftType}
-                    disabled={projectDisabled}
-                    title={projectDisabled ? projectReadOnlyMessage : undefined}
-                    onChange={(event) =>
-                      setGroupDraftType(event.target.value as StageObjectType)
-                    }
-                  >
-                    {objectTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {typeLabel[type]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <div className="object-panel-shape-field"><span>形</span>
                   <ObjectShapeButtons shape={groupDraftShape} disabled={projectDisabled} label="新しいグループの追加時の形" onChange={setGroupDraftShape} />
                 </div>
@@ -510,24 +466,6 @@ export const ObjectPanel = ({
                         }
                         label={`${group.name}のグループの色`}
                       />
-                      <select
-                        className="compact-select"
-                        value={group.defaultType ?? "prop"}
-                        disabled={projectDisabled}
-                        title={projectDisabled ? projectReadOnlyMessage : undefined}
-                        onChange={(event) =>
-                          onUpdateObjectGroup(group.id, {
-                            defaultType: event.target.value as StageObjectType,
-                          })
-                        }
-                        aria-label={`${group.name} の既定種類`}
-                      >
-                        {objectTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {typeLabel[type]}
-                          </option>
-                        ))}
-                      </select>
                       <button
                         className="mini-button"
                         onClick={() => onAddObjectToGroup(group, isVisibleTab)}
@@ -708,25 +646,6 @@ export const ObjectPanel = ({
               />
             </div>
             <div className="field-grid two">
-              <label>
-                種類
-                <select
-                  value={object.type}
-                  disabled={projectDisabled}
-                  title={projectDisabled ? projectReadOnlyMessage : undefined}
-                  onChange={(event) =>
-                    onUpdateObject(object.id, {
-                      type: event.target.value as StageObjectType,
-                    })
-                  }
-                >
-                  {objectTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {typeLabel[type]}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <div className="object-panel-shape-field"><span>形</span>
                 <ObjectShapeButtons shape={object.shape} disabled={projectDisabled} label={object.name + "の形"}
                   onChange={shape => onUpdateObject(object.id, { shape })} />

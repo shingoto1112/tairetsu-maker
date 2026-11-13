@@ -1,4 +1,5 @@
 import { isStageViewRotated180 } from "./stageOrientation";
+import { MEMBER_DIAMETER_MAX, STORED_MEMBER_DIAMETER_MIN } from "./memberDiameter";
 import type { FormationFrame, Position, Project, ViewerPerspective } from "../types";
 import { objectSceneBounds } from "../project/objectAppearance";
 import { constrainMemberPosition } from "./coordinates";
@@ -19,7 +20,8 @@ export function placeNewMembers(project: Project, frame: FormationFrame, count: 
   const bounds = objectSceneBounds(project, frame);
   const stage = { ...project.stage, widthMeters: bounds.widthMeters, depthMeters: bounds.heightMeters };
   const parade = project.mode === "parade";
-  const diameter = parade ? stage.memberDiameterMeters ?? 0.5 : Math.min(1, Math.max(0.2, stage.memberDiameterMeters ?? 0.5));
+  const diameter = parade ? stage.memberDiameterMeters ?? 0.5
+    : Math.min(MEMBER_DIAMETER_MAX, Math.max(STORED_MEMBER_DIAMETER_MIN, stage.memberDiameterMeters ?? 0.5));
   const grid = parade ? project.paradeSettings?.cellSizeMeters ?? stage.gridSizeMeters
     : stage.showGrid ? stage.gridSizeMeters : NaN;
   const gridOrigin = horizontalGridOriginMeters(stage.widthMeters,

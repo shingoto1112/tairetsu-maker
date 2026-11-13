@@ -1,4 +1,5 @@
 import { isStageViewRotated180 } from "../utils/stageOrientation";
+import { MEMBER_DIAMETER_MAX, STORED_MEMBER_DIAMETER_MIN } from "../utils/memberDiameter";
 import { useCanvasEditScope, type CanvasEditOperation } from "../hooks/useCanvasEditScope";
 import { useAnnotationEditor } from "./useAnnotationEditor";
 import type { AnnotationLine } from "../types";
@@ -447,8 +448,8 @@ export const StageCanvas = forwardRef<HTMLDivElement, StageCanvasProps>(
     const rulerAtBottom = horizontalRulerSide(stage, viewerPerspective) === "bottom";
     const originMode = stage.originMode ?? "center";
     const memberDiameterMeters = Math.min(
-      1,
-      Math.max(0.2, stage.memberDiameterMeters ?? 0.5),
+      MEMBER_DIAMETER_MAX,
+      Math.max(STORED_MEMBER_DIAMETER_MIN, stage.memberDiameterMeters ?? 0.5),
     );
     const memberSizeStyle = {
       width: `${(memberDiameterMeters / stage.widthMeters) * 100}%`,

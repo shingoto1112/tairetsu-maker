@@ -16,7 +16,8 @@ export const MemberDiameterPicker = ({ value, onChange, disabled = false, error 
   const id = useId();
   const finite = Number.isFinite(value);
   const belowMinimum = finite && value < MEMBER_DIAMETER_MIN;
-  const diameter = finite ? Math.max(0, Math.min(MEMBER_DIAMETER_MAX, value)) * 64 : 0;
+  const pixelsPerMeter = 32;
+  const diameter = finite ? Math.max(0, Math.min(MEMBER_DIAMETER_MAX, value)) * pixelsPerMeter : 0;
   const lines = splitMemberLabel("さくら");
   const fontSize = getMemberLabelFontSize(diameter, lines, { min: 0 });
   const change = (action: MemberDiameterAction) => {
@@ -42,8 +43,8 @@ export const MemberDiameterPicker = ({ value, onChange, disabled = false, error 
     </div>
     <div className="member-diameter-picker__preview">
       <svg width="180" height="94" viewBox="0 0 180 94" aria-hidden="true" focusable="false">
-        <path d="M26 10v8 M26 14h64 M90 10v8" fill="none" stroke="currentColor" />
-        <text x="105" y="18" fontSize="12" fill="currentColor">1m</text>
+        <path d="M42 10v8 M42 14h32 M74 10v8" fill="none" stroke="currentColor" />
+        <text x="89" y="18" fontSize="12" fill="currentColor">1m</text>
         <circle cx="58" cy="56" r={diameter / 2} fill="var(--accent)" stroke="white" strokeWidth="2" />
         <text x="58" y="56" textAnchor="middle" dominantBaseline="central" fill="white"
           fontSize={fontSize} fontWeight="700">{lines[0]}</text>
@@ -51,7 +52,7 @@ export const MemberDiameterPicker = ({ value, onChange, disabled = false, error 
       <small>大きさの目安<br />印刷時の見え方とは異なります</small>
     </div>
     <small id={`${id}-hint`} className={belowMinimum ? "member-diameter-picker__legacy" : undefined}>
-      {belowMinimum ? "以前の値を保持しています。0.5m未満は新しく選べません。＋で0.5mになります。" : "0.5〜1.0mから選べます（−／＋は0.05mずつ）。"}
+      {belowMinimum ? "以前の値を保持しています。0.5m未満は新しく選べません。＋で0.5mになります。" : `0.5〜${MEMBER_DIAMETER_MAX.toFixed(1)}mから選べます（−／＋は0.05mずつ）。`}
     </small>
     {error && <small id={`${id}-error`} className="formation-field-error" role="alert">{error}</small>}
   </fieldset>;

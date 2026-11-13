@@ -688,7 +688,7 @@ it.each([["stage", false], ["parade", false], ["stage", true], ["parade", true]]
   const update = observed.settings!.onChange;
   act(() => update({ memberDiameterMeters: .3 }));
   expect(current().project).toBe(before);
-  for (const value of [NaN, Infinity, .1, 1.1]) act(() => update({ memberDiameterMeters: value }));
+  for (const value of [NaN, Infinity, .1, 2.05]) act(() => update({ memberDiameterMeters: value }));
   expect(current().project).toBe(before);
   fireEvent.click(screen.getByRole("button", { name: "丸の直径を0.05m大きくする" }));
   expect(current().project.stage.memberDiameterMeters).toBe(.5);
@@ -696,25 +696,52 @@ it.each([["stage", false], ["parade", false], ["stage", true], ["parade", true]]
   const step = () => update(latest => ({ memberDiameterMeters: Math.round(((latest.memberDiameterMeters ?? .5) + .05) * 100) / 100 }));
   act(() => { step(); step(); });
   expect(current().project.stage.memberDiameterMeters).toBe(.75);
+  act(() => update({ memberDiameterMeters: 1.5 }));
+  act(() => update({ showGrid: false }));
+  expect(current().project.stage.memberDiameterMeters).toBe(1.5);
   if (editor) {
     const active = editor;
     const remoteBefore = current().project;
     act(() => active.doc.transact(() => {
-      getModel(active.doc).settings.set("diameter", { "stage.memberDiameterMeters": .65, "stage.memberCircleDiameterM": .65 });
+      getModel(active.doc).settings.set("diameter", { "stage.memberDiameterMeters": 1.95, "stage.memberCircleDiameterM": 1.95 });
       getModel(active.doc).settings.set("width", { "stage.widthMeters": 19, "paradeSettings.width": 19 });
     }, REMOTE_ORIGIN));
     await act(async () => { await coordinator!.receiveCollaborationSnapshot(encodeUpdate(Y.encodeStateAsUpdate(active.doc)), [], "1"); });
-    await screen.findByText("今の値 0.65m");
+    await screen.findByText("今の値 1.95m");
     expect(current().project.stage.widthMeters).toBe(19);
     expect(current().project).not.toBe(remoteBefore);
     act(step);
-    expect(current().project.stage.memberDiameterMeters).toBe(.7);
+    expect(current().project.stage.memberDiameterMeters).toBe(2);
     expect(current().project.stage.widthMeters).toBe(19);
   }
   expect(geometry(current().project)).toEqual(positions);
   const value = current().project.stage.memberDiameterMeters;
   await act(async () => { fireEvent.click(document.querySelector(".toolbar-save-button")!); });
   await waitFor(async () => expect((await repository.get(project.id!))!.project.stage.memberDiameterMeters).toBe(value));
+}, 25_000);
+
+it.each(["stage", "parade"] as const)("2m: %s retains legacy diameter and unrelated settings, and supports Undo/Redo above 1m", async mode => {
+  project.mode = mode; project.stage.memberDiameterMeters = .2;
+  await open();
+  expect(current().project.stage.memberDiameterMeters).toBe(.2);
+  fireEvent.click(screen.getByRole("tab", { name: "ステージ" }));
+  const update = observed.settings!.onChange;
+  expect(current().project.stage.memberDiameterMeters).toBe(.2);
+  const positions = geometry(current().project);
+  act(() => update({ memberDiameterMeters: 1.5 }));
+  act(() => update({ showCenterLine: false }));
+  expect(current().project.stage.memberDiameterMeters).toBe(1.5);
+  // Existing stage edits coalesce for 1200ms; separate this user action in time.
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2000);
+  act(() => update({ widthMeters: 18, memberDiameterMeters: 2 }));
+  clock.mockRestore();
+  expect(current().project.stage.memberDiameterMeters).toBe(2);
+  act(() => current().onUndo());
+  expect(current().project.stage.memberDiameterMeters).toBe(1.5);
+  expect(current().project.stage.showCenterLine).toBe(false);
+  act(() => current().onRedo());
+  expect(current().project.stage.memberDiameterMeters).toBe(2);
+  expect(geometry(current().project)).toEqual(positions);
 }, 25_000);
 
 it("B: playback disables the picker and a retained update callback cannot edit", async () => {
