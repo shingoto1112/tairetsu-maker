@@ -8185,3 +8185,6 @@ html[data-app-runtime="capacitor-ios"] .stage-fullscreen-host.is-stage-fullscree
     left: min(0px, calc((100% - 44px) / 2));
   }
 }
+
+.library-announcements { position: relative; min-width: 44px; min-height: 44px; }
+.library-announcements__dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: #d92d20; }

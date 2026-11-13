@@ -5,6 +5,7 @@ import { ChangeEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo
 import { Cloud, CloudUpload, Copy, Download, Edit3, ExternalLink, Folder, MoreHorizontal, Plus, Trash2, Upload, Users, X } from "lucide-react";
 import type { ProjectSummary } from "../repositories/types";
 import type { CloudLibraryCard } from "../collaboration/libraryCards";
+import { useAnnouncements } from "./AnnouncementsPageLoader";
 import { LibraryHeader, type LibraryHeaderAccount } from "./LibraryHeader";
 
 import type {
@@ -167,6 +168,7 @@ export const FormationLibrary = ({
   onImportProjectFile,
   onDeleteProject,
 }: FormationLibraryProps) => {
+  const announcements = useAnnouncements();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formationMode, setFormationMode] = useState<FormationMode>("stage");
@@ -488,7 +490,8 @@ export const FormationLibrary = ({
 
   return (
     <main className="library-shell">
-      <LibraryHeader onOpenHelp={onOpenHelp} account={account} onOpenStorageManager={onOpenStorageManager}
+      {announcements.announcementsPage}
+      <LibraryHeader onOpenAnnouncements={announcements.openAnnouncements} hasUnreadAnnouncements={announcements.hasUnread} onOpenHelp={onOpenHelp} account={account} onOpenStorageManager={onOpenStorageManager}
         onRefreshCloud={onRefreshCloud} cloudBusy={cloudBusy} onOpenLegacyImport={onOpenLegacyImport} />
       <p className="library-lead">作成済みの隊列表を開くか、新しい隊列表を作成します。</p>
 

@@ -1,0 +1,26 @@
+.announcements-backdrop {
+  position: fixed; inset: 0; z-index: 2000; background: #0f172a75;
+  display: flex; align-items: center; justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+.announcements-page {
+  display: flex; flex-direction: column; width: min(760px, 100%); max-height: 100%;
+  background: white; color: #172c39; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 24px 80px #0f172a45;
+}
+.announcements-page > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border-bottom: 1px solid #dbe7ee; flex: 0 0 auto; }
+.announcements-page > header h2 { margin: 0; font-size: 24px; }
+.announcements-page > header p { margin: 6px 0 0; color: #546772; font-size: 14px; }
+.announcements-page > header button { width: 44px; min-height: 44px; flex-shrink: 0; }
+.announcements-body { padding: 8px 24px 24px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+
+.announcements-body { overflow-wrap: anywhere; line-height: 1.8; }
+.announcements-body article { padding: 24px 0; border-bottom: 1px solid #dbe7ee; }
+.announcements-body h3 { margin: 10px 0; font-size: 19px; }
+.announcements-body p { white-space: pre-wrap; }
+.announcements-body ul { padding-left: 24px; }
+.announcement-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: #546772; }
+.announcement-meta strong { color: #a32626; }
+.announcements-body a { color: #0f766e; text-decoration: underline; }
+.announcements-page :focus-visible { outline: 3px solid #0f766e; outline-offset: -3px; }
+@media (max-width: 480px) { .announcements-page > header { padding: 16px; } .announcements-body { padding: 4px 16px 20px; } }

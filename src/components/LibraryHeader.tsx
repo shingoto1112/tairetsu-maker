@@ -1,4 +1,4 @@
-import { ArchiveRestore, CircleHelp, FileText, HardDrive, LifeBuoy, MoreHorizontal, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
+import { ArchiveRestore, Bell, CircleHelp, FileText, HardDrive, LifeBuoy, MoreHorizontal, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { PUBLIC_LINKS } from "../config/publicLinks";
 
@@ -6,6 +6,8 @@ export type LibraryHeaderAccount = { label: "アカウント" | "ログイン"; 
 
 type Props = {
   onOpenHelp?: () => void;
+  onOpenAnnouncements?: () => void;
+  hasUnreadAnnouncements?: boolean;
   account?: LibraryHeaderAccount;
   onOpenStorageManager?: () => void;
   onRefreshCloud?: () => void;
@@ -20,7 +22,7 @@ type Props = {
  * buttons and links, so it is not a role="menu"; Escape and outside taps close it
  * and focus returns to the trigger.
  */
-export const LibraryHeader = ({ onOpenHelp, account, onOpenStorageManager, onRefreshCloud, cloudBusy = false, onOpenLegacyImport }: Props) => {
+export const LibraryHeader = ({ onOpenHelp, onOpenAnnouncements, hasUnreadAnnouncements = false, account, onOpenStorageManager, onRefreshCloud, cloudBusy = false, onOpenLegacyImport }: Props) => {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -46,6 +48,10 @@ export const LibraryHeader = ({ onOpenHelp, account, onOpenStorageManager, onRef
     <div className="library-header__actions">
       {onOpenHelp && <button type="button" className="library-header-button" onClick={onOpenHelp}>
         <CircleHelp size={17} aria-hidden="true" />使い方
+      </button>}
+      {onOpenAnnouncements && <button type="button" className="library-header-button library-header-button--icon library-announcements"
+        aria-label={hasUnreadAnnouncements ? "お知らせ（未読あり）" : "お知らせ"} title={hasUnreadAnnouncements ? "お知らせ（未読あり）" : "お知らせ"} onClick={event => { event.currentTarget.focus({ preventScroll: true }); onOpenAnnouncements(); }}>
+        <Bell size={19} aria-hidden="true" />{hasUnreadAnnouncements && <span className="library-announcements__dot" aria-hidden="true" />}
       </button>}
       {account && <button type="button" className="library-header-button" onClick={account.onClick}
         disabled={account.pending} aria-busy={account.pending || undefined}
