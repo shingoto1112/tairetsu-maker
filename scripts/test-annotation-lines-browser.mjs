@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
 
 const origin = 'http://127.0.0.1:5194';
-const shots = process.env.LINES_SHOT_DIR ?? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-lines';
+const shots = process.env.LINES_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-annotation-lines');
 const vite = await createServer({ envFile: false, server: { host: '127.0.0.1', port: 5194, strictPort: true }, logLevel: 'warn' });
 await vite.listen(); console.log('Owned browser test process PID', process.pid);
 const browser = await chromium.launch({ headless: true }), errors = [], results = [];

@@ -44,7 +44,7 @@ build22試験は既存5179サーバーに触れず実行できるよう、保存
 
 ## スクリーンショット
 
-保存先：`C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-help/`
+保存先：作業時の一時フォルダ（今は残っていない、`shots-help/`）
 
 寸法：`744x1133`, `1133x744`, `1032x1376`, `1376x1032`, `390x844`。
 

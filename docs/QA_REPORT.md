@@ -2,8 +2,8 @@
 
 ## 使用したテストデータ
 
-- `C:\Users\shing\Downloads\なんでも\さくよさ上段隊列.zip`
-- リポジトリ内の `test-data/さくよさ上段隊列.zip` は存在しませんでした。
+- 実在のチームから借りた見本ZIP（名前は伏せる）
+- リポジトリ内の `test-data/` には見本ZIPは存在しませんでした。
 
 ## 実行した確認
 
@@ -19,7 +19,7 @@
 実行コマンド:
 
 ```powershell
-node scripts\analyze-project-zip.mjs 'C:\Users\shing\Downloads\なんでも\さくよさ上段隊列.zip'
+node scripts\analyze-project-zip.mjs <見本ZIPのパス>
 ```
 
 結果:
@@ -32,8 +32,8 @@ node scripts\analyze-project-zip.mjs 'C:\Users\shing\Downloads\なんでも\さ�
 
 検出内容:
 
-- 前: `ラスト傘` / 187秒
-- 後: `傘パ` / 102秒
+- 前: シーン15 / 187秒
+- 後: シーン16 / 102秒
 
 ### ローカル配信確認
 
@@ -87,7 +87,7 @@ in-app browserの自動操作を試しましたが、ブラウザ制御の初期
 ## 残課題
 
 - 見本ZIPをブラウザUIから手動で読み込み、復元結果を目視確認する。
-- `傘パ` のようなシーン順/時刻順の逆転をUIで扱いやすくする。
+- シーン16 のようなシーン順/時刻順の逆転をUIで扱いやすくする。
 - 大量メンバー・道具の一括作成導線を検討する。
 - 印刷・スクリーンショットを見本ZIPで手動確認する。
 - `typecheck` / `lint` / `test` スクリプトの追加を検討する。

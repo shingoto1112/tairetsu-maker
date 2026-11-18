@@ -1,6 +1,7 @@
 import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
@@ -15,7 +16,7 @@ await vite.listen();
 const { createHandler, RpcError } = await loadCollabEdge();
 const backend = new MockCollabBackend(null, RpcError), server = await startMockServer(backend, createHandler, origin);
 const browser = await chromium.launch({ headless: true }), contexts = [], pages = [], errors = [], denied = [], legacy = [], checks = [], shots = [], bounds = [];
-const shotDir = process.env.ROUND12_SHOT_DIR ?? (process.platform === 'win32' ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-8b' : path.resolve('.tmp-shots-8b'));
+const shotDir = process.env.ROUND12_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-device-audio');
 const fixture = JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json', 'utf8')).stage;
 const dims = round12Dimensions;
 const wav = seconds => {

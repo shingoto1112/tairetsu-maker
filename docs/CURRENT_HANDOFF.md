@@ -392,7 +392,7 @@
 - アプリ名: 隊列メーカー
 - 技術構成: React + TypeScript + Vite
 - Windows版: Tauri
-- 作業フォルダ: `C:\Users\shing\Documents\Codex\2026-04-29\react-typescript-vite-web-stageflow-json`
+- 作業フォルダ: 開発PCの作業フォルダ
 - GitHub: `https://github.com/shingoto1112/tairetsu-maker`
 - 公開URL: `https://tairetsu-maker.vercel.app`
 - ローカル開発URL: `http://localhost:5173/`
@@ -712,7 +712,7 @@ Phase 3 QA で確認済み:
 
 1. Codexで新しいチャットを開く。
 2. 同じ作業フォルダを開く。
-   - `C:\Users\shing\Documents\Codex\2026-04-29\react-typescript-vite-web-stageflow-json`
+   - 開発PCの作業フォルダ
 3. 最初のメッセージとして、下の「新チャット開始プロンプト」を貼る。
 4. Codexに以下を確認させる。
    - `AGENTS.md`

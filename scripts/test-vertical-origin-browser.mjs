@@ -1,7 +1,7 @@
 import { chromium } from '@playwright/test';
 import {execFileSync} from 'node:child_process';
-import assert from 'node:assert/strict';import fs from 'node:fs/promises';
-const out='C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-origin';
+import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+const out=path.join(os.tmpdir(), 'tairetsu-shots-vertical-origin');
 await fs.mkdir(out,{recursive:true});
 await fs.mkdir('output/origin-baseline',{recursive:true});
 const baseline=execFileSync('git',['show','0af3211:src/components/PrintPreview.tsx']).toString().replaceAll('"../','"../../src/').replace('"./EmphasizedGrid"','"../../src/components/EmphasizedGrid"').replace('"./ShareExportModal"','"../../src/components/ShareExportModal"').replace('"../../src/utils/gridEmphasis"','"./gridEmphasis"');

@@ -139,7 +139,7 @@ Parade の 0.1ms 付近はタイマーの分解能が支配し、1 回目の比�
 
 ### スクリーンショット一覧
 
-保存先: `C:\Users\shing\AppData\Local\Temp\claude\c--Users-shing-OneDrive--------ChatGPT-------\e5aa9c38-eb07-490c-ac06-62f047c4c161\scratchpad\shots-10\`。
+保存先: 作業時の一時フォルダ（今は残っていない、`shots-10/`）。
 
 `stage-` と `parade-` 各 13 枚、下記寸法をファイル名として `.png` を付ける（計 26 枚）。
 

@@ -1,6 +1,7 @@
 import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
@@ -8,9 +9,7 @@ import { MockCollabBackend, startMockServer, actors, memberships, documentId } f
 import { loadCollabEdge } from './testing/load-collab-edge.mjs';
 
 // Disposable browsers, anonymous fixtures and loopback mock only. No .env.
-const shotDir = process.env.ROUND12_SHOT_DIR ?? process.env.HELP_SHOT_DIR ?? (process.platform === 'win32'
-  ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-help'
-  : path.resolve('output/playwright/shots-help'));
+const shotDir = process.env.ROUND12_SHOT_DIR ?? process.env.HELP_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-help');
 const dimensions = round12Dimensions;
 const shots = [], bounds = [], errors = [], denied = [], checks = [];
 const browser = await chromium.launch({ headless: true });

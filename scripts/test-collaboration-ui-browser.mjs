@@ -1,6 +1,7 @@
 import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
@@ -15,7 +16,7 @@ await vite.listen();
 const { createHandler, RpcError } = await loadCollabEdge();
 const backend = new MockCollabBackend(null,RpcError,{fresh:true}), server = await startMockServer(backend,createHandler,origin);
 const browser = await chromium.launch({headless:true}), contexts=[], pages=[], errors=[], denied=[], legacy=[], checks=[], shots=[], bounds=[];
-const shotDir = process.env.ROUND12_SHOT_DIR ?? (process.platform === 'win32' ? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-8a2' : path.join(process.cwd(),'.tmp-shots-8a2'));
+const shotDir = process.env.ROUND12_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-collab-ui');
 const dims = round12Dimensions;
 const title = page => page.getByRole('textbox',{name:'隊列表名',exact:true});
 const dialog = page => page.getByRole('dialog',{name:'みんなで編集',exact:true});

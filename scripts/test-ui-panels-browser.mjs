@@ -1,10 +1,12 @@
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fixture, openFixture } from './measure-member-labels.mjs';
 
-const output='C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-panel';
+const output=path.join(os.tmpdir(), 'tairetsu-shots-ui-panels');
 const origin='http://127.0.0.1:5377';
 const server=await createServer({envFile:false,server:{host:'127.0.0.1',port:5377,strictPort:true},logLevel:'warn'});
 await server.listen();const browser=await chromium.launch({headless:true});const results=[];const errors=[];

@@ -62,7 +62,7 @@ Windows / Chromium 149 / 全ネットワーク試験は隔離ブラウザー、l
 
 ## 画像
 
-保存先：`C:\Users\shing\AppData\Local\Temp\claude\c--Users-shing-OneDrive--------ChatGPT-------\e5aa9c38-eb07-490c-ac06-62f047c4c161\scratchpad\shots-8a2\`
+保存先：作業時の一時フォルダ（今は残っていない、`shots-8a2/`）
 
 | 画面 | mini縦 | mini横 | 13インチ縦 | 13インチ横 |
 | --- | --- | --- | --- | --- |

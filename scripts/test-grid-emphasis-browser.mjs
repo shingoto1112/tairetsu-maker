@@ -1,9 +1,10 @@
 import { chromium, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir,writeFile,readFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 const origin=process.env.REPOSITORY_TEST_ORIGIN??'http://127.0.0.1:5196';
-const out='C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-emphasis';
+const out=path.join(os.tmpdir(), 'tairetsu-shots-emphasis');
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({headless:true}),errors=[],results=[];
 const h=['emphasizeHorizontalNumbers','emphasizeHorizontalEvery5','emphasizeHorizontalEvery10'];

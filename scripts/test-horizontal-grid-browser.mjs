@@ -1,9 +1,10 @@
 import { chromium, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir,writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 const origin='http://127.0.0.1:5193';
-const out='C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-grid';
+const out=path.join(os.tmpdir(), 'tairetsu-shots-grid');
 const browser=await chromium.launch({headless:true}),errors=[],results=[];
 const sizes=process.argv.includes('--mobile-detail-only')?[[390,844]]:[[744,1133],[1032,1376],[1376,1032],[390,844]];
 await mkdir(out,{recursive:true});

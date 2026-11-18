@@ -2,6 +2,7 @@ import { round12Dimensions, checkRound12Layout } from './testing/round12-layout.
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
@@ -20,7 +21,7 @@ const server=await startMockServer(backend,createHandler,origin,{maintenance:cre
 const vite=await createServer({envFile:false,server:{host:'127.0.0.1',port:5190,strictPort:true},logLevel:'warn'});await vite.listen();
 const browser=await chromium.launch({headless:true}),contexts=[],pages=[],errors=[],denied=[],legacy=[],checks=[],shots=[],bounds=[];
 const fixture=JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json','utf8')).stage;
-const shotDir = process.env.ROUND12_SHOT_DIR ?? (process.platform==='win32'?'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-9d':path.resolve('.tmp-shots-9d'));
+const shotDir = process.env.ROUND12_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-collab-history');
 const dims = round12Dimensions;
 const title=p=>p.getByRole('textbox',{name:'隊列表名',exact:true}),dialog=p=>p.getByRole('dialog',{name:'みんなで編集',exact:true}),panel=p=>p.getByRole('region',{name:'控え（履歴）',exact:true});
 const row=(p,id)=>p.locator(`[data-checkpoint-id="${id}"]`);

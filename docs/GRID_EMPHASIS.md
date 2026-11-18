@@ -34,7 +34,7 @@ SQL変更は不要。Swiftは未知JSONフィールドを保持する既存の�
 - Vite: VITE_COLLABORATION_V2未設定／1の両方で成功。一時出力を削除しdistは変更なし。メインJSは両方376,938バイト、gzipは未設定116,609／V2 116,610バイト。
 - check-collab-v2、horizontal-counting、horizontal-grid、horizontal-grid-operations、horizontal-grid-collaboration、build22、app-storage、collaboration-ui、shared-session-app、collaboration-lifecycleの各ブラウザー試験成功。
 - 4画面寸法×ステージ／パレード×横①②×8通りの設定＝128組み合わせをブラウザー確認。設定・使い方・出力画像を目視確認。ZIP往復、IndexedDB再読み込み、共同編集受信、Undo/Redoも確認。PNG／PDF書き出し4組成功。
-- スクリーンショットと試験ログ: C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-emphasis/
+- スクリーンショットと試験ログ: 作業時の一時フォルダ（今は残っていない、`shots-emphasis/`）
 - 未確認: Deno未導入のためDeno実行によるEdge試験、iOS実機／Swift契約試験、実紙の白黒印刷。Edge関連のVitestと旧検証の拒否試験は成功。配備・本番アクセスは実施していない。
 
 ## 変更ファイル

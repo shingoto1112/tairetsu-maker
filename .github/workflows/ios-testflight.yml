@@ -173,17 +173,12 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_API_ISSUER_ID"
 
-      - name: Preserve distribution logs
+      - name: Preserve dSYMs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ios-distribution-logs-${{ github.run_number }}
-          path: |
-            ${{ runner.temp }}/TairetsuMaker-dSYMs.zip
-            ${{ runner.temp }}/TairetsuMaker.xcarchive/Info.plist
-            ${{ runner.temp }}/TestFlightExport/DistributionSummary.plist
-            ${{ runner.temp }}/TestFlightExport/ExportOptions.plist
-            ${{ runner.temp }}/TestFlightExport/Packaging.log
+          name: ios-dsyms-${{ github.run_number }}
+          path: ${{ runner.temp }}/TairetsuMaker-dSYMs.zip
           if-no-files-found: ignore
           retention-days: 30
 

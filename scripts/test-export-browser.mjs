@@ -2,10 +2,11 @@ import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 const origin = 'http://127.0.0.1:5380';
-const out = 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-impl70';
+const out = path.join(os.tmpdir(), 'tairetsu-shots-export');
 await mkdir(out, { recursive: true });
 let vite;
 try { await fetch(origin); } catch {

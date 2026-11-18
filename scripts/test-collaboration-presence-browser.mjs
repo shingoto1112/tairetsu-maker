@@ -1,6 +1,7 @@
 import { checkRound12Layout } from './testing/round12-layout.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium, expect } from '@playwright/test';
@@ -31,7 +32,7 @@ const backend = new MockCollabBackend(null, RpcError);
 const people = [...actors, ...Array.from({ length: 3 }, randomUUID)], generations = [...memberships, ...Array.from({ length: 3 }, randomUUID)];
 people.forEach((id, i) => { backend.users.set(id, { id, is_anonymous: false }); backend.members.set(id, generations[i]); backend.details.set(id, { displayName: `参加者${i + 1}`, isGuest: false }); });
 const relay = mockEphemeralRelay(backend, documentId), server = await startMockServer(backend, createHandler, origin, { ephemeral: relay.handler });
-const shotDir = process.env.ROUND12_SHOT_DIR ?? process.env.PRESENCE_SHOT_DIR ?? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-10';
+const shotDir = process.env.ROUND12_SHOT_DIR ?? process.env.PRESENCE_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-collab-presence');
 const browser = await chromium.launch({ headless: true }), contexts = [], pages = [], errors = [], denied = [], shots = [], checks = [], measurements = {};
 const base = JSON.parse(await readFile('src/repositories/contract/fixtures/commitProjects.json', 'utf8')).stage;
 const ids = Array.from({ length: 146 }, randomUUID);

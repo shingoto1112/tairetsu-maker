@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { createServer } from 'vite';
 
 const origin = 'http://127.0.0.1:5380';
-const shots = process.env.ANNOTATION_SHOT_DIR ?? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-impl71';
+const shots = process.env.ANNOTATION_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-annotation-improvements');
 const vite = await createServer({ envFile: false, server: { host: '127.0.0.1', port: 5380, strictPort: true }, logLevel: 'warn' });
 let browser;
 try {

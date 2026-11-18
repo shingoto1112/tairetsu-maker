@@ -60,7 +60,7 @@ regularはサンプルRSSを記載する。boundary restoreはQUOTA_EXCEEDED（�
 2独立ブラウザーで一覧・続き・手動・容量／頻度失敗・ゲストコピー・端末曲対応・資格非持出し・相手反映・直前控え・後続差・端末保存失敗中のconfirm禁止・再起動／オフライン／公開応答消失・256KiB超の案内・自動控え容量回復・recoveryRequired・作成者削除・protected・解除後403・実IDB CASと破損行分離を検査する。
 
 画像保存先：
-`C:\Users\shing\AppData\Local\Temp\claude\c--Users-shing-OneDrive--------ChatGPT-------\e5aa9c38-eb07-490c-ac06-62f047c4c161\scratchpad\shots-9d\`
+作業時の一時フォルダ（今は残っていない、`shots-9d/`）
 
 各 `744x1133 / 1133x744 / 1032x1376 / 1376x1032 / 390x844` の次の画像（計25枚）と `bounds.json`：
 

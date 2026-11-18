@@ -38,7 +38,7 @@ commit/push/install/新依存/workflow/本番接続なし。Project型・PrintPr
 追加E2E：`node scripts/test-device-audio-app-browser.mjs`。実App V2 ON＋環境ファイルなしの独立Vite、2ブラウザー、loopbackモック、匿名の合成WAV。本番外ネットワークを遮断。
 共有開始後の曲設定・自動対応して再生・曖昧な候補・別エンコードの明示対応・ローカルファイル選択・descriptor/outbox不変・再起動・曲変更後停止・ZIP/全件復元/救出・GC延期・旧UI・端末バックアップ範囲を検査。
 
-画像は `C:\Users\shing\AppData\Local\Temp\claude\c--Users-shing-OneDrive--------ChatGPT-------\e5aa9c38-eb07-490c-ac06-62f047c4c161\scratchpad\shots-8b\`。
+画像は作業時の一時フォルダ（今は残っていない、`shots-8b/`）。
 `audio-matched`、`audio-ambiguous`、`audio-selected`、`audio-missing`、`removed-audio` の各画面について
 `-744x1133.png` / `-1133x744.png` / `-1032x1376.png` / `-1376x1032.png` の20枚。
 `bounds.json`に文字範囲/要素範囲/scrollWidthを記録して切れを検査。縦画面は既存パネル高さ操作で音源状態まで表示する。実データ・個人名なし。

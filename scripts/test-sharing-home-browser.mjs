@@ -1,10 +1,12 @@
 import { chromium } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import assert from "node:assert/strict";
 
 // Isolated profile, fictional records, mocked collaboration metadata, loopback only.
 const origin = "http://127.0.0.1:5380";
-const shots = "C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-impl74";
+const shots = path.join(os.tmpdir(), "tairetsu-shots-sharing-home");
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ hasTouch: true, deviceScaleFactor: 1 });
 const errors = [], blocked = [], metrics = [];

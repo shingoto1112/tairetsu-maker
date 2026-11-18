@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
@@ -14,7 +15,7 @@ const { createHandler, RpcError } = await loadCollabEdge();
 const backend = new MockCollabBackend(null,RpcError,{fresh:true});
 const server = await startMockServer(backend,createHandler,origin);
 const browser = await chromium.launch({headless:true});
-const shots = process.env.PASSWORD_SHOT_DIR ?? 'C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-password';
+const shots = process.env.PASSWORD_SHOT_DIR ?? path.join(os.tmpdir(), 'tairetsu-shots-collab-password');
 let password='mock-pass', mode='normal', updates=0;
 const errors=[];
 try {

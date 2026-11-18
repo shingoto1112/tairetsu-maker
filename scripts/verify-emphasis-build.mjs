@@ -1,10 +1,11 @@
 import { build } from 'vite';
 import { mkdir,readFile,readdir,writeFile,rm } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
+import os from 'node:os';
 import path from 'node:path';
 const root=process.cwd(),target=path.resolve(root,'verification-emphasis-build');
 if(path.dirname(target)!==root||path.basename(target)!=='verification-emphasis-build')throw Error('Unsafe build path');
-const out='C:/Users/shing/AppData/Local/Temp/claude/c--Users-shing-OneDrive--------ChatGPT-------/e5aa9c38-eb07-490c-ac06-62f047c4c161/scratchpad/shots-emphasis';await mkdir(out,{recursive:true});const results=[];
+const out=path.join(os.tmpdir(), 'tairetsu-shots-emphasis');await mkdir(out,{recursive:true});const results=[];
 try{for(const flag of [false,true]){
  if(flag)process.env.VITE_COLLABORATION_V2='1';else delete process.env.VITE_COLLABORATION_V2;
  await build({envFile:false,build:{outDir:target,emptyOutDir:true},logLevel:'warn'});
