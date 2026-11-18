@@ -8,6 +8,7 @@
 // decodeBcmap() is adapted from pdf.js src/core/binary_cmap.js (BinaryCMapReader / BinaryCMapStream).
 //   Copyright 2012 Mozilla Foundation. Licensed under the Apache License, Version 2.0
 //   (https://www.apache.org/licenses/LICENSE-2.0); source: https://github.com/mozilla/pdf.js
+//   Full license text: scripts/licenses/pdf.js-Apache-2.0.txt
 //   Changes: condensed into one function that returns a code→CID map, rejects conflicting mappings and
 //   usecmap, and skips code-space/notdef ranges. Runs only at development time; not shipped in the app.
 //

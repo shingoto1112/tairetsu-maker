@@ -7,7 +7,7 @@
 
 ## 対象
 
-- Submission ID: `8eada55b-130c-4b98-bb66-1c1cd28f6927`
+- Submission ID: （Submission ID は伏せる）
 - 審査端末: iPad Air (第5世代)
 - 審査OS: iPadOS 26.6.1
 - 却下build: 12
@@ -97,23 +97,10 @@ uploadすべて成功。今回作成したDevelopment証明書1件もrunnerの�
 以下はbuild18向けの未送信下書き。実機チェックを完了し、審査用buildを18に差し替えてから使用する。
 未実施のテストを実施済みと記載しない。現在の残件は `IPAD_RESUBMISSION_STATUS.md` を参照。
 
-```text
-Hello App Review Team,
-
-Thank you for the review. We addressed both reported issues in version 1.0, build 18.
-
-1. Guideline 2.3.8
-We replaced the placeholder-like icon with the finalized formation-grid icon and updated the launch artwork to use the same visual identity.
-
-2. Guideline 2.1(a)
-All three attached crash reports show the same TCC termination caused by opening the camera without an NSCameraUsageDescription. The previous audio input could expose that system media-capture option on iPadOS. We replaced it with a native audio-document picker limited to audio files. Camera and video capture are no longer presented or used. We also added file validation, double-selection protection, and error recovery.
-
-Review path (Japanese button labels):
-Launch the app > Add (追加) > Create new (新しく作る) > Stage formation (ステージ隊列) > Select audio file (音源ファイルを選択).
-This opens the native audio-document picker. You can cancel the picker and return to the creation form, or select a supported audio file. Audio is optional when creating a formation.
-
-No camera, microphone, or video-capture permission is required by the app.
-```
+英語返信案の要約（全文は公開向けに省略）:
+- Guideline 2.3.8 対応: version 1.0 (build 18) で完成版の隊列グリッドアイコンへ差し替え、起動画面の意匠も統一したことを説明。
+- Guideline 2.1(a) 対応: 添付クラッシュ3件が権限未宣言のカメラ起動によるTCC終了であった原因と、音源専用ネイティブピッカー置換・ファイル検証・二重選択防止・エラー復帰の追加を説明。
+- 確認導線（`追加` > `新しく作る` > `ステージ隊列` > `音源ファイルを選択`）、音源選択が任意でキャンセル可能なこと、カメラ・マイク・動画撮影の権限が不要である旨を伝達。
 
 ## App Reviewのメモ欄用下書き
 
@@ -121,26 +108,10 @@ No camera, microphone, or video-capture permission is required by the app.
 実際の認証情報はこの文書に書かず、App Store Connectの専用ユーザー名・パスワード欄へ入力する。
 審査用アカウントでログインできることと保存・再読込をユーザーが確認してから使用する。
 
-```text
-The app interface is in Japanese. Local formation editing does not require an account.
-
-Create a formation:
-On the formation list, tap 追加 > 新しく作る > ステージ隊列 (stage) or パレード隊列 (parade). Enter a title and tap 作成する. Audio is optional.
-
-Audio picker regression path:
-追加 > 新しく作る > ステージ隊列 > 音源ファイルを選択.
-The app uses a native audio-document picker, not a camera or video recorder.
-
-Personal cloud storage:
-Use the review account entered in the sign-in fields to log in through the クラウド section on the formation list. The menu on a saved local formation card provides クラウドへアップロード. Open the uploaded formation from the cloud list.
-The iPad app provides personal cloud storage only; collaborative editing and invitations are not available in this version. Audio files remain on the device and are not uploaded to the cloud.
-
-Account deletion:
-While signed in, open アカウント from the クラウド section on the formation list, enter the current password, then tap アカウントを削除. A final confirmation follows. Deleting the account removes the applicable cloud data; local formations on the device remain.
-
-Support: https://tairetsu-maker.vercel.app/support.html
-Contact: tairetsu.maker@gmail.com
-```
+英語メモ欄下書きの要約（全文は公開向けに省略）:
+- UIが日本語でローカル編集はアカウント不要である旨と、新規作成手順および Guideline 2.1(a) の再発確認導線（`音源ファイルを選択` でカメラ/動画ではなく音源専用ピッカーが開くこと）を記載。
+- App Store Connect のサインイン欄へ設定した審査用アカウントを使う個人クラウド保存の確認手順（`クラウドへアップロード` とクラウド一覧からの読込。iPad版は共同編集・招待なし、音源は端末内のみ保存）を記載。
+- アプリ内でのアカウント削除手順（`アカウント` から現在パスワード入力後に `アカウントを削除`、端末内データは残存）とサポート・連絡先を記載。
 
 操作ラベルの根拠: `FormationLibrary.tsx`、`CloudAccountModal.tsx`、`AudioPanel.tsx`。
 送信直前に実機結果、審査用アカウント、選択ビルド、スクリーンショットを照合する。
