@@ -53,3 +53,9 @@ Node 22 以上が必要です。
 - Web: `main` へ push すると Vercel が公開します。
 - iPad: TestFlight へのアップロードは手動起動（GitHub Actions の `ios-testflight.yml`、または `codemagic.yaml`）。
 - Windows: `npm run desktop:build`（Rust／Cargo、Microsoft C++ Build Tools、WebView2 Runtime が必要）。GitHub Actions の `windows-desktop.yml` でも作れます。手順は [`docs/WINDOWS_APP_RELEASE.md`](docs/WINDOWS_APP_RELEASE.md)。
+
+## 権利について / License
+
+- Copyright (c) 2026 shingoto1112. All rights reserved.
+- 本リポジトリはオープンソースではなく、閲覧のために一時的に公開しています。第三者の部品を除き、作者が作成したソースコード・文書・画像などの著作物は、作者の書面による許可なく複製・改変・再配布・その他の利用はできません（詳細は [`LICENSE`](LICENSE)）。
+- 第三者の部品（フォント、ライブラリから移したコードなど）はそれぞれのライセンスに従い、[`LICENSE`](LICENSE) の制限は及びません（`public/licenses/`、`public/fonts/biz-udp-gothic/OFL.txt`、`scripts/licenses/`）。
